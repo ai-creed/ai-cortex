@@ -139,6 +139,34 @@ describe("rehydrateRepo (real disk + real git)", () => {
 	});
 });
 
+describe("bug reproductions", () => {
+	it("unstaged tracked deletion does not crash incremental refresh", () => {
+		// Set up: two committed files
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "b.ts"),
+			"export const b = 2;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add b"]);
+		indexRepo(tmpDir);
+
+		// Delete b.ts from working tree without staging the deletion
+		fs.rmSync(path.join(tmpDir, "src", "b.ts"));
+
+		// Should NOT throw ENOENT — should detect b.ts as removed
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(
+			result.cache.files.find((f) => f.path === "src/b.ts"),
+		).toBeUndefined();
+
+		// Clean up: stage the deletion and commit
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove b"]);
+	});
+});
+
 describe("incremental refresh (real disk + real git)", () => {
 	it("uses incremental reindex after modifying one file", () => {
 		// Ensure fresh cache

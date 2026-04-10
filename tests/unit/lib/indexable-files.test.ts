@@ -1,4 +1,5 @@
 // tests/unit/lib/indexable-files.test.ts
+import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process");
@@ -11,6 +12,7 @@ const mockExec = vi.mocked(execFileSync);
 describe("listIndexableFiles", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.spyOn(fs, "existsSync").mockReturnValue(true);
 	});
 
 	it("returns sorted file paths from git ls-files", () => {
@@ -47,5 +49,13 @@ describe("listIndexableFiles", () => {
 	it("returns empty array when git returns no files", () => {
 		mockExec.mockReturnValue("\n" as any);
 		expect(listIndexableFiles("/repo")).toEqual([]);
+	});
+
+	it("filters out files that do not exist on disk", () => {
+		mockExec.mockReturnValue("a.ts\ndeleted.ts\nb.ts\n" as any);
+		vi.mocked(fs.existsSync).mockImplementation((p) =>
+			!String(p).includes("deleted.ts"),
+		);
+		expect(listIndexableFiles("/repo")).toEqual(["a.ts", "b.ts"]);
 	});
 });
