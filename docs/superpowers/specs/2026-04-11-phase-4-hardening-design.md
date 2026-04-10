@@ -238,9 +238,6 @@ export function buildIncrementalIndex(
 Import edges are keyed by `from` field. Removing all edges from a changed file
 and re-extracting gives correct result without global re-parse.
 
-Import edges are keyed by `from` field. Removing all edges from a changed file
-and re-extracting gives correct result without global re-parse.
-
 **Stale `to` references deferred:** Renaming or removing a heavily-imported
 file leaves dead `to` paths in the cache until every importing file itself
 changes. A post-merge existence filter was considered but deferred: current
