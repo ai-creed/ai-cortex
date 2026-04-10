@@ -157,6 +157,27 @@ widely.
 - suggestions improve first-step targeting often enough to change workflow
 - explanations are short, concrete, and believable
 
+**Design note — function call graph:**
+
+Phase 3 should evaluate adding a function-level call graph (`CallEdge[]`) to
+`RepoCache` alongside the existing file-level import graph. This directly
+addresses the Phase 0 weakness where path-token matching could not bridge
+task vocabulary (“UI shell flow”) to renderer component files whose paths do
+not share those terms.
+
+With a call graph, `suggest` can traverse from known entry points through
+call chains to surface relevant files without relying on path-name matches.
+It also enables feature flow tracing (“how does worktree creation work
+end-to-end?”) and basic impact analysis (“what calls this function?”).
+
+Recommended extraction approach: tree-sitter AST parsing (not full TypeScript
+compiler). Accurate enough for navigation, fast enough for the indexing budget.
+Unresolved calls (dynamic dispatch, higher-order functions) are an acceptable
+limitation at MVP scale.
+
+`RepoCache` schema already reserves space for this — add `calls: CallEdge[]`
+when Phase 3 indexing work begins. No Phase 1 or Phase 2 changes required.
+
 ## Phase 4 — Hardening For Real Repos
 
 **Goal:** Make the product dependable enough for repeated personal use on larger
