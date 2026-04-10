@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getCachedIndex, indexRepo } from "../../src/lib/index.js";
+import { getCachedIndex, indexRepo, rehydrateRepo } from "../../src/lib/index.js";
 import { SCHEMA_VERSION } from "../../src/lib/models.js";
 
 let tmpDir: string;
@@ -68,5 +68,58 @@ describe("indexRepo + getCachedIndex (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "update"]);
 
 		expect(getCachedIndex(tmpDir)).toBeNull();
+	});
+});
+
+describe("rehydrateRepo (real disk + real git)", () => {
+	it("writes a .md briefing file containing the project name", () => {
+		// Re-index first to ensure cache exists for this commit state
+		indexRepo(tmpDir);
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.briefingPath).toMatch(/\.md$/);
+		expect(fs.existsSync(result.briefingPath)).toBe(true);
+		const content = fs.readFileSync(result.briefingPath, "utf8");
+		expect(content).toContain("# test-repo");
+	});
+
+	it("auto-reindexes after a new commit", () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "extra.ts"),
+			"export const y = 2;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add extra"]);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+	});
+
+	it("returns stale when --stale is used after another commit", () => {
+		fs.appendFileSync(path.join(tmpDir, "src", "extra.ts"), "\n// change\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "modify extra"]);
+
+		const result = rehydrateRepo(tmpDir, { stale: true });
+
+		expect(result.cacheStatus).toBe("stale");
+	});
+
+	it("detects dirty worktree and reindexes", () => {
+		// First ensure cache is fresh
+		indexRepo(tmpDir);
+		// Now dirty the worktree without committing
+		fs.appendFileSync(
+			path.join(tmpDir, "README.md"),
+			"\nuncommitted change\n",
+		);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+
+		// Clean up for subsequent tests
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "README.md"]);
 	});
 });
