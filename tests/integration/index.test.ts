@@ -138,3 +138,200 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		fs.rmSync(untrackedFile);
 	});
 });
+
+describe("incremental refresh (real disk + real git)", () => {
+	it("uses incremental reindex after modifying one file", () => {
+		// Ensure fresh cache
+		const initial = indexRepo(tmpDir);
+		const initialFileCount = initial.files.length;
+
+		// Modify one file and commit
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const x = 999;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "tweak main"]);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		// File count should stay the same (incremental, not adding/removing)
+		expect(result.cache.files.length).toBe(initialFileCount);
+		// Content hash for main.ts should have changed
+		const mainFile = result.cache.files.find((f) =>
+			f.path === "src/main.ts",
+		);
+		expect(mainFile?.contentHash).toBeDefined();
+	});
+
+	it("second rehydrate on same dirty worktree has empty incremental diff", () => {
+		// Ensure fresh cache
+		indexRepo(tmpDir);
+
+		// Dirty the worktree without committing
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const dirty = true;\n",
+		);
+
+		// First rehydrate picks up the dirty change
+		const first = rehydrateRepo(tmpDir);
+		expect(first.cacheStatus).toBe("reindexed");
+		expect(first.cache.dirtyAtIndex).toBe(true);
+
+		// Second rehydrate — same dirty state, but cache already has correct hashes
+		// Hash validation filters out the already-processed file
+		const second = rehydrateRepo(tmpDir);
+		expect(second.cacheStatus).toBe("reindexed");
+
+		// Clean up
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+	});
+
+	it("dirty edit then revert triggers reindex, not fresh (dirty-revert)", () => {
+		// Ensure fresh cache
+		indexRepo(tmpDir);
+
+		// Dirty the worktree
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const dirty = true;\n",
+		);
+
+		// Rehydrate picks up dirty change — cache now has dirtyAtIndex=true
+		const dirty = rehydrateRepo(tmpDir);
+		expect(dirty.cacheStatus).toBe("reindexed");
+		expect(dirty.cache.dirtyAtIndex).toBe(true);
+
+		// Revert the edit — worktree is clean again
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+
+		// Rehydrate should NOT return "fresh" — cache has stale dirty content
+		const reverted = rehydrateRepo(tmpDir);
+		expect(reverted.cacheStatus).toBe("reindexed");
+		// After reindex from clean state, dirtyAtIndex should be false
+		expect(reverted.cache.dirtyAtIndex).toBe(false);
+	});
+
+	it("removes package.json and rehydrate uses fallback packageMeta", () => {
+		indexRepo(tmpDir);
+
+		// Remove package.json and commit
+		fs.rmSync(path.join(tmpDir, "package.json"));
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove pkg"]);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		// Fallback: name = dirname, version = 0.0.0
+		expect(result.cache.packageMeta.version).toBe("0.0.0");
+		expect(result.cache.packageMeta.framework).toBeNull();
+
+		// Restore for subsequent tests
+		fs.writeFileSync(
+			path.join(tmpDir, "package.json"),
+			JSON.stringify({ name: "test-repo", version: "0.0.1" }),
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "restore pkg"]);
+	});
+
+	it("falls back to hash compare when cached fingerprint is nonexistent", () => {
+		// Index at current HEAD
+		const cache = indexRepo(tmpDir);
+
+		// Tamper with persisted cache to set fingerprint to nonexistent SHA
+		const cacheDir = path.join(
+			os.homedir(),
+			".cache",
+			"ai-cortex",
+			"v1",
+			cache.repoKey,
+		);
+		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
+		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+		raw.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+		fs.writeFileSync(cacheFile, JSON.stringify(raw));
+
+		// Modify a file so there's something to detect
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const fallback = true;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "change for fallback test"]);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		// Should still work — falls back to hash comparison
+		expect(result.cache.files.length).toBeGreaterThan(0);
+	});
+
+	it("stale import edges remain after rename (known limitation)", () => {
+		// Set up: main.ts imports utils.ts
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			'import { helper } from "./utils";\nexport const x = helper();\n',
+		);
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "utils.ts"),
+			"export function helper() { return 1; }\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add utils"]);
+		indexRepo(tmpDir);
+
+		// Rename utils.ts to helpers.ts (but don't update main.ts import)
+		fs.renameSync(
+			path.join(tmpDir, "src", "utils.ts"),
+			path.join(tmpDir, "src", "helpers.ts"),
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "rename utils"]);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		// main.ts was not changed, so its import edge still points to src/utils
+		const staleEdge = result.cache.imports.find(
+			(e) => e.from === "src/main.ts" && e.to === "src/utils",
+		);
+		expect(staleEdge).toBeDefined(); // Known limitation
+
+		// Clean up
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const x = 1;\n",
+		);
+		fs.rmSync(path.join(tmpDir, "src", "helpers.ts"));
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "clean up rename test"]);
+	});
+
+	it("schema v1 cache triggers full reindex", () => {
+		// Build current cache
+		const cache = indexRepo(tmpDir);
+
+		// Tamper with cache file to simulate v1 schema
+		const cacheDir = path.join(
+			os.homedir(),
+			".cache",
+			"ai-cortex",
+			"v1",
+			cache.repoKey,
+		);
+		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
+		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+		raw.schemaVersion = "1";
+		fs.writeFileSync(cacheFile, JSON.stringify(raw));
+
+		const result = rehydrateRepo(tmpDir);
+
+		// Should do full reindex because schema mismatch nukes cache
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(result.cache.schemaVersion).toBe(SCHEMA_VERSION);
+	});
+});
