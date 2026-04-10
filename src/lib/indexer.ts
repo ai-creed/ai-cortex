@@ -4,6 +4,7 @@ import {
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
+import { hashFileContent } from "./diff-files.js";
 import { loadDocs } from "./doc-inputs.js";
 import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
@@ -20,7 +21,11 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 		const docs = loadDocs(identity.worktreePath, filePaths);
 		const imports = extractImports(identity.worktreePath, filePaths);
 		const fingerprint = buildRepoFingerprint(identity.worktreePath);
-		const files = filePaths.map((p) => ({ path: p, kind: "file" as const }));
+		const files = filePaths.map((p) => ({
+			path: p,
+			kind: "file" as const,
+			contentHash: hashFileContent(identity.worktreePath, p),
+		}));
 
 		return {
 			schemaVersion: SCHEMA_VERSION,

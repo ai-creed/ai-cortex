@@ -7,6 +7,7 @@ vi.mock("../../../src/lib/entry-files.js");
 vi.mock("../../../src/lib/doc-inputs.js");
 vi.mock("../../../src/lib/import-graph.js");
 vi.mock("../../../src/lib/cache-store.js");
+vi.mock("../../../src/lib/diff-files.js");
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
@@ -21,6 +22,7 @@ import {
 	readCacheForWorktree,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
+import { hashFileContent } from "../../../src/lib/diff-files.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 import {
@@ -53,6 +55,7 @@ beforeEach(() => {
 	vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 	vi.mocked(readCacheForWorktree).mockReturnValue(null);
 	vi.mocked(writeCache).mockReturnValue(undefined);
+	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
 });
 
 it("uses schema version 2", () => {
@@ -71,6 +74,19 @@ describe("buildIndex", () => {
 		expect(cache.packageMeta.name).toBe("test-app");
 		expect(cache.entryFiles).toEqual(["src/main.ts"]);
 		expect(cache.docs[0]?.title).toBe("Test App");
+	});
+
+	it("populates contentHash on each FileNode", () => {
+		vi.mocked(hashFileContent).mockImplementation((_wp, fp) =>
+			fp === "README.md" ? "hash_readme" : "hash_main",
+		);
+		const cache = buildIndex(mockIdentity);
+
+		expect(cache.files).toEqual([
+			{ path: "README.md", kind: "file", contentHash: "hash_readme" },
+			{ path: "src/main.ts", kind: "file", contentHash: "hash_main" },
+		]);
+		expect(vi.mocked(hashFileContent)).toHaveBeenCalledTimes(2);
 	});
 
 	it("includes indexedAt as an ISO timestamp", () => {
