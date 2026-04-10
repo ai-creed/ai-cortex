@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCache } from "../../src/spike/build-cache.js";
+import { coldOrient } from "../../src/spike/cold-orient.js";
 import { measure } from "../../src/spike/measure.js";
 import { rehydrateFromCache } from "../../src/spike/rehydrate.js";
 import { runPhase0 } from "../../src/spike/run-phase-0.js";
@@ -86,5 +87,30 @@ describe("phase 0 spike workspace", () => {
 		expect(output.cacheStatus).toBe("fresh");
 		expect(output.stale).toBe(false);
 		expect(output.summary).toContain("Example Repo");
+	});
+
+	it("cold-orients a repo into the same summary shape without cache", () => {
+		const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-cold-orient-"));
+		fs.writeFileSync(path.join(repoRoot, "README.md"), "# Example Repo\n");
+		fs.writeFileSync(
+			path.join(repoRoot, "package.json"),
+			JSON.stringify({ name: "example-repo", private: true }, null, 2) + "\n"
+		);
+		fs.mkdirSync(path.join(repoRoot, "electron", "main"), { recursive: true });
+		fs.mkdirSync(path.join(repoRoot, "src", "app"), { recursive: true });
+		fs.writeFileSync(
+			path.join(repoRoot, "electron", "main", "index.ts"),
+			"import { startApp } from '../../src/app/App';\nexport { startApp };\n"
+		);
+		fs.writeFileSync(
+			path.join(repoRoot, "src", "app", "App.ts"),
+			"export function startApp() { return 'ok'; }\n"
+		);
+
+		const result = coldOrient(repoRoot);
+		expect(result.summary).toContain("Example Repo");
+		expect(result.priorityDocs).toContain("README.md");
+		expect(result.priorityFiles).toContain("electron/main/index.ts");
+		expect(result.cacheStatus).toBe("missing");
 	});
 });

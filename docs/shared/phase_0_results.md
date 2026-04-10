@@ -9,23 +9,41 @@
 ## Baseline
 
 - Cold scan command: `node dist/src/cli.js baseline /Users/vuphan/Dev/ai-14all`
-- Cold scan duration: `23.48ms`
+- Cold scan duration: `10.75ms`
 - Files touched: `165`
 - Markdown files read: `23`
+
+## Cold Orientation
+
+- Cold-orient command: `node dist/src/cli.js cold-orient /Users/vuphan/Dev/ai-14all`
+- Cold-orient duration: `15.55ms`
+- Cold-orient summary output:
+
+```text
+Project: ai-14all
+Top docs: README.md, docs/shared/architecture_decisions.md, docs/shared/high_level_plan.md
+Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, electron/main/e2e-git-faults.ts, electron/main/ipc.ts, electron/main/lifecycle.ts
+```
+
+- Cold-orient quality notes:
+  - returns the same summary shape as cached rehydrate without relying on cache
+  - docs remain strong
+  - entry-file hints are plausible, though still heuristic and somewhat noisy
+  - this is the more realistic benchmark target than the cheap baseline
 
 ## Cached Rehydration
 
 - Index command: `node dist/src/cli.js index /Users/vuphan/Dev/ai-14all`
-- Index duration: `60.06ms`
+- Index duration: `52.79ms`
 - Cached rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-cached',durationMs:performance.now()-start,value:result},null,2));"`
-- Cached rehydrate duration: `31.36ms`
+- Cached rehydrate duration: `29.76ms`
 - Refresh rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{refresh:true,writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-refresh',durationMs:performance.now()-start,value:result},null,2));"`
-- Refresh rehydrate duration: `67.13ms`
+- Refresh rehydrate duration: `50.52ms`
 - Summary output:
 
 ```text
 Project: ai-14all
-Indexed: 2026-04-10T08:09:49.758Z
+Indexed: 2026-04-10T08:36:19.537Z
 Top docs: README.md, docs/shared/architecture_decisions.md, docs/shared/high_level_plan.md
 Likely entry files: electron/main/index.ts, electron/main/windows, electron/main/ipc, electron/main/lifecycle, electron/main/menu, services/workspace/workspace-persistence-service
 ```
@@ -36,7 +54,7 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
   - likely entry files remained plausible after moving to git-aware indexing
   - git-aware filtering materially reduced repo noise by excluding ignored artifacts such as `release/`
   - cached `rehydrate` now uses a true cache-first path with a cheaper git-state freshness check
-  - the cached path is still slower than the current baseline, so the speed gate is still not met
+  - the cached path is still slower than both the cheap baseline and the new realistic `cold-orient` benchmark, so the speed gate is still not met
 
 ## Architecture Questions
 
@@ -92,12 +110,14 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
   - The cache now picks useful docs and plausible bootstrap files using a git-aware input set.
   - Hidden-directory filtering and git-aware indexing materially improved signal quality.
   - The spike now has a true cache-first `rehydrate` path plus explicit refresh.
+  - The new `cold-orient` benchmark is a more honest comparison target than the old cheap baseline.
   - Replacing the all-file fingerprint with a git-state token did not clear the speed gate.
   - The speed gate is still not met against the current baseline.
+  - The speed gate is also not met against the new realistic `cold-orient` benchmark.
   - `suggest` remains too doc-heavy and weak on task-specific code targeting.
   - The spike is promising enough to keep going, but not strong enough to justify calling Phase 0 complete without another iteration.
 
 ## Final Decision
 
 - Decision: revise
-- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise, but the current implementation still does not clear the hard gates on measured speed or suggestion quality. The next revision should reduce freshness-check cost further and rebalance suggestion ranking toward implementation files when the task is code-oriented.
+- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise, but the current implementation still does not clear the hard gates on measured speed or suggestion quality. Even against a more realistic fresh-orientation benchmark, cached rehydrate remains slower. The next revision should focus on why cached summary generation is still expensive before adding more product surface area.
