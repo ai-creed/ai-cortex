@@ -155,3 +155,229 @@ describe("diffChangedFiles — hash comparison fallback", () => {
 		expect(diff.removed).toEqual([]);
 	});
 });
+
+describe("diffChangedFiles — git diff tier", () => {
+	it("detects modified file between commits", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "original\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const oldHead = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		// Cache at old HEAD
+		const oldHash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: oldHash }], {
+			fingerprint: oldHead,
+		});
+
+		// Modify and commit
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "modified\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "modify"]);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.changed).toContain("a.ts");
+	});
+
+	it("detects added file in new commit", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "keep\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const oldHead = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		const hashA = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: hashA }], {
+			fingerprint: oldHead,
+		});
+
+		// Add new file and commit
+		fs.writeFileSync(path.join(tmpDir, "b.ts"), "new\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add b"]);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.changed).toContain("b.ts");
+		expect(diff.changed).not.toContain("a.ts");
+	});
+
+	it("detects unstaged changes", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "original\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const head = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		const oldHash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: oldHash }], {
+			fingerprint: head,
+		});
+
+		// Modify without committing
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "dirty\n");
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.changed).toContain("a.ts");
+	});
+
+	it("detects staged changes", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "original\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const head = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		const oldHash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: oldHash }], {
+			fingerprint: head,
+		});
+
+		// Stage a change
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "staged\n");
+		execFileSync("git", ["-C", tmpDir, "add", "a.ts"]);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.changed).toContain("a.ts");
+	});
+
+	it("detects untracked files", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "keep\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const head = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		const hashA = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: hashA }], {
+			fingerprint: head,
+		});
+
+		// Add untracked file
+		fs.writeFileSync(path.join(tmpDir, "new.ts"), "untracked\n");
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.changed).toContain("new.ts");
+	});
+
+	it("hash validation filters out already-processed dirty files", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "dirty content\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const head = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		// Modify file (makes worktree dirty)
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "modified\n");
+
+		// Cache already has the modified content hash (simulating prior incremental)
+		const currentHash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(
+			tmpDir,
+			[{ path: "a.ts", contentHash: currentHash }],
+			{ fingerprint: head },
+		);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		// a.ts is dirty relative to HEAD but hash matches cache — should be filtered out
+		expect(diff.changed).not.toContain("a.ts");
+	});
+
+	it("repeated call on same dirty worktree returns empty diff", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "original\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const head = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		// Dirty the worktree
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "dirty\n");
+		const dirtyHash = hashFileContent(tmpDir, "a.ts");
+
+		// Cache simulates prior incremental that already processed this dirty state
+		const cache = makeCache(
+			tmpDir,
+			[{ path: "a.ts", contentHash: dirtyHash }],
+			{ fingerprint: head },
+		);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.changed).toEqual([]);
+		expect(diff.removed).toEqual([]);
+	});
+
+	it("falls back to hash compare when ancestor commit unreachable", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "content\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+
+		const hash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: hash }], {
+			fingerprint: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		});
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("hash-compare");
+	});
+
+	it("detects removed file via git diff tier", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "keep\n");
+		fs.writeFileSync(path.join(tmpDir, "b.ts"), "delete me\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+		const oldHead = execFileSync("git", ["-C", tmpDir, "rev-parse", "HEAD"], {
+			encoding: "utf8",
+		}).trim();
+
+		const hashA = hashFileContent(tmpDir, "a.ts");
+		const hashB = hashFileContent(tmpDir, "b.ts");
+		const cache = makeCache(
+			tmpDir,
+			[
+				{ path: "a.ts", contentHash: hashA },
+				{ path: "b.ts", contentHash: hashB },
+			],
+			{ fingerprint: oldHead },
+		);
+
+		// Delete b.ts and commit
+		fs.rmSync(path.join(tmpDir, "b.ts"));
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove b"]);
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("git-diff");
+		expect(diff.removed).toContain("b.ts");
+		expect(diff.changed).not.toContain("a.ts");
+	});
+});

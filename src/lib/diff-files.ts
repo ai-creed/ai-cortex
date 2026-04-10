@@ -1,5 +1,6 @@
 // src/lib/diff-files.ts
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { RepoCache, RepoIdentity } from "./models.js";
@@ -54,10 +55,90 @@ function diffByHashCompare(
 	return { changed, removed, method: "hash-compare" };
 }
 
+function gitDiffNames(
+	worktreePath: string,
+	args: string[],
+): string[] {
+	const output = execFileSync("git", ["-C", worktreePath, ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	return output
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+}
+
+function diffByGitDiff(
+	worktreePath: string,
+	cached: RepoCache,
+): FilesDiff | null {
+	try {
+		// Committed changes since cached fingerprint
+		const committed = gitDiffNames(worktreePath, [
+			"diff",
+			"--name-only",
+			`${cached.fingerprint}..HEAD`,
+		]);
+		// Unstaged changes
+		const unstaged = gitDiffNames(worktreePath, ["diff", "--name-only"]);
+		// Staged changes
+		const staged = gitDiffNames(worktreePath, [
+			"diff",
+			"--name-only",
+			"--cached",
+		]);
+		// Untracked files
+		const untracked = gitDiffNames(worktreePath, [
+			"ls-files",
+			"--others",
+			"--exclude-standard",
+		]);
+
+		const rawCandidates = new Set([
+			...committed,
+			...unstaged,
+			...staged,
+			...untracked,
+		]);
+
+		// Hash validation: filter out files whose content already matches cached hash
+		const cachedHashByPath = new Map(
+			cached.files.map((f) => [f.path, f.contentHash]),
+		);
+		const changed: string[] = [];
+		for (const filePath of rawCandidates) {
+			const absPath = path.join(worktreePath, filePath);
+			if (!fs.existsSync(absPath)) continue; // deleted file, handled in removed
+			const cachedHash = cachedHashByPath.get(filePath);
+			if (cachedHash) {
+				const currentHash = hashFileContent(worktreePath, filePath);
+				if (currentHash === cachedHash) continue; // already processed
+			}
+			changed.push(filePath);
+		}
+
+		// Removed: paths in cache but no longer indexable
+		const currentFiles = new Set(listIndexableFiles(worktreePath));
+		const removed: string[] = [];
+		for (const file of cached.files) {
+			if (!currentFiles.has(file.path)) {
+				removed.push(file.path);
+			}
+		}
+
+		return { changed, removed, method: "git-diff" };
+	} catch {
+		// git diff failed (e.g., unreachable ancestor commit) — fall back
+		return null;
+	}
+}
+
 export function diffChangedFiles(
 	identity: RepoIdentity,
 	cached: RepoCache,
 ): FilesDiff {
-	// For now, only hash-compare tier. Git-diff tier added in Task 5.
+	const gitResult = diffByGitDiff(identity.worktreePath, cached);
+	if (gitResult) return gitResult;
 	return diffByHashCompare(identity.worktreePath, cached);
 }
