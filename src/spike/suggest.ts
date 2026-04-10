@@ -17,17 +17,18 @@ export function suggestFiles(task: string, cache: RepoCache, limit = 5): Suggest
 		.filter(node => node.kind === "file")
 		.map(node => {
 			const pathLower = node.path.toLowerCase();
+			const pathTokens = new Set(tokenize(pathLower));
 			const isMarkdown = pathLower.endsWith(".md");
 			let score = 0;
 			for (const term of terms) {
-				if (pathLower.includes(term)) score += 3;
-				if (docText.includes(term) && pathLower.includes(term)) score += 2;
+				if (pathTokens.has(term)) score += 3;
+				if (docText.includes(term) && pathTokens.has(term)) score += 2;
 			}
 			if (isMarkdown) score -= 2;
 			return {
 				path: node.path,
 				score,
-				reason: terms.filter(term => pathLower.includes(term)).slice(0, 2).join(", ")
+				reason: terms.filter(term => pathTokens.has(term)).slice(0, 2).join(", ")
 			};
 		})
 		.filter(item => item.score > 0)

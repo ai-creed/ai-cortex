@@ -60,4 +60,25 @@ describe("suggestFiles", () => {
 
 		expect(results[0]?.path).toBe("services/workspace/workspace-persistence-service.ts");
 	});
+
+	it("matches exact path tokens instead of substrings inside larger words", () => {
+		const results = suggestFiles(
+			"review the main ui shell",
+			{
+				repoPath: "/tmp/example",
+				repoKey: "abc",
+				indexedAt: "2026-04-10T00:00:00.000Z",
+				fingerprint: "fingerprint-1",
+				files: [
+					{ path: "electron-builder.yml", kind: "file" },
+					{ path: "src/app/shell.tsx", kind: "file" }
+				],
+				docs: [],
+				imports: []
+			},
+			1
+		);
+
+		expect(results[0]?.path).toBe("src/app/shell.tsx");
+	});
 });

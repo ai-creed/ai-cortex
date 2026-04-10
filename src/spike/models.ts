@@ -24,6 +24,15 @@ export type RepoCache = {
 	imports: ImportEdge[];
 };
 
+export type RepoSummaryCache = {
+	repoKey: string;
+	indexedAt: string;
+	fingerprint: string;
+	summary: string;
+	priorityDocs: string[];
+	priorityFiles: string[];
+};
+
 export type RehydrateResult = {
 	summary: string;
 	priorityDocs: string[];

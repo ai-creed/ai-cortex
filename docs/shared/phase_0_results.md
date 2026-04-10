@@ -9,14 +9,14 @@
 ## Baseline
 
 - Cold scan command: `node dist/src/cli.js baseline /Users/vuphan/Dev/ai-14all`
-- Cold scan duration: `23.23ms`
+- Cold scan duration: `12.77ms`
 - Files touched: `165`
 - Markdown files read: `23`
 
 ## Cold Orientation
 
 - Cold-orient command: `node dist/src/cli.js cold-orient /Users/vuphan/Dev/ai-14all`
-- Cold-orient duration: `25.12ms`
+- Cold-orient duration: `15.55ms`
 - Cold-orient summary output:
 
 ```text
@@ -34,16 +34,16 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
 ## Cached Rehydration
 
 - Index command: `node dist/src/cli.js index /Users/vuphan/Dev/ai-14all`
-- Index duration: `54.03ms`
+- Index duration: `71.09ms`
 - Cached rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-cached',durationMs:performance.now()-start,value:result},null,2));"`
-- Cached rehydrate duration: `26.74ms`
+- Cached rehydrate duration: `22.85ms`
 - Refresh rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{refresh:true,writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-refresh',durationMs:performance.now()-start,value:result},null,2));"`
-- Refresh rehydrate duration: `40.87ms`
+- Refresh rehydrate duration: `40.89ms`
 - Summary output:
 
 ```text
 Project: ai-14all
-Indexed: 2026-04-10T08:48:02.459Z
+Indexed: 2026-04-10T08:56:53.799Z
 Top docs: README.md, docs/shared/architecture_decisions.md, docs/shared/high_level_plan.md
 Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, electron/main/e2e-git-faults.ts, electron/main/ipc.ts, electron/main/lifecycle.ts
 ```
@@ -53,8 +53,9 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
   - good first-doc selection
   - likely entry files improved after cache rehydrate switched from import-order output to shared entry-file heuristics
   - git-aware filtering materially reduced repo noise by excluding ignored artifacts such as `release/`
-  - cached `rehydrate` now uses a true cache-first path with a commit-only freshness check, which intentionally accepts stale dirty-working-tree data between commits
-  - the cached path is now much closer to the realistic `cold-orient` benchmark, but still slower, so the speed gate is still not met
+  - cached `rehydrate` now reads a slim summary sidecar on cache hits instead of parsing the full repo cache JSON
+  - cached `rehydrate` still uses a commit-only freshness check, which intentionally accepts stale dirty-working-tree data between commits
+  - the cached path improved again, but is still slower than the realistic `cold-orient` benchmark, so the speed gate is still not met
 
 ## Architecture Questions
 
@@ -97,11 +98,11 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
 - Task 3: `review the main UI shell flow`
   - Top suggestions:
     - `docs/superpowers/specs/2026-04-04-phase-6-shell-redesign-and-commit-review-design.md`
-    - `electron-builder.yml`
     - `electron/main/e2e-git-faults.ts`
     - `electron/main/index.ts`
     - `electron/main/ipc.ts`
-  - Quality notes: still weak. Doc dominance is reduced overall, but the shell/UI task still does not surface the main renderer shell components.
+    - `electron/main/lifecycle.ts`
+  - Quality notes: the substring bug is fixed, so `electron-builder.yml` no longer appears from a false `ui` match inside `builder`. The result is still weak, because path-only scoring cannot bridge from shell-design concepts to renderer implementation files whose paths do not share those terms.
 
 ## Decision
 
@@ -112,12 +113,14 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
   - The spike now has a true cache-first `rehydrate` path plus explicit refresh.
   - The new `cold-orient` benchmark is a more honest comparison target than the old cheap baseline.
   - Replacing the git-state fingerprint with a commit-only fingerprint narrowed the speed gap and simplified the cache-hit path.
+  - Writing and reading a slim summary sidecar further reduced cache-hit work by avoiding full-cache JSON parsing on rehydrate.
   - The speed gate is still not met against the current baseline.
   - The speed gate is also still not met against the new realistic `cold-orient` benchmark.
-  - `suggest` improved for persistence and worktree-lifecycle tasks, but remains weak on renderer-shell intent.
+  - The substring-matching bug in `suggest` is fixed.
+  - `suggest` improved for persistence and worktree-lifecycle tasks, but remains weak on renderer-shell intent because path-only matching has a real ceiling.
   - The spike is promising enough to keep going, but not strong enough to justify calling Phase 0 complete without another iteration.
 
 ## Final Decision
 
 - Decision: revise
-- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise. This revision improved cached output quality and narrowed the speed gap by removing dirty-worktree freshness cost, but cached rehydrate still loses to cold orientation on the measured proof repo. The next revision should focus on the remaining cache-read overhead before adding more product surface area.
+- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise. This revision fixed the substring bug in `suggest`, improved cache-hit behavior by reading a slim summary sidecar, and kept cached output quality stronger than before. Even so, cached rehydrate still loses to cold orientation on the measured proof repo. The next revision should focus on the remaining cache-hit overhead or on tightening the benchmark methodology before adding more product surface area.

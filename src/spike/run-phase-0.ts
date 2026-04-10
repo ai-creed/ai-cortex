@@ -1,5 +1,5 @@
 import { buildCache } from "./build-cache.js";
-import { buildRepoFingerprint, readCacheForRepo } from "./cache-store.js";
+import { buildRepoFingerprint, readSummaryCacheForRepo } from "./cache-store.js";
 import { getRepoKey } from "./repo-id.js";
 import { rehydrateFromCache } from "./rehydrate.js";
 import type { RehydrateResult } from "./models.js";
@@ -15,13 +15,15 @@ export async function runPhase0(
 ): Promise<RehydrateResult> {
 	const { refresh = false, writeToStdout = false } = options;
 	const repoKey = getRepoKey(repoPath);
-	const existing = refresh ? null : readCacheForRepo(repoKey);
+	const existing = refresh ? null : readSummaryCacheForRepo(repoKey);
 
 	let result: RehydrateResult;
 	if (existing) {
 		const currentFingerprint = buildRepoFingerprint(repoPath);
 		result = {
-			...rehydrateFromCache(existing),
+			summary: existing.summary,
+			priorityDocs: existing.priorityDocs,
+			priorityFiles: existing.priorityFiles,
 			stale: existing.fingerprint !== currentFingerprint,
 			cacheStatus: existing.fingerprint === currentFingerprint ? "fresh" : "stale"
 		};

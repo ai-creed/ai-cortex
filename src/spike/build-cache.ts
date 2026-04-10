@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildRepoFingerprint, writeCache } from "./cache-store.js";
+import { buildRepoFingerprint, writeCache, writeSummaryCache } from "./cache-store.js";
 import { loadDocs } from "./doc-inputs.js";
 import { buildIndexableTree } from "./indexable-files.js";
 import type { RepoCache } from "./models.js";
+import { rehydrateFromCache } from "./rehydrate.js";
 import { getRepoKey } from "./repo-id.js";
 import { extractImportEdgesFromSource } from "./ts-import-graph.js";
 
@@ -29,5 +30,14 @@ export function buildCache(repoPath: string): RepoCache {
 	};
 
 	writeCache(cache);
+	const summary = rehydrateFromCache(cache);
+	writeSummaryCache({
+		repoKey: cache.repoKey,
+		indexedAt: cache.indexedAt,
+		fingerprint: cache.fingerprint,
+		summary: summary.summary,
+		priorityDocs: summary.priorityDocs,
+		priorityFiles: summary.priorityFiles
+	});
 	return cache;
 }
