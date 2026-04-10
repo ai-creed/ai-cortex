@@ -9,7 +9,7 @@
 ## Baseline
 
 - Cold scan command: `node dist/src/cli.js baseline /Users/vuphan/Dev/ai-14all`
-- Cold scan duration: `16.64ms`
+- Cold scan duration: `23.48ms`
 - Files touched: `165`
 - Markdown files read: `23`
 
@@ -18,14 +18,14 @@
 - Index command: `node dist/src/cli.js index /Users/vuphan/Dev/ai-14all`
 - Index duration: `60.06ms`
 - Cached rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-cached',durationMs:performance.now()-start,value:result},null,2));"`
-- Cached rehydrate duration: `24.94ms`
+- Cached rehydrate duration: `31.36ms`
 - Refresh rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{refresh:true,writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-refresh',durationMs:performance.now()-start,value:result},null,2));"`
-- Refresh rehydrate duration: `42.45ms`
+- Refresh rehydrate duration: `67.13ms`
 - Summary output:
 
 ```text
 Project: ai-14all
-Indexed: 2026-04-10T08:02:09.941Z
+Indexed: 2026-04-10T08:09:49.758Z
 Top docs: README.md, docs/shared/architecture_decisions.md, docs/shared/high_level_plan.md
 Likely entry files: electron/main/index.ts, electron/main/windows, electron/main/ipc, electron/main/lifecycle, electron/main/menu, services/workspace/workspace-persistence-service
 ```
@@ -35,7 +35,7 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
   - good first-doc selection
   - likely entry files remained plausible after moving to git-aware indexing
   - git-aware filtering materially reduced repo noise by excluding ignored artifacts such as `release/`
-  - cached `rehydrate` now uses a true cache-first path with a cheap freshness check
+  - cached `rehydrate` now uses a true cache-first path with a cheaper git-state freshness check
   - the cached path is still slower than the current baseline, so the speed gate is still not met
 
 ## Architecture Questions
@@ -92,6 +92,7 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
   - The cache now picks useful docs and plausible bootstrap files using a git-aware input set.
   - Hidden-directory filtering and git-aware indexing materially improved signal quality.
   - The spike now has a true cache-first `rehydrate` path plus explicit refresh.
+  - Replacing the all-file fingerprint with a git-state token did not clear the speed gate.
   - The speed gate is still not met against the current baseline.
   - `suggest` remains too doc-heavy and weak on task-specific code targeting.
   - The spike is promising enough to keep going, but not strong enough to justify calling Phase 0 complete without another iteration.

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import type { RepoCache } from "./models.js";
 import { listIndexableFiles } from "./indexable-files.js";
 
@@ -13,7 +14,50 @@ export function getCacheFilePath(repoKey: string): string {
 	return path.join(getCacheDir(), `${repoKey}.json`);
 }
 
-export function buildRepoFingerprint(repoPath: string): string {
+function execGit(repoPath: string, args: string[]): string {
+	return execFileSync("git", ["-C", repoPath, ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"]
+	}).trimEnd();
+}
+
+function parsePorcelainPaths(output: string): string[] {
+	return output
+		.split("\n")
+		.map(line => line.trimEnd())
+		.filter(Boolean)
+		.map(line => {
+			const rawPath = line.slice(3);
+			if (rawPath.includes(" -> ")) return rawPath.split(" -> ").at(-1) ?? rawPath;
+			return rawPath;
+		});
+}
+
+function buildGitAwareFingerprint(repoPath: string): string {
+	const hash = createHash("sha256");
+	const head = execGit(repoPath, ["rev-parse", "HEAD"]);
+	const status = execGit(repoPath, ["status", "--porcelain=v1", "--untracked-files=all"]);
+	const changedPaths = parsePorcelainPaths(status).sort();
+
+	hash.update(head);
+	hash.update(status);
+
+	for (const filePath of changedPaths) {
+		const abs = path.join(repoPath, filePath);
+		if (!fs.existsSync(abs)) {
+			hash.update(`${filePath}:missing`);
+			continue;
+		}
+		const stat = fs.statSync(abs);
+		hash.update(filePath);
+		hash.update(String(stat.size));
+		hash.update(String(stat.mtimeMs));
+	}
+
+	return hash.digest("hex");
+}
+
+function buildFallbackFingerprint(repoPath: string): string {
 	const hash = createHash("sha256");
 	const files = listIndexableFiles(repoPath);
 
@@ -26,6 +70,14 @@ export function buildRepoFingerprint(repoPath: string): string {
 	}
 
 	return hash.digest("hex");
+}
+
+export function buildRepoFingerprint(repoPath: string): string {
+	try {
+		return buildGitAwareFingerprint(repoPath);
+	} catch {
+		return buildFallbackFingerprint(repoPath);
+	}
 }
 
 export function writeCache(cache: RepoCache): string {
