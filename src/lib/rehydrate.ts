@@ -7,8 +7,10 @@ import {
 	buildRepoFingerprint,
 	getCacheDir,
 	readCacheForWorktree,
+	writeCache,
 } from "./cache-store.js";
-import { indexRepo } from "./indexer.js";
+import { diffChangedFiles } from "./diff-files.js";
+import { indexRepo, buildIncrementalIndex } from "./indexer.js";
 import { IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
@@ -51,7 +53,11 @@ export function rehydrateRepo(
 			const fingerprintStale = cached.fingerprint !== fingerprint;
 			const dirty =
 				!fingerprintStale && isWorktreeDirty(identity.worktreePath);
-			const isStale = fingerprintStale || dirty;
+			// Dirty-revert detection: cache was built from dirty worktree,
+			// but worktree is now clean — cached content is stale
+			const dirtyReverted =
+				!fingerprintStale && !dirty && !!cached.dirtyAtIndex;
+			const isStale = fingerprintStale || dirty || dirtyReverted;
 
 			if (!isStale) {
 				cache = cached;
@@ -60,7 +66,15 @@ export function rehydrateRepo(
 				cache = cached;
 				cacheStatus = "stale";
 			} else {
-				cache = indexRepo(repoPath);
+				const diff = diffChangedFiles(identity, cached);
+				const isDirtyRefresh = !fingerprintStale && dirty;
+				cache = buildIncrementalIndex(
+					identity,
+					cached,
+					diff,
+					isDirtyRefresh,
+				);
+				writeCache(cache);
 				cacheStatus = "reindexed";
 			}
 		}

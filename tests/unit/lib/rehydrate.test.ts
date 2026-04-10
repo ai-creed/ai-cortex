@@ -9,6 +9,7 @@ vi.mock("../../../src/lib/repo-identity.js");
 vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/indexer.js");
 vi.mock("../../../src/lib/briefing.js");
+vi.mock("../../../src/lib/diff-files.js");
 
 import { execFileSync } from "node:child_process";
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
@@ -16,8 +17,10 @@ import {
 	buildRepoFingerprint,
 	getCacheDir,
 	readCacheForWorktree,
+	writeCache,
 } from "../../../src/lib/cache-store.js";
-import { indexRepo } from "../../../src/lib/indexer.js";
+import { diffChangedFiles } from "../../../src/lib/diff-files.js";
+import { indexRepo, buildIncrementalIndex } from "../../../src/lib/indexer.js";
 import { renderBriefing } from "../../../src/lib/briefing.js";
 import {
 	SCHEMA_VERSION,
@@ -81,41 +84,61 @@ describe("rehydrateRepo", () => {
 
 	it("reindexes when fingerprint is stale", () => {
 		const cache = makeFreshCache();
-		const reindexed = { ...cache, fingerprint: "newfingerprint" };
+		const updated = { ...cache, fingerprint: "newfingerprint" };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		vi.mocked(indexRepo).mockReturnValue(reindexed);
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: [],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
 
 		const result = rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
-		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
 	it("reindexes when worktree has modified tracked files", () => {
 		const cache = makeFreshCache();
+		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any);
-		vi.mocked(indexRepo).mockReturnValue(cache);
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
 
 		const result = rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
-		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
 	it("reindexes when worktree has new untracked files", () => {
 		const cache = makeFreshCache();
+		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		vi.mocked(execFileSync).mockReturnValue("?? newfile.ts\n" as any);
-		vi.mocked(indexRepo).mockReturnValue(cache);
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["newfile.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
 
 		const result = rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
-		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
 	it("uses stale data when stale option is set", () => {
@@ -194,5 +217,140 @@ describe("rehydrateRepo", () => {
 		const result = rehydrateRepo("/repo");
 
 		expect(result.cache).toBe(cache);
+	});
+});
+
+describe("rehydrateRepo — incremental path", () => {
+	it("uses incremental index when cache exists and fingerprint is stale", () => {
+		const cache = makeFreshCache();
+		cache.files = [
+			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
+		];
+		const updated = { ...cache, fingerprint: "newfingerprint" };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		const result = rehydrateRepo("/repo");
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
+		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
+		expect(vi.mocked(writeCache)).toHaveBeenCalledWith(updated);
+	});
+
+	it("uses incremental index when worktree is dirty", () => {
+		const cache = makeFreshCache();
+		cache.files = [
+			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
+		];
+		const updated = { ...cache };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any);
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		const result = rehydrateRepo("/repo");
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
+		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
+	});
+
+	it("still uses full indexRepo when no cache exists", () => {
+		const cache = makeFreshCache();
+		vi.mocked(readCacheForWorktree).mockReturnValue(null);
+		vi.mocked(indexRepo).mockReturnValue(cache);
+
+		const result = rehydrateRepo("/repo");
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
+		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
+	});
+
+	it("treats dirty-reverted cache as stale (dirtyAtIndex + clean worktree)", () => {
+		const cache = makeFreshCache();
+		cache.dirtyAtIndex = true; // was built from dirty worktree
+		const updated = { ...cache, dirtyAtIndex: false };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123"); // same fingerprint
+		vi.mocked(execFileSync).mockReturnValue("" as any); // clean worktree
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		const result = rehydrateRepo("/repo");
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
+	});
+
+	it("passes dirtyAtIndex=true when refresh triggered by dirty worktree", () => {
+		const cache = makeFreshCache();
+		const updated = { ...cache, dirtyAtIndex: true };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123"); // same fingerprint
+		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any); // dirty
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		rehydrateRepo("/repo");
+
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			true, // dirtyAtIndex
+		);
+	});
+
+	it("passes dirtyAtIndex=false when refresh triggered by fingerprint change", () => {
+		const cache = makeFreshCache();
+		const updated = { ...cache, fingerprint: "newfingerprint" };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: [],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		rehydrateRepo("/repo");
+
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			false, // dirtyAtIndex
+		);
 	});
 });
