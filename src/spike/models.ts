@@ -1,0 +1,35 @@
+export type DocInput = {
+	path: string;
+	title: string;
+	body: string;
+};
+
+export type FileNode = {
+	path: string;
+	kind: "file" | "dir";
+};
+
+export type ImportEdge = {
+	from: string;
+	to: string;
+};
+
+export type RepoCache = {
+	repoPath: string;
+	repoKey: string;
+	indexedAt: string;
+	files: FileNode[];
+	docs: DocInput[];
+	imports: ImportEdge[];
+};
+
+export type RehydrateResult = {
+	summary: string;
+	priorityDocs: string[];
+	priorityFiles: string[];
+};
+
+export type SuggestResult = {
+	path: string;
+	reason: string;
+};
