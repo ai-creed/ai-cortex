@@ -1,3 +1,14 @@
 node_modules/
+out/
 dist/
+*.tsbuildinfo
+.DS_Store
+.env*
+.claude/
+test-results/
+playwright-report/
+docs/superpowers/plans/
+.worktrees/
+.superpowers/
+release/
 .cache/
