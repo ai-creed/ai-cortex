@@ -1,10 +1,13 @@
 // tests/unit/lib/diff-files.test.ts
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hashFileContent } from "../../../src/lib/diff-files.js";
+import { hashFileContent, diffChangedFiles } from "../../../src/lib/diff-files.js";
+import type { RepoCache, RepoIdentity } from "../../../src/lib/models.js";
+import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 
 let tmpDir: string;
 
@@ -15,6 +18,43 @@ beforeEach(() => {
 afterEach(() => {
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+function initRepo(dir: string): void {
+	execFileSync("git", ["init", dir]);
+	execFileSync("git", ["-C", dir, "config", "user.email", "t@t.com"]);
+	execFileSync("git", ["-C", dir, "config", "user.name", "T"]);
+	execFileSync("git", ["-C", dir, "config", "commit.gpgsign", "false"]);
+}
+
+function makeIdentity(dir: string): RepoIdentity {
+	return {
+		repoKey: "testrepokey00000",
+		worktreeKey: "testworktreekey00",
+		gitCommonDir: path.join(dir, ".git"),
+		worktreePath: dir,
+	};
+}
+
+function makeCache(
+	dir: string,
+	files: { path: string; contentHash: string }[],
+	overrides?: Partial<RepoCache>,
+): RepoCache {
+	return {
+		schemaVersion: SCHEMA_VERSION,
+		repoKey: "testrepokey00000",
+		worktreeKey: "testworktreekey00",
+		worktreePath: dir,
+		indexedAt: "2026-01-01T00:00:00.000Z",
+		fingerprint: "0000000000000000000000000000000000000000",
+		packageMeta: { name: "test", version: "1.0.0", framework: null },
+		entryFiles: [],
+		files: files.map((f) => ({ path: f.path, kind: "file" as const, contentHash: f.contentHash })),
+		docs: [],
+		imports: [],
+		...overrides,
+	};
+}
 
 describe("hashFileContent", () => {
 	it("returns SHA-256 hex of file content", () => {
@@ -41,5 +81,77 @@ describe("hashFileContent", () => {
 		expect(hashFileContent(tmpDir, "a.ts")).toBe(
 			hashFileContent(tmpDir, "b.ts"),
 		);
+	});
+});
+
+describe("diffChangedFiles — hash comparison fallback", () => {
+	it("detects changed file by content hash mismatch", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "changed\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+
+		const oldHash = createHash("sha256").update("original\n").digest("hex");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: oldHash }]);
+		// Set fingerprint to an unreachable commit to force hash-compare tier
+		cache.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("hash-compare");
+		expect(diff.changed).toContain("a.ts");
+	});
+
+	it("detects removed file (in cache, not on disk)", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "keep\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+
+		const hash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [
+			{ path: "a.ts", contentHash: hash },
+			{ path: "gone.ts", contentHash: "somehash" },
+		]);
+		cache.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("hash-compare");
+		expect(diff.removed).toContain("gone.ts");
+		expect(diff.changed).not.toContain("a.ts");
+	});
+
+	it("detects added file (on disk, no cached hash)", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "old\n");
+		fs.writeFileSync(path.join(tmpDir, "b.ts"), "new\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+
+		const hashA = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: hashA }]);
+		cache.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.method).toBe("hash-compare");
+		expect(diff.changed).toContain("b.ts");
+	});
+
+	it("returns empty diff when nothing changed", () => {
+		initRepo(tmpDir);
+		fs.writeFileSync(path.join(tmpDir, "a.ts"), "same\n");
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "init"]);
+
+		const hash = hashFileContent(tmpDir, "a.ts");
+		const cache = makeCache(tmpDir, [{ path: "a.ts", contentHash: hash }]);
+		cache.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+		const diff = diffChangedFiles(makeIdentity(tmpDir), cache);
+
+		expect(diff.changed).toEqual([]);
+		expect(diff.removed).toEqual([]);
 	});
 });
