@@ -67,6 +67,9 @@ export function rehydrateRepo(
 				cacheStatus = "stale";
 			} else {
 				const diff = diffChangedFiles(identity, cached);
+				// Dirty-revert: cached hashes reflect dirty state, disk reflects
+				// clean state, so hash compare always detects the delta — the diff
+				// is never empty in this path despite fingerprint matching.
 				const isDirtyRefresh = !fingerprintStale && dirty;
 				cache = buildIncrementalIndex(
 					identity,

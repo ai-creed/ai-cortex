@@ -102,14 +102,17 @@ function diffByGitDiff(
 			...untracked,
 		]);
 
+		// Filter candidates to indexable files only — git diff may include
+		// files that listIndexableFiles excludes (binaries, non-source, etc.)
+		const currentFiles = new Set(listIndexableFiles(worktreePath));
+
 		// Hash validation: filter out files whose content already matches cached hash
 		const cachedHashByPath = new Map(
 			cached.files.map((f) => [f.path, f.contentHash]),
 		);
 		const changed: string[] = [];
 		for (const filePath of rawCandidates) {
-			const absPath = path.join(worktreePath, filePath);
-			if (!fs.existsSync(absPath)) continue; // deleted file, handled in removed
+			if (!currentFiles.has(filePath)) continue; // not indexable
 			const cachedHash = cachedHashByPath.get(filePath);
 			if (cachedHash) {
 				const currentHash = hashFileContent(worktreePath, filePath);
@@ -117,9 +120,6 @@ function diffByGitDiff(
 			}
 			changed.push(filePath);
 		}
-
-		// Removed: paths in cache but no longer indexable
-		const currentFiles = new Set(listIndexableFiles(worktreePath));
 		const removed: string[] = [];
 		for (const file of cached.files) {
 			if (!currentFiles.has(file.path)) {
