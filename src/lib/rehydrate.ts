@@ -64,10 +64,12 @@ export function rehydrateRepo(
 				cache = cached;
 				cacheStatus = "stale";
 			} else {
-				const diff = diffChangedFiles(identity, cached);
-				// Dirty-revert: cached hashes reflect dirty state, disk reflects
-				// clean state, so hash compare always detects the delta — the diff
-				// is never empty in this path despite fingerprint matching.
+				// Dirty-revert: git-diff sees no changes (worktree matches HEAD),
+				// but cached hashes are stale. Force hash-compare so it detects
+				// the delta between cached dirty hashes and clean disk content.
+				const diff = diffChangedFiles(identity, cached, {
+					forceHashCompare: dirtyReverted,
+				});
 				const isDirtyRefresh = dirty;
 				cache = buildIncrementalIndex(
 					identity,

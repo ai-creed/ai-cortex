@@ -165,6 +165,35 @@ describe("bug reproductions", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove b"]);
 	});
+	it("dirty-revert restores clean content hashes, not stale dirty ones", () => {
+		// Get clean cache with known hash
+		const clean = indexRepo(tmpDir);
+		const cleanHash = clean.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		expect(cleanHash).toBeDefined();
+
+		// Dirty the worktree
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const dirty = true;\n",
+		);
+
+		// First rehydrate picks up dirty content
+		const dirty = rehydrateRepo(tmpDir);
+		expect(dirty.cache.dirtyAtIndex).toBe(true);
+		const dirtyHash = dirty.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		expect(dirtyHash).not.toBe(cleanHash);
+
+		// Revert — worktree is clean again
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+
+		// Rehydrate after revert must restore the clean hash
+		const reverted = rehydrateRepo(tmpDir);
+		expect(reverted.cacheStatus).toBe("reindexed");
+		expect(reverted.cache.dirtyAtIndex).toBe(false);
+		const revertedHash = reverted.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		expect(revertedHash).toBe(cleanHash);
+	});
+
 	it("new commit + uncommitted edit marks cache as dirty", () => {
 		indexRepo(tmpDir);
 

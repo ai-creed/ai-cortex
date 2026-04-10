@@ -134,11 +134,18 @@ function diffByGitDiff(
 	}
 }
 
+export type DiffOptions = {
+	forceHashCompare?: boolean;
+};
+
 export function diffChangedFiles(
 	identity: RepoIdentity,
 	cached: RepoCache,
+	options?: DiffOptions,
 ): FilesDiff {
-	const gitResult = diffByGitDiff(identity.worktreePath, cached);
-	if (gitResult) return gitResult;
+	if (!options?.forceHashCompare) {
+		const gitResult = diffByGitDiff(identity.worktreePath, cached);
+		if (gitResult) return gitResult;
+	}
 	return diffByHashCompare(identity.worktreePath, cached);
 }

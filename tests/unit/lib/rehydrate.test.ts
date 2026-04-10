@@ -294,7 +294,7 @@ describe("rehydrateRepo — incremental path", () => {
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
-			method: "git-diff",
+			method: "hash-compare",
 		});
 		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
@@ -303,6 +303,12 @@ describe("rehydrateRepo — incremental path", () => {
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
+		// Must force hash-compare to detect delta between dirty cache and clean disk
+		expect(vi.mocked(diffChangedFiles)).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			{ forceHashCompare: true },
+		);
 	});
 
 	it("passes dirtyAtIndex=true when refresh triggered by dirty worktree", () => {
