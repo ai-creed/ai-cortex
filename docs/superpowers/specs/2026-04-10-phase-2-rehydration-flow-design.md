@@ -186,8 +186,8 @@ export function rehydrateRepo(
 4. If cache exists → check freshness:
    a. `buildRepoFingerprint(identity.worktreePath)` — compare HEAD hash
    b. `isWorktreeDirty(identity.worktreePath)` — run
-      `git diff --quiet HEAD`; exits 1 if tracked files have uncommitted
-      changes
+      `git status --porcelain -unormal`; if output is non-empty, there are
+      uncommitted changes to tracked files or new untracked files
    - Both clean (fingerprint matches + not dirty) → status = `"fresh"`
    - Either stale + `stale` option set → status = `"stale"` (use stale data
      as-is)
@@ -202,14 +202,17 @@ freshness, or file writing.
 
 **Why the dirty check matters:** Phase 1's `getCachedIndex` intentionally uses
 commit-only freshness — cheap and acceptable for a library API. But `rehydrate`
-is the agent-facing product. If the user edited README.md, docs, or entry files
-since the last commit, the briefing must reflect that or it undercuts the
-"orient without cold scanning" value proposition. The extra `git diff --quiet`
-call is cheap (~2ms) and only runs in the rehydrate path.
+is the agent-facing product. If the user edited README.md, added a new doc, or
+created a new source file since the last commit, the briefing must reflect that
+or it undercuts the "orient without cold scanning" value proposition. The extra
+`git status` call is cheap (~2-5ms) and only runs in the rehydrate path.
 
 `isWorktreeDirty` is a helper in `rehydrate.ts` (not exported). It runs
-`execFileSync("git", ["-C", worktreePath, "diff", "--quiet", "HEAD"])` and
-returns `true` if the exit code is non-zero.
+`execFileSync("git", ["-C", worktreePath, "status", "--porcelain", "-unormal"])`
+and returns `true` if the output is non-empty. The `-unormal` flag explicitly
+includes untracked files, matching the indexer's `git ls-files --others`
+behavior. Without this, newly added files would be invisible to the freshness
+check despite being indexed.
 
 ---
 
@@ -298,8 +301,10 @@ Pure function — no mocks needed. Pass a `RepoCache` directly.
 - Fresh cache (fingerprint matches + clean worktree) → no re-index, status =
   `"fresh"`
 - Stale fingerprint → auto re-indexes, status = `"reindexed"`
-- Dirty worktree (fingerprint matches but uncommitted changes) → auto
-  re-indexes, status = `"reindexed"`
+- Dirty worktree — modified tracked file (fingerprint matches but uncommitted
+  changes) → auto re-indexes, status = `"reindexed"`
+- Dirty worktree — new untracked file (fingerprint matches but untracked file
+  present) → auto re-indexes, status = `"reindexed"`
 - Stale + `stale: true` → uses stale data, status = `"stale"`
 - Missing cache → indexes from scratch, status = `"reindexed"`
 - Writes `.md` file to correct path
