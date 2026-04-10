@@ -4,24 +4,28 @@
 
 - Repo path: `/Users/vuphan/Dev/ai-14all`
 - Repo type: Electron + React + TypeScript desktop app for worktree-based development sessions
-- Approximate file count: 488 files touched by the current baseline scanner after hidden-directory filtering
+- Approximate file count: 165 git-aware indexable files after applying `git ls-files --cached --others --exclude-standard`
 
 ## Baseline
 
 - Cold scan command: `node dist/src/cli.js baseline /Users/vuphan/Dev/ai-14all`
-- Cold scan duration: `10.53ms`
-- Files touched: `488`
-- Markdown files read: `43`
+- Cold scan duration: `16.64ms`
+- Files touched: `165`
+- Markdown files read: `23`
 
 ## Cached Rehydration
 
-- Rehydrate command: `node --input-type=module -e "import { measure } from './dist/src/spike/measure.js'; import { buildCache } from './dist/src/spike/build-cache.js'; import { rehydrateFromCache } from './dist/src/spike/rehydrate.js'; const repoPath=process.argv[1]; const result=await measure('rehydrate', () => rehydrateFromCache(buildCache(repoPath))); console.log(JSON.stringify(result, null, 2));" /Users/vuphan/Dev/ai-14all`
-- Rehydrate duration: `22.18ms`
+- Index command: `node dist/src/cli.js index /Users/vuphan/Dev/ai-14all`
+- Index duration: `60.06ms`
+- Cached rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-cached',durationMs:performance.now()-start,value:result},null,2));"`
+- Cached rehydrate duration: `24.94ms`
+- Refresh rehydrate command: `node --input-type=module -e "const start=performance.now(); const { runPhase0 } = await import('./dist/src/spike/run-phase-0.js'); const result=await runPhase0('/Users/vuphan/Dev/ai-14all',{refresh:true,writeToStdout:false}); console.log(JSON.stringify({label:'rehydrate-refresh',durationMs:performance.now()-start,value:result},null,2));"`
+- Refresh rehydrate duration: `42.45ms`
 - Summary output:
 
 ```text
 Project: ai-14all
-Indexed: 2026-04-10T07:16:14.755Z
+Indexed: 2026-04-10T08:02:09.941Z
 Top docs: README.md, docs/shared/architecture_decisions.md, docs/shared/high_level_plan.md
 Likely entry files: electron/main/index.ts, electron/main/windows, electron/main/ipc, electron/main/lifecycle, electron/main/menu, services/workspace/workspace-persistence-service
 ```
@@ -29,9 +33,10 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
 - Summary quality notes:
   - good repo identification
   - good first-doc selection
-  - likely entry files became much more plausible after excluding hidden directories
-  - still too shallow to explain major subsystems directly
-  - current output is slower than the current baseline, so the speed gate is not met yet
+  - likely entry files remained plausible after moving to git-aware indexing
+  - git-aware filtering materially reduced repo noise by excluding ignored artifacts such as `release/`
+  - cached `rehydrate` now uses a true cache-first path with a cheap freshness check
+  - the cached path is still slower than the current baseline, so the speed gate is still not met
 
 ## Architecture Questions
 
@@ -55,42 +60,43 @@ Likely entry files: electron/main/index.ts, electron/main/windows, electron/main
 
 - Task 1: `inspect persistence logic`
   - Top suggestions:
-    - `docs/superpowers/plans/2026-04-04-phase-4-code-inspection-and-git-review.md`
-    - `docs/superpowers/plans/2026-04-04-phase-5-persistence-and-restore.md`
     - `docs/superpowers/specs/2026-04-04-phase-4-code-inspection-and-git-review-design.md`
     - `docs/superpowers/specs/2026-04-04-phase-5-persistence-and-restore-design.md`
     - `services/workspace/workspace-persistence-service.ts`
-  - Quality notes: mixed. It does find the persistence service, but ranks docs too aggressively.
+    - `src/features/workspace/workspace-persistence.ts`
+    - `tests/unit/services/workspace/workspace-persistence-service.test.ts`
+  - Quality notes: improved slightly. It now surfaces more code files, but docs still rank too high.
 
 - Task 2: `trace worktree lifecycle behavior`
   - Top suggestions:
-    - `docs/superpowers/plans/2026-04-08-phase-7-basic-worktree-lifecycle-and-reactivity.md`
     - `docs/superpowers/specs/2026-04-08-phase-7-basic-worktree-lifecycle-and-reactivity-design.md`
     - `shared/models/worktree-lifecycle.ts`
     - `tests/unit/components/App-worktree-lifecycle.test.tsx`
     - `electron/main/lifecycle.ts`
-  - Quality notes: decent. It surfaces both the model and an implementation-adjacent file, but still overweights docs.
+    - `services/worktrees/parse-worktree-porcelain.ts`
+  - Quality notes: decent. It surfaces both model and implementation-adjacent files, but still overweights docs.
 
 - Task 3: `review the main UI shell flow`
   - Top suggestions:
-    - `docs/superpowers/plans/2026-04-04-phase-6-shell-redesign-and-commit-review.md`
     - `docs/superpowers/specs/2026-04-04-phase-6-shell-redesign-and-commit-review-design.md`
-    - `docs/superpowers/plans/2026-04-03-phase-2-session-first-workflow.md`
-    - `docs/superpowers/plans/2026-04-03-radix-terminal-first-shell.md`
-    - `docs/superpowers/plans/2026-04-04-phase-4-code-inspection-and-git-review.md`
-  - Quality notes: weak. This is mostly document retrieval and does not surface the main renderer entry files or shell components.
+    - `docs/superpowers/specs/2026-04-03-phase-2-session-first-workflow-design.md`
+    - `docs/superpowers/specs/2026-04-03-radix-terminal-first-shell-design.md`
+    - `docs/superpowers/specs/2026-04-04-phase-4-code-inspection-and-git-review-design.md`
+    - `docs/superpowers/specs/2026-04-06-markdown-preview-design.md`
+  - Quality notes: still weak. This remains mostly document retrieval and does not surface the main renderer shell components.
 
 ## Decision
 
 - Continue / revise / stop: revise
 - Why:
-  - The cache already picks useful docs and can produce plausible bootstrap files.
-  - The hidden-directory bug fix materially improved result quality.
-  - The speed gate is not met against the current baseline.
-  - `suggest` is still too doc-heavy and weak on task-specific code targeting.
+  - The cache now picks useful docs and plausible bootstrap files using a git-aware input set.
+  - Hidden-directory filtering and git-aware indexing materially improved signal quality.
+  - The spike now has a true cache-first `rehydrate` path plus explicit refresh.
+  - The speed gate is still not met against the current baseline.
+  - `suggest` remains too doc-heavy and weak on task-specific code targeting.
   - The spike is promising enough to keep going, but not strong enough to justify calling Phase 0 complete without another iteration.
 
 ## Final Decision
 
 - Decision: revise
-- Rationale: the thesis is directionally promising, but the current implementation does not yet clear the hard gates on measured speed or suggestion quality. The next revision should improve the baseline comparison, filter noisy generated/project-artifact areas like `release/`, and rebalance suggestion ranking toward implementation files when the task is code-oriented.
+- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise, but the current implementation still does not clear the hard gates on measured speed or suggestion quality. The next revision should reduce freshness-check cost further and rebalance suggestion ranking toward implementation files when the task is code-oriented.

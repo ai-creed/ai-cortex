@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { writeCache } from "./cache-store.js";
+import { buildRepoFingerprint, writeCache } from "./cache-store.js";
 import { loadDocs } from "./doc-inputs.js";
-import { collectFileTree } from "./file-tree.js";
+import { buildIndexableTree } from "./indexable-files.js";
 import type { RepoCache } from "./models.js";
 import { getRepoKey } from "./repo-id.js";
 import { extractImportEdgesFromSource } from "./ts-import-graph.js";
 
 export function buildCache(repoPath: string): RepoCache {
-	const files = collectFileTree(repoPath);
+	const files = buildIndexableTree(repoPath);
 	const filePaths = files.filter(node => node.kind === "file").map(node => node.path);
 	const docs = loadDocs(repoPath, filePaths);
 	const imports = filePaths
@@ -22,6 +22,7 @@ export function buildCache(repoPath: string): RepoCache {
 		repoPath,
 		repoKey: getRepoKey(repoPath),
 		indexedAt: new Date().toISOString(),
+		fingerprint: buildRepoFingerprint(repoPath),
 		files,
 		docs,
 		imports

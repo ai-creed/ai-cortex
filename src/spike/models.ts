@@ -18,6 +18,7 @@ export type RepoCache = {
 	repoPath: string;
 	repoKey: string;
 	indexedAt: string;
+	fingerprint: string;
 	files: FileNode[];
 	docs: DocInput[];
 	imports: ImportEdge[];
@@ -27,6 +28,8 @@ export type RehydrateResult = {
 	summary: string;
 	priorityDocs: string[];
 	priorityFiles: string[];
+	stale: boolean;
+	cacheStatus: "fresh" | "stale" | "missing";
 };
 
 export type SuggestResult = {

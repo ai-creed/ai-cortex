@@ -17,6 +17,8 @@ export function rehydrateFromCache(cache: RepoCache): RehydrateResult {
 	return {
 		summary: summaryLines.join("\n"),
 		priorityDocs,
-		priorityFiles
+		priorityFiles,
+		stale: false,
+		cacheStatus: "fresh"
 	};
 }

@@ -9,6 +9,7 @@ describe("suggestFiles", () => {
 				repoPath: "/tmp/example",
 				repoKey: "abc",
 				indexedAt: "2026-04-10T00:00:00.000Z",
+				fingerprint: "fingerprint-1",
 				files: [
 					{ path: "src/persistence/store.ts", kind: "file" },
 					{ path: "src/viewer/FileViewer.tsx", kind: "file" },
