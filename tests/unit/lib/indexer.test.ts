@@ -25,8 +25,10 @@ import {
 import { hashFileContent } from "../../../src/lib/diff-files.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
+import type { FilesDiff } from "../../../src/lib/diff-files.js";
 import {
 	buildIndex,
+	buildIncrementalIndex,
 	getCachedIndex,
 	indexRepo,
 } from "../../../src/lib/indexer.js";
@@ -147,5 +149,294 @@ describe("getCachedIndex", () => {
 		vi.mocked(readCacheForWorktree).mockReturnValue(fresh);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		expect(getCachedIndex("/repo")).toBe(fresh);
+	});
+});
+
+function makeCacheForIncremental(): RepoCache {
+	return {
+		schemaVersion: SCHEMA_VERSION,
+		repoKey: mockIdentity.repoKey,
+		worktreeKey: mockIdentity.worktreeKey,
+		worktreePath: "/repo",
+		indexedAt: "2026-01-01T00:00:00.000Z",
+		fingerprint: "oldfingerprint",
+		packageMeta: { name: "test-app", version: "1.0.0", framework: null },
+		entryFiles: ["src/main.ts"],
+		files: [
+			{ path: "README.md", kind: "file", contentHash: "hash_readme" },
+			{ path: "src/main.ts", kind: "file", contentHash: "hash_main" },
+			{ path: "src/utils.ts", kind: "file", contentHash: "hash_utils" },
+		],
+		docs: [{ path: "README.md", title: "Test App", body: "# Test App\n" }],
+		imports: [
+			{ from: "src/main.ts", to: "src/utils" },
+		],
+	};
+}
+
+describe("buildIncrementalIndex", () => {
+	beforeEach(() => {
+		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+	});
+
+	it("merges changed files into existing cache", () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
+		vi.mocked(extractImports).mockReturnValue([
+			{ from: "src/main.ts", to: "src/helper" },
+		]);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		// Changed file has updated hash
+		const mainFile = result.files.find((f) => f.path === "src/main.ts");
+		expect(mainFile?.contentHash).toBe("hash_main_v2");
+
+		// Unchanged file keeps old hash
+		const utilsFile = result.files.find((f) => f.path === "src/utils.ts");
+		expect(utilsFile?.contentHash).toBe("hash_utils");
+
+		// Imports from changed file are replaced
+		expect(result.imports).toEqual([{ from: "src/main.ts", to: "src/helper" }]);
+	});
+
+	it("removes files listed in diff.removed from files, imports, and docs", () => {
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: [],
+			removed: ["src/utils.ts"],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.files.find((f) => f.path === "src/utils.ts")).toBeUndefined();
+	});
+
+	it("replaces import edges from changed files, keeps unchanged", () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
+		vi.mocked(extractImports).mockReturnValue([
+			{ from: "src/main.ts", to: "src/new-dep" },
+		]);
+
+		const existing = makeCacheForIncremental();
+		// Add an edge from utils that should be untouched
+		existing.imports.push({ from: "src/utils.ts", to: "src/lib" });
+
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		// Old edge from main.ts dropped, new one added
+		expect(result.imports).toContainEqual({
+			from: "src/main.ts",
+			to: "src/new-dep",
+		});
+		// Edge from utils.ts untouched
+		expect(result.imports).toContainEqual({
+			from: "src/utils.ts",
+			to: "src/lib",
+		});
+		// Old edge from main.ts gone
+		expect(result.imports).not.toContainEqual({
+			from: "src/main.ts",
+			to: "src/utils",
+		});
+	});
+
+	it("stale import to edges remain when target removed (deferred to Phase 5)", () => {
+		const existing = makeCacheForIncremental();
+		// main.ts imports utils — we remove utils.ts but don't change main.ts
+		const diff: FilesDiff = {
+			changed: [],
+			removed: ["src/utils.ts"],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		// Edge from main.ts still points to src/utils (stale to, accepted)
+		expect(result.imports).toContainEqual({
+			from: "src/main.ts",
+			to: "src/utils",
+		});
+	});
+
+	it("re-reads packageMeta when package.json is in changed", () => {
+		vi.mocked(readPackageMeta).mockReturnValue({
+			name: "renamed-app",
+			version: "2.0.0",
+			framework: "vite",
+		});
+		vi.mocked(hashFileContent).mockReturnValue("hash_pkg_v2");
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["package.json"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.packageMeta.name).toBe("renamed-app");
+		expect(result.packageMeta.framework).toBe("vite");
+		expect(vi.mocked(pickEntryFiles)).toHaveBeenCalled();
+	});
+
+	it("re-reads packageMeta when package.json is in removed", () => {
+		vi.mocked(readPackageMeta).mockReturnValue({
+			name: "repo",
+			version: "0.0.0",
+			framework: null,
+		});
+
+		const existing = makeCacheForIncremental();
+		existing.files.push({
+			path: "package.json",
+			kind: "file",
+			contentHash: "hash_pkg",
+		});
+
+		const diff: FilesDiff = {
+			changed: [],
+			removed: ["package.json"],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.packageMeta.name).toBe("repo");
+		expect(result.packageMeta.version).toBe("0.0.0");
+	});
+
+	it("recomputes entry files after merge", () => {
+		vi.mocked(pickEntryFiles).mockReturnValue(["src/main.ts", "src/new.ts"]);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["src/new.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.entryFiles).toEqual(["src/main.ts", "src/new.ts"]);
+	});
+
+	it("updates content hashes for changed files on incremental index", () => {
+		vi.mocked(hashFileContent).mockImplementation((_wp, fp) =>
+			fp === "src/main.ts" ? "new_hash_main" : "other",
+		);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		const mainFile = result.files.find((f) => f.path === "src/main.ts");
+		expect(mainFile?.contentHash).toBe("new_hash_main");
+	});
+
+	it("returns same cache with updated fingerprint and timestamp on empty diff", () => {
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: [],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.fingerprint).toBe("newfingerprint");
+		expect(result.indexedAt).not.toBe(existing.indexedAt);
+		expect(result.files).toEqual(existing.files);
+		expect(result.imports).toEqual(existing.imports);
+	});
+
+	it("recomputes docs from scratch when .md file added (promotes into top-8)", () => {
+		vi.mocked(loadDocs).mockReturnValue([
+			{ path: "README.md", title: "Test App", body: "# Test App\n" },
+			{ path: "docs/new.md", title: "New Doc", body: "# New Doc\n" },
+		]);
+		vi.mocked(hashFileContent).mockReturnValue("hash_newdoc");
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["docs/new.md"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.docs).toHaveLength(2);
+		expect(result.docs[1]?.title).toBe("New Doc");
+		expect(vi.mocked(loadDocs)).toHaveBeenCalled();
+	});
+
+	it("sets dirtyAtIndex true when passed true", () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
+		vi.mocked(extractImports).mockReturnValue([]);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, true);
+
+		expect(result.dirtyAtIndex).toBe(true);
+	});
+
+	it("sets dirtyAtIndex false when passed false", () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
+		vi.mocked(extractImports).mockReturnValue([]);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.dirtyAtIndex).toBe(false);
+	});
+
+	it("recomputes docs from scratch when top-ranked doc removed", () => {
+		vi.mocked(loadDocs).mockReturnValue([
+			{ path: "docs/other.md", title: "Other", body: "# Other\n" },
+		]);
+
+		const existing = makeCacheForIncremental();
+		const diff: FilesDiff = {
+			changed: [],
+			removed: ["README.md"],
+			method: "git-diff",
+		};
+
+		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.docs).toHaveLength(1);
+		expect(result.docs[0]?.title).toBe("Other");
 	});
 });

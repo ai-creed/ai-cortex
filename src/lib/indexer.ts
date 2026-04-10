@@ -5,6 +5,7 @@ import {
 	writeCache,
 } from "./cache-store.js";
 import { hashFileContent } from "./diff-files.js";
+import type { FilesDiff } from "./diff-files.js";
 import { loadDocs } from "./doc-inputs.js";
 import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
@@ -52,6 +53,80 @@ export function indexRepo(repoPath: string): RepoCache {
 	const cache = buildIndex(identity);
 	writeCache(cache);
 	return cache;
+}
+
+export function buildIncrementalIndex(
+	identity: RepoIdentity,
+	existingCache: RepoCache,
+	diff: FilesDiff,
+	dirtyAtIndex: boolean,
+): RepoCache {
+	const fingerprint = buildRepoFingerprint(identity.worktreePath);
+	const indexedAt = new Date().toISOString();
+
+	// Empty diff — timestamp-only refresh
+	if (diff.changed.length === 0 && diff.removed.length === 0) {
+		return { ...existingCache, fingerprint, indexedAt, dirtyAtIndex };
+	}
+
+	const changedSet = new Set(diff.changed);
+	const removedSet = new Set(diff.removed);
+	const touchedSet = new Set([...diff.changed, ...diff.removed]);
+
+	// --- files[] ---
+	const keptFiles = existingCache.files.filter(
+		(f) => !changedSet.has(f.path) && !removedSet.has(f.path),
+	);
+	const newFiles = diff.changed.map((p) => ({
+		path: p,
+		kind: "file" as const,
+		contentHash: hashFileContent(identity.worktreePath, p),
+	}));
+	const files = [...keptFiles, ...newFiles].sort((a, b) =>
+		a.path.localeCompare(b.path),
+	);
+	const allFilePaths = files.map((f) => f.path);
+
+	// --- imports[] ---
+	const keptImports = existingCache.imports.filter(
+		(e) => !changedSet.has(e.from) && !removedSet.has(e.from),
+	);
+	const changedTsFiles = diff.changed.filter((p) =>
+		/\.(ts|tsx|js|jsx)$/.test(p),
+	);
+	const newImports = extractImports(identity.worktreePath, changedTsFiles);
+	const imports = [...keptImports, ...newImports];
+
+	// --- packageMeta ---
+	const packageJsonTouched =
+		changedSet.has("package.json") || removedSet.has("package.json");
+	const packageMeta = packageJsonTouched
+		? readPackageMeta(identity.worktreePath)
+		: existingCache.packageMeta;
+
+	// --- entryFiles[] ---
+	const entryFiles = pickEntryFiles(allFilePaths, packageMeta);
+
+	// --- docs[] ---
+	const anyMdTouched = [...touchedSet].some((p) => p.endsWith(".md"));
+	const docs = anyMdTouched
+		? loadDocs(identity.worktreePath, allFilePaths)
+		: existingCache.docs;
+
+	return {
+		schemaVersion: SCHEMA_VERSION,
+		repoKey: identity.repoKey,
+		worktreeKey: identity.worktreeKey,
+		worktreePath: identity.worktreePath,
+		indexedAt,
+		fingerprint,
+		dirtyAtIndex,
+		packageMeta,
+		entryFiles,
+		files,
+		docs,
+		imports,
+	};
 }
 
 export function getCachedIndex(repoPath: string): RepoCache | null {
