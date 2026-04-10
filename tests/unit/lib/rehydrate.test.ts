@@ -165,6 +165,18 @@ describe("rehydrateRepo", () => {
 		expect(() => rehydrateRepo("/repo")).toThrow(IndexError);
 	});
 
+	it("wraps fs.writeFileSync failure in IndexError", () => {
+		const cache = makeFreshCache();
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.spyOn(fs, "writeFileSync").mockImplementationOnce(() => {
+			throw new Error("ENOSPC: no space left on device");
+		});
+
+		expect(() => rehydrateRepo("/repo")).toThrow(IndexError);
+	});
+
 	it("passes through RepoIdentityError without wrapping", () => {
 		vi.mocked(resolveRepoIdentity).mockImplementation(() => {
 			throw new RepoIdentityError("not a git repo");

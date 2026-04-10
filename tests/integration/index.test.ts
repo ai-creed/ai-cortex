@@ -122,4 +122,19 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		// Clean up for subsequent tests
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "README.md"]);
 	});
+
+	it("detects new untracked file and reindexes", () => {
+		// Ensure cache is fresh at current HEAD
+		indexRepo(tmpDir);
+		// Create a new untracked file (not staged, not committed)
+		const untrackedFile = path.join(tmpDir, "newfile.ts");
+		fs.writeFileSync(untrackedFile, "export const z = 3;\n");
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+
+		// Clean up for subsequent tests
+		fs.rmSync(untrackedFile);
+	});
 });
