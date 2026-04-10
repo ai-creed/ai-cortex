@@ -7,7 +7,7 @@
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"phase0": "tsx src/cli.ts"
+		"cortex": "tsx src/cli.ts"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.17",
