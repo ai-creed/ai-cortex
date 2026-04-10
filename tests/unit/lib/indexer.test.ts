@@ -55,6 +55,10 @@ beforeEach(() => {
 	vi.mocked(writeCache).mockReturnValue(undefined);
 });
 
+it("uses schema version 2", () => {
+	expect(SCHEMA_VERSION).toBe("2");
+});
+
 describe("buildIndex", () => {
 	it("assembles a RepoCache from all modules", () => {
 		const cache = buildIndex(mockIdentity);

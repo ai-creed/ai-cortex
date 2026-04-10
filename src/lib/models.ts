@@ -1,6 +1,6 @@
 // src/lib/models.ts
 
-export const SCHEMA_VERSION = "1";
+export const SCHEMA_VERSION = "2";
 
 export class RepoIdentityError extends Error {
 	constructor(message: string) {
@@ -34,6 +34,7 @@ export type PackageMeta = {
 export type FileNode = {
 	path: string;
 	kind: "file" | "dir";
+	contentHash?: string;
 };
 
 export type ImportEdge = {
@@ -54,6 +55,7 @@ export type RepoCache = {
 	worktreePath: string;
 	indexedAt: string;
 	fingerprint: string;
+	dirtyAtIndex?: boolean;
 	packageMeta: PackageMeta;
 	entryFiles: string[];
 	files: FileNode[];
