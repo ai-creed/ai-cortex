@@ -17,11 +17,13 @@ export function suggestFiles(task: string, cache: RepoCache, limit = 5): Suggest
 		.filter(node => node.kind === "file")
 		.map(node => {
 			const pathLower = node.path.toLowerCase();
+			const isMarkdown = pathLower.endsWith(".md");
 			let score = 0;
 			for (const term of terms) {
 				if (pathLower.includes(term)) score += 3;
 				if (docText.includes(term) && pathLower.includes(term)) score += 2;
 			}
+			if (isMarkdown) score -= 2;
 			return {
 				path: node.path,
 				score,

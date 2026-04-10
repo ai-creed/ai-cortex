@@ -50,4 +50,26 @@ describe("buildRepoFingerprint", () => {
 		expect(statSpy).toHaveBeenCalledTimes(0);
 		statSpy.mockRestore();
 	});
+
+	it("does not change for dirty working-tree edits until a new commit exists", () => {
+		const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-fingerprint-head-"));
+		createdDirs.push(repoRoot);
+
+		execFileSync("git", ["init"], { cwd: repoRoot, stdio: "ignore" });
+		execFileSync("git", ["config", "user.name", "Codex"], { cwd: repoRoot, stdio: "ignore" });
+		execFileSync("git", ["config", "user.email", "codex@example.com"], { cwd: repoRoot, stdio: "ignore" });
+
+		fs.writeFileSync(path.join(repoRoot, "README.md"), "# Example\n");
+		fs.mkdirSync(path.join(repoRoot, "src"), { recursive: true });
+		fs.writeFileSync(path.join(repoRoot, "src", "main.ts"), "export const value = 1;\n");
+
+		execFileSync("git", ["add", "."], { cwd: repoRoot, stdio: "ignore" });
+		execFileSync("git", ["commit", "-m", "init"], { cwd: repoRoot, stdio: "ignore" });
+
+		const first = buildRepoFingerprint(repoRoot);
+		fs.writeFileSync(path.join(repoRoot, "src", "main.ts"), "export const value = 2;\n");
+		const second = buildRepoFingerprint(repoRoot);
+
+		expect(second).toBe(first);
+	});
 });

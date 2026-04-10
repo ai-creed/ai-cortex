@@ -21,39 +21,11 @@ function execGit(repoPath: string, args: string[]): string {
 	}).trimEnd();
 }
 
-function parsePorcelainPaths(output: string): string[] {
-	return output
-		.split("\n")
-		.map(line => line.trimEnd())
-		.filter(Boolean)
-		.map(line => {
-			const rawPath = line.slice(3);
-			if (rawPath.includes(" -> ")) return rawPath.split(" -> ").at(-1) ?? rawPath;
-			return rawPath;
-		});
-}
-
 function buildGitAwareFingerprint(repoPath: string): string {
 	const hash = createHash("sha256");
 	const head = execGit(repoPath, ["rev-parse", "HEAD"]);
-	const status = execGit(repoPath, ["status", "--porcelain=v1", "--untracked-files=all"]);
-	const changedPaths = parsePorcelainPaths(status).sort();
 
 	hash.update(head);
-	hash.update(status);
-
-	for (const filePath of changedPaths) {
-		const abs = path.join(repoPath, filePath);
-		if (!fs.existsSync(abs)) {
-			hash.update(`${filePath}:missing`);
-			continue;
-		}
-		const stat = fs.statSync(abs);
-		hash.update(filePath);
-		hash.update(String(stat.size));
-		hash.update(String(stat.mtimeMs));
-	}
-
 	return hash.digest("hex");
 }
 

@@ -30,4 +30,34 @@ describe("suggestFiles", () => {
 		expect(results[0]?.path).toBe("src/persistence/store.ts");
 		expect(results[0]?.reason).toContain("persistence");
 	});
+
+	it("prefers code files over docs when both match the same task terms", () => {
+		const results = suggestFiles(
+			"inspect persistence logic",
+			{
+				repoPath: "/tmp/example",
+				repoKey: "abc",
+				indexedAt: "2026-04-10T00:00:00.000Z",
+				fingerprint: "fingerprint-1",
+				files: [
+					{
+						path: "docs/superpowers/specs/2026-04-04-phase-5-persistence-and-restore-design.md",
+						kind: "file"
+					},
+					{ path: "services/workspace/workspace-persistence-service.ts", kind: "file" }
+				],
+				docs: [
+					{
+						path: "docs/superpowers/specs/2026-04-04-phase-5-persistence-and-restore-design.md",
+						title: "Phase 5 Persistence And Restore Design",
+						body: "Persistence and restore flow."
+					}
+				],
+				imports: []
+			},
+			2
+		);
+
+		expect(results[0]?.path).toBe("services/workspace/workspace-persistence-service.ts");
+	});
 });

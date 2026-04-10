@@ -49,8 +49,8 @@ describe("phase 0 spike workspace", () => {
 			fingerprint: "fingerprint-1",
 			files: [
 				{ path: "README.md", kind: "file" as const },
-				{ path: "src/app.ts", kind: "file" as const },
-				{ path: "src/session/store.ts", kind: "file" as const }
+				{ path: "src/main.tsx", kind: "file" as const },
+				{ path: "src/app/App.tsx", kind: "file" as const }
 			],
 			docs: [
 				{
@@ -59,12 +59,44 @@ describe("phase 0 spike workspace", () => {
 					body: "# Example Repo\nSession-first workflow\n"
 				}
 			],
-			imports: [{ from: "src/app.ts", to: "src/session/store" }]
+			imports: [{ from: "src/main.tsx", to: "src/app/App" }]
 		};
 
 		const result = rehydrateFromCache(cache);
 		expect(result.summary).toContain("Example Repo");
-		expect(result.priorityFiles).toContain("src/app.ts");
+		expect(result.priorityFiles).toContain("src/main.tsx");
+	});
+
+	it("uses entry-file heuristics instead of cache import order", () => {
+		const cache = {
+			repoPath: "/tmp/example",
+			repoKey: "abc123",
+			indexedAt: "2026-04-10T00:00:00.000Z",
+			fingerprint: "fingerprint-1",
+			files: [
+				{ path: "README.md", kind: "file" as const },
+				{ path: "src/app/App.tsx", kind: "file" as const },
+				{ path: "src/main.tsx", kind: "file" as const },
+				{ path: "electron/main/index.ts", kind: "file" as const },
+				{ path: "services/workspace/workspace-persistence-service.ts", kind: "file" as const }
+			],
+			docs: [
+				{
+					path: "README.md",
+					title: "Example Repo",
+					body: "# Example Repo\nSession-first workflow\n"
+				}
+			],
+			imports: [
+				{ from: "services/workspace/workspace-persistence-service.ts", to: "src/app/App" },
+				{ from: "src/app/App.tsx", to: "src/main" }
+			]
+		};
+
+		const result = rehydrateFromCache(cache);
+		expect(result.priorityFiles[0]).toBe("electron/main/index.ts");
+		expect(result.priorityFiles).toContain("src/main.tsx");
+		expect(result.priorityFiles).toContain("src/app/App.tsx");
 	});
 
 	it("measures operation duration", async () => {
