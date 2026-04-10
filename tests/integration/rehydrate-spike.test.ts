@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCache } from "../../src/spike/build-cache.js";
+import { rehydrateFromCache } from "../../src/spike/rehydrate.js";
 import { extractImportEdgesFromSource } from "../../src/spike/ts-import-graph.js";
 
 describe("phase 0 spike workspace", () => {
@@ -35,5 +36,30 @@ describe("phase 0 spike workspace", () => {
 		expect(cache.repoPath).toBe(repoRoot);
 		expect(cache.files.some(node => node.path === "README.md")).toBe(true);
 		expect(cache.docs[0]?.path).toBe("README.md");
+	});
+
+	it("produces a compact rehydration summary", () => {
+		const cache = {
+			repoPath: "/tmp/example",
+			repoKey: "abc123",
+			indexedAt: "2026-04-10T00:00:00.000Z",
+			files: [
+				{ path: "README.md", kind: "file" as const },
+				{ path: "src/app.ts", kind: "file" as const },
+				{ path: "src/session/store.ts", kind: "file" as const }
+			],
+			docs: [
+				{
+					path: "README.md",
+					title: "Example Repo",
+					body: "# Example Repo\nSession-first workflow\n"
+				}
+			],
+			imports: [{ from: "src/app.ts", to: "src/session/store" }]
+		};
+
+		const result = rehydrateFromCache(cache);
+		expect(result.summary).toContain("Example Repo");
+		expect(result.priorityFiles).toContain("src/app.ts");
 	});
 });
