@@ -109,8 +109,26 @@ on read (current `readCacheForWorktree` behavior handles this).
 
 ### RepoCache
 
-No structural changes. `fingerprint` field (HEAD commit hash) remains for fast
-"anything changed?" check. Per-file hashes live in `files[]` entries.
+```ts
+export type RepoCache = {
+  // ... existing fields unchanged ...
+  dirtyAtIndex?: boolean;  // true when cache was built from a dirty worktree
+};
+```
+
+`dirtyAtIndex` is optional (absent or `false` = clean). Set to `true` by
+`buildIncrementalIndex` when the incremental refresh was triggered by a dirty
+worktree at the same HEAD fingerprint. Set to `false` (or omitted) by full
+`indexRepo` and by incremental refreshes triggered by a fingerprint change.
+
+This flag catches the dirty-revert scenario: if a prior incremental refresh
+processed dirty edits, and the user later reverts those edits (worktree
+becomes clean), the fingerprint still matches HEAD and the worktree is clean,
+but the cached content hashes and import edges reflect the old dirty state.
+Without this flag, the orchestrator would incorrectly return `"fresh"`.
+
+`fingerprint` field (HEAD commit hash) remains for fast "anything changed?"
+check. Per-file hashes live in `files[]` entries.
 
 ---
 
@@ -200,6 +218,7 @@ export function buildIncrementalIndex(
   identity: RepoIdentity,
   existingCache: RepoCache,
   diff: FilesDiff,
+  dirtyAtIndex: boolean,
 ): RepoCache;
 ```
 
@@ -232,6 +251,9 @@ export function buildIncrementalIndex(
      after `packageMeta` update in either case.
 
 4. Update `fingerprint` to current HEAD, update `indexedAt`.
+5. Set `dirtyAtIndex` based on caller context: `true` when the refresh was
+   triggered by a dirty worktree at the same fingerprint, `false` otherwise.
+   The orchestrator passes this as a parameter to `buildIncrementalIndex`.
 
 ### Import Edge Handling
 
@@ -259,7 +281,10 @@ cause errors. A full reindex (`index --refresh`) clears them.
 3. No cache -> full `indexRepo(repoPath)`, status = `"reindexed"`
 4. Cache exists:
    - Compare fingerprint to current HEAD
-   - If same fingerprint, check dirty worktree (same as today)
+   - If same fingerprint, check dirty worktree
+   - Also check `dirtyAtIndex` flag: if cache has `dirtyAtIndex: true` and
+     worktree is now clean, treat as stale (dirty-revert scenario — cache
+     content reflects old dirty state that no longer matches disk)
    - If not stale -> use cached, status = `"fresh"`
    - If stale + `stale: true` -> use cached, status = `"stale"`
    - If stale -> `diffChangedFiles(identity, cached)` -> diff
@@ -318,6 +343,8 @@ path.
 - Content hashes populated on full index
 - Content hashes updated for changed files on incremental index
 - Empty diff returns same cache with updated fingerprint and timestamp
+- `dirtyAtIndex` set to `true` when dirty worktree triggered incremental
+- `dirtyAtIndex` set to `false` when fingerprint change triggered incremental
 - New high-ranked `.md` doc added promotes into top-8, evicts lowest
 - Existing top-ranked doc removed promotes next candidate into top-8
 
@@ -326,8 +353,10 @@ path.
 - Full index -> modify one file -> rehydrate -> confirms incremental reindex
 - Full index -> modify one file -> rehydrate twice -> second call has no
   reprocessing (dirty worktree idempotency)
-- Full index -> force-push scenario (unreachable ancestor) -> falls back to
-  hash compare
+- Full index -> dirty edit -> rehydrate -> revert edit -> rehydrate ->
+  returns reindexed, not fresh (dirty-revert detection via `dirtyAtIndex`)
+- Full index -> tamper cached fingerprint to nonexistent SHA -> rehydrate ->
+  falls back to hash compare
 - Full index -> no changes -> rehydrate returns `"fresh"`
 - Full index -> remove `package.json` -> rehydrate -> `packageMeta` uses
   fallback, `entryFiles` recomputed
@@ -384,7 +413,7 @@ Reserve `calls?: CallEdge[]` on `RepoCache` when Phase 5 work begins.
 
 | File | Change |
 |------|--------|
-| `src/lib/models.ts` | `FileNode.contentHash`, `SCHEMA_VERSION` to `"2"` |
+| `src/lib/models.ts` | `FileNode.contentHash`, `RepoCache.dirtyAtIndex`, `SCHEMA_VERSION` to `"2"` |
 | `src/lib/diff-files.ts` | **new** — changed-file detection |
 | `src/lib/indexer.ts` | `buildIncrementalIndex`, hash population in full index |
 | `src/lib/rehydrate.ts` | incremental path in staleness branch |
