@@ -165,6 +165,37 @@ describe("bug reproductions", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove b"]);
 	});
+	it("new commit + uncommitted edit marks cache as dirty", () => {
+		indexRepo(tmpDir);
+
+		// New commit changes fingerprint
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const committed = true;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "commit change"]);
+
+		// Also dirty the worktree (uncommitted edit)
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const dirty = true;\n",
+		);
+
+		const result = rehydrateRepo(tmpDir);
+
+		expect(result.cacheStatus).toBe("reindexed");
+		// Must be dirty — worktree has uncommitted edit
+		expect(result.cache.dirtyAtIndex).toBe(true);
+
+		// Now revert the dirty edit
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+
+		// Next rehydrate should NOT be fresh — cache has dirty hash
+		const reverted = rehydrateRepo(tmpDir);
+		expect(reverted.cacheStatus).toBe("reindexed");
+		expect(reverted.cache.dirtyAtIndex).toBe(false);
+	});
 });
 
 describe("incremental refresh (real disk + real git)", () => {

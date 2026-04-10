@@ -51,12 +51,10 @@ export function rehydrateRepo(
 		} else {
 			const fingerprint = buildRepoFingerprint(identity.worktreePath);
 			const fingerprintStale = cached.fingerprint !== fingerprint;
-			const dirty =
-				!fingerprintStale && isWorktreeDirty(identity.worktreePath);
+			const dirty = isWorktreeDirty(identity.worktreePath);
 			// Dirty-revert detection: cache was built from dirty worktree,
 			// but worktree is now clean — cached content is stale
-			const dirtyReverted =
-				!fingerprintStale && !dirty && !!cached.dirtyAtIndex;
+			const dirtyReverted = !dirty && !!cached.dirtyAtIndex;
 			const isStale = fingerprintStale || dirty || dirtyReverted;
 
 			if (!isStale) {
@@ -70,7 +68,7 @@ export function rehydrateRepo(
 				// Dirty-revert: cached hashes reflect dirty state, disk reflects
 				// clean state, so hash compare always detects the delta — the diff
 				// is never empty in this path despite fingerprint matching.
-				const isDirtyRefresh = !fingerprintStale && dirty;
+				const isDirtyRefresh = dirty;
 				cache = buildIncrementalIndex(
 					identity,
 					cached,

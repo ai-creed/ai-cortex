@@ -330,12 +330,13 @@ describe("rehydrateRepo — incremental path", () => {
 		);
 	});
 
-	it("passes dirtyAtIndex=false when refresh triggered by fingerprint change", () => {
+	it("passes dirtyAtIndex=false when refresh triggered by fingerprint change only", () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(execFileSync).mockReturnValue("" as any); // clean worktree
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: [],
 			removed: [],
@@ -351,6 +352,31 @@ describe("rehydrateRepo — incremental path", () => {
 			expect.anything(),
 			expect.anything(),
 			false, // dirtyAtIndex
+		);
+	});
+
+	it("passes dirtyAtIndex=true when fingerprint is stale AND worktree is dirty", () => {
+		const cache = makeFreshCache();
+		const updated = { ...cache, fingerprint: "newfingerprint", dirtyAtIndex: true };
+
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any); // dirty
+		vi.mocked(diffChangedFiles).mockReturnValue({
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		});
+		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(writeCache).mockReturnValue(undefined);
+
+		rehydrateRepo("/repo");
+
+		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			true, // dirtyAtIndex — worktree is dirty even though fingerprint also changed
 		);
 	});
 });
