@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildCache } from "../../src/spike/build-cache.js";
 import { extractImportEdgesFromSource } from "../../src/spike/ts-import-graph.js";
 
 describe("phase 0 spike workspace", () => {
@@ -17,5 +21,19 @@ describe("phase 0 spike workspace", () => {
 			{ from: "src/a.ts", to: "src/b" },
 			{ from: "src/a.ts", to: "shared/c" }
 		]);
+	});
+
+	it("builds a repo cache with files and docs", () => {
+		const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-phase0-"));
+		fs.writeFileSync(path.join(repoRoot, "README.md"), "# Example Repo\n");
+		fs.mkdirSync(path.join(repoRoot, "src"));
+		fs.writeFileSync(path.join(repoRoot, "src", "main.ts"), "export const x = 1;\n");
+
+		// This spike currently writes cache files into the real user cache dir.
+		// That is acceptable for Phase 0, but test runs will leave cache artifacts behind.
+		const cache = buildCache(repoRoot);
+		expect(cache.repoPath).toBe(repoRoot);
+		expect(cache.files.some(node => node.path === "README.md")).toBe(true);
+		expect(cache.docs[0]?.path).toBe("README.md");
 	});
 });
