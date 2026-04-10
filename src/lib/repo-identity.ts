@@ -8,7 +8,7 @@ import type { RepoIdentity } from "./models.js";
 function execGit(cwd: string, args: string[]): string {
 	return execFileSync("git", ["-C", cwd, ...args], {
 		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"]
+		stdio: ["ignore", "pipe", "ignore"],
 	}).trimEnd();
 }
 
@@ -19,16 +19,22 @@ function sha16(input: string): string {
 export function resolveRepoIdentity(inputPath: string): RepoIdentity {
 	try {
 		const resolved = path.resolve(inputPath);
-		const gitCommonDir = path.resolve(execGit(resolved, ["rev-parse", "--git-common-dir"]));
-		const worktreePath = path.resolve(execGit(resolved, ["rev-parse", "--show-toplevel"]));
+		const gitCommonDir = path.resolve(
+			execGit(resolved, ["rev-parse", "--git-common-dir"]),
+		);
+		const worktreePath = path.resolve(
+			execGit(resolved, ["rev-parse", "--show-toplevel"]),
+		);
 		return {
 			repoKey: sha16(gitCommonDir),
 			worktreeKey: sha16(worktreePath),
 			gitCommonDir,
-			worktreePath
+			worktreePath,
 		};
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		throw new RepoIdentityError(`Cannot resolve git repo at ${inputPath}: ${msg}`);
+		throw new RepoIdentityError(
+			`Cannot resolve git repo at ${inputPath}: ${msg}`,
+		);
 	}
 }

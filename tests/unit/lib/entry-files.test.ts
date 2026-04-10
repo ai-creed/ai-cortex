@@ -4,26 +4,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("node:fs");
 
 import fs from "node:fs";
-import { pickEntryFiles, readPackageMeta } from "../../../src/lib/entry-files.js";
+import {
+	pickEntryFiles,
+	readPackageMeta,
+} from "../../../src/lib/entry-files.js";
 
 const mockFs = vi.mocked(fs);
 
 describe("readPackageMeta", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("reads name, version, and detects electron framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "my-app", version: "1.2.3", devDependencies: { electron: "^30.0.0" } }) as any
+			JSON.stringify({
+				name: "my-app",
+				version: "1.2.3",
+				devDependencies: { electron: "^30.0.0" },
+			}) as any,
 		);
 		const meta = readPackageMeta("/repo");
-		expect(meta).toEqual({ name: "my-app", version: "1.2.3", framework: "electron" });
+		expect(meta).toEqual({
+			name: "my-app",
+			version: "1.2.3",
+			framework: "electron",
+		});
 	});
 
 	it("detects next framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "app", version: "1.0.0", dependencies: { next: "^14.0.0" } }) as any
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				dependencies: { next: "^14.0.0" },
+			}) as any,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("next");
 	});
@@ -31,7 +48,11 @@ describe("readPackageMeta", () => {
 	it("detects vite framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "app", version: "1.0.0", devDependencies: { vite: "^5.0.0" } }) as any
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				devDependencies: { vite: "^5.0.0" },
+			}) as any,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("vite");
 	});
@@ -55,20 +76,34 @@ describe("readPackageMeta", () => {
 describe("pickEntryFiles", () => {
 	it("prefers package.json main field when it points to source", () => {
 		const files = ["src/main.ts", "src/index.ts", "index.ts"];
-		const meta = { name: "app", version: "1.0.0", main: "src/main.ts", framework: null as null };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			main: "src/main.ts",
+			framework: null as null,
+		};
 		expect(pickEntryFiles(files, meta)[0]).toBe("src/main.ts");
 	});
 
 	it("excludes package.json main when it points to dist/", () => {
 		const files = ["dist/index.js", "src/index.ts"];
-		const meta = { name: "app", version: "1.0.0", main: "dist/index.js", framework: null as null };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			main: "dist/index.js",
+			framework: null as null,
+		};
 		const entries = pickEntryFiles(files, meta);
 		expect(entries).not.toContain("dist/index.js");
 	});
 
 	it("uses electron conventions when framework is electron", () => {
 		const files = ["electron/main/index.ts", "src/renderer.tsx"];
-		const meta = { name: "app", version: "1.0.0", framework: "electron" as const };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			framework: "electron" as const,
+		};
 		expect(pickEntryFiles(files, meta)).toContain("electron/main/index.ts");
 	});
 
@@ -86,7 +121,12 @@ describe("pickEntryFiles", () => {
 
 	it("caps results at 8", () => {
 		const files = Array.from({ length: 20 }, (_, i) => `src/index${i}.ts`);
-		const meta = { name: "app", version: "1.0.0", framework: null as null, main: "src/index0.ts" };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			framework: null as null,
+			main: "src/index0.ts",
+		};
 		expect(pickEntryFiles(files, meta).length).toBeLessThanOrEqual(8);
 	});
 });

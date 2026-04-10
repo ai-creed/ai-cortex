@@ -1,5 +1,9 @@
 // src/lib/indexer.ts
-import { buildRepoFingerprint, readCacheForWorktree, writeCache } from "./cache-store.js";
+import {
+	buildRepoFingerprint,
+	readCacheForWorktree,
+	writeCache,
+} from "./cache-store.js";
 import { loadDocs } from "./doc-inputs.js";
 import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
@@ -16,7 +20,7 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 		const docs = loadDocs(identity.worktreePath, filePaths);
 		const imports = extractImports(identity.worktreePath, filePaths);
 		const fingerprint = buildRepoFingerprint(identity.worktreePath);
-		const files = filePaths.map(p => ({ path: p, kind: "file" as const }));
+		const files = filePaths.map((p) => ({ path: p, kind: "file" as const }));
 
 		return {
 			schemaVersion: SCHEMA_VERSION,
@@ -29,7 +33,7 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 			entryFiles,
 			files,
 			docs,
-			imports
+			imports,
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;

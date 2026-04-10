@@ -203,4 +203,3 @@ Do not expand V1 into:
 - live daemon or watcher infrastructure
 
 Those can be revisited only after the first personal MVP proves useful.
-

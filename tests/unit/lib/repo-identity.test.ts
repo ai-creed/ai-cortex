@@ -10,7 +10,9 @@ import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 const mockExec = vi.mocked(execFileSync);
 
 describe("resolveRepoIdentity", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("returns a 16-char repoKey and worktreeKey", () => {
 		mockExec
@@ -42,13 +44,19 @@ describe("resolveRepoIdentity", () => {
 	});
 
 	it("throws RepoIdentityError when not a git repo", () => {
-		mockExec.mockImplementation(() => { throw new Error("fatal: not a git repo"); });
+		mockExec.mockImplementation(() => {
+			throw new Error("fatal: not a git repo");
+		});
 		expect(() => resolveRepoIdentity("/not/a/repo")).toThrow(RepoIdentityError);
 	});
 
 	it("throws RepoIdentityError when git is not installed", () => {
-		const err = Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" });
-		mockExec.mockImplementation(() => { throw err; });
+		const err = Object.assign(new Error("spawn git ENOENT"), {
+			code: "ENOENT",
+		});
+		mockExec.mockImplementation(() => {
+			throw err;
+		});
 		expect(() => resolveRepoIdentity("/any/path")).toThrow(RepoIdentityError);
 	});
 });

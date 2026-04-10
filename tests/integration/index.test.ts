@@ -19,12 +19,18 @@ beforeAll(() => {
 	execFileSync("git", ["-C", tmpDir, "config", "commit.gpgsign", "false"]);
 
 	// Add files
-	fs.writeFileSync(path.join(tmpDir, "README.md"), "# Test Repo\nA minimal test repo.\n");
+	fs.writeFileSync(
+		path.join(tmpDir, "README.md"),
+		"# Test Repo\nA minimal test repo.\n",
+	);
 	fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
-	fs.writeFileSync(path.join(tmpDir, "src", "main.ts"), "export const x = 1;\n");
+	fs.writeFileSync(
+		path.join(tmpDir, "src", "main.ts"),
+		"export const x = 1;\n",
+	);
 	fs.writeFileSync(
 		path.join(tmpDir, "package.json"),
-		JSON.stringify({ name: "test-repo", version: "0.0.1" })
+		JSON.stringify({ name: "test-repo", version: "0.0.1" }),
 	);
 
 	execFileSync("git", ["-C", tmpDir, "add", "."]);
@@ -45,7 +51,7 @@ describe("indexRepo + getCachedIndex (real disk + real git)", () => {
 		expect(cache.worktreePath).toBe(fs.realpathSync(tmpDir));
 		expect(cache.fingerprint).toHaveLength(40);
 		expect(cache.packageMeta.name).toBe("test-repo");
-		expect(cache.files.some(f => f.path === "README.md")).toBe(true);
+		expect(cache.files.some((f) => f.path === "README.md")).toBe(true);
 		expect(cache.docs[0]?.path).toBe("README.md");
 		expect(cache.docs[0]?.title).toBe("Test Repo");
 	});

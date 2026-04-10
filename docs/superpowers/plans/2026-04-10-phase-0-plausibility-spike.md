@@ -52,6 +52,7 @@
 ## Task 1: Create Minimal Spike Workspace
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `.gitignore`
@@ -154,6 +155,7 @@ git commit -m "chore: scaffold phase 0 spike workspace"
 ## Task 2: Define Phase 0 Data Model And Repo Identity
 
 **Files:**
+
 - Create: `src/spike/models.ts`
 - Create: `src/spike/repo-id.ts`
 - Test: `tests/unit/repo-id.test.ts`
@@ -259,6 +261,7 @@ git commit -m "feat: add phase 0 repo identity model"
 ## Task 3: Ingest Docs And File Tree Inputs
 
 **Files:**
+
 - Create: `src/spike/file-tree.ts`
 - Create: `src/spike/doc-inputs.ts`
 - Test: `tests/unit/doc-inputs.test.ts`
@@ -277,13 +280,13 @@ describe("rankDocCandidates", () => {
 			"src/app.ts",
 			"README.md",
 			"docs/shared/architecture_decisions.md",
-			"docs/shared/high_level_plan.md"
+			"docs/shared/high_level_plan.md",
 		]);
 
 		expect(ranked.slice(0, 3)).toEqual([
 			"README.md",
 			"docs/shared/architecture_decisions.md",
-			"docs/shared/high_level_plan.md"
+			"docs/shared/high_level_plan.md",
 		]);
 	});
 });
@@ -344,15 +347,23 @@ export function rankDocCandidates(paths: string[]): string[] {
 	};
 
 	return [...paths]
-		.filter(filePath => filePath.endsWith(".md"))
+		.filter((filePath) => filePath.endsWith(".md"))
 		.sort((a, b) => score(b) - score(a) || a.localeCompare(b));
 }
 
-export function loadDocs(repoPath: string, paths: string[], limit = 8): DocInput[] {
+export function loadDocs(
+	repoPath: string,
+	paths: string[],
+	limit = 8,
+): DocInput[] {
 	const ranked = rankDocCandidates(paths).slice(0, limit);
-	return ranked.map(filePath => {
+	return ranked.map((filePath) => {
 		const body = fs.readFileSync(path.join(repoPath, filePath), "utf8");
-		const title = body.split("\n").find(line => line.startsWith("# "))?.slice(2) || filePath;
+		const title =
+			body
+				.split("\n")
+				.find((line) => line.startsWith("# "))
+				?.slice(2) || filePath;
 		return { path: filePath, title, body };
 	});
 }
@@ -374,6 +385,7 @@ git commit -m "feat: add phase 0 file tree and doc inputs"
 ## Task 4: Extract Minimal TypeScript Import Graph
 
 **Files:**
+
 - Create: `src/spike/ts-import-graph.ts`
 - Test: `tests/integration/rehydrate-spike.test.ts`
 
@@ -394,12 +406,12 @@ describe("phase 0 spike workspace", () => {
 	it("extracts relative import edges from TypeScript source", () => {
 		const edges = extractImportEdgesFromSource(
 			"src/a.ts",
-			"import { b } from './b';\nimport c from '../shared/c';\nimport x from 'react';"
+			"import { b } from './b';\nimport c from '../shared/c';\nimport x from 'react';",
 		);
 
 		expect(edges).toEqual([
 			{ from: "src/a.ts", to: "src/b" },
-			{ from: "src/a.ts", to: "shared/c" }
+			{ from: "src/a.ts", to: "shared/c" },
 		]);
 	});
 });
@@ -421,7 +433,10 @@ import type { ImportEdge } from "./models.js";
 
 const IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
 
-export function extractImportEdgesFromSource(filePath: string, source: string): ImportEdge[] {
+export function extractImportEdgesFromSource(
+	filePath: string,
+	source: string,
+): ImportEdge[] {
 	const edges: ImportEdge[] = [];
 	for (const match of source.matchAll(IMPORT_RE)) {
 		const specifier = match[1];
@@ -452,6 +467,7 @@ git commit -m "feat: add minimal ts import extraction for phase 0"
 ## Task 5: Build And Persist Minimal Repo Cache
 
 **Files:**
+
 - Create: `src/spike/cache-store.ts`
 - Create: `src/spike/build-cache.ts`
 - Test: `tests/integration/rehydrate-spike.test.ts`
@@ -470,13 +486,16 @@ it("builds a repo cache with files and docs", () => {
 	const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-phase0-"));
 	fs.writeFileSync(path.join(repoRoot, "README.md"), "# Example Repo\n");
 	fs.mkdirSync(path.join(repoRoot, "src"));
-	fs.writeFileSync(path.join(repoRoot, "src", "main.ts"), "export const x = 1;\n");
+	fs.writeFileSync(
+		path.join(repoRoot, "src", "main.ts"),
+		"export const x = 1;\n",
+	);
 
 	// This spike currently writes cache files into the real user cache dir.
 	// That is acceptable for Phase 0, but test runs will leave cache artifacts behind.
 	const cache = buildCache(repoRoot);
 	expect(cache.repoPath).toBe(repoRoot);
-	expect(cache.files.some(node => node.path === "README.md")).toBe(true);
+	expect(cache.files.some((node) => node.path === "README.md")).toBe(true);
 	expect(cache.docs[0]?.path).toBe("README.md");
 });
 ```
@@ -530,11 +549,13 @@ import { extractImportEdgesFromSource } from "./ts-import-graph.js";
 
 export function buildCache(repoPath: string): RepoCache {
 	const files = collectFileTree(repoPath);
-	const filePaths = files.filter(node => node.kind === "file").map(node => node.path);
+	const filePaths = files
+		.filter((node) => node.kind === "file")
+		.map((node) => node.path);
 	const docs = loadDocs(repoPath, filePaths);
 	const imports = filePaths
-		.filter(filePath => /\.(ts|tsx|js|jsx)$/u.test(filePath))
-		.flatMap(filePath => {
+		.filter((filePath) => /\.(ts|tsx|js|jsx)$/u.test(filePath))
+		.flatMap((filePath) => {
 			const source = fs.readFileSync(path.join(repoPath, filePath), "utf8");
 			return extractImportEdgesFromSource(filePath, source);
 		});
@@ -545,7 +566,7 @@ export function buildCache(repoPath: string): RepoCache {
 		indexedAt: new Date().toISOString(),
 		files,
 		docs,
-		imports
+		imports,
 	};
 
 	writeCache(cache);
@@ -569,6 +590,7 @@ git commit -m "feat: add phase 0 repo cache builder"
 ## Task 6: Generate Rehydration Output
 
 **Files:**
+
 - Create: `src/spike/rehydrate.ts`
 - Modify: `src/spike/run-phase-0.ts`
 - Test: `tests/integration/rehydrate-spike.test.ts`
@@ -588,12 +610,16 @@ it("produces a compact rehydration summary", async () => {
 		files: [
 			{ path: "README.md", kind: "file" as const },
 			{ path: "src/app.ts", kind: "file" as const },
-			{ path: "src/session/store.ts", kind: "file" as const }
+			{ path: "src/session/store.ts", kind: "file" as const },
 		],
 		docs: [
-			{ path: "README.md", title: "Example Repo", body: "# Example Repo\nSession-first workflow\n" }
+			{
+				path: "README.md",
+				title: "Example Repo",
+				body: "# Example Repo\nSession-first workflow\n",
+			},
 		],
-		imports: [{ from: "src/app.ts", to: "src/session/store" }]
+		imports: [{ from: "src/app.ts", to: "src/session/store" }],
 	};
 
 	const result = rehydrateFromCache(cache);
@@ -616,19 +642,23 @@ Create `src/spike/rehydrate.ts`:
 import type { RehydrateResult, RepoCache } from "./models.js";
 
 export function rehydrateFromCache(cache: RepoCache): RehydrateResult {
-	const priorityDocs = cache.docs.slice(0, 3).map(doc => doc.path);
-	const priorityFiles = cache.imports.slice(0, 8).flatMap(edge => [edge.from, edge.to]).filter((value, index, arr) => arr.indexOf(value) === index).slice(0, 6);
+	const priorityDocs = cache.docs.slice(0, 3).map((doc) => doc.path);
+	const priorityFiles = cache.imports
+		.slice(0, 8)
+		.flatMap((edge) => [edge.from, edge.to])
+		.filter((value, index, arr) => arr.indexOf(value) === index)
+		.slice(0, 6);
 	const summaryLines = [
 		`Project: ${cache.docs[0]?.title || cache.repoPath}`,
 		`Indexed: ${cache.indexedAt}`,
 		`Top docs: ${priorityDocs.join(", ") || "none"}`,
-		`Likely entry files: ${priorityFiles.join(", ") || "none"}`
+		`Likely entry files: ${priorityFiles.join(", ") || "none"}`,
 	];
 
 	return {
 		summary: summaryLines.join("\n"),
 		priorityDocs,
-		priorityFiles
+		priorityFiles,
 	};
 }
 ```
@@ -664,6 +694,7 @@ git commit -m "feat: add phase 0 rehydration output"
 ## Task 7: Generate Suggest Output
 
 **Files:**
+
 - Create: `src/spike/suggest.ts`
 - Test: `tests/unit/suggest.test.ts`
 
@@ -686,14 +717,18 @@ describe("suggestFiles", () => {
 				files: [
 					{ path: "src/persistence/store.ts", kind: "file" },
 					{ path: "src/viewer/FileViewer.tsx", kind: "file" },
-					{ path: "docs/shared/architecture_decisions.md", kind: "file" }
+					{ path: "docs/shared/architecture_decisions.md", kind: "file" },
 				],
 				docs: [
-					{ path: "docs/shared/architecture_decisions.md", title: "Architecture Decisions", body: "Persistence boundary and restore behavior." }
+					{
+						path: "docs/shared/architecture_decisions.md",
+						title: "Architecture Decisions",
+						body: "Persistence boundary and restore behavior.",
+					},
 				],
-				imports: []
+				imports: [],
 			},
-			3
+			3,
 		);
 
 		expect(results[0]?.path).toBe("src/persistence/store.ts");
@@ -722,13 +757,19 @@ function tokenize(input: string): string[] {
 		.filter(Boolean);
 }
 
-export function suggestFiles(task: string, cache: RepoCache, limit = 5): SuggestResult[] {
+export function suggestFiles(
+	task: string,
+	cache: RepoCache,
+	limit = 5,
+): SuggestResult[] {
 	const terms = tokenize(task);
-	const docText = cache.docs.map(doc => `${doc.path} ${doc.title} ${doc.body}`.toLowerCase()).join("\n");
+	const docText = cache.docs
+		.map((doc) => `${doc.path} ${doc.title} ${doc.body}`.toLowerCase())
+		.join("\n");
 
 	return cache.files
-		.filter(node => node.kind === "file")
-		.map(node => {
+		.filter((node) => node.kind === "file")
+		.map((node) => {
 			const pathLower = node.path.toLowerCase();
 			let score = 0;
 			for (const term of terms) {
@@ -738,15 +779,20 @@ export function suggestFiles(task: string, cache: RepoCache, limit = 5): Suggest
 			return {
 				path: node.path,
 				score,
-				reason: terms.filter(term => pathLower.includes(term)).slice(0, 2).join(", ")
+				reason: terms
+					.filter((term) => pathLower.includes(term))
+					.slice(0, 2)
+					.join(", "),
 			};
 		})
-		.filter(item => item.score > 0)
+		.filter((item) => item.score > 0)
 		.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
 		.slice(0, limit)
-		.map(item => ({
+		.map((item) => ({
 			path: item.path,
-			reason: item.reason ? `matched task terms: ${item.reason}` : "matched repo context"
+			reason: item.reason
+				? `matched task terms: ${item.reason}`
+				: "matched repo context",
 		}));
 }
 ```
@@ -767,6 +813,7 @@ git commit -m "feat: add phase 0 suggest output"
 ## Task 8: Add CLI Surface And Measurement Harness
 
 **Files:**
+
 - Create: `src/cli.ts`
 - Create: `src/spike/cold-scan-baseline.ts`
 - Create: `src/spike/measure.ts`
@@ -802,13 +849,16 @@ Expected: FAIL because `measure.ts` does not exist yet.
 Create `src/spike/measure.ts`:
 
 ```ts
-export async function measure<T>(label: string, fn: () => Promise<T> | T): Promise<{ label: string; durationMs: number; value: T }> {
+export async function measure<T>(
+	label: string,
+	fn: () => Promise<T> | T,
+): Promise<{ label: string; durationMs: number; value: T }> {
 	const start = performance.now();
 	const value = await fn();
 	return {
 		label,
 		durationMs: performance.now() - start,
-		value
+		value,
 	};
 }
 ```
@@ -820,8 +870,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { collectFileTree } from "./file-tree.js";
 
-export function coldScanBaseline(repoPath: string): { filesTouched: number; markdownFilesRead: number } {
-	const files = collectFileTree(repoPath).filter(node => node.kind === "file");
+export function coldScanBaseline(repoPath: string): {
+	filesTouched: number;
+	markdownFilesRead: number;
+} {
+	const files = collectFileTree(repoPath).filter(
+		(node) => node.kind === "file",
+	);
 	let markdownFilesRead = 0;
 
 	for (const file of files) {
@@ -832,7 +887,7 @@ export function coldScanBaseline(repoPath: string): { filesTouched: number; mark
 
 	return {
 		filesTouched: files.length,
-		markdownFilesRead
+		markdownFilesRead,
 	};
 }
 ```
@@ -851,7 +906,9 @@ const [, , command = "phase0", repoPath = process.cwd()] = process.argv;
 if (command === "phase0") {
 	await runPhase0(repoPath);
 } else if (command === "baseline") {
-	const result = await measure("cold-baseline", () => coldScanBaseline(repoPath));
+	const result = await measure("cold-baseline", () =>
+		coldScanBaseline(repoPath),
+	);
 	process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 } else {
 	process.stderr.write(`Unknown command: ${command}\n`);
@@ -875,6 +932,7 @@ git commit -m "feat: add phase 0 cli and measurement helpers"
 ## Task 9: Run Proof Experiments Against One Real Repo
 
 **Files:**
+
 - Modify: `docs/shared/phase_0_results.md`
 
 - [ ] **Step 1: Choose the proof repo and record it**
@@ -971,6 +1029,7 @@ git commit -m "docs: record phase 0 plausibility results"
 ## Task 10: Make The Go / No-Go Call
 
 **Files:**
+
 - Modify: `docs/shared/phase_0_results.md`
 - Review existing: `docs/shared/phase_0_plausibility_checklist.md`
 

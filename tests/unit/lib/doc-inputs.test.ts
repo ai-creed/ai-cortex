@@ -16,14 +16,14 @@ describe("rankDocCandidates", () => {
 			"docs/shared/high_level_plan.md",
 			"docs/shared/architecture_decisions.md",
 			"docs/shared/notes.md",
-			"README.md"
+			"README.md",
 		]);
 		expect(ranked).toEqual([
 			"README.md",
 			"docs/shared/architecture_decisions.md",
 			"docs/shared/high_level_plan.md",
 			"docs/shared/notes.md",
-			"other.md"
+			"other.md",
 		]);
 	});
 
@@ -34,18 +34,26 @@ describe("rankDocCandidates", () => {
 });
 
 describe("loadDocs", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("loads ranked docs up to the limit", () => {
 		mockFs.readFileSync.mockReturnValue("# My Project\nsome content\n" as any);
-		const docs = loadDocs("/repo", ["README.md", "docs/shared/architecture.md"], 1);
+		const docs = loadDocs(
+			"/repo",
+			["README.md", "docs/shared/architecture.md"],
+			1,
+		);
 		expect(docs).toHaveLength(1);
 		expect(docs[0]?.path).toBe("README.md");
 		expect(docs[0]?.title).toBe("My Project");
 	});
 
 	it("extracts title from first h1 heading", () => {
-		mockFs.readFileSync.mockReturnValue("intro line\n# The Title\nbody\n" as any);
+		mockFs.readFileSync.mockReturnValue(
+			"intro line\n# The Title\nbody\n" as any,
+		);
 		const docs = loadDocs("/repo", ["docs/shared/notes.md"]);
 		expect(docs[0]?.title).toBe("The Title");
 	});

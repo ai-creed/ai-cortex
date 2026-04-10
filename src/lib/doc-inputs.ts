@@ -14,16 +14,25 @@ function scoreDoc(filePath: string): number {
 
 export function rankDocCandidates(filePaths: string[]): string[] {
 	return filePaths
-		.filter(p => p.endsWith(".md"))
+		.filter((p) => p.endsWith(".md"))
 		.sort((a, b) => scoreDoc(b) - scoreDoc(a) || a.localeCompare(b));
 }
 
-export function loadDocs(repoPath: string, filePaths: string[], limit = 8): DocInput[] {
+export function loadDocs(
+	repoPath: string,
+	filePaths: string[],
+	limit = 8,
+): DocInput[] {
 	return rankDocCandidates(filePaths)
 		.slice(0, limit)
-		.map(filePath => {
+		.map((filePath) => {
 			const body = fs.readFileSync(path.join(repoPath, filePath), "utf8");
-			const title = body.split("\n").find(line => line.startsWith("# "))?.slice(2).trim() ?? filePath;
+			const title =
+				body
+					.split("\n")
+					.find((line) => line.startsWith("# "))
+					?.slice(2)
+					.trim() ?? filePath;
 			return { path: filePath, title, body };
 		});
 }

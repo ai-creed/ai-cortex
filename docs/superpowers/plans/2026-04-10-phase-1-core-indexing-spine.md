@@ -13,6 +13,7 @@
 ## Planned File Structure
 
 ### Create
+
 - `src/lib/models.ts` — types, error classes, SCHEMA_VERSION
 - `src/lib/repo-identity.ts` — resolve git common dir + worktree key
 - `src/lib/indexable-files.ts` — git ls-files + fs fallback
@@ -32,9 +33,11 @@
 - `tests/integration/index.test.ts`
 
 ### Modify
+
 - `src/cli.ts` — point at `src/lib/index.ts`, replace spike commands with `index`
 
 ### Delete (Task 11)
+
 - `src/spike/` — entire directory
 
 ---
@@ -42,6 +45,7 @@
 ## Task 1: Data Models
 
 **Files:**
+
 - Create: `src/lib/models.ts`
 
 - [ ] **Step 1: Create the models file**
@@ -129,6 +133,7 @@ git commit -m "feat: add phase 1 data models"
 ## Task 2: Repo Identity
 
 **Files:**
+
 - Create: `src/lib/repo-identity.ts`
 - Create: `tests/unit/lib/repo-identity.test.ts`
 
@@ -147,7 +152,9 @@ import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 const mockExec = vi.mocked(execFileSync);
 
 describe("resolveRepoIdentity", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("returns a 16-char repoKey and worktreeKey", () => {
 		mockExec
@@ -179,13 +186,19 @@ describe("resolveRepoIdentity", () => {
 	});
 
 	it("throws RepoIdentityError when not a git repo", () => {
-		mockExec.mockImplementation(() => { throw new Error("fatal: not a git repo"); });
+		mockExec.mockImplementation(() => {
+			throw new Error("fatal: not a git repo");
+		});
 		expect(() => resolveRepoIdentity("/not/a/repo")).toThrow(RepoIdentityError);
 	});
 
 	it("throws RepoIdentityError when git is not installed", () => {
-		const err = Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" });
-		mockExec.mockImplementation(() => { throw err; });
+		const err = Object.assign(new Error("spawn git ENOENT"), {
+			code: "ENOENT",
+		});
+		mockExec.mockImplementation(() => {
+			throw err;
+		});
 		expect(() => resolveRepoIdentity("/any/path")).toThrow(RepoIdentityError);
 	});
 });
@@ -210,7 +223,7 @@ import type { RepoIdentity } from "./models.js";
 function execGit(cwd: string, args: string[]): string {
 	return execFileSync("git", ["-C", cwd, ...args], {
 		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"]
+		stdio: ["ignore", "pipe", "ignore"],
 	}).trimEnd();
 }
 
@@ -221,17 +234,23 @@ function sha16(input: string): string {
 export function resolveRepoIdentity(inputPath: string): RepoIdentity {
 	try {
 		const resolved = path.resolve(inputPath);
-		const gitCommonDir = path.resolve(execGit(resolved, ["rev-parse", "--git-common-dir"]));
-		const worktreePath = path.resolve(execGit(resolved, ["rev-parse", "--show-toplevel"]));
+		const gitCommonDir = path.resolve(
+			execGit(resolved, ["rev-parse", "--git-common-dir"]),
+		);
+		const worktreePath = path.resolve(
+			execGit(resolved, ["rev-parse", "--show-toplevel"]),
+		);
 		return {
 			repoKey: sha16(gitCommonDir),
 			worktreeKey: sha16(worktreePath),
 			gitCommonDir,
-			worktreePath
+			worktreePath,
 		};
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		throw new RepoIdentityError(`Cannot resolve git repo at ${inputPath}: ${msg}`);
+		throw new RepoIdentityError(
+			`Cannot resolve git repo at ${inputPath}: ${msg}`,
+		);
 	}
 }
 ```
@@ -254,6 +273,7 @@ git commit -m "feat: add repo identity resolution with worktree-aware keys"
 ## Task 3: Indexable Files
 
 **Files:**
+
 - Create: `src/lib/indexable-files.ts`
 - Create: `tests/unit/lib/indexable-files.test.ts`
 
@@ -271,11 +291,17 @@ import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
 const mockExec = vi.mocked(execFileSync);
 
 describe("listIndexableFiles", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("returns sorted file paths from git ls-files", () => {
 		mockExec.mockReturnValue("src/b.ts\nsrc/a.ts\nREADME.md\n" as any);
-		expect(listIndexableFiles("/repo")).toEqual(["README.md", "src/a.ts", "src/b.ts"]);
+		expect(listIndexableFiles("/repo")).toEqual([
+			"README.md",
+			"src/a.ts",
+			"src/b.ts",
+		]);
 	});
 
 	it("calls git with the correct arguments", () => {
@@ -283,8 +309,15 @@ describe("listIndexableFiles", () => {
 		listIndexableFiles("/my/repo");
 		expect(mockExec).toHaveBeenCalledWith(
 			"git",
-			["-C", "/my/repo", "ls-files", "--cached", "--others", "--exclude-standard"],
-			expect.objectContaining({ encoding: "utf8" })
+			[
+				"-C",
+				"/my/repo",
+				"ls-files",
+				"--cached",
+				"--others",
+				"--exclude-standard",
+			],
+			expect.objectContaining({ encoding: "utf8" }),
 		);
 	});
 
@@ -314,7 +347,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const IGNORE_DIRS = new Set([".git", "node_modules", "dist", "out", "build", "release"]);
+const IGNORE_DIRS = new Set([
+	".git",
+	"node_modules",
+	"dist",
+	"out",
+	"build",
+	"release",
+]);
 
 function walkFs(dir: string, root: string): string[] {
 	const results: string[] = [];
@@ -334,12 +374,19 @@ export function listIndexableFiles(repoPath: string): string[] {
 	try {
 		const output = execFileSync(
 			"git",
-			["-C", repoPath, "ls-files", "--cached", "--others", "--exclude-standard"],
-			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+			[
+				"-C",
+				repoPath,
+				"ls-files",
+				"--cached",
+				"--others",
+				"--exclude-standard",
+			],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
 		);
 		return output
 			.split("\n")
-			.map(line => line.trim())
+			.map((line) => line.trim())
 			.filter(Boolean)
 			.sort();
 	} catch {
@@ -366,6 +413,7 @@ git commit -m "feat: add indexable-files with git ls-files and fs fallback"
 ## Task 4: Doc Inputs
 
 **Files:**
+
 - Create: `src/lib/doc-inputs.ts`
 - Create: `tests/unit/lib/doc-inputs.test.ts`
 
@@ -390,14 +438,14 @@ describe("rankDocCandidates", () => {
 			"docs/shared/high_level_plan.md",
 			"docs/shared/architecture_decisions.md",
 			"docs/shared/notes.md",
-			"README.md"
+			"README.md",
 		]);
 		expect(ranked).toEqual([
 			"README.md",
 			"docs/shared/architecture_decisions.md",
 			"docs/shared/high_level_plan.md",
 			"docs/shared/notes.md",
-			"other.md"
+			"other.md",
 		]);
 	});
 
@@ -408,18 +456,26 @@ describe("rankDocCandidates", () => {
 });
 
 describe("loadDocs", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("loads ranked docs up to the limit", () => {
 		mockFs.readFileSync.mockReturnValue("# My Project\nsome content\n" as any);
-		const docs = loadDocs("/repo", ["README.md", "docs/shared/architecture.md"], 1);
+		const docs = loadDocs(
+			"/repo",
+			["README.md", "docs/shared/architecture.md"],
+			1,
+		);
 		expect(docs).toHaveLength(1);
 		expect(docs[0]?.path).toBe("README.md");
 		expect(docs[0]?.title).toBe("My Project");
 	});
 
 	it("extracts title from first h1 heading", () => {
-		mockFs.readFileSync.mockReturnValue("intro line\n# The Title\nbody\n" as any);
+		mockFs.readFileSync.mockReturnValue(
+			"intro line\n# The Title\nbody\n" as any,
+		);
 		const docs = loadDocs("/repo", ["docs/shared/notes.md"]);
 		expect(docs[0]?.title).toBe("The Title");
 	});
@@ -457,16 +513,25 @@ function scoreDoc(filePath: string): number {
 
 export function rankDocCandidates(filePaths: string[]): string[] {
 	return filePaths
-		.filter(p => p.endsWith(".md"))
+		.filter((p) => p.endsWith(".md"))
 		.sort((a, b) => scoreDoc(b) - scoreDoc(a) || a.localeCompare(b));
 }
 
-export function loadDocs(repoPath: string, filePaths: string[], limit = 8): DocInput[] {
+export function loadDocs(
+	repoPath: string,
+	filePaths: string[],
+	limit = 8,
+): DocInput[] {
 	return rankDocCandidates(filePaths)
 		.slice(0, limit)
-		.map(filePath => {
+		.map((filePath) => {
 			const body = fs.readFileSync(path.join(repoPath, filePath), "utf8");
-			const title = body.split("\n").find(line => line.startsWith("# "))?.slice(2).trim() ?? filePath;
+			const title =
+				body
+					.split("\n")
+					.find((line) => line.startsWith("# "))
+					?.slice(2)
+					.trim() ?? filePath;
 			return { path: filePath, title, body };
 		});
 }
@@ -490,6 +555,7 @@ git commit -m "feat: add doc ranking and loading"
 ## Task 5: Import Graph
 
 **Files:**
+
 - Create: `src/lib/import-graph.ts`
 - Create: `tests/unit/lib/import-graph.test.ts`
 
@@ -504,18 +570,18 @@ describe("extractImportEdgesFromSource", () => {
 	it("extracts relative imports and resolves paths", () => {
 		const edges = extractImportEdgesFromSource(
 			"src/a.ts",
-			"import { b } from './b';\nimport c from '../shared/c';"
+			"import { b } from './b';\nimport c from '../shared/c';",
 		);
 		expect(edges).toEqual([
 			{ from: "src/a.ts", to: "src/b" },
-			{ from: "src/a.ts", to: "shared/c" }
+			{ from: "src/a.ts", to: "shared/c" },
 		]);
 	});
 
 	it("skips non-relative imports", () => {
 		const edges = extractImportEdgesFromSource(
 			"src/a.ts",
-			"import React from 'react';\nimport { x } from 'vitest';"
+			"import React from 'react';\nimport { x } from 'vitest';",
 		);
 		expect(edges).toHaveLength(0);
 	});
@@ -523,7 +589,7 @@ describe("extractImportEdgesFromSource", () => {
 	it("strips file extensions from resolved paths", () => {
 		const edges = extractImportEdgesFromSource(
 			"src/a.ts",
-			"import { b } from './b.ts';\nimport c from './c.js';"
+			"import { b } from './b.ts';\nimport c from './c.js';",
 		);
 		expect(edges[0]?.to).toBe("src/b");
 		expect(edges[1]?.to).toBe("src/c");
@@ -533,7 +599,7 @@ describe("extractImportEdgesFromSource", () => {
 		// 'electron-builder.yml' path contains 'ui' as substring — must not score
 		const edges = extractImportEdgesFromSource(
 			"src/a.ts",
-			"import { build } from './electron-builder';"
+			"import { build } from './electron-builder';",
 		);
 		// resolved path is "src/electron-builder" — valid relative import, will be included
 		// but the scoring test belongs in suggest (Phase 3), not here
@@ -543,7 +609,7 @@ describe("extractImportEdgesFromSource", () => {
 	it("uses forward slashes on all platforms", () => {
 		const edges = extractImportEdgesFromSource(
 			"src/deep/a.ts",
-			"import x from '../other';"
+			"import x from '../other';",
 		);
 		expect(edges[0]?.to).toBe("src/other");
 		expect(edges[0]?.to).not.toContain("\\");
@@ -568,7 +634,10 @@ import type { ImportEdge } from "./models.js";
 const IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
 const TS_EXTS = /\.(ts|tsx|js|jsx)$/u;
 
-export function extractImportEdgesFromSource(filePath: string, source: string): ImportEdge[] {
+export function extractImportEdgesFromSource(
+	filePath: string,
+	source: string,
+): ImportEdge[] {
 	const edges: ImportEdge[] = [];
 	for (const match of source.matchAll(IMPORT_RE)) {
 		const specifier = match[1];
@@ -582,10 +651,13 @@ export function extractImportEdgesFromSource(filePath: string, source: string): 
 	return edges;
 }
 
-export function extractImports(worktreePath: string, filePaths: string[]): ImportEdge[] {
+export function extractImports(
+	worktreePath: string,
+	filePaths: string[],
+): ImportEdge[] {
 	return filePaths
-		.filter(filePath => TS_EXTS.test(filePath))
-		.flatMap(filePath => {
+		.filter((filePath) => TS_EXTS.test(filePath))
+		.flatMap((filePath) => {
 			const source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
 			return extractImportEdgesFromSource(filePath, source);
 		});
@@ -610,6 +682,7 @@ git commit -m "feat: add TS/JS import graph extraction"
 ## Task 6: Entry Files & Package Meta
 
 **Files:**
+
 - Create: `src/lib/entry-files.ts`
 - Create: `tests/unit/lib/entry-files.test.ts`
 
@@ -622,26 +695,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("node:fs");
 
 import fs from "node:fs";
-import { pickEntryFiles, readPackageMeta } from "../../../src/lib/entry-files.js";
+import {
+	pickEntryFiles,
+	readPackageMeta,
+} from "../../../src/lib/entry-files.js";
 
 const mockFs = vi.mocked(fs);
 
 describe("readPackageMeta", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("reads name, version, and detects electron framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "my-app", version: "1.2.3", devDependencies: { electron: "^30.0.0" } }) as any
+			JSON.stringify({
+				name: "my-app",
+				version: "1.2.3",
+				devDependencies: { electron: "^30.0.0" },
+			}) as any,
 		);
 		const meta = readPackageMeta("/repo");
-		expect(meta).toEqual({ name: "my-app", version: "1.2.3", framework: "electron" });
+		expect(meta).toEqual({
+			name: "my-app",
+			version: "1.2.3",
+			framework: "electron",
+		});
 	});
 
 	it("detects next framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "app", version: "1.0.0", dependencies: { next: "^14.0.0" } }) as any
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				dependencies: { next: "^14.0.0" },
+			}) as any,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("next");
 	});
@@ -649,7 +739,11 @@ describe("readPackageMeta", () => {
 	it("detects vite framework", () => {
 		mockFs.existsSync.mockReturnValue(true);
 		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({ name: "app", version: "1.0.0", devDependencies: { vite: "^5.0.0" } }) as any
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				devDependencies: { vite: "^5.0.0" },
+			}) as any,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("vite");
 	});
@@ -673,20 +767,34 @@ describe("readPackageMeta", () => {
 describe("pickEntryFiles", () => {
 	it("prefers package.json main field when it points to source", () => {
 		const files = ["src/main.ts", "src/index.ts", "index.ts"];
-		const meta = { name: "app", version: "1.0.0", main: "src/main.ts", framework: null as null };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			main: "src/main.ts",
+			framework: null as null,
+		};
 		expect(pickEntryFiles(files, meta)[0]).toBe("src/main.ts");
 	});
 
 	it("excludes package.json main when it points to dist/", () => {
 		const files = ["dist/index.js", "src/index.ts"];
-		const meta = { name: "app", version: "1.0.0", main: "dist/index.js", framework: null as null };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			main: "dist/index.js",
+			framework: null as null,
+		};
 		const entries = pickEntryFiles(files, meta);
 		expect(entries).not.toContain("dist/index.js");
 	});
 
 	it("uses electron conventions when framework is electron", () => {
 		const files = ["electron/main/index.ts", "src/renderer.tsx"];
-		const meta = { name: "app", version: "1.0.0", framework: "electron" as const };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			framework: "electron" as const,
+		};
 		expect(pickEntryFiles(files, meta)).toContain("electron/main/index.ts");
 	});
 
@@ -704,7 +812,12 @@ describe("pickEntryFiles", () => {
 
 	it("caps results at 8", () => {
 		const files = Array.from({ length: 20 }, (_, i) => `src/index${i}.ts`);
-		const meta = { name: "app", version: "1.0.0", framework: null as null, main: "src/index0.ts" };
+		const meta = {
+			name: "app",
+			version: "1.0.0",
+			framework: null as null,
+			main: "src/index0.ts",
+		};
 		expect(pickEntryFiles(files, meta).length).toBeLessThanOrEqual(8);
 	});
 });
@@ -724,51 +837,73 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PackageMeta } from "./models.js";
 
-const FRAMEWORK_CONVENTIONS: Record<NonNullable<PackageMeta["framework"]>, string[]> = {
+const FRAMEWORK_CONVENTIONS: Record<
+	NonNullable<PackageMeta["framework"]>,
+	string[]
+> = {
 	electron: ["electron/main/index.ts", "src/main.ts", "src/main.tsx"],
-	next: ["src/app/layout.tsx", "src/app/page.tsx", "pages/_app.tsx", "pages/index.tsx"],
+	next: [
+		"src/app/layout.tsx",
+		"src/app/page.tsx",
+		"pages/_app.tsx",
+		"pages/index.tsx",
+	],
 	vite: ["src/main.ts", "src/main.tsx", "src/index.ts"],
-	node: ["src/index.ts", "src/main.ts", "index.ts"]
+	node: ["src/index.ts", "src/main.ts", "index.ts"],
 };
 
-const COMMON_FALLBACKS = ["src/index.ts", "src/main.ts", "src/main.tsx", "index.ts", "src/index.tsx"];
+const COMMON_FALLBACKS = [
+	"src/index.ts",
+	"src/main.ts",
+	"src/main.tsx",
+	"index.ts",
+	"src/index.tsx",
+];
 
 export function readPackageMeta(worktreePath: string): PackageMeta {
 	const pkgPath = path.join(worktreePath, "package.json");
 	const fallback: PackageMeta = {
 		name: path.basename(worktreePath),
 		version: "0.0.0",
-		framework: null
+		framework: null,
 	};
 
 	if (!fs.existsSync(pkgPath)) return fallback;
 
 	try {
-		const raw = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
+		const raw = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as Record<
+			string,
+			unknown
+		>;
 		const deps: Record<string, string> = {
-			...(raw.dependencies as Record<string, string> ?? {}),
-			...(raw.devDependencies as Record<string, string> ?? {})
+			...((raw.dependencies as Record<string, string>) ?? {}),
+			...((raw.devDependencies as Record<string, string>) ?? {}),
 		};
 		return {
 			name: typeof raw.name === "string" ? raw.name : fallback.name,
 			version: typeof raw.version === "string" ? raw.version : "0.0.0",
 			main: typeof raw.main === "string" ? raw.main : undefined,
 			module: typeof raw.module === "string" ? raw.module : undefined,
-			framework: detectFramework(deps)
+			framework: detectFramework(deps),
 		};
 	} catch {
 		return fallback;
 	}
 }
 
-function detectFramework(deps: Record<string, string>): PackageMeta["framework"] {
+function detectFramework(
+	deps: Record<string, string>,
+): PackageMeta["framework"] {
 	if ("electron" in deps) return "electron";
 	if ("next" in deps) return "next";
 	if ("vite" in deps) return "vite";
 	return null;
 }
 
-export function pickEntryFiles(filePaths: string[], packageMeta: PackageMeta): string[] {
+export function pickEntryFiles(
+	filePaths: string[],
+	packageMeta: PackageMeta,
+): string[] {
 	const fileSet = new Set(filePaths);
 	const candidates: string[] = [];
 
@@ -810,6 +945,7 @@ git commit -m "feat: add entry file detection and package meta reading"
 ## Task 7: Cache Store
 
 **Files:**
+
 - Create: `src/lib/cache-store.ts`
 - Create: `tests/unit/lib/cache-store.test.ts`
 
@@ -830,7 +966,7 @@ import { execFileSync } from "node:child_process";
 import {
 	buildRepoFingerprint,
 	readCacheForWorktree,
-	writeCache
+	writeCache,
 } from "../../../src/lib/cache-store.js";
 
 const mockExec = vi.mocked(execFileSync);
@@ -848,7 +984,7 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 		files: [],
 		docs: [],
 		imports: [],
-		...overrides
+		...overrides,
 	};
 }
 
@@ -884,14 +1020,16 @@ describe("writeCache + readCacheForWorktree", () => {
 	it("returns null and warns to stderr on schema version mismatch", () => {
 		const cache = makeCache({ schemaVersion: "0" as any });
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
 
 		writeCache(cache);
 		const result = readCacheForWorktree(cache.repoKey, cache.worktreeKey);
 
 		expect(result).toBeNull();
 		expect(stderrSpy).toHaveBeenCalledWith(
-			expect.stringContaining("cache schema updated")
+			expect.stringContaining("cache schema updated"),
 		);
 	});
 });
@@ -932,7 +1070,7 @@ export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 export function buildRepoFingerprint(worktreePath: string): string {
 	return execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
 		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"]
+		stdio: ["ignore", "pipe", "ignore"],
 	}).trimEnd();
 }
 
@@ -943,14 +1081,19 @@ export function writeCache(cache: RepoCache): void {
 	fs.writeFileSync(filePath, JSON.stringify(cache, null, 2) + "\n");
 }
 
-export function readCacheForWorktree(repoKey: string, worktreeKey: string): RepoCache | null {
+export function readCacheForWorktree(
+	repoKey: string,
+	worktreeKey: string,
+): RepoCache | null {
 	const filePath = getCacheFilePath(repoKey, worktreeKey);
 	if (!fs.existsSync(filePath)) return null;
 
 	const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as RepoCache;
 	if (raw.schemaVersion !== SCHEMA_VERSION) {
 		fs.rmSync(filePath, { force: true });
-		process.stderr.write(`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`);
+		process.stderr.write(
+			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+		);
 		return null;
 	}
 	return raw;
@@ -975,6 +1118,7 @@ git commit -m "feat: add versioned cache store with worktree-aware paths"
 ## Task 8: Indexer + Public API
 
 **Files:**
+
 - Create: `src/lib/indexer.ts`
 - Create: `src/lib/index.ts`
 - Create: `tests/unit/lib/indexer.test.ts`
@@ -994,32 +1138,45 @@ vi.mock("../../../src/lib/cache-store.js");
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
-import { readPackageMeta, pickEntryFiles } from "../../../src/lib/entry-files.js";
+import {
+	readPackageMeta,
+	pickEntryFiles,
+} from "../../../src/lib/entry-files.js";
 import { loadDocs } from "../../../src/lib/doc-inputs.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
 import {
 	buildRepoFingerprint,
 	readCacheForWorktree,
-	writeCache
+	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
-import { buildIndex, getCachedIndex, indexRepo } from "../../../src/lib/indexer.js";
+import {
+	buildIndex,
+	getCachedIndex,
+	indexRepo,
+} from "../../../src/lib/indexer.js";
 
 const mockIdentity = {
 	repoKey: "aabbccdd11223344",
 	worktreeKey: "eeff00112233aabb",
 	gitCommonDir: "/repo/.git",
-	worktreePath: "/repo"
+	worktreePath: "/repo",
 };
 
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
 	vi.mocked(listIndexableFiles).mockReturnValue(["README.md", "src/main.ts"]);
-	vi.mocked(readPackageMeta).mockReturnValue({ name: "test-app", version: "1.0.0", framework: null });
+	vi.mocked(readPackageMeta).mockReturnValue({
+		name: "test-app",
+		version: "1.0.0",
+		framework: null,
+	});
 	vi.mocked(pickEntryFiles).mockReturnValue(["src/main.ts"]);
-	vi.mocked(loadDocs).mockReturnValue([{ path: "README.md", title: "Test App", body: "# Test App\n" }]);
+	vi.mocked(loadDocs).mockReturnValue([
+		{ path: "README.md", title: "Test App", body: "# Test App\n" },
+	]);
 	vi.mocked(extractImports).mockReturnValue([]);
 	vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 	vi.mocked(readCacheForWorktree).mockReturnValue(null);
@@ -1074,7 +1231,7 @@ describe("getCachedIndex", () => {
 			entryFiles: [],
 			files: [],
 			docs: [],
-			imports: []
+			imports: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(stale);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
@@ -1093,7 +1250,7 @@ describe("getCachedIndex", () => {
 			entryFiles: [],
 			files: [],
 			docs: [],
-			imports: []
+			imports: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(fresh);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -1112,7 +1269,11 @@ Expected: FAIL — module not found.
 
 ```ts
 // src/lib/indexer.ts
-import { buildRepoFingerprint, readCacheForWorktree, writeCache } from "./cache-store.js";
+import {
+	buildRepoFingerprint,
+	readCacheForWorktree,
+	writeCache,
+} from "./cache-store.js";
 import { loadDocs } from "./doc-inputs.js";
 import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
@@ -1129,7 +1290,7 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 		const docs = loadDocs(identity.worktreePath, filePaths);
 		const imports = extractImports(identity.worktreePath, filePaths);
 		const fingerprint = buildRepoFingerprint(identity.worktreePath);
-		const files = filePaths.map(p => ({ path: p, kind: "file" as const }));
+		const files = filePaths.map((p) => ({ path: p, kind: "file" as const }));
 
 		return {
 			schemaVersion: SCHEMA_VERSION,
@@ -1142,7 +1303,7 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 			entryFiles,
 			files,
 			docs,
-			imports
+			imports,
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
@@ -1174,7 +1335,14 @@ export function getCachedIndex(repoPath: string): RepoCache | null {
 // src/lib/index.ts
 export { indexRepo, getCachedIndex } from "./indexer.js";
 export { RepoIdentityError, IndexError } from "./models.js";
-export type { RepoCache, RepoIdentity, PackageMeta, FileNode, ImportEdge, DocInput } from "./models.js";
+export type {
+	RepoCache,
+	RepoIdentity,
+	PackageMeta,
+	FileNode,
+	ImportEdge,
+	DocInput,
+} from "./models.js";
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -1195,6 +1363,7 @@ git commit -m "feat: add indexer orchestrator and public api"
 ## Task 9: Update CLI
 
 **Files:**
+
 - Modify: `src/cli.ts`
 
 - [ ] **Step 1: Replace cli.ts**
@@ -1208,7 +1377,7 @@ const [, , command = "index", ...args] = process.argv;
 
 if (command === "index") {
 	const refresh = args.includes("--refresh");
-	const repoPath = args.find(arg => arg !== "--refresh") ?? process.cwd();
+	const repoPath = args.find((arg) => arg !== "--refresh") ?? process.cwd();
 	const start = performance.now();
 
 	try {
@@ -1218,9 +1387,9 @@ if (command === "index") {
 
 		process.stdout.write(
 			`indexed ${cache.packageMeta.name}\n` +
-			`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
-			`  cache: ~/.cache/ai-cortex/v1/${cache.repoKey}/${cache.worktreeKey}.json\n` +
-			`  duration: ${duration}ms\n`
+				`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
+				`  cache: ~/.cache/ai-cortex/v1/${cache.repoKey}/${cache.worktreeKey}.json\n` +
+				`  duration: ${duration}ms\n`,
 		);
 	} catch (err) {
 		if (err instanceof RepoIdentityError) {
@@ -1257,6 +1426,7 @@ if (command === "index") {
 Run: `pnpm build && node dist/src/cli.js index /Users/vuphan/Dev/ai-14all`
 
 Expected output similar to:
+
 ```
 indexed ai-14all
   files: 165  docs: 8  imports: 312  entry files: 6
@@ -1288,6 +1458,7 @@ git commit -m "feat: update cli to use phase 1 library"
 ## Task 10: Integration Test
 
 **Files:**
+
 - Create: `tests/integration/index.test.ts`
 
 - [ ] **Step 1: Write the integration test**
@@ -1314,12 +1485,18 @@ beforeAll(() => {
 	execFileSync("git", ["-C", tmpDir, "config", "commit.gpgsign", "false"]);
 
 	// Add files
-	fs.writeFileSync(path.join(tmpDir, "README.md"), "# Test Repo\nA minimal test repo.\n");
+	fs.writeFileSync(
+		path.join(tmpDir, "README.md"),
+		"# Test Repo\nA minimal test repo.\n",
+	);
 	fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
-	fs.writeFileSync(path.join(tmpDir, "src", "main.ts"), "export const x = 1;\n");
+	fs.writeFileSync(
+		path.join(tmpDir, "src", "main.ts"),
+		"export const x = 1;\n",
+	);
 	fs.writeFileSync(
 		path.join(tmpDir, "package.json"),
-		JSON.stringify({ name: "test-repo", version: "0.0.1" })
+		JSON.stringify({ name: "test-repo", version: "0.0.1" }),
 	);
 
 	execFileSync("git", ["-C", tmpDir, "add", "."]);
@@ -1340,7 +1517,7 @@ describe("indexRepo + getCachedIndex (real disk + real git)", () => {
 		expect(cache.worktreePath).toBe(tmpDir);
 		expect(cache.fingerprint).toHaveLength(40);
 		expect(cache.packageMeta.name).toBe("test-repo");
-		expect(cache.files.some(f => f.path === "README.md")).toBe(true);
+		expect(cache.files.some((f) => f.path === "README.md")).toBe(true);
 		expect(cache.docs[0]?.path).toBe("README.md");
 		expect(cache.docs[0]?.title).toBe("Test Repo");
 	});
@@ -1385,6 +1562,7 @@ git commit -m "test: add integration test for indexRepo and getCachedIndex"
 ## Task 11: Delete Spike
 
 **Files:**
+
 - Delete: `src/spike/` (all files)
 - Delete: `tests/unit/repo-id.test.ts`
 - Delete: `tests/unit/doc-inputs.test.ts`
@@ -1430,6 +1608,7 @@ git commit -m "chore: delete phase 0 spike after phase 1 library is complete"
 ## Self-Review
 
 **Spec coverage:**
+
 - Repo identity + worktree key: Task 2 ✓
 - git common dir resolution: Task 2 ✓
 - Storage layout `v1/<repoKey>/<worktreeKey>.json`: Task 7 ✓
@@ -1449,6 +1628,7 @@ git commit -m "chore: delete phase 0 spike after phase 1 library is complete"
 **Placeholder scan:** None found.
 
 **Type consistency:**
+
 - `RepoCache` defined in Task 1, used in Tasks 7, 8, 10 — consistent.
 - `RepoIdentity` defined in Task 1, produced in Task 2, consumed in Task 8 — consistent.
 - `PackageMeta` defined in Task 1, produced in Task 6, stored in Task 8 — consistent.

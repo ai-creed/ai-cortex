@@ -6,7 +6,7 @@ const [, , command = "index", ...args] = process.argv;
 
 if (command === "index") {
 	const refresh = args.includes("--refresh");
-	const repoPath = args.find(arg => arg !== "--refresh") ?? process.cwd();
+	const repoPath = args.find((arg) => arg !== "--refresh") ?? process.cwd();
 	const start = performance.now();
 
 	try {
@@ -16,9 +16,9 @@ if (command === "index") {
 
 		process.stdout.write(
 			`indexed ${cache.packageMeta.name}\n` +
-			`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
-			`  cache: ~/.cache/ai-cortex/v1/${cache.repoKey}/${cache.worktreeKey}.json\n` +
-			`  duration: ${duration}ms\n`
+				`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
+				`  cache: ~/.cache/ai-cortex/v1/${cache.repoKey}/${cache.worktreeKey}.json\n` +
+				`  duration: ${duration}ms\n`,
 		);
 	} catch (err) {
 		if (err instanceof RepoIdentityError) {

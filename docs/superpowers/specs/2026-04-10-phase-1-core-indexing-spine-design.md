@@ -76,8 +76,8 @@ export class RepoIdentityError extends Error {}
 export class IndexError extends Error {}
 
 export type RepoIdentity = {
-	repoKey: string;      // SHA256(gitCommonDir).slice(0, 16)
-	worktreeKey: string;  // SHA256(worktreePath).slice(0, 16)
+	repoKey: string; // SHA256(gitCommonDir).slice(0, 16)
+	worktreeKey: string; // SHA256(worktreePath).slice(0, 16)
 	gitCommonDir: string; // absolute path to shared .git/
 	worktreePath: string; // absolute path to this worktree root
 };
@@ -111,10 +111,10 @@ export type RepoCache = {
 	repoKey: string;
 	worktreeKey: string;
 	worktreePath: string;
-	indexedAt: string;       // ISO 8601 timestamp
-	fingerprint: string;     // HEAD commit hash
+	indexedAt: string; // ISO 8601 timestamp
+	fingerprint: string; // HEAD commit hash
 	packageMeta: PackageMeta;
-	entryFiles: string[];    // computed at index time, not re-derived on read
+	entryFiles: string[]; // computed at index time, not re-derived on read
 	files: FileNode[];
 	docs: DocInput[];
 	imports: ImportEdge[];
@@ -143,6 +143,7 @@ derivation requires file existence checks, which are slow on the read path.
 4. `worktreeKey = SHA256(worktreePath).slice(0, 16)`
 
 Throws `RepoIdentityError` if:
+
 - Path is not inside a git repo (`git rev-parse` exits non-zero)
 - Git is not installed (`execFileSync` throws ENOENT)
 
@@ -240,10 +241,12 @@ Runs `git -C <worktreePath> rev-parse HEAD`. Returns the HEAD commit hash.
 Throws `RepoIdentityError` if git fails (propagated from `indexer.ts`).
 
 `writeCache(cache: RepoCache): void`
+
 - Creates `~/.cache/ai-cortex/v1/<repoKey>/` if needed
 - Writes `<worktreeKey>.json`
 
 `readCacheForWorktree(repoKey, worktreeKey): RepoCache | null`
+
 - Returns `null` if file does not exist
 - Parses JSON, checks `schemaVersion`
 - On version mismatch: deletes stale file, writes one line to `stderr`:
@@ -257,15 +260,17 @@ Throws `RepoIdentityError` if git fails (propagated from `indexer.ts`).
 `src/lib/index.ts` re-exports exactly two functions:
 
 ```ts
-export function indexRepo(repoPath: string): RepoCache
+export function indexRepo(repoPath: string): RepoCache;
 ```
+
 Resolves identity, runs full pipeline, writes cache, returns result.
 Throws `RepoIdentityError` if not a git repo.
 Throws `IndexError` with message if pipeline fails.
 
 ```ts
-export function getCachedIndex(repoPath: string): RepoCache | null
+export function getCachedIndex(repoPath: string): RepoCache | null;
 ```
+
 Resolves repo identity, reads the cache file, then calls `buildRepoFingerprint`
 to compare against the stored fingerprint. Returns the cached index if it exists
 and fingerprints match. Returns `null` if: no cache, schema mismatch (warns to
@@ -277,8 +282,9 @@ identity resolution failures.
 Internal only (not exported):
 
 ```ts
-function buildIndex(identity: RepoIdentity): RepoCache
+function buildIndex(identity: RepoIdentity): RepoCache;
 ```
+
 Pure computation, no disk I/O. Called by `indexRepo`, also used directly in
 unit tests to avoid disk writes.
 
@@ -295,6 +301,7 @@ Usage:
 ```
 
 Success output (stdout):
+
 ```
 indexed ai-14all
   files: 165  docs: 8  imports: 312  entry files: 6
@@ -303,11 +310,13 @@ indexed ai-14all
 ```
 
 Schema invalidation warning (stderr, one line):
+
 ```
 ai-cortex: cache schema updated, reindexing <worktreeKey>
 ```
 
 Exit codes:
+
 - `0` — success
 - `1` — not a git repo or git not found
 - `2` — pipeline error (unreadable file, etc.)
@@ -335,26 +344,26 @@ specifically or let it bubble to the CLI error handler.
 subprocesses. Mock `execFileSync` for git calls, `fs` for file reads where
 needed.
 
-| File | Key cases |
-|------|-----------|
-| `repo-identity.test.ts` | key derivation, git failure → RepoIdentityError, subdirectory input resolves to root |
-| `indexable-files.test.ts` | git output parsing, fallback trigger on git failure, hidden dir exclusion |
-| `doc-inputs.test.ts` | ranking order, title extraction, limit enforcement |
-| `import-graph.test.ts` | relative vs non-relative, path normalization, extension stripping, no substring false positives |
-| `entry-files.test.ts` | package.json field → framework convention → common fallback, non-existent paths excluded |
-| `cache-store.test.ts` | schema mismatch warns + returns null, round-trip read/write, missing file returns null |
+| File                      | Key cases                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `repo-identity.test.ts`   | key derivation, git failure → RepoIdentityError, subdirectory input resolves to root            |
+| `indexable-files.test.ts` | git output parsing, fallback trigger on git failure, hidden dir exclusion                       |
+| `doc-inputs.test.ts`      | ranking order, title extraction, limit enforcement                                              |
+| `import-graph.test.ts`    | relative vs non-relative, path normalization, extension stripping, no substring false positives |
+| `entry-files.test.ts`     | package.json field → framework convention → common fallback, non-existent paths excluded        |
+| `cache-store.test.ts`     | schema mismatch warns + returns null, round-trip read/write, missing file returns null          |
 
 **Integration test** (`tests/integration/index.test.ts`) — one test, real disk,
 real git:
 
 ```ts
 it("indexes a real temp git repo and reads it back via getCachedIndex", () => {
-  // git init temp dir, add README + TS files, commit
-  // indexRepo(tmpDir) → verify RepoCache shape and field values
-  // getCachedIndex(tmpDir) → verify returns equivalent data
-  // make a new commit → getCachedIndex returns null (stale fingerprint)
-  // cleanup tmpDir
-})
+	// git init temp dir, add README + TS files, commit
+	// indexRepo(tmpDir) → verify RepoCache shape and field values
+	// getCachedIndex(tmpDir) → verify returns equivalent data
+	// make a new commit → getCachedIndex returns null (stale fingerprint)
+	// cleanup tmpDir
+});
 ```
 
 Only test that touches disk or spawns real git subprocesses.

@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import {
 	buildRepoFingerprint,
 	readCacheForWorktree,
-	writeCache
+	writeCache,
 } from "../../../src/lib/cache-store.js";
 
 const mockExec = vi.mocked(execFileSync);
@@ -30,7 +30,7 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 		files: [],
 		docs: [],
 		imports: [],
-		...overrides
+		...overrides,
 	};
 }
 
@@ -66,14 +66,16 @@ describe("writeCache + readCacheForWorktree", () => {
 	it("returns null and warns to stderr on schema version mismatch", () => {
 		const cache = makeCache({ schemaVersion: "0" as any });
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
-		const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
 
 		writeCache(cache);
 		const result = readCacheForWorktree(cache.repoKey, cache.worktreeKey);
 
 		expect(result).toBeNull();
 		expect(stderrSpy).toHaveBeenCalledWith(
-			expect.stringContaining("cache schema updated")
+			expect.stringContaining("cache schema updated"),
 		);
 	});
 });

@@ -9,11 +9,17 @@ import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
 const mockExec = vi.mocked(execFileSync);
 
 describe("listIndexableFiles", () => {
-	beforeEach(() => { vi.clearAllMocks(); });
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it("returns sorted file paths from git ls-files", () => {
 		mockExec.mockReturnValue("src/b.ts\nsrc/a.ts\nREADME.md\n" as any);
-		expect(listIndexableFiles("/repo")).toEqual(["README.md", "src/a.ts", "src/b.ts"]);
+		expect(listIndexableFiles("/repo")).toEqual([
+			"README.md",
+			"src/a.ts",
+			"src/b.ts",
+		]);
 	});
 
 	it("calls git with the correct arguments", () => {
@@ -21,8 +27,15 @@ describe("listIndexableFiles", () => {
 		listIndexableFiles("/my/repo");
 		expect(mockExec).toHaveBeenCalledWith(
 			"git",
-			["-C", "/my/repo", "ls-files", "--cached", "--others", "--exclude-standard"],
-			expect.objectContaining({ encoding: "utf8" })
+			[
+				"-C",
+				"/my/repo",
+				"ls-files",
+				"--cached",
+				"--others",
+				"--exclude-standard",
+			],
+			expect.objectContaining({ encoding: "utf8" }),
 		);
 	});
 

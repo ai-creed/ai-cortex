@@ -6,7 +6,10 @@ import type { ImportEdge } from "./models.js";
 const IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
 const TS_EXTS = /\.(ts|tsx|js|jsx)$/u;
 
-export function extractImportEdgesFromSource(filePath: string, source: string): ImportEdge[] {
+export function extractImportEdgesFromSource(
+	filePath: string,
+	source: string,
+): ImportEdge[] {
 	const edges: ImportEdge[] = [];
 	for (const match of source.matchAll(IMPORT_RE)) {
 		const specifier = match[1];
@@ -20,10 +23,13 @@ export function extractImportEdgesFromSource(filePath: string, source: string): 
 	return edges;
 }
 
-export function extractImports(worktreePath: string, filePaths: string[]): ImportEdge[] {
+export function extractImports(
+	worktreePath: string,
+	filePaths: string[],
+): ImportEdge[] {
 	return filePaths
-		.filter(filePath => TS_EXTS.test(filePath))
-		.flatMap(filePath => {
+		.filter((filePath) => TS_EXTS.test(filePath))
+		.flatMap((filePath) => {
 			const source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
 			return extractImportEdgesFromSource(filePath, source);
 		});

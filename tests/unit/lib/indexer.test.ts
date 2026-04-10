@@ -10,32 +10,45 @@ vi.mock("../../../src/lib/cache-store.js");
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
-import { readPackageMeta, pickEntryFiles } from "../../../src/lib/entry-files.js";
+import {
+	readPackageMeta,
+	pickEntryFiles,
+} from "../../../src/lib/entry-files.js";
 import { loadDocs } from "../../../src/lib/doc-inputs.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
 import {
 	buildRepoFingerprint,
 	readCacheForWorktree,
-	writeCache
+	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
-import { buildIndex, getCachedIndex, indexRepo } from "../../../src/lib/indexer.js";
+import {
+	buildIndex,
+	getCachedIndex,
+	indexRepo,
+} from "../../../src/lib/indexer.js";
 
 const mockIdentity = {
 	repoKey: "aabbccdd11223344",
 	worktreeKey: "eeff00112233aabb",
 	gitCommonDir: "/repo/.git",
-	worktreePath: "/repo"
+	worktreePath: "/repo",
 };
 
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
 	vi.mocked(listIndexableFiles).mockReturnValue(["README.md", "src/main.ts"]);
-	vi.mocked(readPackageMeta).mockReturnValue({ name: "test-app", version: "1.0.0", framework: null });
+	vi.mocked(readPackageMeta).mockReturnValue({
+		name: "test-app",
+		version: "1.0.0",
+		framework: null,
+	});
 	vi.mocked(pickEntryFiles).mockReturnValue(["src/main.ts"]);
-	vi.mocked(loadDocs).mockReturnValue([{ path: "README.md", title: "Test App", body: "# Test App\n" }]);
+	vi.mocked(loadDocs).mockReturnValue([
+		{ path: "README.md", title: "Test App", body: "# Test App\n" },
+	]);
 	vi.mocked(extractImports).mockReturnValue([]);
 	vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 	vi.mocked(readCacheForWorktree).mockReturnValue(null);
@@ -90,7 +103,7 @@ describe("getCachedIndex", () => {
 			entryFiles: [],
 			files: [],
 			docs: [],
-			imports: []
+			imports: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(stale);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
@@ -109,7 +122,7 @@ describe("getCachedIndex", () => {
 			entryFiles: [],
 			files: [],
 			docs: [],
-			imports: []
+			imports: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(fresh);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");

@@ -17,7 +17,7 @@ export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 export function buildRepoFingerprint(worktreePath: string): string {
 	return execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
 		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"]
+		stdio: ["ignore", "pipe", "ignore"],
 	}).trimEnd();
 }
 
@@ -28,13 +28,18 @@ export function writeCache(cache: RepoCache): void {
 	fs.writeFileSync(filePath, JSON.stringify(cache, null, 2) + "\n");
 }
 
-export function readCacheForWorktree(repoKey: string, worktreeKey: string): RepoCache | null {
+export function readCacheForWorktree(
+	repoKey: string,
+	worktreeKey: string,
+): RepoCache | null {
 	const filePath = getCacheFilePath(repoKey, worktreeKey);
 	if (!fs.existsSync(filePath)) return null;
 	const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as RepoCache;
 	if (raw.schemaVersion !== SCHEMA_VERSION) {
 		fs.rmSync(filePath, { force: true });
-		process.stderr.write(`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`);
+		process.stderr.write(
+			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+		);
 		return null;
 	}
 	return raw;
