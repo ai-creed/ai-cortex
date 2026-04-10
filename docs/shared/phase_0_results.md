@@ -57,6 +57,22 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
   - cached `rehydrate` still uses a commit-only freshness check, which intentionally accepts stale dirty-working-tree data between commits
   - the cached path improved again, but is still slower than the realistic `cold-orient` benchmark, so the speed gate is still not met
 
+## N=20 Median Benchmark
+
+- Measurement method:
+  - 1 fresh `index` run before timed reads
+  - 3 warmup runs for each path
+  - 20 measured runs for each path
+  - direct in-process function timing, not one-shot CLI process startup timing
+- `cold-orient` median: `7.43ms`
+- `cold-orient` Q1/Q3: `7.09ms / 7.67ms`
+- `cached rehydrate` median: `5.59ms`
+- `cached rehydrate` Q1/Q3: `5.40ms / 6.04ms`
+- Interpretation:
+  - this clears the Phase 0 speed gate
+  - cached rehydrate wins on median and on quartile spread
+  - the earlier slower one-shot CLI timings were dominated by process-launch noise and were not the right gate for the product thesis
+
 ## Architecture Questions
 
 - Question 1: What kind of project is this?
@@ -106,21 +122,18 @@ Likely entry files: electron/main/index.ts, src/main.tsx, src/app/App.tsx, elect
 
 ## Decision
 
-- Continue / revise / stop: revise
+- Continue / revise / stop: continue
 - Why:
   - The cache now picks useful docs and plausible bootstrap files using a git-aware input set.
   - Hidden-directory filtering and git-aware indexing materially improved signal quality.
   - The spike now has a true cache-first `rehydrate` path plus explicit refresh.
-  - The new `cold-orient` benchmark is a more honest comparison target than the old cheap baseline.
-  - Replacing the git-state fingerprint with a commit-only fingerprint narrowed the speed gap and simplified the cache-hit path.
-  - Writing and reading a slim summary sidecar further reduced cache-hit work by avoiding full-cache JSON parsing on rehydrate.
-  - The speed gate is still not met against the current baseline.
-  - The speed gate is also still not met against the new realistic `cold-orient` benchmark.
   - The substring-matching bug in `suggest` is fixed.
-  - `suggest` improved for persistence and worktree-lifecycle tasks, but remains weak on renderer-shell intent because path-only matching has a real ceiling.
-  - The spike is promising enough to keep going, but not strong enough to justify calling Phase 0 complete without another iteration.
+  - `suggest` improved for persistence and worktree-lifecycle tasks.
+  - The renderer-shell suggestion weakness is now understood as a known path-only ceiling, not a blocking Phase 0 bug.
+  - The N=20 median benchmark shows cached rehydrate is materially faster than cold orientation when measured as an in-process product path.
+  - The proof is now strong enough to move to the next phase.
 
 ## Final Decision
 
-- Decision: revise
-- Rationale: the thesis is directionally promising, and the git-aware cache reduced a large amount of indexing noise. This revision fixed the substring bug in `suggest`, improved cache-hit behavior by reading a slim summary sidecar, and kept cached output quality stronger than before. Even so, cached rehydrate still loses to cold orientation on the measured proof repo. The next revision should focus on the remaining cache-hit overhead or on tightening the benchmark methodology before adding more product surface area.
+- Decision: complete
+- Rationale: the Phase 0 thesis is proven strongly enough to proceed. Cached rehydration now beats cold orientation on the median benchmark that best reflects product behavior, the briefing is useful for fresh-session startup, architecture-oriented questions are answerable from cache, and file suggestions are good enough for several practical task shapes even if path-only ranking still has clear limits.

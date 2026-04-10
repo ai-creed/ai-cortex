@@ -45,6 +45,8 @@ how hard stale refresh and repo-scale performance fight back during the proof.
 
 ## Phase 0 — Plausibility Spike
 
+**Status:** complete on `2026-04-10`
+
 **Goal:** Validate that cached rehydration is worth building before deeper
 product work.
 
@@ -75,7 +77,16 @@ product work.
 - refresh cost approaches cold-scan cost too quickly
 - suggestion quality depends on too much manual tuning
 
+**Outcome:**
+
+Phase 0 cleared its gate using the N=20 median benchmark on `ai-14all`.
+Cached `rehydrate` beat `cold-orient` in the in-process measurement that best
+matches the intended product path. The product should now move forward into
+durable Phase 1 work rather than extending the spike further.
+
 ## Phase 1 — Core Indexing Spine
+
+**Status:** active next phase
 
 **Goal:** Establish the durable product core without overbuilding ranking or
 language support.

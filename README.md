@@ -11,4 +11,5 @@ Primary references:
 - `docs/shared/project_ai_cortex_spike.md`
 - `docs/shared/high_level_plan.md`
 - `docs/shared/phase_0_plausibility_checklist.md`
+- `docs/shared/phase_0_results.md`
 - `docs/superpowers/plans/2026-04-10-phase-0-plausibility-spike.md`

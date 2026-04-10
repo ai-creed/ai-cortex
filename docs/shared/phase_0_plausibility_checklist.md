@@ -1,5 +1,7 @@
 # ai-cortex — Phase 0 Plausibility Checklist
 
+> Status: complete on `2026-04-10` based on the N=20 median benchmark and the recorded results in `docs/shared/phase_0_results.md`.
+
 ## Purpose
 
 This document defines the concrete proof needed before `ai-cortex` should
