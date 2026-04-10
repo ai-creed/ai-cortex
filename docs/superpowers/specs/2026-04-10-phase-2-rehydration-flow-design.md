@@ -138,9 +138,9 @@ docs/
 
 Files with the most inbound imports (likely core modules):
 
-- `shared/models/worktree.ts` (12 importers)
-- `src/app/hooks/use-workspace.ts` (9 importers)
-- `electron/main/ipc.ts` (8 importers)
+- `shared/models/worktree` (12 importers)
+- `src/app/hooks/use-workspace` (9 importers)
+- `electron/main/ipc` (8 importers)
 ```
 
 ### Section Details
@@ -160,7 +160,9 @@ depth.
 
 **Import Hot Spots:** Count inbound edges per target in `imports[]`, show top 5
 by count. Tells the agent which files are structural load-bearers. If no
-imports exist, this section is omitted.
+imports exist, this section is omitted. Import targets are shown extensionless
+as stored by Phase 1's import-graph (e.g. `shared/models/worktree`, not
+`shared/models/worktree.ts`).
 
 ---
 
@@ -181,12 +183,15 @@ export function rehydrateRepo(
 2. `readCacheForWorktree(identity.repoKey, identity.worktreeKey)` → cached or
    null
 3. If no cache → `indexRepo(repoPath)`, status = `"reindexed"`
-4. If cache exists → `buildRepoFingerprint(identity.worktreePath)` to check
-   freshness:
-   - Fingerprint matches → status = `"fresh"`
-   - Fingerprint differs + `stale` option set → status = `"stale"` (use stale
-     data as-is)
-   - Fingerprint differs + no `stale` option → `indexRepo(repoPath)`, status =
+4. If cache exists → check freshness:
+   a. `buildRepoFingerprint(identity.worktreePath)` — compare HEAD hash
+   b. `isWorktreeDirty(identity.worktreePath)` — run
+      `git diff --quiet HEAD`; exits 1 if tracked files have uncommitted
+      changes
+   - Both clean (fingerprint matches + not dirty) → status = `"fresh"`
+   - Either stale + `stale` option set → status = `"stale"` (use stale data
+     as-is)
+   - Either stale + no `stale` option → `indexRepo(repoPath)`, status =
      `"reindexed"`
 5. `renderBriefing(cache)` → markdown string
 6. Write markdown to `getCacheDir(identity.repoKey)/<worktreeKey>.md`
@@ -194,6 +199,17 @@ export function rehydrateRepo(
 
 `rehydrateRepo` is a one-call API. Callers do not need to worry about indexing,
 freshness, or file writing.
+
+**Why the dirty check matters:** Phase 1's `getCachedIndex` intentionally uses
+commit-only freshness — cheap and acceptable for a library API. But `rehydrate`
+is the agent-facing product. If the user edited README.md, docs, or entry files
+since the last commit, the briefing must reflect that or it undercuts the
+"orient without cold scanning" value proposition. The extra `git diff --quiet`
+call is cheap (~2ms) and only runs in the rehydrate path.
+
+`isWorktreeDirty` is a helper in `rehydrate.ts` (not exported). It runs
+`execFileSync("git", ["-C", worktreePath, "diff", "--quiet", "HEAD"])` and
+returns `true` if the exit code is non-zero.
 
 ---
 
@@ -246,12 +262,16 @@ Same as Phase 1:
 
 ## Error Handling
 
-No new error classes. `rehydrateRepo` propagates `RepoIdentityError` (identity
-resolution failure) and `IndexError` (pipeline failure) from the existing
-modules. The CLI catches both with the same handler as the `index` command.
+No new error classes. `rehydrateRepo` wraps the entire flow in try/catch —
+same pattern as `indexer.ts`:
 
-If writing the `.md` file fails (disk full, permissions), the error propagates
-as-is — no silent swallowing.
+- `RepoIdentityError` passes through (identity resolution failure)
+- All other errors (including `.md` write failures from disk full, permissions,
+  etc.) are wrapped in `IndexError`
+
+This keeps the CLI's existing error handler working: `RepoIdentityError` → exit
+1, `IndexError` → exit 2. No unhandled exceptions leak outside the documented
+exit-code contract.
 
 ---
 
@@ -275,9 +295,12 @@ Pure function — no mocks needed. Pass a `RepoCache` directly.
 
 **`tests/unit/lib/rehydrate.test.ts`:**
 
-- Fresh cache → no re-index called, status = `"fresh"`
-- Stale cache → auto re-indexes, status = `"reindexed"`
-- Stale cache + `stale: true` → uses stale data, status = `"stale"`
+- Fresh cache (fingerprint matches + clean worktree) → no re-index, status =
+  `"fresh"`
+- Stale fingerprint → auto re-indexes, status = `"reindexed"`
+- Dirty worktree (fingerprint matches but uncommitted changes) → auto
+  re-indexes, status = `"reindexed"`
+- Stale + `stale: true` → uses stale data, status = `"stale"`
 - Missing cache → indexes from scratch, status = `"reindexed"`
 - Writes `.md` file to correct path
 - Returns correct `briefingPath`
