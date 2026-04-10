@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCache } from "../../src/spike/build-cache.js";
+import { measure } from "../../src/spike/measure.js";
 import { rehydrateFromCache } from "../../src/spike/rehydrate.js";
 import { extractImportEdgesFromSource } from "../../src/spike/ts-import-graph.js";
 
@@ -61,5 +62,13 @@ describe("phase 0 spike workspace", () => {
 		const result = rehydrateFromCache(cache);
 		expect(result.summary).toContain("Example Repo");
 		expect(result.priorityFiles).toContain("src/app.ts");
+	});
+
+	it("measures operation duration", async () => {
+		const result = await measure("noop", async () => 42);
+
+		expect(result.label).toBe("noop");
+		expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		expect(result.value).toBe(42);
 	});
 });
