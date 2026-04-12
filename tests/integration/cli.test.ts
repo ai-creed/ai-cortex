@@ -90,7 +90,12 @@ function seedSuggestRepo(): void {
 		"# Persistence Guide\nPersistence guide body.\n",
 	);
 	execFileSync("git", ["-C", tmpDir, "add", "."]);
-	execFileSync("git", ["-C", tmpDir, "commit", "-m", "seed suggest fixtures"]);
+	const status = spawnSync("git", ["-C", tmpDir, "status", "--porcelain"], {
+		encoding: "utf8",
+	});
+	if (status.stdout.trim()) {
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "seed suggest fixtures"]);
+	}
 }
 
 describe("suggest CLI", () => {
