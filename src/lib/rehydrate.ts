@@ -1,11 +1,11 @@
 // src/lib/rehydrate.ts
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { renderBriefing } from "./briefing.js";
 import {
 	buildRepoFingerprint,
 	getCacheDir,
+	isWorktreeDirty,
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
@@ -24,15 +24,6 @@ export type RehydrateResult = {
 	cacheStatus: "fresh" | "reindexed" | "stale";
 	cache: RepoCache;
 };
-
-function isWorktreeDirty(worktreePath: string): boolean {
-	const output = execFileSync(
-		"git",
-		["-C", worktreePath, "status", "--porcelain", "-unormal"],
-		{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-	);
-	return output.length > 0;
-}
 
 export function rehydrateRepo(
 	repoPath: string,

@@ -4,18 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("node:child_process");
 vi.mock("../../../src/lib/repo-identity.js");
 vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/indexer.js");
 vi.mock("../../../src/lib/briefing.js");
 vi.mock("../../../src/lib/diff-files.js");
 
-import { execFileSync } from "node:child_process";
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import {
 	buildRepoFingerprint,
 	getCacheDir,
+	isWorktreeDirty,
 	readCacheForWorktree,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
@@ -74,7 +73,7 @@ describe("rehydrateRepo", () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
 		const result = rehydrateRepo("/repo");
 
@@ -106,7 +105,7 @@ describe("rehydrateRepo", () => {
 		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(true);
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
@@ -126,7 +125,7 @@ describe("rehydrateRepo", () => {
 		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("?? newfile.ts\n" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(true);
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["newfile.ts"],
 			removed: [],
@@ -167,7 +166,7 @@ describe("rehydrateRepo", () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
 		const result = rehydrateRepo("/repo");
 
@@ -180,7 +179,7 @@ describe("rehydrateRepo", () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 		vi.mocked(renderBriefing).mockImplementation(() => {
 			throw new Error("disk full");
 		});
@@ -192,7 +191,7 @@ describe("rehydrateRepo", () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 		vi.spyOn(fs, "writeFileSync").mockImplementationOnce(() => {
 			throw new Error("ENOSPC: no space left on device");
 		});
@@ -212,7 +211,7 @@ describe("rehydrateRepo", () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue("" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
 		const result = rehydrateRepo("/repo");
 
@@ -255,7 +254,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any);
+		vi.mocked(isWorktreeDirty).mockReturnValue(true);
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
@@ -290,7 +289,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123"); // same fingerprint
-		vi.mocked(execFileSync).mockReturnValue("" as any); // clean worktree
+		vi.mocked(isWorktreeDirty).mockReturnValue(false); // clean worktree
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
@@ -317,7 +316,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123"); // same fingerprint
-		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any); // dirty
+		vi.mocked(isWorktreeDirty).mockReturnValue(true); // dirty
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
@@ -342,7 +341,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		vi.mocked(execFileSync).mockReturnValue("" as any); // clean worktree
+		vi.mocked(isWorktreeDirty).mockReturnValue(false); // clean worktree
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: [],
 			removed: [],
@@ -367,7 +366,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		vi.mocked(execFileSync).mockReturnValue(" M src/main.ts\n" as any); // dirty
+		vi.mocked(isWorktreeDirty).mockReturnValue(true); // dirty
 		vi.mocked(diffChangedFiles).mockReturnValue({
 			changed: ["src/main.ts"],
 			removed: [],
