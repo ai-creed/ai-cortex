@@ -67,6 +67,8 @@ export function suggestRepo(
 			const fingerprint = buildRepoFingerprint(identity.worktreePath);
 			const fingerprintStale = cached.fingerprint !== fingerprint;
 			const dirty = isWorktreeDirty(identity.worktreePath);
+			// Dirty-revert detection: cache was built from dirty worktree,
+			// but worktree is now clean — cached content is stale
 			const dirtyReverted = !dirty && !!cached.dirtyAtIndex;
 			const isStale = fingerprintStale || dirty || dirtyReverted;
 
@@ -77,10 +79,14 @@ export function suggestRepo(
 				cache = cached;
 				cacheStatus = "stale";
 			} else {
+				// Dirty-revert: git-diff sees no changes (worktree matches HEAD),
+				// but cached hashes are stale. Force hash-compare so it detects
+				// the delta between cached dirty hashes and clean disk content.
 				const diff = diffChangedFiles(identity, cached, {
 					forceHashCompare: dirtyReverted,
 				});
-				cache = buildIncrementalIndex(identity, cached, diff, dirty);
+				const isDirtyRefresh = dirty;
+				cache = buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
 				writeCache(cache);
 				cacheStatus = "reindexed";
 			}
