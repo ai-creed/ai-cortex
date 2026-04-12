@@ -98,7 +98,7 @@ export function rankSuggestions(
 				reason:
 					matchedPathTokens.length > 0
 						? `matched task terms in path: ${matchedPathTokens.join(", ")}`
-						: normalizedFrom && sameDirectory(normalizedPath, normalizedFrom)
+						: normalizedFrom && sameDirectory(normalizedPath, normalizedFrom) && normalizedPath !== normalizedFrom
 							? "near anchor file via path"
 							: cache.entryFiles.includes(file.path)
 								? "entry file with matching repo context"
