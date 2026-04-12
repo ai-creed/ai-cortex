@@ -78,3 +78,75 @@ describe("rehydrate CLI", () => {
 		expect(result.stderr).toContain("ai-cortex:");
 	});
 });
+
+function seedSuggestRepo(): void {
+	fs.writeFileSync(
+		path.join(tmpDir, "src.ts"),
+		"export const persistenceStore = true;\n" +
+			"export const restoreFlow = true;\n",
+	);
+	fs.writeFileSync(
+		path.join(tmpDir, "guide.md"),
+		"# Persistence Guide\nPersistence guide body.\n",
+	);
+	execFileSync("git", ["-C", tmpDir, "add", "."]);
+	execFileSync("git", ["-C", tmpDir, "commit", "-m", "seed suggest fixtures"]);
+}
+
+describe("suggest CLI", () => {
+	it("renders numbered text output", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync("node", [CLI, "suggest", "persistence", tmpDir], {
+			encoding: "utf8",
+		});
+
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain("suggested files for: persistence");
+		expect(result.stdout).toMatch(/\n\n1\. /);
+		expect(result.stdout).toContain("reason:");
+	});
+
+	it("supports --json output", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest", "persistence", "--json", tmpDir],
+			{ encoding: "utf8" },
+		);
+
+		expect(result.status).toBe(0);
+		const json = JSON.parse(result.stdout);
+		expect(json).toMatchObject({
+			task: "persistence",
+			from: null,
+			cacheStatus: expect.stringMatching(/^(fresh|reindexed|stale)$/),
+			results: expect.any(Array),
+		});
+	});
+
+	it("exits with code 2 for invalid limit", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest", "persistence", "--limit", "0", tmpDir],
+			{ encoding: "utf8" },
+		);
+
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain("ai-cortex:");
+	});
+
+	it("exits with code 2 for an empty task", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync("node", [CLI, "suggest", "", tmpDir], {
+			encoding: "utf8",
+		});
+
+		expect(result.status).toBe(2);
+		expect(result.stderr).toContain("ai-cortex:");
+	});
+});
