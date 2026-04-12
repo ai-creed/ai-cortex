@@ -1,19 +1,81 @@
 // src/cli.ts
 import os from "node:os";
-import { getCachedIndex, indexRepo, rehydrateRepo } from "./lib/index.js";
+import {
+	getCachedIndex,
+	indexRepo,
+	rehydrateRepo,
+	suggestRepo,
+} from "./lib/index.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
 
-function parseArgs(flags: string[]): { repoPath: string; options: string[] } {
-	const options = args.filter((arg) => flags.includes(arg));
-	const repoPath = args.find((arg) => !arg.startsWith("--")) ?? process.cwd();
+function parseIndexOrRehydrateArgs(
+	argv: string[],
+	flags: string[],
+): { repoPath: string; options: string[] } {
+	const options = argv.filter((arg) => flags.includes(arg));
+	const repoPath = argv.find((arg) => !arg.startsWith("--")) ?? process.cwd();
 	return { repoPath, options };
+}
+
+function parseSuggestArgs(argv: string[]): {
+	task: string;
+	repoPath: string;
+	from?: string;
+	limit?: number;
+	json: boolean;
+	stale: boolean;
+} {
+	let task: string | null = null;
+	let repoPath: string | null = null;
+	let from: string | undefined;
+	let limit: number | undefined;
+	let json = false;
+	let stale = false;
+
+	for (let i = 0; i < argv.length; i += 1) {
+		const arg = argv[i];
+		if (arg === "--json") {
+			json = true;
+			continue;
+		}
+		if (arg === "--stale") {
+			stale = true;
+			continue;
+		}
+		if (arg === "--from") {
+			from = argv[i + 1];
+			i += 1;
+			continue;
+		}
+		if (arg === "--limit") {
+			limit = Number(argv[i + 1]);
+			i += 1;
+			continue;
+		}
+		if (task === null) {
+			task = arg;
+			continue;
+		}
+		if (repoPath === null) {
+			repoPath = arg;
+		}
+	}
+
+	return {
+		task: task ?? "",
+		repoPath: repoPath ?? process.cwd(),
+		from,
+		limit,
+		json,
+		stale,
+	};
 }
 
 try {
 	if (command === "index") {
-		const { repoPath, options } = parseArgs(["--refresh"]);
+		const { repoPath, options } = parseIndexOrRehydrateArgs(args, ["--refresh"]);
 		const refresh = options.includes("--refresh");
 		const start = performance.now();
 
@@ -28,7 +90,7 @@ try {
 				`  duration: ${duration}ms\n`,
 		);
 	} else if (command === "rehydrate") {
-		const { repoPath, options } = parseArgs(["--stale", "--json"]);
+		const { repoPath, options } = parseIndexOrRehydrateArgs(args, ["--stale", "--json"]);
 		const stale = options.includes("--stale");
 		const json = options.includes("--json");
 
@@ -57,6 +119,24 @@ try {
 				`rehydrated ${result.cache.packageMeta.name} (${result.cacheStatus}, ${result.cache.files.length} files, ${result.cache.docs.length} docs)\n` +
 					`  briefing: ${displayPath}\n`,
 			);
+		}
+	} else if (command === "suggest") {
+		const parsed = parseSuggestArgs(args);
+		const result = suggestRepo(parsed.repoPath, parsed.task, {
+			from: parsed.from,
+			limit: parsed.limit,
+			stale: parsed.stale,
+		});
+
+		if (parsed.json) {
+			process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+		} else {
+			process.stdout.write(`suggested files for: ${result.task}\n\n`);
+			for (const [index, item] of result.results.entries()) {
+				process.stdout.write(
+					`${index + 1}. ${item.path}\n   reason: ${item.reason}\n\n`,
+				);
+			}
 		}
 	} else {
 		process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
