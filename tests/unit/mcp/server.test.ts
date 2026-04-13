@@ -10,7 +10,8 @@ import { createServer } from "../../../src/mcp/server.js";
 vi.mock("../../../src/lib/index.js");
 vi.mock("node:fs");
 
-async function makeClient() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function makeClient(): Promise<any> {
 	const server = createServer();
 	const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
 	await server.connect(serverTransport);
@@ -195,5 +196,66 @@ describe("suggest_files", () => {
 
 		expect(result.isError).toBe(true);
 		expect((result.content[0] as any).text).toContain("ranking failed");
+	});
+});
+
+describe("index_project", () => {
+	it("calls indexRepo with given path and returns file and doc count", async () => {
+		vi.mocked(indexRepo).mockReturnValue({
+			files: [
+				{ path: "src/app.ts", kind: "file", contentHash: "h1" },
+				{ path: "src/cli.ts", kind: "file", contentHash: "h2" },
+			],
+			docs: [{ path: "README.md", title: "App", body: "# App" }],
+		} as any);
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "index_project",
+			arguments: { path: "/repo" },
+		});
+
+		expect(indexRepo).toHaveBeenCalledWith("/repo");
+		const text = (result.content[0] as any).text as string;
+		expect(text).toBe("Indexed 2 files and 1 docs.");
+	});
+
+	it("defaults path to process.cwd() when not provided", async () => {
+		vi.mocked(indexRepo).mockReturnValue({ files: [], docs: [] } as any);
+
+		const client = await makeClient();
+		await client.callTool({ name: "index_project", arguments: {} });
+
+		expect(indexRepo).toHaveBeenCalledWith(process.cwd());
+	});
+
+	it("returns isError result for RepoIdentityError", async () => {
+		vi.mocked(indexRepo).mockImplementation(() => {
+			throw new RepoIdentityError("not a git repo");
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "index_project",
+			arguments: { path: "/x" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("not a git repo");
+	});
+
+	it("returns isError result for IndexError", async () => {
+		vi.mocked(indexRepo).mockImplementation(() => {
+			throw new IndexError("scan failed");
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "index_project",
+			arguments: { path: "/x" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("scan failed");
 	});
 });

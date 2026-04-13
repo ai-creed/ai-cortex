@@ -59,6 +59,24 @@ export function createServer(): McpServer {
 		},
 	);
 
+	server.tool(
+		"index_project",
+		"Build or force-refresh the project index. Usually not needed — rehydrate_project handles freshness automatically. Use this to explicitly rebuild after large structural changes.",
+		{ path: z.string().optional() },
+		async ({ path }) => {
+			const repoPath = path ?? process.cwd();
+			const cache = indexRepo(repoPath);
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Indexed ${cache.files.length} files and ${cache.docs.length} docs.`,
+					},
+				],
+			};
+		},
+	);
+
 	return server;
 }
 

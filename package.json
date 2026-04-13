@@ -3,7 +3,7 @@
 	"version": "0.0.0-phase0",
 	"private": true,
 	"type": "module",
-	"bin": { "ai-cortex": "dist/cli.js" },
+	"bin": { "ai-cortex": "dist/src/cli.js" },
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
