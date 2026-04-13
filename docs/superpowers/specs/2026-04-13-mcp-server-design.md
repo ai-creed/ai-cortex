@@ -46,18 +46,21 @@ src/
     server.ts   ← new: MCP stdio server, wires tools to lib functions
 ```
 
-`server.ts` imports only from `src/lib/index.ts`. No new business logic. It is a
-transport layer only.
+`server.ts` imports only from `src/lib/index.ts`. All library functions and error
+classes (`IndexError`, `RepoIdentityError`) are re-exported from that module, so
+no direct import from `src/lib/models.ts` is needed. No new business logic.
 
 ### Dependencies
 
-Add one new dependency:
+Add two new runtime dependencies:
 
 ```
-@modelcontextprotocol/sdk
+@modelcontextprotocol/sdk   ← MCP server, client, and transport classes
+zod                         ← tool input schema validation (required by McpServer.tool())
 ```
 
-No other new dependencies.
+`zod` is a direct dependency of `@modelcontextprotocol/sdk` (per the SDK README),
+but must be listed explicitly in `package.json` for direct imports in `server.ts`.
 
 ### Entry Point
 
