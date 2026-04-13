@@ -1,35 +1,64 @@
 # Phase 3 — Suggest Command Design
 
-**Date:** 2026-04-10
-**Status:** approved
-**Phase:** 3 of 4
+**Date:** 2026-04-12
+**Status:** revised after Phase 4 alignment
+**Phase:** 3 of 5
 
 ---
 
 ## Goal
 
 Add a `suggest` command that recommends likely relevant code files and docs for a
-task, using only cached local repo signals. The output must be fast,
-deterministic, and useful for both human terminal workflows and tool-driven
-flows.
+task, using only cached local repo signals already produced by `ai-cortex`.
 
-Phase 3 delivers one new command: `suggest`. Existing `index` and `rehydrate`
-commands remain unchanged.
+The output must be:
+
+- fast enough for repeated terminal use
+- deterministic across runs on the same cache state
+- useful for both human workflows and tool-driven consumers
+
+Phase 3 delivers one new command: `suggest`. It must fit the current codebase as
+it exists after Phase 4 hardening, not the pre-hardening architecture from the
+original Phase 3 draft.
 
 ---
 
 ## Context
 
-Phase 1 established the durable indexing spine (`RepoCache`). Phase 2 added an
-agent-facing briefing via `rehydrate`. Phase 3 builds on same cache contract to
-answer different question: "given this task, where should I look first?"
+Current implemented foundation:
 
-Key constraint: Phase 3 stays local-first and cache-driven. No embeddings, no
-LLM reranking, no live full-repo scan. Ranking uses only signals already
-available in `RepoCache`: file paths, docs, import graph, and entry files.
+- Phase 1: durable indexing spine
+- Phase 2: `rehydrate` flow and briefing generation
+- Phase 4: incremental refresh via `diff-files.ts`, content hashes, and
+  `buildIncrementalIndex`
 
-The design must also leave clean extension point for later function call graph
-work without forcing Phase 3 rewrite.
+`suggest` is therefore not a greenfield command. It must plug into the current
+cache lifecycle and reuse the same freshness behavior already implemented for
+`rehydrate`.
+
+Key constraints:
+
+- local-only
+- cache-driven
+- no embeddings
+- no LLM reranking
+- no broad repo scan outside the existing cache refresh path
+
+Available ranking inputs today:
+
+- `cache.files[]`
+- `cache.docs[]`
+- `cache.imports[]`
+- `cache.entryFiles[]`
+- `cache.packageMeta`
+
+Known structural limitation:
+
+- import targets are stored as extensionless, not-fully-resolved paths
+- this is good enough for light structural boosts
+- this is not good enough for perfect module resolution or deep graph scoring
+
+Phase 3 must work within that limit rather than pretending it does not exist.
 
 ---
 
@@ -45,10 +74,16 @@ src/lib/
   suggest.ts          ← orchestrator: ensure fresh cache → rank → format result
 ```
 
-`suggest-ranker.ts` is pure and depends only on `models.ts`.
+Design intent:
 
-`suggest.ts` is orchestrator module like `indexer.ts` and `rehydrate.ts`. It may
-import multiple lib modules. Existing modules are otherwise unchanged.
+- `suggest-ranker.ts` stays pure and depends only on `models.ts`
+- `suggest.ts` is the orchestration layer, like `rehydrate.ts`
+- `suggest.ts` may import cache, identity, diff, and indexer modules
+
+Existing modules are unchanged except for public exports and CLI wiring.
+One small supporting refactor is allowed: shared dirty-worktree detection may be
+extracted into an existing git/cache helper module so `rehydrate` and `suggest`
+do not duplicate the same `git status --porcelain -unormal` logic.
 
 ### Public API Changes
 
@@ -69,15 +104,15 @@ All existing exports remain unchanged.
 
 ## Data Model
 
-### New Types
+No changes to `models.ts`.
+
+Suggest-specific types live in `suggest.ts`:
 
 ```ts
-// suggest.ts
-
 export type SuggestOptions = {
-  from?: string;     // optional anchor file path, relative to repo root when possible
-  limit?: number;    // default 5
-  stale?: boolean;   // if true, skip re-indexing even if cache is stale
+  from?: string;
+  limit?: number;
+  stale?: boolean;
 };
 
 export type SuggestItem = {
@@ -95,17 +130,12 @@ export type SuggestResult = {
 };
 ```
 
-No changes to `models.ts`. Suggest-specific types stay in `suggest.ts`.
+Notes:
 
-### Why `kind` Exists
-
-Docs are still files on disk, but Phase 3 must distinguish between:
-
-- code file recommendation
-- doc recommendation
-
-This allows CLI and future tools to prioritize code without losing strong doc
-hits.
+- `from` is an optional anchor path, relative to repo root when possible
+- `limit` defaults to `5`
+- `kind` exists so callers can distinguish code hits from doc hits even when
+  both refer to markdown files on disk
 
 ---
 
@@ -113,58 +143,96 @@ hits.
 
 ### Core Approach
 
-Phase 3 uses two-stage ranking:
+Phase 3 uses a simple two-stage approach:
 
-1. **Recall** — find plausible candidates from cached signals
-2. **Rerank** — apply structural boosts and code-vs-doc balancing
+1. Build a candidate set from cache signals
+2. Score and sort candidates using textual and structural heuristics
 
-This keeps MVP simple while giving clean place to add function call graph later.
+This keeps the MVP understandable and predictable while leaving room for later
+call-graph work.
 
 ### Candidate Pool
 
-Candidates come from:
+Candidates come from two logical sources:
 
-- all file paths in `cache.files[]` with `kind: "file"`
-- all docs in `cache.docs[]`
+- code/file candidates from `cache.files[]`
+- doc candidates from `cache.docs[]`
 
-For ranking, docs are treated as separate candidates with `kind: "doc"`.
+Important dedupe rule:
 
-### Text Signals
+- if a path exists in `cache.docs[]`, it must not also appear as a `"file"`
+  candidate
+- markdown docs should be represented once, as `kind: "doc"`
 
-Task text is lowercased and tokenized on non-alphanumeric boundaries. Ignore
-empty tokens and duplicates.
+Why this matters:
 
-Each candidate gets base score from:
+- current cache data includes markdown files in `files[]`
+- without dedupe, `README.md` and similar files can appear twice
+- Phase 3 should produce one suggestion item per path
 
-- path segment match against task tokens
-- filename match against task tokens
-- doc title/body token match
-- doc path match
-- entry-file boost if candidate path appears in `entryFiles[]`
+### Task Tokenization
 
-### Structural Signals
+Task text is:
 
-If `options.from` is provided, boost:
+- lowercased
+- split on non-alphanumeric boundaries
+- emptied of blank tokens
+- deduplicated
 
-- exact anchor file match
+Short stopwords may remain unless they prove noisy in implementation. Phase 3
+should start simple and only add filtering if tests show obvious harm.
+
+### Base Text Signals
+
+Each candidate gets score from:
+
+- filename token match
+- path segment token match
+- full path substring/token overlap
+- doc title token match
+- doc body token match
+- entry-file boost if candidate path appears in `cache.entryFiles[]`
+
+Bias:
+
+- code should usually win when code and doc evidence are similar
+- docs can still outrank code when textual evidence is materially stronger
+
+### Structural Signals From `from`
+
+If `options.from` is provided and normalizes to a known cached file, boost:
+
+- exact anchor file
 - same-directory files
-- direct import neighbors in `imports[]`
-- import targets/importers one hop away from anchor
+- direct importers of the anchor
+- direct import targets of the anchor
+- one-hop structural neighbors reachable through one additional import edge
 
-If `options.from` does not resolve to known file in cache, no error. Treat as
-plain task-only suggest.
+If `from` does not resolve to a known cached file:
 
-### Code vs Doc Balancing
+- do not throw
+- treat request as task-only suggest
+- return `from: null` in the result if normalization fails
 
-Phase 3 should prefer code files when code and doc matches are similarly strong,
-but docs may still rank when match is materially better.
+### Anchor/Import Normalization Rules
 
-Rule:
+Current import graph stores unresolved extensionless `to` paths such as
+`src/foo`, not guaranteed concrete files such as `src/foo.ts` or
+`src/foo/index.ts`.
 
-- code candidates rank ahead of doc candidates on score ties
-- docs remain eligible and can outrank code when score is clearly stronger
+Phase 3 must therefore define a conservative matching rule:
 
-This produces "code first, docs allowed when strong" behavior.
+1. Normalize the anchor path to forward-slash repo-relative form
+2. Exact `from`-field matches are authoritative
+3. For `to`-field matches, try only cheap path candidates:
+   - exact candidate path without extension
+   - candidate path with extension stripped
+   - candidate path ending in `/index` after extension stripping
+4. If multiple files could match the same unresolved import target, treat that
+   structural signal as ambiguous and do not apply that specific boost
+
+This keeps scoring honest and deterministic without inventing a resolver Phase 4
+explicitly deferred.
 
 ### Sorting
 
@@ -177,33 +245,44 @@ Final sort order:
 ### Reasons
 
 Each returned suggestion includes one short human-readable reason derived from
-highest-value signals, for example:
+the strongest signals, for example:
 
 - `matched task terms in path: persistence, restore`
 - `near anchor file via imports`
 - `entry file with matching repo context`
 - `doc title/body strongly matches task`
 
-Reason text is explanation only. It is not parsed by callers.
+Reason strings are explanatory only. They are not part of a stable machine API.
 
 ---
 
 ## Freshness Model
 
-`suggest` uses same freshness model as `rehydrate`:
+`suggest` must use the current Phase 4 freshness model, matching `rehydrate`.
 
-- missing cache → reindex
-- stale fingerprint or dirty worktree → reindex by default
-- `--stale` / `stale: true` → allow stale cache
+Rules:
 
-Dirty worktree detection includes untracked files via:
+- no cache → full `indexRepo(repoPath)` → `"reindexed"`
+- cache exists and is fresh → use cached → `"fresh"`
+- cache is stale and `stale: true` → use cached → `"stale"`
+- cache is stale and `stale` not set → incremental refresh when possible →
+  `"reindexed"`
 
-```bash
-git status --porcelain -unormal
-```
+Staleness is defined the same way as current `rehydrate`:
 
-This keeps `suggest` behavior aligned with `rehydrate` and avoids stale
-recommendations after local edits.
+- fingerprint mismatch
+- dirty worktree detected via `git status --porcelain -unormal`
+- dirty-revert case: cache has `dirtyAtIndex: true` but worktree is now clean
+
+Refresh path must mirror `rehydrate`:
+
+- call `diffChangedFiles(identity, cached, { forceHashCompare })`
+- use `forceHashCompare` for dirty-revert cases
+- call `buildIncrementalIndex(identity, cached, diff, dirty)`
+- persist updated cache with `writeCache`
+
+This is required to stay aligned with the current implementation. Phase 3 must
+not reintroduce unconditional full reindex on every stale/dirty condition.
 
 ---
 
@@ -215,33 +294,74 @@ recommendations after local edits.
 export function suggestRepo(
   repoPath: string,
   task: string,
-  options?: SuggestOptions
+  options?: SuggestOptions,
 ): SuggestResult
 ```
 
 ### Flow
 
 1. Validate `task.trim()` is non-empty
-   - Empty task throws `IndexError` with clear message
-2. `resolveRepoIdentity(repoPath)` → identity
-3. `readCacheForWorktree(identity.repoKey, identity.worktreeKey)` → cached or
+   - empty task throws `IndexError`
+2. Validate `limit`
+   - if provided, it must be a positive integer
+   - invalid `limit` throws `IndexError`
+3. `resolveRepoIdentity(repoPath)` → identity
+4. `readCacheForWorktree(identity.repoKey, identity.worktreeKey)` → cached or
    `null`
-4. Freshness check:
-   - no cache → `indexRepo(repoPath)`, status = `"reindexed"`
-   - stale/dirty + `stale: true` → use cached, status = `"stale"`
-   - stale/dirty + no `stale` → `indexRepo(repoPath)`, status = `"reindexed"`
-   - clean → use cached, status = `"fresh"`
-5. `rankSuggestions(task, cache, { from, limit })`
-6. Return `{ cacheStatus, task, from: normalizedFromOrNull, results }`
+5. Apply current freshness logic:
+   - no cache → `indexRepo(repoPath)`
+   - stale + `stale: true` → use cached
+   - stale + no `stale` → incremental refresh via `diffChangedFiles` +
+     `buildIncrementalIndex` + `writeCache`
+   - fresh → use cached
+6. Normalize `from`
+7. `rankSuggestions(task, cache, { from, limit })`
+8. Return `{ cacheStatus, task, from, results }`
 
-No `.md` file is written in Phase 3. `suggest` is read-only apart from possible
-cache refresh.
+No `.md` file is written. `suggest` is read-only except for cache refresh.
+
+### Error Handling
+
+No new error classes.
+
+Behavior matches existing library conventions:
+
+- `RepoIdentityError` passes through
+- all other failures are wrapped in `IndexError`
+
+Examples:
+
+- empty task
+- invalid limit
+- filesystem or git failures during freshness check
+- ranking logic errors
 
 ---
 
 ## CLI
 
-`src/cli.ts` adds:
+### Parsing Requirement
+
+Current `src/cli.ts` parsing is built around one positional repo path plus a
+small flag list. `suggest` needs a richer shape:
+
+- required task argument
+- optional repo path
+- optional `--from`
+- optional `--limit`
+- optional `--stale`
+- optional `--json`
+
+Phase 3 should therefore explicitly refactor CLI parsing rather than bolting
+this onto the current `parseArgs(flags)` helper.
+
+Minimum acceptable parser behavior:
+
+- first positional after `suggest` is the task
+- second positional, if present, is the repo path
+- default repo path remains `process.cwd()`
+
+### Usage
 
 ```text
 Usage:
@@ -257,10 +377,10 @@ Usage:
   ai-cortex suggest "<task>" --json [path]
 ```
 
-### CLI Flag Semantics
+### Flag Semantics
 
 - `--from <file>` — optional anchor path
-- `--limit <n>` — optional positive integer, default 5
+- `--limit <n>` — optional positive integer, default `5`
 - `--stale` — use stale cache if present
 - `--json` — machine-readable output
 
@@ -307,30 +427,11 @@ Rules:
 
 ### Exit Codes
 
-Same as Phase 1/2:
+Same as current CLI behavior:
 
 - `0` — success
 - `1` — not a git repo or git not found
 - `2` — pipeline / argument / ranking error
-
----
-
-## Error Handling
-
-No new error classes.
-
-`suggestRepo` follows same pattern as `rehydrateRepo`:
-
-- `RepoIdentityError` passes through
-- all other errors are wrapped in `IndexError`
-
-Examples:
-
-- empty task
-- invalid `limit`
-- filesystem or git failures during freshness check
-
-CLI continues using same existing error handler.
 
 ---
 
@@ -341,24 +442,29 @@ CLI continues using same existing error handler.
 **`tests/unit/lib/suggest-ranker.test.ts`**
 
 - task token path match boosts correct files
-- doc title/body matches can create doc candidates
+- doc title/body matches create doc candidates
+- doc/file dedupe prevents duplicate path results
 - code outranks doc on equal score
-- docs can outrank code on materially stronger match
+- docs outrank code on materially stronger match
 - entry files receive boost
-- `from` boosts same-directory files
-- `from` boosts direct import neighbors
+- valid `from` boosts same-directory files
+- valid `from` boosts direct import neighbors
+- ambiguous unresolved import targets do not apply unstable boosts
 - limit truncates result set
 - stable sort on ties
 
 **`tests/unit/lib/suggest.test.ts`**
 
-- fresh cache → no reindex, status = `"fresh"`
-- stale fingerprint → reindex, status = `"reindexed"`
-- dirty worktree with untracked file → reindex, status = `"reindexed"`
+- fresh cache → no refresh, status = `"fresh"`
+- stale fingerprint → incremental refresh, status = `"reindexed"`
+- dirty worktree with untracked file → incremental refresh, status =
+  `"reindexed"`
+- dirty-revert cache state forces hash-compare path and returns `"reindexed"`
 - stale + `stale: true` → status = `"stale"`
 - empty task throws `IndexError`
 - invalid limit throws `IndexError`
-- passes normalized `from` and `limit` into ranker
+- normalized `from` passed into ranker
+- invalid or unknown `from` becomes `null`
 - wraps non-identity errors in `IndexError`
 
 ### Integration Tests
@@ -366,23 +472,39 @@ CLI continues using same existing error handler.
 Extend integration coverage with:
 
 - `suggestRepo(tmpDir, "persistence")` returns ranked results
-- untracked file causes auto-reindex before suggest
+- untracked file causes auto-refresh before suggest
+- dirty-revert scenario refreshes before suggest
 - `from` anchor changes ranking in expected direction
+- doc/file dedupe preserved in final results
 - CLI text output shape
 - CLI JSON output shape
-- CLI invalid task / invalid limit exit code path
+- CLI invalid task / invalid limit exit-code path
 
 ---
 
 ## Out of Scope for Phase 3
 
 - function call graph scoring
-- embeddings / semantic vector search
+- embeddings or vector search
 - LLM reranking
-- multi-hop graph scoring beyond direct one-hop import relationships
-- snippet extraction or file body previews in output
+- deep module resolution beyond today's lightweight normalization
+- snippet extraction or file previews
 - interactive TUI selection
-- non-TS/JS structural graph support beyond existing import extraction
+- non-TS/JS graph expansion beyond current import extraction
 
-These belong to later expansion, with function call graph as first intended
-extension point.
+These belong to later phases. The first intended extension remains function call
+graph support once import/call resolution becomes stronger.
+
+---
+
+## Implementation Notes
+
+This spec intentionally aligns with the current codebase:
+
+- Phase 4 incremental refresh is already implemented and must be reused
+- `suggest` should follow `rehydrate` orchestration patterns where possible
+- current import-graph limitations are accepted and bounded, not ignored
+
+Success for Phase 3 is not "perfect task understanding." Success is a useful,
+deterministic first-pass targeting tool that fits the existing cache model and
+does not regress current hardening work.
