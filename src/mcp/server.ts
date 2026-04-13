@@ -31,6 +31,34 @@ export function createServer(): McpServer {
 		},
 	);
 
+	server.tool(
+		"suggest_files",
+		"Get a ranked list of files relevant to a specific task. Call this when you have a clear task before reading the codebase — it surfaces the most relevant files so you know where to start.",
+		{
+			task: z.string(),
+			path: z.string().optional(),
+			from: z.string().optional(),
+			limit: z.number().int().positive().optional(),
+			stale: z.boolean().optional(),
+		},
+		async ({ task, path, from, limit, stale }) => {
+			if (!task.trim()) {
+				throw new Error("task must not be blank");
+			}
+			const repoPath = path ?? process.cwd();
+			const result = suggestRepo(repoPath, task, { from, limit, stale });
+			const lines = [`suggested files for: ${result.task}`, ""];
+			for (const [i, item] of result.results.entries()) {
+				lines.push(`${i + 1}. ${item.path}`);
+				lines.push(`   reason: ${item.reason}`);
+				lines.push("");
+			}
+			return {
+				content: [{ type: "text" as const, text: lines.join("\n").trimEnd() }],
+			};
+		},
+	);
+
 	return server;
 }
 

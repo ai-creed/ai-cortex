@@ -110,3 +110,90 @@ describe("rehydrate_project", () => {
 		expect((result.content[0] as any).text).toContain("read failed");
 	});
 });
+
+describe("suggest_files", () => {
+	it("calls suggestRepo with task and options and returns formatted text", async () => {
+		vi.mocked(suggestRepo).mockReturnValue({
+			task: "persistence layer",
+			from: null,
+			cacheStatus: "fresh",
+			results: [
+				{
+					path: "src/store.ts",
+					kind: "file",
+					score: 10,
+					reason: "matched task terms in path: persistence",
+				},
+			],
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "persistence layer", path: "/repo", limit: 3 },
+		});
+
+		expect(suggestRepo).toHaveBeenCalledWith("/repo", "persistence layer", {
+			from: undefined,
+			limit: 3,
+			stale: undefined,
+		});
+		const text = (result.content[0] as any).text as string;
+		expect(text).toContain("suggested files for: persistence layer");
+		expect(text).toContain("src/store.ts");
+		expect(text).toContain("matched task terms in path: persistence");
+	});
+
+	it("returns isError for blank task without calling suggestRepo", async () => {
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("blank");
+		expect(suggestRepo).not.toHaveBeenCalled();
+	});
+
+	it("returns isError for non-positive limit without calling suggestRepo", async () => {
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "fix auth", limit: 0 },
+		});
+
+		expect(result.isError).toBe(true);
+		expect(suggestRepo).not.toHaveBeenCalled();
+	});
+
+	it("returns isError result for RepoIdentityError", async () => {
+		vi.mocked(suggestRepo).mockImplementation(() => {
+			throw new RepoIdentityError("not a git repo");
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "fix auth" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("not a git repo");
+	});
+
+	it("returns isError result for IndexError", async () => {
+		vi.mocked(suggestRepo).mockImplementation(() => {
+			throw new IndexError("ranking failed");
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "fix auth" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("ranking failed");
+	});
+});
