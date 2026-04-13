@@ -9,8 +9,11 @@ import {
 	suggestRepo,
 } from "../lib/index.js";
 
+// Keep in sync with package.json "version".
+const SERVER_VERSION = "0.0.0-phase0";
+
 export function createServer(): McpServer {
-	const server = new McpServer({ name: "ai-cortex", version: "1.0.0" });
+	const server = new McpServer({ name: "ai-cortex", version: SERVER_VERSION });
 
 	server.tool(
 		"rehydrate_project",
@@ -35,16 +38,13 @@ export function createServer(): McpServer {
 		"suggest_files",
 		"Get a ranked list of files relevant to a specific task. Call this when you have a clear task before reading the codebase — it surfaces the most relevant files so you know where to start.",
 		{
-			task: z.string(),
+			task: z.string().min(1, "task must not be blank"),
 			path: z.string().optional(),
 			from: z.string().optional(),
 			limit: z.number().int().positive().optional(),
 			stale: z.boolean().optional(),
 		},
 		async ({ task, path, from, limit, stale }) => {
-			if (!task.trim()) {
-				throw new Error("task must not be blank");
-			}
 			const repoPath = path ?? process.cwd();
 			const result = suggestRepo(repoPath, task, { from, limit, stale });
 			const lines = [`suggested files for: ${result.task}`, ""];
