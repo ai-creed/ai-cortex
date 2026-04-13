@@ -4,7 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getCachedIndex, indexRepo, rehydrateRepo } from "../../src/lib/index.js";
+import {
+	getCachedIndex,
+	indexRepo,
+	rehydrateRepo,
+	suggestRepo,
+} from "../../src/lib/index.js";
 import { SCHEMA_VERSION } from "../../src/lib/models.js";
 
 let tmpDir: string;
@@ -421,5 +426,84 @@ describe("incremental refresh (real disk + real git)", () => {
 		// Should do full reindex because schema mismatch nukes cache
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(result.cache.schemaVersion).toBe(SCHEMA_VERSION);
+	});
+});
+
+describe("suggestRepo (real disk + real git)", () => {
+	it("returns ranked suggestions from real cache data", () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "persistence-store.ts"),
+			"export const persistenceStore = true;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add persistence store"]);
+
+		const result = suggestRepo(tmpDir, "persistence store");
+
+		expect(result.results[0]?.path).toContain("persistence-store");
+		expect(result.cacheStatus).toMatch(/^(fresh|reindexed)$/);
+	});
+
+	it("refreshes incrementally when the worktree becomes dirty", () => {
+		indexRepo(tmpDir);
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "dirty-persistence.ts"),
+			"export const dirtyPersistence = true;\n",
+		);
+
+		const result = suggestRepo(tmpDir, "dirty persistence");
+
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(
+			result.results.some((item) => item.path.includes("dirty-persistence")),
+		).toBe(true);
+	});
+
+	it("refreshes when a dirty cache is reverted back to clean", () => {
+		indexRepo(tmpDir);
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "main.ts"),
+			"export const dirty = true;\n",
+		);
+		suggestRepo(tmpDir, "dirty");
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+
+		const result = suggestRepo(tmpDir, "main");
+
+		expect(result.cacheStatus).toBe("reindexed");
+	});
+
+	it("changes ranking direction when --from points at a related anchor", () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "feature.ts"),
+			"import './persistence-store';\nexport const feature = true;\n",
+		);
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "persistence-store.ts"),
+			"export const persistenceStore = true;\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add anchor fixtures"]);
+
+		const plain = suggestRepo(tmpDir, "store");
+		const anchored = suggestRepo(tmpDir, "store", { from: "src/feature.ts" });
+
+		expect(plain.results[0]?.path).toContain("store");
+		expect(anchored.results[0]?.path).toBe("src/persistence-store.ts");
+	});
+
+	it("dedupes markdown doc results", () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "docs.md"),
+			"# Persistence Architecture\nPersistence Architecture\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add docs"]);
+
+		const result = suggestRepo(tmpDir, "persistence architecture");
+		const docs = result.results.filter((item) => item.path === "docs.md");
+
+		expect(docs).toHaveLength(1);
+		expect(docs[0]?.kind).toBe("doc");
 	});
 });
