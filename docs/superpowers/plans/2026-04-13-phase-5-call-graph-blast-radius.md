@@ -43,7 +43,7 @@
 - [ ] **Step 1: Install web-tree-sitter and grammar**
 
 ```bash
-cd /Users/vuphan/Dev/ai-cortex && pnpm add web-tree-sitter tree-sitter-typescript
+cd /Users/vuphan/Dev/ai-cortex && pnpm add web-tree-sitter tree-sitter-typescript tree-sitter-javascript
 ```
 
 Expected: `pnpm-lock.yaml` updated, no errors.
@@ -731,12 +731,13 @@ Expected: FAIL — module not found.
 Create `src/lib/adapters/typescript.ts`. This is the largest single file in Phase 5. The adapter must:
 
 1. Initialize `web-tree-sitter` WASM parser lazily
-2. Load TypeScript grammar from `tree-sitter-typescript` package
+2. Load TS, TSX, and JS grammars from their respective packages
 3. Parse source into tree-sitter AST
 4. Walk the tree to extract `FunctionNode[]`, `RawCallSite[]`, `ImportBinding[]`
 
 ```typescript
 // src/lib/adapters/typescript.ts
+import { createRequire } from "node:module";
 import path from "node:path";
 import type { FunctionNode } from "../models.js";
 import type {
@@ -746,10 +747,14 @@ import type {
 	ImportBinding,
 } from "../lang-adapter.js";
 
+// createRequire needed because repo is "type": "module" — no bare require()
+const require = createRequire(import.meta.url);
+
 // Lazy-initialized parser state
 let Parser: typeof import("web-tree-sitter").default | null = null;
 let tsParser: import("web-tree-sitter").default | null = null;
 let tsxParser: import("web-tree-sitter").default | null = null;
+let jsParser: import("web-tree-sitter").default | null = null;
 
 type SyntaxNode = import("web-tree-sitter").default.SyntaxNode;
 
@@ -758,16 +763,21 @@ async function initParsers(): Promise<void> {
 	const TreeSitter = (await import("web-tree-sitter")).default;
 	await TreeSitter.init();
 
-	// tree-sitter-typescript ships .wasm files for both TS and TSX
+	// tree-sitter-typescript ships TS and TSX grammars
 	const tsGrammarPath = require.resolve(
 		"tree-sitter-typescript/tree-sitter-typescript.wasm",
 	);
 	const tsxGrammarPath = require.resolve(
 		"tree-sitter-typescript/tree-sitter-tsx.wasm",
 	);
+	// tree-sitter-javascript ships JS grammar (handles JSX too)
+	const jsGrammarPath = require.resolve(
+		"tree-sitter-javascript/tree-sitter-javascript.wasm",
+	);
 
 	const tsLang = await TreeSitter.Language.load(tsGrammarPath);
 	const tsxLang = await TreeSitter.Language.load(tsxGrammarPath);
+	const jsLang = await TreeSitter.Language.load(jsGrammarPath);
 
 	tsParser = new TreeSitter();
 	tsParser.setLanguage(tsLang);
@@ -775,12 +785,16 @@ async function initParsers(): Promise<void> {
 	tsxParser = new TreeSitter();
 	tsxParser.setLanguage(tsxLang);
 
+	jsParser = new TreeSitter();
+	jsParser.setLanguage(jsLang);
+
 	Parser = TreeSitter;
 }
 
 function parserForExt(ext: string): import("web-tree-sitter").default | null {
-	if (ext === ".tsx" || ext === ".jsx") return tsxParser;
-	if (ext === ".ts" || ext === ".js") return tsParser;
+	if (ext === ".tsx") return tsxParser;
+	if (ext === ".ts") return tsParser;
+	if (ext === ".jsx" || ext === ".js") return jsParser;
 	return null;
 }
 
@@ -1087,7 +1101,7 @@ export async function createTypescriptAdapter(): Promise<LangAdapter> {
 }
 ```
 
-**Important note on WASM loading:** The `require.resolve` approach for finding `.wasm` files may need adjustment depending on how `tree-sitter-typescript` packages the grammar. The implementer should check the actual package layout after install. An alternative is `import.meta.resolve` or using `createRequire` from `node:module`. Adjust the `initParsers` function accordingly — the key requirement is finding and loading the `.wasm` grammar files.
+**WASM loading note:** The adapter uses `createRequire(import.meta.url)` because the repo is `"type": "module"`. The `tree-sitter-javascript` package may ship the grammar as `tree-sitter-javascript.wasm` at its package root — verify the exact path after `pnpm install` and adjust `require.resolve` if needed.
 
 - [ ] **Step 4: Run tests**
 
@@ -1132,7 +1146,7 @@ vi.mock("../../../src/lib/adapters/index.js");
 
 import { adapterForFile } from "../../../src/lib/adapters/index.js";
 import type { LangAdapter, RawCallSite, ImportBinding } from "../../../src/lib/lang-adapter.js";
-import type { FunctionNode, ImportEdge } from "../../../src/lib/models.js";
+import type { FunctionNode } from "../../../src/lib/models.js";
 import { resolveCallSites, extractCallGraph } from "../../../src/lib/call-graph.js";
 
 describe("resolveCallSites", () => {
@@ -1166,7 +1180,6 @@ describe("resolveCallSites", () => {
 			rawCallsFixed,
 			funcsWithHelper,
 			new Map(),
-			[],
 		);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
@@ -1190,8 +1203,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "named",
 			}]],
 		]);
-		const imports: ImportEdge[] = [{ from: "src/a.ts", to: "src/b" }];
-		const edges = resolveCallSites(rawCalls, functions, bindings, imports);
+		const edges = resolveCallSites(rawCalls, functions, bindings);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -1214,8 +1226,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "named",
 			}]],
 		]);
-		const imports: ImportEdge[] = [{ from: "src/a.ts", to: "src/b" }];
-		const edges = resolveCallSites(rawCalls, functions, bindings, imports);
+		const edges = resolveCallSites(rawCalls, functions, bindings);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -1238,8 +1249,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "default",
 			}]],
 		]);
-		const imports: ImportEdge[] = [{ from: "src/a.ts", to: "src/c" }];
-		const edges = resolveCallSites(rawCalls, functions, bindings, imports);
+		const edges = resolveCallSites(rawCalls, functions, bindings);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/c.ts::doThing",
@@ -1262,8 +1272,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "namespace",
 			}]],
 		]);
-		const imports: ImportEdge[] = [{ from: "src/a.ts", to: "src/b" }];
-		const edges = resolveCallSites(rawCalls, functions, bindings, imports);
+		const edges = resolveCallSites(rawCalls, functions, bindings);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -1278,7 +1287,7 @@ describe("resolveCallSites", () => {
 			rawCallee: "obj.unknown",
 			kind: "method",
 		}];
-		const edges = resolveCallSites(rawCalls, functions, new Map(), []);
+		const edges = resolveCallSites(rawCalls, functions, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "::unknown",
@@ -1293,7 +1302,7 @@ describe("resolveCallSites", () => {
 			rawCallee: "mystery",
 			kind: "call",
 		}];
-		const edges = resolveCallSites(rawCalls, functions, new Map(), []);
+		const edges = resolveCallSites(rawCalls, functions, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "::mystery",
@@ -1307,14 +1316,14 @@ describe("extractCallGraph", () => {
 		vi.clearAllMocks();
 	});
 
-	it("skips files with no adapter", () => {
+	it("skips files with no adapter", async () => {
 		vi.mocked(adapterForFile).mockReturnValue(undefined);
-		const result = extractCallGraph("/repo", ["src/styles.css"], []);
+		const result = await extractCallGraph("/repo", ["src/styles.css"]);
 		expect(result.calls).toHaveLength(0);
 		expect(result.functions).toHaveLength(0);
 	});
 
-	it("collects functions and resolved calls from adapter", () => {
+	it("collects functions and resolved calls from adapter", async () => {
 		const mockAdapter: LangAdapter = {
 			extensions: [".ts"],
 			extractFile: vi.fn().mockReturnValue({
@@ -1333,7 +1342,7 @@ describe("extractCallGraph", () => {
 		};
 		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
 
-		const result = extractCallGraph("/repo", ["src/main.ts"], []);
+		const result = await extractCallGraph("/repo", ["src/main.ts"]);
 		expect(result.functions).toHaveLength(2);
 		expect(result.calls).toContainEqual({
 			from: "src/main.ts::main",
@@ -1362,7 +1371,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { adapterForFile } from "./adapters/index.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
-import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
+import type { CallEdge, FunctionNode } from "./models.js";
 
 function stripKnownExt(value: string): string {
 	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
@@ -1396,7 +1405,6 @@ export function resolveCallSites(
 	rawCalls: RawCallSite[],
 	allFunctions: FunctionNode[],
 	bindingsByFile: Map<string, ImportBinding[]>,
-	imports: ImportEdge[],
 ): CallEdge[] {
 	// Build function lookup: file -> qualifiedName -> FunctionNode
 	const funcsByFile = new Map<string, Map<string, FunctionNode>>();
@@ -1440,15 +1448,19 @@ export function resolveCallSites(
 				if (targetFile) {
 					if (binding.bindingKind === "namespace") {
 						// Namespace: utils.foo -> targetFile::foo
+						// Only emit file-qualified edge if function actually exists
 						const targetFunc = funcsByFile.get(targetFile)?.get(member);
-						edges.push({
-							from: fromKey,
-							to: targetFunc
-								? `${targetFile}::${targetFunc.qualifiedName}`
-								: `${targetFile}::${member}`,
-							kind: raw.kind,
-						});
-						resolved = true;
+						if (targetFunc) {
+							edges.push({
+								from: fromKey,
+								to: `${targetFile}::${targetFunc.qualifiedName}`,
+								kind: raw.kind,
+							});
+							resolved = true;
+						}
+						// If member not found in target file, fall through to
+						// unresolved fallback below (::member) — don't invent
+						// a resolved-looking edge to a nonexistent function
 					}
 				}
 			}
@@ -1520,11 +1532,22 @@ export function resolveCallSites(
 	return edges;
 }
 
-export function extractCallGraph(
+// Lazy adapter registration — called once on first extractCallGraph
+let adapterInitialized = false;
+async function ensureAdapters(): Promise<void> {
+	if (adapterInitialized) return;
+	const { createTypescriptAdapter } = await import("./adapters/typescript.js");
+	const { registerAdapter } = await import("./adapters/index.js");
+	const adapter = await createTypescriptAdapter();
+	registerAdapter(adapter);
+	adapterInitialized = true;
+}
+
+export async function extractCallGraph(
 	worktreePath: string,
 	filePaths: string[],
-	imports: ImportEdge[],
-): { calls: CallEdge[]; functions: FunctionNode[] } {
+): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
+	await ensureAdapters();
 	const allFunctions: FunctionNode[] = [];
 	const allRawCalls: RawCallSite[] = [];
 	const bindingsByFile = new Map<string, ImportBinding[]>();
@@ -1553,7 +1576,7 @@ export function extractCallGraph(
 		}
 	}
 
-	const calls = resolveCallSites(allRawCalls, allFunctions, bindingsByFile, imports);
+	const calls = resolveCallSites(allRawCalls, allFunctions, bindingsByFile);
 	return { calls, functions: allFunctions };
 }
 ```
@@ -1967,26 +1990,25 @@ import { extractCallGraph } from "../../../src/lib/call-graph.js";
 In `beforeEach`, add:
 
 ```typescript
-vi.mocked(extractCallGraph).mockReturnValue({ calls: [], functions: [] });
+vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
 ```
 
 Add test in `describe("buildIndex")`:
 
 ```typescript
-it("includes call graph from extractCallGraph", () => {
-	vi.mocked(extractCallGraph).mockReturnValue({
+it("includes call graph from extractCallGraph", async () => {
+	vi.mocked(extractCallGraph).mockResolvedValue({
 		calls: [{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" }],
 		functions: [
 			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 		],
 	});
-	const cache = buildIndex(mockIdentity);
+	const cache = await buildIndex(mockIdentity);
 	expect(cache.calls).toHaveLength(1);
 	expect(cache.functions).toHaveLength(1);
 	expect(extractCallGraph).toHaveBeenCalledWith(
 		"/repo",
 		["README.md", "src/main.ts"],
-		expect.any(Array),
 	);
 });
 ```
@@ -1996,9 +2018,9 @@ it("includes call graph from extractCallGraph", () => {
 Add tests in `describe("buildIncrementalIndex")`:
 
 ```typescript
-it("removes call edges from changed files and re-extracts", () => {
+it("removes call edges from changed files and re-extracts", async () => {
 	vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-	vi.mocked(extractCallGraph).mockReturnValue({
+	vi.mocked(extractCallGraph).mockResolvedValue({
 		calls: [{ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" }],
 		functions: [
 			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
@@ -2022,7 +2044,7 @@ it("removes call edges from changed files and re-extracts", () => {
 		method: "git-diff",
 	};
 
-	const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+	const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 	// Old edge from main.ts removed, new one from extractCallGraph added
 	expect(result.calls).toContainEqual({
@@ -2042,9 +2064,9 @@ it("removes call edges from changed files and re-extracts", () => {
 	);
 });
 
-it("removes call edges from affected callers (files importing changed files)", () => {
+it("removes call edges from affected callers (files importing changed files)", async () => {
 	vi.mocked(hashFileContent).mockReturnValue("hash_utils_v2");
-	vi.mocked(extractCallGraph).mockReturnValue({
+	vi.mocked(extractCallGraph).mockResolvedValue({
 		calls: [
 			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
 			{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
@@ -2072,7 +2094,7 @@ it("removes call edges from affected callers (files importing changed files)", (
 		method: "git-diff",
 	};
 
-	const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+	const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 	// main.ts imports utils.ts, so it's an affected caller — its edges are re-extracted too
 	// Old edge from main.ts -> utils.ts::oldHelper should be gone
@@ -2098,13 +2120,24 @@ Modify `src/lib/indexer.ts`. Add import at top:
 import { extractCallGraph } from "./call-graph.js";
 ```
 
+**Critical: async boundary starts here.** `extractCallGraph` is async (WASM init),
+so `buildIndex`, `buildIncrementalIndex`, `indexRepo`, `rehydrateRepo`, and
+`suggestRepo` must all become async in this task. Update their signatures to
+`async function ... (): Promise<...>` and add `await` at all call sites:
+
+- `src/lib/indexer.ts`: `buildIndex` → async, `indexRepo` → async, `buildIncrementalIndex` → async
+- `src/lib/rehydrate.ts`: `rehydrateRepo` → async (already returns via try/catch, just add async + await)
+- `src/lib/suggest.ts`: `suggestRepo` → async
+- `src/cli.ts`: already has async main — add `await` to `indexRepo`/`rehydrateRepo`/`suggestRepo` calls
+- `src/mcp/server.ts`: handlers already async — add `await` to lib calls
+- **All test files** that call these functions must `await` them
+
 In `buildIndex()`, after `const imports = extractImports(...)`, add:
 
 ```typescript
-const { calls, functions: functionNodes } = extractCallGraph(
+const { calls, functions: functionNodes } = await extractCallGraph(
 	identity.worktreePath,
 	filePaths,
-	imports,
 );
 ```
 
@@ -2144,10 +2177,9 @@ const filesToReparse = [
 	...changedTsFiles,
 	...[...affectedCallers].filter((p) => /\.(ts|tsx|js|jsx)$/.test(p)),
 ];
-const { calls: newCalls, functions: newFunctions } = extractCallGraph(
+const { calls: newCalls, functions: newFunctions } = await extractCallGraph(
 	identity.worktreePath,
 	filesToReparse,
-	imports,
 );
 
 const calls = [...keptCalls, ...newCalls];
@@ -2540,50 +2572,16 @@ git commit -m "feat: add blast_radius MCP tool and update public exports"
 
 ---
 
-## Task 10: Register adapter at startup and integration test
+## Task 10: Call graph integration test
 
 **Files:**
-- Modify: `src/lib/indexer.ts` (register adapter)
 - Create: `tests/integration/call-graph.test.ts`
 
-- [ ] **Step 1: Register TS adapter in indexer**
+> **Note:** Adapter registration (`ensureAdapters`) and the async pipeline cascade
+> were already implemented in Tasks 5 and 7. This task only adds the end-to-end
+> integration test that exercises real tree-sitter parsing against a temp git repo.
 
-The adapter must be registered before `extractCallGraph` uses it. In `src/lib/indexer.ts`, add the registration call. Since the adapter factory is async (WASM init), the simplest approach is to make `extractCallGraph` handle adapter registration internally, OR register in a top-level init.
-
-Add to `src/lib/call-graph.ts` an init function:
-
-```typescript
-import { registerAdapter } from "./adapters/index.js";
-import { createTypescriptAdapter } from "./adapters/typescript.js";
-
-let initialized = false;
-
-export async function initCallGraph(): Promise<void> {
-	if (initialized) return;
-	const adapter = await createTypescriptAdapter();
-	registerAdapter(adapter);
-	initialized = true;
-}
-```
-
-Update `extractCallGraph` to be async:
-
-```typescript
-export async function extractCallGraph(
-	worktreePath: string,
-	filePaths: string[],
-	imports: ImportEdge[],
-): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
-	await initCallGraph();
-	// ... rest of implementation
-}
-```
-
-Update `buildIndex` and `buildIncrementalIndex` in `indexer.ts` to be async (they call `extractCallGraph`). Update callers in `rehydrate.ts`, `suggest.ts`, and `cli.ts` to await.
-
-**Note:** This is a cascading change. `indexRepo`, `buildIndex`, `buildIncrementalIndex` all become async. Callers already handle this pattern — `rehydrateRepo` and `suggestRepo` can become async, and the MCP server handlers are already async. The CLI `main()` is already async.
-
-- [ ] **Step 2: Write integration test**
+- [ ] **Step 1: Write integration test**
 
 Create `tests/integration/call-graph.test.ts`:
 
@@ -2690,19 +2688,7 @@ describe("call graph integration", () => {
 });
 ```
 
-- [ ] **Step 3: Update all callers to handle async indexRepo/rehydrateRepo/suggestRepo**
-
-Since `extractCallGraph` is now async, cascade the changes:
-
-- `src/lib/indexer.ts`: `buildIndex` → async, `indexRepo` → async, `buildIncrementalIndex` → async
-- `src/lib/rehydrate.ts`: `rehydrateRepo` → async
-- `src/lib/suggest.ts`: `suggestRepo` → async
-- `src/cli.ts`: already async — just add `await` to calls
-- `src/mcp/server.ts`: handlers already async — add `await` to `indexRepo`/`rehydrateRepo`/`suggestRepo` calls
-
-Update all test files that call these functions to `await` them.
-
-- [ ] **Step 4: Build and run full test suite**
+- [ ] **Step 2: Build and run full test suite**
 
 ```bash
 pnpm run build && pnpm test
@@ -2710,7 +2696,7 @@ pnpm run build && pnpm test
 
 Expected: all tests pass including new integration test.
 
-- [ ] **Step 5: Run typecheck**
+- [ ] **Step 3: Run typecheck**
 
 ```bash
 pnpm run typecheck
@@ -2718,11 +2704,11 @@ pnpm run typecheck
 
 Expected: zero errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/ tests/
-git commit -m "feat: register TS adapter, make index pipeline async, add call graph integration test"
+git add tests/integration/call-graph.test.ts
+git commit -m "test: add call graph end-to-end integration test"
 ```
 
 ---
