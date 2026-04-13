@@ -21,6 +21,15 @@ export function buildRepoFingerprint(worktreePath: string): string {
 	}).trimEnd();
 }
 
+export function isWorktreeDirty(worktreePath: string): boolean {
+	const output = execFileSync(
+		"git",
+		["-C", worktreePath, "status", "--porcelain", "-unormal"],
+		{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+	);
+	return output.length > 0;
+}
+
 export function writeCache(cache: RepoCache): void {
 	const dir = getCacheDir(cache.repoKey);
 	fs.mkdirSync(dir, { recursive: true });

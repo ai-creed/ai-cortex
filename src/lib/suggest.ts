@@ -1,40 +1,64 @@
-// src/lib/rehydrate.ts
-import fs from "node:fs";
-import path from "node:path";
-import { renderBriefing } from "./briefing.js";
+// src/lib/suggest.ts
 import {
 	buildRepoFingerprint,
-	getCacheDir,
 	isWorktreeDirty,
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
 import { diffChangedFiles } from "./diff-files.js";
-import { indexRepo, buildIncrementalIndex } from "./indexer.js";
+import { buildIncrementalIndex, indexRepo } from "./indexer.js";
 import { IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
+import { rankSuggestions } from "./suggest-ranker.js";
 
-export type RehydrateOptions = {
+export type SuggestOptions = {
+	from?: string;
+	limit?: number;
 	stale?: boolean;
 };
 
-export type RehydrateResult = {
-	briefingPath: string;
-	cacheStatus: "fresh" | "reindexed" | "stale";
-	cache: RepoCache;
+export type SuggestItem = {
+	path: string;
+	kind: "file" | "doc";
+	score: number;
+	reason: string;
 };
 
-export function rehydrateRepo(
+export type SuggestResult = {
+	cacheStatus: "fresh" | "reindexed" | "stale";
+	task: string;
+	from: string | null;
+	results: SuggestItem[];
+};
+
+function normalizeFrom(value: string | undefined, cache: RepoCache): string | null {
+	if (!value) return null;
+	const normalized = value.replace(/\\/g, "/").replace(/^\.?\//, "");
+	return cache.files.some((file) => file.path === normalized) ? normalized : null;
+}
+
+export function suggestRepo(
 	repoPath: string,
-	options?: RehydrateOptions,
-): RehydrateResult {
+	task: string,
+	options: SuggestOptions = {},
+): SuggestResult {
 	try {
+		if (task.trim().length === 0) {
+			throw new IndexError("suggest task must not be empty");
+		}
+		if (
+			options.limit !== undefined &&
+			(!Number.isInteger(options.limit) || options.limit < 1)
+		) {
+			throw new IndexError("suggest limit must be a positive integer");
+		}
+
 		const identity = resolveRepoIdentity(repoPath);
 		const cached = readCacheForWorktree(identity.repoKey, identity.worktreeKey);
 
 		let cache: RepoCache;
-		let cacheStatus: RehydrateResult["cacheStatus"];
+		let cacheStatus: SuggestResult["cacheStatus"];
 
 		if (!cached) {
 			cache = indexRepo(repoPath);
@@ -51,7 +75,7 @@ export function rehydrateRepo(
 			if (!isStale) {
 				cache = cached;
 				cacheStatus = "fresh";
-			} else if (options?.stale) {
+			} else if (options.stale) {
 				cache = cached;
 				cacheStatus = "stale";
 			} else {
@@ -62,24 +86,19 @@ export function rehydrateRepo(
 					forceHashCompare: dirtyReverted,
 				});
 				const isDirtyRefresh = dirty;
-				cache = buildIncrementalIndex(
-					identity,
-					cached,
-					diff,
-					isDirtyRefresh,
-				);
+				cache = buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
 				writeCache(cache);
 				cacheStatus = "reindexed";
 			}
 		}
 
-		const md = renderBriefing(cache);
-		const dir = getCacheDir(identity.repoKey);
-		fs.mkdirSync(dir, { recursive: true });
-		const briefingPath = path.join(dir, `${identity.worktreeKey}.md`);
-		fs.writeFileSync(briefingPath, md);
+		const from = normalizeFrom(options.from, cache);
+		const results = rankSuggestions(task, cache, {
+			from,
+			limit: options.limit,
+		});
 
-		return { briefingPath, cacheStatus, cache };
+		return { cacheStatus, task, from, results };
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
 		if (err instanceof IndexError) throw err;

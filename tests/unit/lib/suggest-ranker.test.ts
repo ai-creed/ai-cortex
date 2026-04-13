@@ -1,0 +1,121 @@
+// tests/unit/lib/suggest-ranker.test.ts
+import { describe, expect, it } from "vitest";
+import { SCHEMA_VERSION } from "../../../src/lib/models.js";
+import type { RepoCache } from "../../../src/lib/models.js";
+import { rankSuggestions } from "../../../src/lib/suggest-ranker.js";
+
+function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
+	return {
+		schemaVersion: SCHEMA_VERSION,
+		repoKey: "repokey1234567890",
+		worktreeKey: "worktree12345678",
+		worktreePath: "/repo",
+		indexedAt: "2026-04-12T00:00:00.000Z",
+		fingerprint: "abc123",
+		packageMeta: { name: "test-app", version: "1.0.0", framework: null },
+		entryFiles: ["src/app.ts"],
+		files: [
+			{ path: "src/persistence/store.ts", kind: "file" },
+			{ path: "src/persistence/restore-session.ts", kind: "file" },
+			{ path: "src/app.ts", kind: "file" },
+			{ path: "README.md", kind: "file" },
+			{ path: "docs/shared/architecture_decisions.md", kind: "file" },
+		],
+		docs: [
+			{
+				path: "README.md",
+				title: "Test App",
+				body: "# Test App\nPersistence overview.\n",
+			},
+			{
+				path: "docs/shared/architecture_decisions.md",
+				title: "Architecture Decisions",
+				body: "# Architecture Decisions\nPersistence and restore flow.\n",
+			},
+		],
+		imports: [
+			{ from: "src/app.ts", to: "src/persistence/store" },
+			{ from: "src/persistence/restore-session.ts", to: "src/persistence/store" },
+		],
+		...overrides,
+	};
+}
+
+describe("rankSuggestions", () => {
+	it("ranks code files by task token matches in filename and path", () => {
+		const result = rankSuggestions("inspect persistence store", makeCache());
+		expect(result[0]?.path).toBe("src/persistence/store.ts");
+		expect(result[0]?.kind).toBe("file");
+	});
+
+	it("dedupes markdown docs so the same path does not appear as both file and doc", () => {
+		const result = rankSuggestions("architecture decisions", makeCache());
+		const matches = result.filter(
+			(item) => item.path === "docs/shared/architecture_decisions.md",
+		);
+		expect(matches).toHaveLength(1);
+		expect(matches[0]?.kind).toBe("doc");
+	});
+
+	it("prefers code over docs on comparable evidence", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/persistence.ts", kind: "file" },
+				{ path: "docs/shared/persistence.md", kind: "file" },
+			],
+			docs: [
+				{
+					path: "docs/shared/persistence.md",
+					title: "Persistence",
+					body: "# Persistence\n",
+				},
+			],
+		});
+		const result = rankSuggestions("persistence", cache);
+		expect(result[0]?.path).toBe("src/persistence.ts");
+		expect(result[0]?.kind).toBe("file");
+	});
+
+	it("allows a doc to outrank code when title/body evidence is materially stronger", () => {
+		const result = rankSuggestions("architecture decisions restore flow", makeCache());
+		expect(result[0]?.path).toBe("docs/shared/architecture_decisions.md");
+		expect(result[0]?.kind).toBe("doc");
+	});
+
+	it("boosts entry files", () => {
+		const result = rankSuggestions("app", makeCache());
+		expect(result.some((item) => item.path === "src/app.ts")).toBe(true);
+	});
+
+	it("boosts same-directory and direct import neighbors when from is known", () => {
+		const result = rankSuggestions("store", makeCache(), {
+			from: "src/app.ts",
+			limit: 5,
+		});
+		expect(result[0]?.path).toBe("src/persistence/store.ts");
+		expect(result[0]?.reason).toMatch(/imports|anchor|path/i);
+	});
+
+	it("does not apply ambiguous target boosts when two files map to the same stripped import target", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/foo.ts", kind: "file" },
+				{ path: "src/foo/index.ts", kind: "file" },
+				{ path: "src/app.ts", kind: "file" },
+			],
+			docs: [],
+			imports: [{ from: "src/app.ts", to: "src/foo" }],
+		});
+		const result = rankSuggestions("foo", cache, {
+			from: "src/app.ts",
+			limit: 5,
+		});
+		expect(result.map((item) => item.path)).toContain("src/foo.ts");
+		expect(result.map((item) => item.path)).toContain("src/foo/index.ts");
+	});
+
+	it("applies the limit after sorting", () => {
+		const result = rankSuggestions("persistence", makeCache(), { limit: 1 });
+		expect(result).toHaveLength(1);
+	});
+});

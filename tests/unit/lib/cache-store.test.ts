@@ -11,6 +11,7 @@ vi.mock("node:child_process");
 import { execFileSync } from "node:child_process";
 import {
 	buildRepoFingerprint,
+	isWorktreeDirty,
 	readCacheForWorktree,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
@@ -84,5 +85,17 @@ describe("buildRepoFingerprint", () => {
 	it("returns trimmed HEAD commit hash from git", () => {
 		mockExec.mockReturnValue("abc123def456\n" as any);
 		expect(buildRepoFingerprint("/repo")).toBe("abc123def456");
+	});
+});
+
+describe("isWorktreeDirty", () => {
+	it("returns false when git status output is empty", () => {
+		mockExec.mockReturnValue("" as any);
+		expect(isWorktreeDirty("/repo")).toBe(false);
+	});
+
+	it("returns true when git status output contains tracked or untracked changes", () => {
+		mockExec.mockReturnValue(" M src/main.ts\n?? newfile.ts\n" as any);
+		expect(isWorktreeDirty("/repo")).toBe(true);
 	});
 });
