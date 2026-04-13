@@ -18,39 +18,45 @@ let tsParser: import("web-tree-sitter").Parser | null = null;
 let tsxParser: import("web-tree-sitter").Parser | null = null;
 let jsParser: import("web-tree-sitter").Parser | null = null;
 
+// Promise cache to prevent concurrent initialization
+let initPromise: Promise<void> | null = null;
+
 type SyntaxNode = import("web-tree-sitter").Node;
 
 async function initParsers(): Promise<void> {
-	if (Parser) return;
-	const { Parser: TreeSitter, Language } = await import("web-tree-sitter");
-	await TreeSitter.init();
+	if (initPromise) return initPromise;
+	initPromise = (async () => {
+		const { Parser: TreeSitter, Language } = await import("web-tree-sitter");
+		await TreeSitter.init();
 
-	// tree-sitter-typescript ships TS and TSX grammars
-	const tsGrammarPath = require.resolve(
-		"tree-sitter-typescript/tree-sitter-typescript.wasm",
-	);
-	const tsxGrammarPath = require.resolve(
-		"tree-sitter-typescript/tree-sitter-tsx.wasm",
-	);
-	// tree-sitter-javascript ships JS grammar (handles JSX too)
-	const jsGrammarPath = require.resolve(
-		"tree-sitter-javascript/tree-sitter-javascript.wasm",
-	);
+		// tree-sitter-typescript ships TS and TSX grammars
+		const tsGrammarPath = require.resolve(
+			"tree-sitter-typescript/tree-sitter-typescript.wasm",
+		);
+		const tsxGrammarPath = require.resolve(
+			"tree-sitter-typescript/tree-sitter-tsx.wasm",
+		);
+		// tree-sitter-javascript ships JS grammar (handles JSX too)
+		const jsGrammarPath = require.resolve(
+			"tree-sitter-javascript/tree-sitter-javascript.wasm",
+		);
 
-	const tsLang = await Language.load(tsGrammarPath);
-	const tsxLang = await Language.load(tsxGrammarPath);
-	const jsLang = await Language.load(jsGrammarPath);
+		const tsLang = await Language.load(tsGrammarPath);
+		const tsxLang = await Language.load(tsxGrammarPath);
+		const jsLang = await Language.load(jsGrammarPath);
 
-	tsParser = new TreeSitter();
-	tsParser.setLanguage(tsLang);
+		tsParser = new TreeSitter();
+		tsParser.setLanguage(tsLang);
 
-	tsxParser = new TreeSitter();
-	tsxParser.setLanguage(tsxLang);
+		tsxParser = new TreeSitter();
+		tsxParser.setLanguage(tsxLang);
 
-	jsParser = new TreeSitter();
-	jsParser.setLanguage(jsLang);
+		jsParser = new TreeSitter();
+		jsParser.setLanguage(jsLang);
 
-	Parser = TreeSitter;
+		Parser = TreeSitter;
+	})();
+	return initPromise;
 }
 
 function parserForExt(ext: string): import("web-tree-sitter").Parser | null {
