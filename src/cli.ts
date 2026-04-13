@@ -52,8 +52,10 @@ function parseSuggestArgs(argv: string[]): {
 			continue;
 		}
 		if (arg === "--limit") {
-			limit = Number(argv[i + 1]);
-			i += 1;
+			if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) {
+				limit = Number(argv[i + 1]);
+				i += 1;
+			}
 			continue;
 		}
 		if (task === null) {
