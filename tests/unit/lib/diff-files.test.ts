@@ -52,6 +52,8 @@ function makeCache(
 		files: files.map((f) => ({ path: f.path, kind: "file" as const, contentHash: f.contentHash })),
 		docs: [],
 		imports: [],
+		calls: [],
+		functions: [],
 		...overrides,
 	};
 }

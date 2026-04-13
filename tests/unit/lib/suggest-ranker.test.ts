@@ -37,6 +37,8 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 			{ from: "src/app.ts", to: "src/persistence/store" },
 			{ from: "src/persistence/restore-session.ts", to: "src/persistence/store" },
 		],
+		calls: [],
+		functions: [],
 		...overrides,
 	};
 }

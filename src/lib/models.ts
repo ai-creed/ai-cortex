@@ -1,6 +1,6 @@
 // src/lib/models.ts
 
-export const SCHEMA_VERSION = "2";
+export const SCHEMA_VERSION = "3";
 
 export class RepoIdentityError extends Error {
 	constructor(message: string) {
@@ -48,6 +48,27 @@ export type DocInput = {
 	body: string;
 };
 
+export type CallEdge = {
+	from: string;
+	to: string;
+	kind: "call" | "new" | "method";
+};
+
+export type FunctionNode = {
+	qualifiedName: string;
+	file: string;
+	exported: boolean;
+	isDefaultExport: boolean;
+	line: number;
+};
+
+export type BlastHit = {
+	qualifiedName: string;
+	file: string;
+	hop: number;
+	exported: boolean;
+};
+
 export type RepoCache = {
 	schemaVersion: typeof SCHEMA_VERSION;
 	repoKey: string;
@@ -61,4 +82,6 @@ export type RepoCache = {
 	files: FileNode[];
 	docs: DocInput[];
 	imports: ImportEdge[];
+	calls: CallEdge[];
+	functions: FunctionNode[];
 };

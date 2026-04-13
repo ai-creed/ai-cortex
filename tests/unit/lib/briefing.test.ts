@@ -44,6 +44,8 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 			{ from: "src/features/auth.ts", to: "shared/models/user" },
 			{ from: "electron/main/index.ts", to: "shared/models/user" },
 		],
+		calls: [],
+		functions: [],
 		...overrides,
 	};
 }

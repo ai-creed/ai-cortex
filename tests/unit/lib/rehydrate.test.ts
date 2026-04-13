@@ -49,6 +49,8 @@ function makeFreshCache(): RepoCache {
 		files: [{ path: "src/main.ts", kind: "file" }],
 		docs: [{ path: "README.md", title: "Test", body: "# Test\n" }],
 		imports: [],
+		calls: [],
+		functions: [],
 	};
 }
 

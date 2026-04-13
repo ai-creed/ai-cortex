@@ -31,6 +31,8 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 		files: [],
 		docs: [],
 		imports: [],
+		calls: [],
+		functions: [],
 		...overrides,
 	};
 }

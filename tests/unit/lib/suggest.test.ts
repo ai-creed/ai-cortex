@@ -46,6 +46,8 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 		files: [{ path: "src/app.ts", kind: "file", contentHash: "hash1" }],
 		docs: [{ path: "README.md", title: "Test App", body: "# Test App\n" }],
 		imports: [],
+		calls: [],
+		functions: [],
 		...overrides,
 	};
 }

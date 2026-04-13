@@ -40,6 +40,8 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 			files,
 			docs,
 			imports,
+			calls: [],
+			functions: [],
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
@@ -66,7 +68,14 @@ export function buildIncrementalIndex(
 
 	// Empty diff — timestamp-only refresh
 	if (diff.changed.length === 0 && diff.removed.length === 0) {
-		return { ...existingCache, fingerprint, indexedAt, dirtyAtIndex };
+		return {
+			...existingCache,
+			fingerprint,
+			indexedAt,
+			dirtyAtIndex,
+			calls: existingCache.calls ?? [],
+			functions: existingCache.functions ?? [],
+		};
 	}
 
 	const changedSet = new Set(diff.changed);
@@ -126,6 +135,8 @@ export function buildIncrementalIndex(
 		files,
 		docs,
 		imports,
+		calls: [],
+		functions: [],
 	};
 }
 

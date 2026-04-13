@@ -60,8 +60,8 @@ beforeEach(() => {
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
 });
 
-it("uses schema version 2", () => {
-	expect(SCHEMA_VERSION).toBe("2");
+it("uses schema version 3", () => {
+	expect(SCHEMA_VERSION).toBe("3");
 });
 
 describe("buildIndex", () => {
@@ -126,6 +126,8 @@ describe("getCachedIndex", () => {
 			files: [],
 			docs: [],
 			imports: [],
+			calls: [],
+			functions: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(stale);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
@@ -145,6 +147,8 @@ describe("getCachedIndex", () => {
 			files: [],
 			docs: [],
 			imports: [],
+			calls: [],
+			functions: [],
 		};
 		vi.mocked(readCacheForWorktree).mockReturnValue(fresh);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -171,6 +175,8 @@ function makeCacheForIncremental(): RepoCache {
 		imports: [
 			{ from: "src/main.ts", to: "src/utils" },
 		],
+		calls: [],
+		functions: [],
 	};
 }
 
