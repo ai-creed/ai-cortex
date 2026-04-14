@@ -6,7 +6,7 @@
 		"ai-cortex": "dist/src/cli.js"
 	},
 	"scripts": {
-		"prepare": "npx tsc -p tsconfig.json",
+		"prepare": "tsc -p tsconfig.json",
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
@@ -21,6 +21,7 @@
 		"@modelcontextprotocol/sdk": "^1.0.0",
 		"tree-sitter-javascript": "^0.25.0",
 		"tree-sitter-typescript": "^0.23.2",
+		"typescript": "^5.8.3",
 		"web-tree-sitter": "^0.26.8",
 		"zod": "^3.0.0"
 	},
@@ -32,7 +33,6 @@
 		"globals": "^16.0.0",
 		"prettier": "^3.0.0",
 		"tsx": "^4.20.3",
-		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.0.0",
 		"vitest": "^3.2.4"
 	}
