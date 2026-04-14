@@ -10,6 +10,7 @@
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:bench": "tsc --noEmit -p benchmarks/tsconfig.json",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --check .",
