@@ -10,7 +10,6 @@ import { createServer } from "../../../src/mcp/server.js";
 vi.mock("../../../src/lib/index.js");
 vi.mock("node:fs");
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function makeClient(): Promise<any> {
 	const server = createServer();
 	const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();

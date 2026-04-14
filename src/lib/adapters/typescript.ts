@@ -13,7 +13,6 @@ import type {
 const require = createRequire(import.meta.url);
 
 // Lazy-initialized parser state
-let Parser: typeof import("web-tree-sitter").Parser | null = null;
 let tsParser: import("web-tree-sitter").Parser | null = null;
 let tsxParser: import("web-tree-sitter").Parser | null = null;
 let jsParser: import("web-tree-sitter").Parser | null = null;
@@ -54,7 +53,6 @@ async function initParsers(): Promise<void> {
 		jsParser = new TreeSitter();
 		jsParser.setLanguage(jsLang);
 
-		Parser = TreeSitter;
 	})();
 	return initPromise;
 }
@@ -181,8 +179,6 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 
 function findEnclosingFunction(
 	node: SyntaxNode,
-	functions: FunctionNode[],
-	filePath: string,
 ): string | null {
 	let current = node.parent;
 	while (current) {
@@ -219,7 +215,6 @@ function findEnclosingFunction(
 function extractRawCalls(
 	root: SyntaxNode,
 	filePath: string,
-	functions: FunctionNode[],
 ): RawCallSite[] {
 	const calls: RawCallSite[] = [];
 
@@ -241,7 +236,7 @@ function extractRawCalls(
 				kind = "call";
 			}
 
-			const caller = findEnclosingFunction(node, functions, filePath);
+			const caller = findEnclosingFunction(node);
 			if (caller) {
 				calls.push({
 					callerQualifiedName: caller,
@@ -253,7 +248,7 @@ function extractRawCalls(
 		} else if (node.type === "new_expression") {
 			const ctorNode = node.childForFieldName("constructor");
 			if (ctorNode) {
-				const caller = findEnclosingFunction(node, functions, filePath);
+				const caller = findEnclosingFunction(node);
 				if (caller) {
 					calls.push({
 						callerQualifiedName: caller,
@@ -361,7 +356,7 @@ export async function createTypescriptAdapter(): Promise<LangAdapter> {
 			const root = tree.rootNode;
 
 			const functions = extractFunctions(root, filePath);
-			const rawCalls = extractRawCalls(root, filePath, functions);
+			const rawCalls = extractRawCalls(root, filePath);
 			const importBindings = extractImportBindings(root);
 
 			return { functions, rawCalls, importBindings };

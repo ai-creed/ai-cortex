@@ -14,11 +14,12 @@ function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
 }
 
 function findTargetFile(normalizedSpecifier: string, allFiles: Map<string, FunctionNode[]>): string | null {
+	const strippedSpecifier = stripKnownExt(normalizedSpecifier);
 	for (const file of allFiles.keys()) {
-		if (stripKnownExt(file) === normalizedSpecifier) return file;
+		if (stripKnownExt(file) === strippedSpecifier) return file;
 	}
 	for (const file of allFiles.keys()) {
-		if (stripKnownExt(file) === `${normalizedSpecifier}/index`) return file;
+		if (stripKnownExt(file) === `${strippedSpecifier}/index`) return file;
 	}
 	return null;
 }

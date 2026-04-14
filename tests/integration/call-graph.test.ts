@@ -35,8 +35,8 @@ beforeAll(async () => {
 	fs.writeFileSync(
 		path.join(tmpDir, "src/utils.ts"),
 		[
-			'export function helper() { return 1; }',
-			'export function unused() { return 2; }',
+			"export function helper() { return 1; }",
+			"export function unused() { return 2; }",
 		].join("\n"),
 	);
 
@@ -44,7 +44,7 @@ beforeAll(async () => {
 		path.join(tmpDir, "src/main.ts"),
 		[
 			'import { helper } from "./utils";',
-			'export function main() { return helper(); }',
+			"export function main() { return helper(); }",
 		].join("\n"),
 	);
 
@@ -52,7 +52,7 @@ beforeAll(async () => {
 		path.join(tmpDir, "src/cli.ts"),
 		[
 			'import { main } from "./main";',
-			'function run() { main(); }',
+			"function run() { main(); }",
 		].join("\n"),
 	);
 
