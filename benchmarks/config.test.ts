@@ -22,7 +22,7 @@ describe("discoverRepos", () => {
 describe("getSloForScenario", () => {
 	it("returns SLO for known scenario and size", () => {
 		const slo = getSloForScenario("index:cold", "small");
-		expect(slo).toBe(200);
+		expect(slo).toBe(300);
 	});
 
 	it("returns null for regression-only scenario", () => {

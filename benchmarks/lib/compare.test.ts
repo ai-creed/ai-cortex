@@ -6,7 +6,7 @@ import {
 	loadBaselines,
 	saveBaselines,
 } from "./compare.js";
-import type { ScenarioResult, SizeBucket } from "./types.js";
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

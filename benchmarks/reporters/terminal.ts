@@ -16,7 +16,7 @@ function fmtStatus(result: ScenarioResult): string {
 		case "warn":
 			return `warn +${result.regressionPct}%`;
 		case "fail": {
-			const pctStr = result.regressionPct !== null ? ` +${result.regressionPct}%` : "";
+			const pctStr = result.regressionPct !== null ? ` ${result.regressionPct > 0 ? "+" : ""}${result.regressionPct}%` : "";
 			return `FAIL${pctStr}`;
 		}
 		case "skip":
