@@ -101,7 +101,10 @@ function spawnAgent(
 	const wallClockMs = Math.round(performance.now() - start);
 	return {
 		stdout: result.stdout || "",
-		exitCode: result.status ?? 1,
+		exitCode:
+			result.signal === "SIGTERM" || result.error != null
+				? 124
+				: (result.status ?? 1),
 		wallClockMs,
 	};
 }
