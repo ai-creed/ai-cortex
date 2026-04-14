@@ -12,7 +12,7 @@ const distCli = path.resolve(
 
 describe("mcp server subprocess", () => {
 	it(
-		"starts, lists all three tools, and exits cleanly on client disconnect",
+		"starts, lists all four tools, and exits cleanly on client disconnect",
 		async () => {
 			const transport = new StdioClientTransport({
 				command: "node",
@@ -31,6 +31,7 @@ describe("mcp server subprocess", () => {
 			expect(names).toContain("rehydrate_project");
 			expect(names).toContain("suggest_files");
 			expect(names).toContain("index_project");
+			expect(names).toContain("blast_radius");
 
 			// Closing the client writes EOF to the server's stdin.
 			// The server's startMcpServer() resolves and the process exits.

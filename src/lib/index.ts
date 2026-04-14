@@ -16,4 +16,11 @@ export type {
 	FileNode,
 	ImportEdge,
 	DocInput,
+	CallEdge,
+	FunctionNode,
+	BlastHit,
 } from "./models.js";
+export { queryBlastRadius } from "./blast-radius.js";
+export type { BlastRadiusResult, BlastTier } from "./blast-radius.js";
+export { extractCallGraph } from "./call-graph.js";
+export type { LangAdapter, FileExtractionResult, RawCallSite, ImportBinding } from "./lang-adapter.js";

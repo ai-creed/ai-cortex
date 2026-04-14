@@ -7,6 +7,7 @@ import {
 	indexRepo,
 	rehydrateRepo,
 	suggestRepo,
+	queryBlastRadius,
 } from "../lib/index.js";
 
 // Keep in sync with package.json "version".
@@ -73,6 +74,34 @@ export function createServer(): McpServer {
 						text: `Indexed ${cache.files.length} files and ${cache.docs.length} docs.`,
 					},
 				],
+			};
+		},
+	);
+
+	server.tool(
+		"blast_radius",
+		"Analyze what functions and files are affected if a given function is changed. "
+			+ "Returns callers organized by hop distance (direct, transitive) with export "
+			+ "visibility. Use before modifying a function to understand risk and plan testing. "
+			+ "For class methods, use Class.method format (e.g., 'Ranker.score').",
+		{
+			qualifiedName: z.string().min(1),
+			file: z.string().min(1),
+			path: z.string().optional(),
+			maxHops: z.number().int().positive().optional(),
+			stale: z.boolean().optional(),
+		},
+		async ({ qualifiedName, file, path, maxHops, stale }) => {
+			const repoPath = path ?? process.cwd();
+			const { cache } = await rehydrateRepo(repoPath, { stale });
+			const result = queryBlastRadius(
+				{ qualifiedName, file },
+				cache.calls ?? [],
+				cache.functions ?? [],
+				maxHops ? { maxHops } : undefined,
+			);
+			return {
+				content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
 			};
 		},
 	);
