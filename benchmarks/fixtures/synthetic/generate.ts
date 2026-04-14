@@ -12,8 +12,9 @@
 //
 // Known call chains for blast radius testing:
 //   hashPassword (auth/crypto.ts)
-//     <- register (auth/register.ts)          hop 1
+//     <- register (auth/register.ts)            hop 1
 //     <- resetPassword (auth/reset-password.ts) hop 1
+//     <- handleOAuthCallback (auth/oauth.ts)    hop 1
 //     <- handleUserCreate (api/user-routes.ts)  hop 2 (via register)
 //     <- handlePasswordReset (api/user-routes.ts) hop 2 (via resetPassword)
 //
