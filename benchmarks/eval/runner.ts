@@ -18,11 +18,21 @@ function parseArgs(argv: string[]): {
 	for (let i = 2; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === "--reps" && argv[i + 1]) {
-			reps = parseInt(argv[++i], 10);
+			const parsed = parseInt(argv[++i], 10);
+			if (isNaN(parsed) || parsed < 1) {
+				console.error(`Invalid --reps value: ${argv[i]}`);
+				process.exit(1);
+			}
+			reps = parsed;
 		} else if (arg === "--tasks" && argv[i + 1]) {
 			taskFilter = argv[++i];
 		} else if (arg === "--condition" && argv[i + 1]) {
-			condition = argv[++i] as "with" | "without";
+			const val = argv[++i];
+			if (val !== "with" && val !== "without" && val !== "both") {
+				console.error(`Invalid --condition value: ${val}. Must be "with", "without", or "both".`);
+				process.exit(1);
+			}
+			condition = val;
 		}
 	}
 
@@ -55,6 +65,10 @@ async function main(): Promise<void> {
 		console.error(`Skipping ${t.name}: repo not found at ${t.repoPath}`);
 		return false;
 	});
+	if (tasks.length === 0) {
+		console.error("No tasks to run.");
+		process.exit(1);
+	}
 
 	const conditions: Array<"with" | "without"> =
 		args.condition === "both" ? ["with", "without"] : [args.condition];
