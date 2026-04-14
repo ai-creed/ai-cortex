@@ -535,5 +535,14 @@ describe("buildIncrementalIndex", () => {
 		expect(result.calls).not.toContainEqual(
 			expect.objectContaining({ to: "src/utils.ts::oldHelper" }),
 		);
+
+		// Verify no duplicate functions for the affected-caller file
+		const mainFns = result.functions.filter(f => f.file === "src/main.ts");
+		expect(mainFns).toHaveLength(1);
+		// Verify extractCallGraph was called with both changed + affected-caller files
+		expect(extractCallGraph).toHaveBeenCalledWith(
+			"/repo",
+			expect.arrayContaining(["src/utils.ts", "src/main.ts"]),
+		);
 	});
 });

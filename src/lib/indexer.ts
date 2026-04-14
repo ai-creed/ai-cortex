@@ -154,7 +154,7 @@ export async function buildIncrementalIndex(
 		return !callCleanSet.has(fromFile);
 	});
 	const keptFunctions = existingFunctions.filter(
-		(f) => !changedSet.has(f.file) && !removedSet.has(f.file),
+		(f) => !changedSet.has(f.file) && !removedSet.has(f.file) && !affectedCallers.has(f.file),
 	);
 
 	// Reparse changed files + affected callers
