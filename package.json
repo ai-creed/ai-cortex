@@ -20,7 +20,8 @@
 		"bench": "tsx benchmarks/runner.ts",
 		"bench:perf": "tsx benchmarks/runner.ts --suite perf",
 		"bench:quality": "tsx benchmarks/runner.ts --suite quality",
-		"bench:update-baseline": "tsx benchmarks/runner.ts --update-baseline"
+		"bench:update-baseline": "tsx benchmarks/runner.ts --update-baseline",
+		"eval": "tsx benchmarks/eval/runner.ts"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.0",
