@@ -38,11 +38,11 @@ function normalizeFrom(value: string | undefined, cache: RepoCache): string | nu
 	return cache.files.some((file) => file.path === normalized) ? normalized : null;
 }
 
-export function suggestRepo(
+export async function suggestRepo(
 	repoPath: string,
 	task: string,
 	options: SuggestOptions = {},
-): SuggestResult {
+): Promise<SuggestResult> {
 	try {
 		if (task.trim().length === 0) {
 			throw new IndexError("suggest task must not be empty");
@@ -61,7 +61,7 @@ export function suggestRepo(
 		let cacheStatus: SuggestResult["cacheStatus"];
 
 		if (!cached) {
-			cache = indexRepo(repoPath);
+			cache = await indexRepo(repoPath);
 			cacheStatus = "reindexed";
 		} else {
 			const fingerprint = buildRepoFingerprint(identity.worktreePath);
@@ -86,7 +86,7 @@ export function suggestRepo(
 					forceHashCompare: dirtyReverted,
 				});
 				const isDirtyRefresh = dirty;
-				cache = buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
+				cache = await buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
 				writeCache(cache);
 				cacheStatus = "reindexed";
 			}

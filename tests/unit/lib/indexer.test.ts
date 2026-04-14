@@ -8,6 +8,7 @@ vi.mock("../../../src/lib/doc-inputs.js");
 vi.mock("../../../src/lib/import-graph.js");
 vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/diff-files.js");
+vi.mock("../../../src/lib/call-graph.js");
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
@@ -23,6 +24,7 @@ import {
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { hashFileContent } from "../../../src/lib/diff-files.js";
+import { extractCallGraph } from "../../../src/lib/call-graph.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 import type { FilesDiff } from "../../../src/lib/diff-files.js";
@@ -58,6 +60,7 @@ beforeEach(() => {
 	vi.mocked(readCacheForWorktree).mockReturnValue(null);
 	vi.mocked(writeCache).mockReturnValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
+	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
 });
 
 it("uses schema version 3", () => {
@@ -65,8 +68,8 @@ it("uses schema version 3", () => {
 });
 
 describe("buildIndex", () => {
-	it("assembles a RepoCache from all modules", () => {
-		const cache = buildIndex(mockIdentity);
+	it("assembles a RepoCache from all modules", async () => {
+		const cache = await buildIndex(mockIdentity);
 
 		expect(cache.schemaVersion).toBe(SCHEMA_VERSION);
 		expect(cache.repoKey).toBe(mockIdentity.repoKey);
@@ -78,11 +81,11 @@ describe("buildIndex", () => {
 		expect(cache.docs[0]?.title).toBe("Test App");
 	});
 
-	it("populates contentHash on each FileNode", () => {
+	it("populates contentHash on each FileNode", async () => {
 		vi.mocked(hashFileContent).mockImplementation((_wp, fp) =>
 			fp === "README.md" ? "hash_readme" : "hash_main",
 		);
-		const cache = buildIndex(mockIdentity);
+		const cache = await buildIndex(mockIdentity);
 
 		expect(cache.files).toEqual([
 			{ path: "README.md", kind: "file", contentHash: "hash_readme" },
@@ -91,16 +94,32 @@ describe("buildIndex", () => {
 		expect(vi.mocked(hashFileContent)).toHaveBeenCalledTimes(2);
 	});
 
-	it("includes indexedAt as an ISO timestamp", () => {
-		const cache = buildIndex(mockIdentity);
+	it("includes indexedAt as an ISO timestamp", async () => {
+		const cache = await buildIndex(mockIdentity);
 		expect(() => new Date(cache.indexedAt)).not.toThrow();
 		expect(cache.indexedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+	});
+
+	it("includes call graph from extractCallGraph", async () => {
+		vi.mocked(extractCallGraph).mockResolvedValue({
+			calls: [{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" }],
+			functions: [
+				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		const cache = await buildIndex(mockIdentity);
+		expect(cache.calls).toHaveLength(1);
+		expect(cache.functions).toHaveLength(1);
+		expect(extractCallGraph).toHaveBeenCalledWith(
+			"/repo",
+			["README.md", "src/main.ts"],
+		);
 	});
 });
 
 describe("indexRepo", () => {
-	it("calls writeCache with the assembled cache", () => {
-		indexRepo("/repo");
+	it("calls writeCache with the assembled cache", async () => {
+		await indexRepo("/repo");
 		expect(vi.mocked(writeCache)).toHaveBeenCalledOnce();
 		const written = vi.mocked(writeCache).mock.calls[0]?.[0] as RepoCache;
 		expect(written.packageMeta.name).toBe("test-app");
@@ -185,7 +204,7 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
 	});
 
-	it("merges changed files into existing cache", () => {
+	it("merges changed files into existing cache", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractImports).mockReturnValue([
 			{ from: "src/main.ts", to: "src/helper" },
@@ -198,7 +217,7 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		// Changed file has updated hash
 		const mainFile = result.files.find((f) => f.path === "src/main.ts");
@@ -212,7 +231,7 @@ describe("buildIncrementalIndex", () => {
 		expect(result.imports).toEqual([{ from: "src/main.ts", to: "src/helper" }]);
 	});
 
-	it("removes files listed in diff.removed from files, imports, and docs", () => {
+	it("removes files listed in diff.removed from files, imports, and docs", async () => {
 		const existing = makeCacheForIncremental();
 		const diff: FilesDiff = {
 			changed: [],
@@ -220,12 +239,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.files.find((f) => f.path === "src/utils.ts")).toBeUndefined();
 	});
 
-	it("replaces import edges from changed files, keeps unchanged", () => {
+	it("replaces import edges from changed files, keeps unchanged", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractImports).mockReturnValue([
 			{ from: "src/main.ts", to: "src/new-dep" },
@@ -241,7 +260,7 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		// Old edge from main.ts dropped, new one added
 		expect(result.imports).toContainEqual({
@@ -260,7 +279,7 @@ describe("buildIncrementalIndex", () => {
 		});
 	});
 
-	it("stale import to edges remain when target removed (deferred to Phase 5)", () => {
+	it("stale import to edges remain when target removed (deferred to Phase 5)", async () => {
 		const existing = makeCacheForIncremental();
 		// main.ts imports utils — we remove utils.ts but don't change main.ts
 		const diff: FilesDiff = {
@@ -269,7 +288,7 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		// Edge from main.ts still points to src/utils (stale to, accepted)
 		expect(result.imports).toContainEqual({
@@ -278,7 +297,7 @@ describe("buildIncrementalIndex", () => {
 		});
 	});
 
-	it("re-reads packageMeta when package.json is in changed", () => {
+	it("re-reads packageMeta when package.json is in changed", async () => {
 		vi.mocked(readPackageMeta).mockReturnValue({
 			name: "renamed-app",
 			version: "2.0.0",
@@ -293,14 +312,14 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.packageMeta.name).toBe("renamed-app");
 		expect(result.packageMeta.framework).toBe("vite");
 		expect(vi.mocked(pickEntryFiles)).toHaveBeenCalled();
 	});
 
-	it("re-reads packageMeta when package.json is in removed", () => {
+	it("re-reads packageMeta when package.json is in removed", async () => {
 		vi.mocked(readPackageMeta).mockReturnValue({
 			name: "repo",
 			version: "0.0.0",
@@ -320,13 +339,13 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.packageMeta.name).toBe("repo");
 		expect(result.packageMeta.version).toBe("0.0.0");
 	});
 
-	it("recomputes entry files after merge", () => {
+	it("recomputes entry files after merge", async () => {
 		vi.mocked(pickEntryFiles).mockReturnValue(["src/main.ts", "src/new.ts"]);
 
 		const existing = makeCacheForIncremental();
@@ -336,12 +355,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.entryFiles).toEqual(["src/main.ts", "src/new.ts"]);
 	});
 
-	it("updates content hashes for changed files on incremental index", () => {
+	it("updates content hashes for changed files on incremental index", async () => {
 		vi.mocked(hashFileContent).mockImplementation((_wp, fp) =>
 			fp === "src/main.ts" ? "new_hash_main" : "other",
 		);
@@ -353,13 +372,13 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		const mainFile = result.files.find((f) => f.path === "src/main.ts");
 		expect(mainFile?.contentHash).toBe("new_hash_main");
 	});
 
-	it("returns same cache with updated fingerprint and timestamp on empty diff", () => {
+	it("returns same cache with updated fingerprint and timestamp on empty diff", async () => {
 		const existing = makeCacheForIncremental();
 		const diff: FilesDiff = {
 			changed: [],
@@ -367,7 +386,7 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.fingerprint).toBe("newfingerprint");
 		expect(result.indexedAt).not.toBe(existing.indexedAt);
@@ -375,7 +394,7 @@ describe("buildIncrementalIndex", () => {
 		expect(result.imports).toEqual(existing.imports);
 	});
 
-	it("recomputes docs from scratch when .md file added (promotes into top-8)", () => {
+	it("recomputes docs from scratch when .md file added (promotes into top-8)", async () => {
 		vi.mocked(loadDocs).mockReturnValue([
 			{ path: "README.md", title: "Test App", body: "# Test App\n" },
 			{ path: "docs/new.md", title: "New Doc", body: "# New Doc\n" },
@@ -389,14 +408,14 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.docs).toHaveLength(2);
 		expect(result.docs[1]?.title).toBe("New Doc");
 		expect(vi.mocked(loadDocs)).toHaveBeenCalled();
 	});
 
-	it("sets dirtyAtIndex true when passed true", () => {
+	it("sets dirtyAtIndex true when passed true", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractImports).mockReturnValue([]);
 
@@ -407,12 +426,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, true);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, true);
 
 		expect(result.dirtyAtIndex).toBe(true);
 	});
 
-	it("sets dirtyAtIndex false when passed false", () => {
+	it("sets dirtyAtIndex false when passed false", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractImports).mockReturnValue([]);
 
@@ -423,12 +442,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.dirtyAtIndex).toBe(false);
 	});
 
-	it("recomputes docs from scratch when top-ranked doc removed", () => {
+	it("recomputes docs from scratch when top-ranked doc removed", async () => {
 		vi.mocked(loadDocs).mockReturnValue([
 			{ path: "docs/other.md", title: "Other", body: "# Other\n" },
 		]);
@@ -440,9 +459,81 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
 
 		expect(result.docs).toHaveLength(1);
 		expect(result.docs[0]?.title).toBe("Other");
+	});
+
+	it("removes call edges from changed files and re-extracts", async () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
+		vi.mocked(extractCallGraph).mockResolvedValue({
+			calls: [{ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" }],
+			functions: [
+				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		vi.mocked(extractImports).mockReturnValue([]);
+
+		const existing = makeCacheForIncremental();
+		existing.calls = [
+			{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
+			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
+		];
+		existing.functions = [
+			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+			{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+
+		const diff: FilesDiff = {
+			changed: ["src/main.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.calls).toContainEqual({ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" });
+		expect(result.calls).toContainEqual({ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" });
+		expect(result.functions).toContainEqual(
+			expect.objectContaining({ qualifiedName: "helper", file: "src/utils.ts" }),
+		);
+	});
+
+	it("removes call edges from affected callers (files importing changed files)", async () => {
+		vi.mocked(hashFileContent).mockReturnValue("hash_utils_v2");
+		vi.mocked(extractCallGraph).mockResolvedValue({
+			calls: [
+				{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
+				{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
+			],
+			functions: [
+				{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		vi.mocked(extractImports).mockReturnValue([]);
+
+		const existing = makeCacheForIncremental();
+		existing.calls = [
+			{ from: "src/main.ts::main", to: "src/utils.ts::oldHelper", kind: "call" },
+			{ from: "src/utils.ts::oldHelper", to: "src/lib.ts::lib", kind: "call" },
+		];
+		existing.functions = [
+			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+			{ qualifiedName: "oldHelper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+
+		const diff: FilesDiff = {
+			changed: ["src/utils.ts"],
+			removed: [],
+			method: "git-diff",
+		};
+
+		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+
+		expect(result.calls).not.toContainEqual(
+			expect.objectContaining({ to: "src/utils.ts::oldHelper" }),
+		);
 	});
 });

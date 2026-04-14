@@ -25,10 +25,10 @@ export type RehydrateResult = {
 	cache: RepoCache;
 };
 
-export function rehydrateRepo(
+export async function rehydrateRepo(
 	repoPath: string,
 	options?: RehydrateOptions,
-): RehydrateResult {
+): Promise<RehydrateResult> {
 	try {
 		const identity = resolveRepoIdentity(repoPath);
 		const cached = readCacheForWorktree(identity.repoKey, identity.worktreeKey);
@@ -37,7 +37,7 @@ export function rehydrateRepo(
 		let cacheStatus: RehydrateResult["cacheStatus"];
 
 		if (!cached) {
-			cache = indexRepo(repoPath);
+			cache = await indexRepo(repoPath);
 			cacheStatus = "reindexed";
 		} else {
 			const fingerprint = buildRepoFingerprint(identity.worktreePath);
@@ -62,7 +62,7 @@ export function rehydrateRepo(
 					forceHashCompare: dirtyReverted,
 				});
 				const isDirtyRefresh = dirty;
-				cache = buildIncrementalIndex(
+				cache = await buildIncrementalIndex(
 					identity,
 					cached,
 					diff,

@@ -4,6 +4,7 @@ import {
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
+import { extractCallGraph } from "./call-graph.js";
 import { hashFileContent } from "./diff-files.js";
 import type { FilesDiff } from "./diff-files.js";
 import { loadDocs } from "./doc-inputs.js";
@@ -14,7 +15,11 @@ import { SCHEMA_VERSION, IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache, RepoIdentity } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 
-export function buildIndex(identity: RepoIdentity): RepoCache {
+function stripKnownExt(value: string): string {
+	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
+}
+
+export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 	try {
 		const filePaths = listIndexableFiles(identity.worktreePath);
 		const packageMeta = readPackageMeta(identity.worktreePath);
@@ -27,6 +32,10 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 			kind: "file" as const,
 			contentHash: hashFileContent(identity.worktreePath, p),
 		}));
+		const { calls, functions: functionNodes } = await extractCallGraph(
+			identity.worktreePath,
+			filePaths,
+		);
 
 		return {
 			schemaVersion: SCHEMA_VERSION,
@@ -40,8 +49,8 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 			files,
 			docs,
 			imports,
-			calls: [],
-			functions: [],
+			calls,
+			functions: functionNodes,
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
@@ -50,19 +59,19 @@ export function buildIndex(identity: RepoIdentity): RepoCache {
 	}
 }
 
-export function indexRepo(repoPath: string): RepoCache {
+export async function indexRepo(repoPath: string): Promise<RepoCache> {
 	const identity = resolveRepoIdentity(repoPath);
-	const cache = buildIndex(identity);
+	const cache = await buildIndex(identity);
 	writeCache(cache);
 	return cache;
 }
 
-export function buildIncrementalIndex(
+export async function buildIncrementalIndex(
 	identity: RepoIdentity,
 	existingCache: RepoCache,
 	diff: FilesDiff,
 	dirtyAtIndex: boolean,
-): RepoCache {
+): Promise<RepoCache> {
 	const fingerprint = buildRepoFingerprint(identity.worktreePath);
 	const indexedAt = new Date().toISOString();
 
@@ -122,6 +131,45 @@ export function buildIncrementalIndex(
 		? loadDocs(identity.worktreePath, allFilePaths)
 		: existingCache.docs;
 
+	// --- calls[] + functions[] ---
+	const existingCalls = existingCache.calls ?? [];
+	const existingFunctions = existingCache.functions ?? [];
+
+	// Identify affected callers: unchanged files that import changed files
+	const affectedCallers = new Set<string>();
+	for (const edge of existingCache.imports) {
+		if (touchedSet.has(edge.from)) continue;
+		for (const changed of touchedSet) {
+			const changedStripped = stripKnownExt(changed);
+			if (edge.to === changedStripped || edge.to === changedStripped.replace(/\/index$/, "")) {
+				affectedCallers.add(edge.from);
+			}
+		}
+	}
+
+	// Remove call edges from changed files and affected callers
+	const callCleanSet = new Set([...touchedSet, ...affectedCallers]);
+	const keptCalls = existingCalls.filter((e) => {
+		const fromFile = e.from.slice(0, e.from.indexOf("::"));
+		return !callCleanSet.has(fromFile);
+	});
+	const keptFunctions = existingFunctions.filter(
+		(f) => !changedSet.has(f.file) && !removedSet.has(f.file),
+	);
+
+	// Reparse changed files + affected callers
+	const filesToReparse = [
+		...changedTsFiles,
+		...[...affectedCallers].filter((p) => /\.(ts|tsx|js|jsx)$/.test(p)),
+	];
+	const { calls: newCalls, functions: newFunctions } = await extractCallGraph(
+		identity.worktreePath,
+		filesToReparse,
+	);
+
+	const calls = [...keptCalls, ...newCalls];
+	const functionNodes = [...keptFunctions, ...newFunctions];
+
 	return {
 		schemaVersion: SCHEMA_VERSION,
 		repoKey: identity.repoKey,
@@ -135,8 +183,8 @@ export function buildIncrementalIndex(
 		files,
 		docs,
 		imports,
-		calls: [],
-		functions: [],
+		calls,
+		functions: functionNodes,
 	};
 }
 

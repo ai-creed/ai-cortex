@@ -71,19 +71,19 @@ afterEach(() => {
 });
 
 describe("rehydrateRepo", () => {
-	it("returns fresh when fingerprint matches and worktree is clean", () => {
+	it("returns fresh when fingerprint matches and worktree is clean", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("fresh");
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 	});
 
-	it("reindexes when fingerprint is stale", () => {
+	it("reindexes when fingerprint is stale", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
@@ -93,16 +93,16 @@ describe("rehydrateRepo", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
-	it("reindexes when worktree has modified tracked files", () => {
+	it("reindexes when worktree has modified tracked files", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
@@ -113,16 +113,16 @@ describe("rehydrateRepo", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
-	it("reindexes when worktree has new untracked files", () => {
+	it("reindexes when worktree has new untracked files", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
@@ -133,51 +133,51 @@ describe("rehydrateRepo", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
-	it("uses stale data when stale option is set", () => {
+	it("uses stale data when stale option is set", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
 
-		const result = rehydrateRepo("/repo", { stale: true });
+		const result = await rehydrateRepo("/repo", { stale: true });
 
 		expect(result.cacheStatus).toBe("stale");
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 	});
 
-	it("indexes from scratch when no cache exists", () => {
+	it("indexes from scratch when no cache exists", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(null);
-		vi.mocked(indexRepo).mockReturnValue(cache);
+		vi.mocked(indexRepo).mockResolvedValue(cache);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
 	});
 
-	it("writes .md file to the correct path", () => {
+	it("writes .md file to the correct path", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.briefingPath).toContain(mockIdentity.worktreeKey + ".md");
 		expect(fs.existsSync(result.briefingPath)).toBe(true);
 		expect(fs.readFileSync(result.briefingPath, "utf8")).toBe("# test-app\n");
 	});
 
-	it("wraps non-identity errors in IndexError", () => {
+	it("wraps non-identity errors in IndexError", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -186,10 +186,10 @@ describe("rehydrateRepo", () => {
 			throw new Error("disk full");
 		});
 
-		expect(() => rehydrateRepo("/repo")).toThrow(IndexError);
+		await expect(rehydrateRepo("/repo")).rejects.toThrow(IndexError);
 	});
 
-	it("wraps fs.writeFileSync failure in IndexError", () => {
+	it("wraps fs.writeFileSync failure in IndexError", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -198,31 +198,31 @@ describe("rehydrateRepo", () => {
 			throw new Error("ENOSPC: no space left on device");
 		});
 
-		expect(() => rehydrateRepo("/repo")).toThrow(IndexError);
+		await expect(rehydrateRepo("/repo")).rejects.toThrow(IndexError);
 	});
 
-	it("passes through RepoIdentityError without wrapping", () => {
+	it("passes through RepoIdentityError without wrapping", async () => {
 		vi.mocked(resolveRepoIdentity).mockImplementation(() => {
 			throw new RepoIdentityError("not a git repo");
 		});
 
-		expect(() => rehydrateRepo("/repo")).toThrow(RepoIdentityError);
+		await expect(rehydrateRepo("/repo")).rejects.toThrow(RepoIdentityError);
 	});
 
-	it("returns the cache in the result", () => {
+	it("returns the cache in the result", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 		vi.mocked(isWorktreeDirty).mockReturnValue(false);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cache).toBe(cache);
 	});
 });
 
 describe("rehydrateRepo — incremental path", () => {
-	it("uses incremental index when cache exists and fingerprint is stale", () => {
+	it("uses incremental index when cache exists and fingerprint is stale", async () => {
 		const cache = makeFreshCache();
 		cache.files = [
 			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
@@ -236,10 +236,10 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
@@ -247,7 +247,7 @@ describe("rehydrateRepo — incremental path", () => {
 		expect(vi.mocked(writeCache)).toHaveBeenCalledWith(updated);
 	});
 
-	it("uses incremental index when worktree is dirty", () => {
+	it("uses incremental index when worktree is dirty", async () => {
 		const cache = makeFreshCache();
 		cache.files = [
 			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
@@ -262,29 +262,29 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 	});
 
-	it("still uses full indexRepo when no cache exists", () => {
+	it("still uses full indexRepo when no cache exists", async () => {
 		const cache = makeFreshCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(null);
-		vi.mocked(indexRepo).mockReturnValue(cache);
+		vi.mocked(indexRepo).mockResolvedValue(cache);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});
 
-	it("treats dirty-reverted cache as stale (dirtyAtIndex + clean worktree)", () => {
+	it("treats dirty-reverted cache as stale (dirtyAtIndex + clean worktree)", async () => {
 		const cache = makeFreshCache();
 		cache.dirtyAtIndex = true; // was built from dirty worktree
 		const updated = { ...cache, dirtyAtIndex: false };
@@ -297,10 +297,10 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "hash-compare",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = rehydrateRepo("/repo");
+		const result = await rehydrateRepo("/repo");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
@@ -312,7 +312,7 @@ describe("rehydrateRepo — incremental path", () => {
 		);
 	});
 
-	it("passes dirtyAtIndex=true when refresh triggered by dirty worktree", () => {
+	it("passes dirtyAtIndex=true when refresh triggered by dirty worktree", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache, dirtyAtIndex: true };
 
@@ -324,10 +324,10 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		rehydrateRepo("/repo");
+		await rehydrateRepo("/repo");
 
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
 			expect.anything(),
@@ -337,7 +337,7 @@ describe("rehydrateRepo — incremental path", () => {
 		);
 	});
 
-	it("passes dirtyAtIndex=false when refresh triggered by fingerprint change only", () => {
+	it("passes dirtyAtIndex=false when refresh triggered by fingerprint change only", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
 
@@ -349,10 +349,10 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		rehydrateRepo("/repo");
+		await rehydrateRepo("/repo");
 
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
 			expect.anything(),
@@ -362,7 +362,7 @@ describe("rehydrateRepo — incremental path", () => {
 		);
 	});
 
-	it("passes dirtyAtIndex=true when fingerprint is stale AND worktree is dirty", () => {
+	it("passes dirtyAtIndex=true when fingerprint is stale AND worktree is dirty", async () => {
 		const cache = makeFreshCache();
 		const updated = { ...cache, fingerprint: "newfingerprint", dirtyAtIndex: true };
 
@@ -374,10 +374,10 @@ describe("rehydrateRepo — incremental path", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		rehydrateRepo("/repo");
+		await rehydrateRepo("/repo");
 
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledWith(
 			expect.anything(),

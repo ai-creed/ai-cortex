@@ -29,7 +29,7 @@ beforeEach(() => {
 
 describe("rehydrate_project", () => {
 	it("calls rehydrateRepo with given path and returns briefing text", async () => {
-		vi.mocked(rehydrateRepo).mockReturnValue({
+		vi.mocked(rehydrateRepo).mockResolvedValue({
 			briefingPath: "/cache/key.md",
 			cacheStatus: "fresh",
 			cache: {} as any,
@@ -50,7 +50,7 @@ describe("rehydrate_project", () => {
 	});
 
 	it("includes cache status comment at the top of the output", async () => {
-		vi.mocked(rehydrateRepo).mockReturnValue({
+		vi.mocked(rehydrateRepo).mockResolvedValue({
 			briefingPath: "/cache/key.md",
 			cacheStatus: "reindexed",
 			cache: {} as any,
@@ -68,7 +68,7 @@ describe("rehydrate_project", () => {
 	});
 
 	it("defaults path to process.cwd() when not provided", async () => {
-		vi.mocked(rehydrateRepo).mockReturnValue({
+		vi.mocked(rehydrateRepo).mockResolvedValue({
 			briefingPath: "/cache/key.md",
 			cacheStatus: "fresh",
 			cache: {} as any,
@@ -114,7 +114,7 @@ describe("rehydrate_project", () => {
 
 describe("suggest_files", () => {
 	it("calls suggestRepo with task and options and returns formatted text", async () => {
-		vi.mocked(suggestRepo).mockReturnValue({
+		vi.mocked(suggestRepo).mockResolvedValue({
 			task: "persistence layer",
 			from: null,
 			cacheStatus: "fresh",
@@ -201,7 +201,7 @@ describe("suggest_files", () => {
 
 describe("index_project", () => {
 	it("calls indexRepo with given path and returns file and doc count", async () => {
-		vi.mocked(indexRepo).mockReturnValue({
+		vi.mocked(indexRepo).mockResolvedValue({
 			files: [
 				{ path: "src/app.ts", kind: "file", contentHash: "h1" },
 				{ path: "src/cli.ts", kind: "file", contentHash: "h2" },
@@ -221,7 +221,7 @@ describe("index_project", () => {
 	});
 
 	it("defaults path to process.cwd() when not provided", async () => {
-		vi.mocked(indexRepo).mockReturnValue({ files: [], docs: [] } as any);
+		vi.mocked(indexRepo).mockResolvedValue({ files: [], docs: [] } as any);
 
 		const client = await makeClient();
 		await client.callTool({ name: "index_project", arguments: {} });

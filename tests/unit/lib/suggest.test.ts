@@ -67,12 +67,12 @@ beforeEach(() => {
 });
 
 describe("suggestRepo", () => {
-	it("returns fresh when cache is current and worktree is clean", () => {
+	it("returns fresh when cache is current and worktree is clean", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 
-		const result = suggestRepo("/repo", "app");
+		const result = await suggestRepo("/repo", "app");
 
 		expect(result.cacheStatus).toBe("fresh");
 		expect(result.results[0]?.path).toBe("src/app.ts");
@@ -80,18 +80,18 @@ describe("suggestRepo", () => {
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});
 
-	it("indexes from scratch when no cache exists", () => {
+	it("indexes from scratch when no cache exists", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(null);
-		vi.mocked(indexRepo).mockReturnValue(cache);
+		vi.mocked(indexRepo).mockResolvedValue(cache);
 
-		const result = suggestRepo("/repo", "app");
+		const result = await suggestRepo("/repo", "app");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(indexRepo)).toHaveBeenCalledOnce();
 	});
 
-	it("uses incremental refresh when fingerprint is stale", () => {
+	it("uses incremental refresh when fingerprint is stale", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
@@ -101,16 +101,16 @@ describe("suggestRepo", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue(updated);
+		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = suggestRepo("/repo", "app");
+		const result = await suggestRepo("/repo", "app");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 	});
 
-	it("uses incremental refresh when the worktree is dirty at the same fingerprint", () => {
+	it("uses incremental refresh when the worktree is dirty at the same fingerprint", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -120,13 +120,13 @@ describe("suggestRepo", () => {
 			removed: [],
 			method: "git-diff",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue({
+		vi.mocked(buildIncrementalIndex).mockResolvedValue({
 			...cache,
 			dirtyAtIndex: true,
 		});
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = suggestRepo("/repo", "new");
+		const result = await suggestRepo("/repo", "new");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(diffChangedFiles)).toHaveBeenCalledWith(
@@ -136,7 +136,7 @@ describe("suggestRepo", () => {
 		);
 	});
 
-	it("forces hash compare when cache was built dirty and worktree is now clean", () => {
+	it("forces hash compare when cache was built dirty and worktree is now clean", async () => {
 		const cache = makeCache({ dirtyAtIndex: true });
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
@@ -145,13 +145,13 @@ describe("suggestRepo", () => {
 			removed: [],
 			method: "hash-compare",
 		});
-		vi.mocked(buildIncrementalIndex).mockReturnValue({
+		vi.mocked(buildIncrementalIndex).mockResolvedValue({
 			...cache,
 			dirtyAtIndex: false,
 		});
 		vi.mocked(writeCache).mockReturnValue(undefined);
 
-		const result = suggestRepo("/repo", "app");
+		const result = await suggestRepo("/repo", "app");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(diffChangedFiles)).toHaveBeenCalledWith(
@@ -161,50 +161,50 @@ describe("suggestRepo", () => {
 		);
 	});
 
-	it("uses stale cache when stale is requested", () => {
+	it("uses stale cache when stale is requested", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
 
-		const result = suggestRepo("/repo", "app", { stale: true });
+		const result = await suggestRepo("/repo", "app", { stale: true });
 
 		expect(result.cacheStatus).toBe("stale");
 	});
 
-	it("throws IndexError for an empty task", () => {
-		expect(() => suggestRepo("/repo", "   ")).toThrow(IndexError);
+	it("throws IndexError for an empty task", async () => {
+		await expect(suggestRepo("/repo", "   ")).rejects.toThrow(IndexError);
 	});
 
-	it("throws IndexError for invalid limit", () => {
-		expect(() => suggestRepo("/repo", "app", { limit: 0 })).toThrow(IndexError);
+	it("throws IndexError for invalid limit", async () => {
+		await expect(suggestRepo("/repo", "app", { limit: 0 })).rejects.toThrow(IndexError);
 	});
 
-	it("normalizes unknown from values to null", () => {
+	it("normalizes unknown from values to null", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 
-		const result = suggestRepo("/repo", "app", { from: "missing.ts" });
+		const result = await suggestRepo("/repo", "app", { from: "missing.ts" });
 
 		expect(result.from).toBeNull();
 	});
 
-	it("wraps non-identity errors in IndexError", () => {
+	it("wraps non-identity errors in IndexError", async () => {
 		const cache = makeCache();
 		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockImplementation(() => {
 			throw new Error("git exploded");
 		});
 
-		expect(() => suggestRepo("/repo", "app")).toThrow(IndexError);
+		await expect(suggestRepo("/repo", "app")).rejects.toThrow(IndexError);
 	});
 
-	it("passes through RepoIdentityError", () => {
+	it("passes through RepoIdentityError", async () => {
 		vi.mocked(resolveRepoIdentity).mockImplementation(() => {
 			throw new RepoIdentityError("not a repo");
 		});
 
-		expect(() => suggestRepo("/repo", "app")).toThrow(RepoIdentityError);
+		await expect(suggestRepo("/repo", "app")).rejects.toThrow(RepoIdentityError);
 	});
 
 	it("re-exports suggestRepo from the library entrypoint", () => {

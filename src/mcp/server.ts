@@ -21,7 +21,7 @@ export function createServer(): McpServer {
 		{ path: z.string().optional() },
 		async ({ path }) => {
 			const repoPath = path ?? process.cwd();
-			const result = rehydrateRepo(repoPath);
+			const result = await rehydrateRepo(repoPath);
 			const briefing = fs.readFileSync(result.briefingPath, "utf8");
 			return {
 				content: [
@@ -46,7 +46,7 @@ export function createServer(): McpServer {
 		},
 		async ({ task, path, from, limit, stale }) => {
 			const repoPath = path ?? process.cwd();
-			const result = suggestRepo(repoPath, task, { from, limit, stale });
+			const result = await suggestRepo(repoPath, task, { from, limit, stale });
 			const lines = [`suggested files for: ${result.task}`, ""];
 			for (const [i, item] of result.results.entries()) {
 				lines.push(`${i + 1}. ${item.path}`);
@@ -65,7 +65,7 @@ export function createServer(): McpServer {
 		{ path: z.string().optional() },
 		async ({ path }) => {
 			const repoPath = path ?? process.cwd();
-			const cache = indexRepo(repoPath);
+			const cache = await indexRepo(repoPath);
 			return {
 				content: [
 					{

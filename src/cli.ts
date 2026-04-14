@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 			const start = performance.now();
 
 			const existing = refresh ? null : getCachedIndex(repoPath);
-			const cache = existing ?? indexRepo(repoPath);
+			const cache = existing ?? await indexRepo(repoPath);
 			const duration = Math.round(performance.now() - start);
 
 			process.stdout.write(
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
 			const stale = options.includes("--stale");
 			const json = options.includes("--json");
 
-			const result = rehydrateRepo(repoPath, { stale });
+			const result = await rehydrateRepo(repoPath, { stale });
 
 			if (json) {
 				process.stdout.write(
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
 			}
 		} else if (command === "suggest") {
 			const parsed = parseSuggestArgs(args);
-			const result = suggestRepo(parsed.repoPath, parsed.task, {
+			const result = await suggestRepo(parsed.repoPath, parsed.task, {
 				from: parsed.from,
 				limit: parsed.limit,
 				stale: parsed.stale,

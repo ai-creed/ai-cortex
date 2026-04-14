@@ -47,8 +47,8 @@ afterAll(() => {
 });
 
 describe("indexRepo + getCachedIndex (real disk + real git)", () => {
-	it("builds a RepoCache with correct shape", () => {
-		const cache = indexRepo(tmpDir);
+	it("builds a RepoCache with correct shape", async () => {
+		const cache = await indexRepo(tmpDir);
 
 		expect(cache.schemaVersion).toBe(SCHEMA_VERSION);
 		expect(cache.repoKey).toHaveLength(16);
@@ -77,10 +77,10 @@ describe("indexRepo + getCachedIndex (real disk + real git)", () => {
 });
 
 describe("rehydrateRepo (real disk + real git)", () => {
-	it("writes a .md briefing file containing the project name", () => {
+	it("writes a .md briefing file containing the project name", async () => {
 		// Re-index first to ensure cache exists for this commit state
-		indexRepo(tmpDir);
-		const result = rehydrateRepo(tmpDir);
+		await indexRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.briefingPath).toMatch(/\.md$/);
 		expect(fs.existsSync(result.briefingPath)).toBe(true);
@@ -88,7 +88,7 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		expect(content).toContain("# test-repo");
 	});
 
-	it("auto-reindexes after a new commit", () => {
+	it("auto-reindexes after a new commit", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "extra.ts"),
 			"export const y = 2;\n",
@@ -96,31 +96,31 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add extra"]);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 	});
 
-	it("returns stale when --stale is used after another commit", () => {
+	it("returns stale when --stale is used after another commit", async () => {
 		fs.appendFileSync(path.join(tmpDir, "src", "extra.ts"), "\n// change\n");
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "modify extra"]);
 
-		const result = rehydrateRepo(tmpDir, { stale: true });
+		const result = await rehydrateRepo(tmpDir, { stale: true });
 
 		expect(result.cacheStatus).toBe("stale");
 	});
 
-	it("detects dirty worktree and reindexes", () => {
+	it("detects dirty worktree and reindexes", async () => {
 		// First ensure cache is fresh
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 		// Now dirty the worktree without committing
 		fs.appendFileSync(
 			path.join(tmpDir, "README.md"),
 			"\nuncommitted change\n",
 		);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 
@@ -128,14 +128,14 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "README.md"]);
 	});
 
-	it("detects new untracked file and reindexes", () => {
+	it("detects new untracked file and reindexes", async () => {
 		// Ensure cache is fresh at current HEAD
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 		// Create a new untracked file (not staged, not committed)
 		const untrackedFile = path.join(tmpDir, "newfile.ts");
 		fs.writeFileSync(untrackedFile, "export const z = 3;\n");
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 
@@ -145,7 +145,7 @@ describe("rehydrateRepo (real disk + real git)", () => {
 });
 
 describe("bug reproductions", () => {
-	it("unstaged tracked deletion does not crash incremental refresh", () => {
+	it("unstaged tracked deletion does not crash incremental refresh", async () => {
 		// Set up: two committed files
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "b.ts"),
@@ -153,13 +153,13 @@ describe("bug reproductions", () => {
 		);
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add b"]);
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 
 		// Delete b.ts from working tree without staging the deletion
 		fs.rmSync(path.join(tmpDir, "src", "b.ts"));
 
 		// Should NOT throw ENOENT — should detect b.ts as removed
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(
@@ -170,9 +170,9 @@ describe("bug reproductions", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove b"]);
 	});
-	it("dirty-revert restores clean content hashes, not stale dirty ones", () => {
+	it("dirty-revert restores clean content hashes, not stale dirty ones", async () => {
 		// Get clean cache with known hash
-		const clean = indexRepo(tmpDir);
+		const clean = await indexRepo(tmpDir);
 		const cleanHash = clean.files.find((f) => f.path === "src/main.ts")?.contentHash;
 		expect(cleanHash).toBeDefined();
 
@@ -183,7 +183,7 @@ describe("bug reproductions", () => {
 		);
 
 		// First rehydrate picks up dirty content
-		const dirty = rehydrateRepo(tmpDir);
+		const dirty = await rehydrateRepo(tmpDir);
 		expect(dirty.cache.dirtyAtIndex).toBe(true);
 		const dirtyHash = dirty.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
 		expect(dirtyHash).not.toBe(cleanHash);
@@ -192,15 +192,15 @@ describe("bug reproductions", () => {
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
 
 		// Rehydrate after revert must restore the clean hash
-		const reverted = rehydrateRepo(tmpDir);
+		const reverted = await rehydrateRepo(tmpDir);
 		expect(reverted.cacheStatus).toBe("reindexed");
 		expect(reverted.cache.dirtyAtIndex).toBe(false);
 		const revertedHash = reverted.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
 		expect(revertedHash).toBe(cleanHash);
 	});
 
-	it("new commit + uncommitted edit marks cache as dirty", () => {
-		indexRepo(tmpDir);
+	it("new commit + uncommitted edit marks cache as dirty", async () => {
+		await indexRepo(tmpDir);
 
 		// New commit changes fingerprint
 		fs.writeFileSync(
@@ -216,7 +216,7 @@ describe("bug reproductions", () => {
 			"export const dirty = true;\n",
 		);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		// Must be dirty — worktree has uncommitted edit
@@ -226,16 +226,16 @@ describe("bug reproductions", () => {
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
 
 		// Next rehydrate should NOT be fresh — cache has dirty hash
-		const reverted = rehydrateRepo(tmpDir);
+		const reverted = await rehydrateRepo(tmpDir);
 		expect(reverted.cacheStatus).toBe("reindexed");
 		expect(reverted.cache.dirtyAtIndex).toBe(false);
 	});
 });
 
 describe("incremental refresh (real disk + real git)", () => {
-	it("uses incremental reindex after modifying one file", () => {
+	it("uses incremental reindex after modifying one file", async () => {
 		// Ensure fresh cache
-		const initial = indexRepo(tmpDir);
+		const initial = await indexRepo(tmpDir);
 		const initialFileCount = initial.files.length;
 
 		// Modify one file and commit
@@ -246,7 +246,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "tweak main"]);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		// File count should stay the same (incremental, not adding/removing)
@@ -258,9 +258,9 @@ describe("incremental refresh (real disk + real git)", () => {
 		expect(mainFile?.contentHash).toBeDefined();
 	});
 
-	it("second rehydrate on same dirty worktree has empty incremental diff", () => {
+	it("second rehydrate on same dirty worktree has empty incremental diff", async () => {
 		// Ensure fresh cache
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 
 		// Dirty the worktree without committing
 		fs.writeFileSync(
@@ -269,22 +269,22 @@ describe("incremental refresh (real disk + real git)", () => {
 		);
 
 		// First rehydrate picks up the dirty change
-		const first = rehydrateRepo(tmpDir);
+		const first = await rehydrateRepo(tmpDir);
 		expect(first.cacheStatus).toBe("reindexed");
 		expect(first.cache.dirtyAtIndex).toBe(true);
 
 		// Second rehydrate — same dirty state, but cache already has correct hashes
 		// Hash validation filters out the already-processed file
-		const second = rehydrateRepo(tmpDir);
+		const second = await rehydrateRepo(tmpDir);
 		expect(second.cacheStatus).toBe("reindexed");
 
 		// Clean up
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
 	});
 
-	it("dirty edit then revert triggers reindex, not fresh (dirty-revert)", () => {
+	it("dirty edit then revert triggers reindex, not fresh (dirty-revert)", async () => {
 		// Ensure fresh cache
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 
 		// Dirty the worktree
 		fs.writeFileSync(
@@ -293,7 +293,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		);
 
 		// Rehydrate picks up dirty change — cache now has dirtyAtIndex=true
-		const dirty = rehydrateRepo(tmpDir);
+		const dirty = await rehydrateRepo(tmpDir);
 		expect(dirty.cacheStatus).toBe("reindexed");
 		expect(dirty.cache.dirtyAtIndex).toBe(true);
 
@@ -301,21 +301,21 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
 
 		// Rehydrate should NOT return "fresh" — cache has stale dirty content
-		const reverted = rehydrateRepo(tmpDir);
+		const reverted = await rehydrateRepo(tmpDir);
 		expect(reverted.cacheStatus).toBe("reindexed");
 		// After reindex from clean state, dirtyAtIndex should be false
 		expect(reverted.cache.dirtyAtIndex).toBe(false);
 	});
 
-	it("removes package.json and rehydrate uses fallback packageMeta", () => {
-		indexRepo(tmpDir);
+	it("removes package.json and rehydrate uses fallback packageMeta", async () => {
+		await indexRepo(tmpDir);
 
 		// Remove package.json and commit
 		fs.rmSync(path.join(tmpDir, "package.json"));
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "remove pkg"]);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		// Fallback: name = dirname, version = 0.0.0
@@ -331,9 +331,9 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "restore pkg"]);
 	});
 
-	it("falls back to hash compare when cached fingerprint is nonexistent", () => {
+	it("falls back to hash compare when cached fingerprint is nonexistent", async () => {
 		// Index at current HEAD
-		const cache = indexRepo(tmpDir);
+		const cache = await indexRepo(tmpDir);
 
 		// Tamper with persisted cache to set fingerprint to nonexistent SHA
 		const cacheDir = path.join(
@@ -356,14 +356,14 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "change for fallback test"]);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		// Should still work — falls back to hash comparison
 		expect(result.cache.files.length).toBeGreaterThan(0);
 	});
 
-	it("stale import edges remain after rename (known limitation)", () => {
+	it("stale import edges remain after rename (known limitation)", async () => {
 		// Set up: main.ts imports utils.ts
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "main.ts"),
@@ -375,7 +375,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		);
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add utils"]);
-		indexRepo(tmpDir);
+		await indexRepo(tmpDir);
 
 		// Rename utils.ts to helpers.ts (but don't update main.ts import)
 		fs.renameSync(
@@ -385,7 +385,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "rename utils"]);
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		expect(result.cacheStatus).toBe("reindexed");
 		// main.ts was not changed, so its import edge still points to src/utils
@@ -404,9 +404,9 @@ describe("incremental refresh (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "clean up rename test"]);
 	});
 
-	it("schema v1 cache triggers full reindex", () => {
+	it("schema v1 cache triggers full reindex", async () => {
 		// Build current cache
-		const cache = indexRepo(tmpDir);
+		const cache = await indexRepo(tmpDir);
 
 		// Tamper with cache file to simulate v1 schema
 		const cacheDir = path.join(
@@ -421,7 +421,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		raw.schemaVersion = "1";
 		fs.writeFileSync(cacheFile, JSON.stringify(raw));
 
-		const result = rehydrateRepo(tmpDir);
+		const result = await rehydrateRepo(tmpDir);
 
 		// Should do full reindex because schema mismatch nukes cache
 		expect(result.cacheStatus).toBe("reindexed");
@@ -430,7 +430,7 @@ describe("incremental refresh (real disk + real git)", () => {
 });
 
 describe("suggestRepo (real disk + real git)", () => {
-	it("returns ranked suggestions from real cache data", () => {
+	it("returns ranked suggestions from real cache data", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "persistence-store.ts"),
 			"export const persistenceStore = true;\n",
@@ -438,20 +438,20 @@ describe("suggestRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add persistence store"]);
 
-		const result = suggestRepo(tmpDir, "persistence store");
+		const result = await suggestRepo(tmpDir, "persistence store");
 
 		expect(result.results[0]?.path).toContain("persistence-store");
 		expect(result.cacheStatus).toMatch(/^(fresh|reindexed)$/);
 	});
 
-	it("refreshes incrementally when the worktree becomes dirty", () => {
-		indexRepo(tmpDir);
+	it("refreshes incrementally when the worktree becomes dirty", async () => {
+		await indexRepo(tmpDir);
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "dirty-persistence.ts"),
 			"export const dirtyPersistence = true;\n",
 		);
 
-		const result = suggestRepo(tmpDir, "dirty persistence");
+		const result = await suggestRepo(tmpDir, "dirty persistence");
 
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(
@@ -459,21 +459,21 @@ describe("suggestRepo (real disk + real git)", () => {
 		).toBe(true);
 	});
 
-	it("refreshes when a dirty cache is reverted back to clean", () => {
-		indexRepo(tmpDir);
+	it("refreshes when a dirty cache is reverted back to clean", async () => {
+		await indexRepo(tmpDir);
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "main.ts"),
 			"export const dirty = true;\n",
 		);
-		suggestRepo(tmpDir, "dirty");
+		await suggestRepo(tmpDir, "dirty");
 		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
 
-		const result = suggestRepo(tmpDir, "main");
+		const result = await suggestRepo(tmpDir, "main");
 
 		expect(result.cacheStatus).toBe("reindexed");
 	});
 
-	it("changes ranking direction when --from points at a related anchor", () => {
+	it("changes ranking direction when --from points at a related anchor", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "src", "feature.ts"),
 			"import './persistence-store';\nexport const feature = true;\n",
@@ -485,14 +485,14 @@ describe("suggestRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add anchor fixtures"]);
 
-		const plain = suggestRepo(tmpDir, "store");
-		const anchored = suggestRepo(tmpDir, "store", { from: "src/feature.ts" });
+		const plain = await suggestRepo(tmpDir, "store");
+		const anchored = await suggestRepo(tmpDir, "store", { from: "src/feature.ts" });
 
 		expect(plain.results[0]?.path).toContain("store");
 		expect(anchored.results[0]?.path).toBe("src/persistence-store.ts");
 	});
 
-	it("dedupes markdown doc results", () => {
+	it("dedupes markdown doc results", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "docs.md"),
 			"# Persistence Architecture\nPersistence Architecture\n",
@@ -500,7 +500,7 @@ describe("suggestRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add docs"]);
 
-		const result = suggestRepo(tmpDir, "persistence architecture");
+		const result = await suggestRepo(tmpDir, "persistence architecture");
 		const docs = result.results.filter((item) => item.path === "docs.md");
 
 		expect(docs).toHaveLength(1);
