@@ -113,6 +113,14 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
 - `CallEdge.from` / `to` use `"file::qualifiedName"` keys
 - `confidence: "full"` when all edges resolve statically; `"partial"` when dynamic call sites remain
 
+## Releasing
+
+```bash
+pnpm run release 0.2.0-beta.1
+```
+
+Bumps the version in `package.json`, commits, tags, and pushes. Must be on `master` with a clean working tree.
+
 ## Installation
 
 See [MANUAL.md](./MANUAL.md) for full installation and integration instructions.
