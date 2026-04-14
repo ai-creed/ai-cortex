@@ -13,6 +13,7 @@ describe("listIndexableFiles", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.spyOn(fs, "existsSync").mockReturnValue(true);
+		vi.spyOn(fs, "statSync").mockReturnValue({ isDirectory: () => false } as any);
 	});
 
 	it("returns sorted file paths from git ls-files", () => {
@@ -57,5 +58,13 @@ describe("listIndexableFiles", () => {
 			!String(p).includes("deleted.ts"),
 		);
 		expect(listIndexableFiles("/repo")).toEqual(["a.ts", "b.ts"]);
+	});
+
+	it("filters out directories (submodules, symlinked dirs)", () => {
+		mockExec.mockReturnValue("src/app.ts\nvendor\nlib/utils.ts\n" as any);
+		vi.spyOn(fs, "statSync").mockImplementation((p) => ({
+			isDirectory: () => String(p).endsWith("vendor"),
+		}) as any);
+		expect(listIndexableFiles("/repo")).toEqual(["lib/utils.ts", "src/app.ts"]);
 	});
 });

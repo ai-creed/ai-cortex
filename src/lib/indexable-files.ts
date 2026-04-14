@@ -44,7 +44,10 @@ export function listIndexableFiles(repoPath: string): string[] {
 			.split("\n")
 			.map((line) => line.trim())
 			.filter(Boolean)
-			.filter((f) => fs.existsSync(path.join(repoPath, f)))
+			.filter((f) => {
+				const abs = path.join(repoPath, f);
+				return fs.existsSync(abs) && !fs.statSync(abs).isDirectory();
+			})
 			.sort();
 	} catch {
 		return walkFs(repoPath, repoPath).sort();
