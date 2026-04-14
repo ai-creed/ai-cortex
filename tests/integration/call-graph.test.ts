@@ -6,8 +6,10 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { indexRepo } from "../../src/lib/indexer.js";
 import { queryBlastRadius } from "../../src/lib/blast-radius.js";
+import type { RepoCache } from "../../src/lib/models.js";
 
 let tmpDir: string;
+let cache: RepoCache;
 
 function git(...args: string[]): string {
 	return execFileSync("git", ["-C", tmpDir, ...args], {
@@ -56,6 +58,7 @@ beforeAll(async () => {
 
 	git("add", ".");
 	git("commit", "-m", "init");
+	cache = await indexRepo(tmpDir);
 });
 
 afterAll(() => {
@@ -64,8 +67,6 @@ afterAll(() => {
 
 describe("call graph integration", () => {
 	it("extracts call edges and functions from real files", async () => {
-		const cache = await indexRepo(tmpDir);
-
 		expect(cache.functions.length).toBeGreaterThan(0);
 		expect(cache.calls.length).toBeGreaterThan(0);
 
@@ -80,8 +81,6 @@ describe("call graph integration", () => {
 	});
 
 	it("blast radius returns tiered callers", async () => {
-		const cache = await indexRepo(tmpDir);
-
 		const result = queryBlastRadius(
 			{ qualifiedName: "helper", file: "src/utils.ts" },
 			cache.calls,
@@ -89,12 +88,19 @@ describe("call graph integration", () => {
 		);
 
 		expect(result.target.qualifiedName).toBe("helper");
-		expect(result.totalAffected).toBeGreaterThanOrEqual(1);
+		expect(result.totalAffected).toBeGreaterThanOrEqual(2);
+		expect(result.confidence).toBe("full");
 
 		// main is a direct caller
 		const directCallers = result.tiers.find((t) => t.hop === 1);
 		expect(directCallers?.hits).toContainEqual(
 			expect.objectContaining({ qualifiedName: "main" }),
+		);
+
+		// run calls main which calls helper — two-hop transitive caller
+		const transitiveCallers = result.tiers.find((t) => t.hop === 2);
+		expect(transitiveCallers?.hits).toContainEqual(
+			expect.objectContaining({ qualifiedName: "run" }),
 		);
 	});
 });
