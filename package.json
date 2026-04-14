@@ -14,7 +14,8 @@
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --check .",
 		"format:write": "prettier --write .",
-		"cortex": "tsx src/cli.ts"
+		"cortex": "tsx src/cli.ts",
+		"release": "bash scripts/release.sh"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.0",
