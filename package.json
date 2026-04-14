@@ -6,7 +6,7 @@
 		"ai-cortex": "dist/src/cli.js"
 	},
 	"scripts": {
-		"prepare": "tsc -p tsconfig.json",
+		"prepare": "npx tsc -p tsconfig.json",
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
