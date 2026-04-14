@@ -6,7 +6,7 @@
 		"ai-cortex": "dist/src/cli.js"
 	},
 	"scripts": {
-		"prepare": "npm install --ignore-scripts --no-save 2>/dev/null; ./node_modules/.bin/tsc -p tsconfig.json",
+		"prepare": "npm_config_global= npm install --ignore-scripts --no-save 2>/dev/null; ./node_modules/.bin/tsc -p tsconfig.json",
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
