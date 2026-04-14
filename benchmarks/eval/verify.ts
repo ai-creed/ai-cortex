@@ -9,7 +9,12 @@ export function checkStructural(
 	pattern: string,
 	shouldMatch: boolean,
 ): boolean {
-	const regex = new RegExp(pattern);
+	let regex: RegExp;
+	try {
+		regex = new RegExp(pattern);
+	} catch {
+		return false;
+	}
 	const matches = regex.test(fileContent);
 	return shouldMatch ? matches : !matches;
 }

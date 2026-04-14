@@ -29,7 +29,7 @@ describe("computeFilesCorrect", () => {
 		expect(computeFilesCorrect(["a.ts", "b.ts"], ["a.ts", "b.ts"])).toBe(1);
 	});
 
-	it("returns 0.5 for partial overlap", () => {
+	it("returns 1/3 for partial overlap (Jaccard of {a,b} vs {a,c})", () => {
 		expect(computeFilesCorrect(["a.ts", "b.ts"], ["a.ts", "c.ts"])).toBeCloseTo(1 / 3);
 	});
 
