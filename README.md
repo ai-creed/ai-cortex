@@ -7,7 +7,7 @@ about a project without broad repo scans or writes into the target repository.
 
 ## Status
 
-Phases 0–4 complete. Personal MVP delivered.
+Beta — all core phases complete, in active personal workflow testing.
 
 | Phase | Goal | Status |
 |-------|------|--------|
@@ -16,6 +16,7 @@ Phases 0–4 complete. Personal MVP delivered.
 | 2 | Rehydration flow | complete |
 | 3 | Suggest flow | complete |
 | 4 | Hardening for real repos | complete |
+| 5 | Call graph & blast radius | complete |
 
 ## Commands
 
@@ -40,7 +41,7 @@ ai-cortex mcp                             # Start MCP server (stdio transport)
 
 ai-cortex exposes its capabilities as an MCP server so agents can use it automatically without manual CLI invocations.
 
-**Registration (one-time, run from the repo root after `pnpm build`):**
+**Registration (one-time, run from the install directory after building):**
 
 ```
 claude mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
@@ -53,20 +54,70 @@ claude mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
 | `rehydrate_project` | Once at session start when working in a git repo | Markdown briefing: structure, key files, entry points, recent changes |
 | `suggest_files` | Before reading the codebase for a specific task | Ranked list of relevant files with reasons |
 | `index_project` | After large structural changes to force a rebuild | Confirmation with file and doc counts |
+| `blast_radius` | Before modifying a function, to assess impact | Callers organized by hop distance (direct, transitive) with export visibility |
 
-The `rehydrate_project` and `index_project` tools accept an optional `path` argument (defaults to `cwd`). The `suggest_files` tool requires a `task` string and also accepts `path`, `from`, `limit`, and `stale`.
+The `rehydrate_project` and `index_project` tools accept an optional `path` argument (defaults to `cwd`). The `suggest_files` tool requires a `task` string and also accepts `path`, `from`, `limit`, and `stale`. The `blast_radius` tool requires `qualifiedName` and `file`, and also accepts `path`, `maxHops`, and `stale`.
 
 ## Library API
 
 ```ts
-import { indexRepo, rehydrateRepo, suggestRepo } from "ai-cortex";
+import { indexRepo, rehydrateRepo, suggestRepo, queryBlastRadius } from "ai-cortex";
 
-const result = suggestRepo("/path/to/repo", "persistence layer");
+const cache = await indexRepo("/path/to/repo");
+// cache.functions — all extracted functions with file + line
+// cache.calls     — directed call edges between functions
+
+const result = await suggestRepo("/path/to/repo", { task: "persistence layer" });
 // { task, from, cacheStatus, results: [{ path, kind, score, reason }] }
+
+const blast = queryBlastRadius(
+  { qualifiedName: "myFunction", file: "src/lib/foo.ts" },
+  cache.calls,
+  cache.functions,
+);
+// { target, totalAffected, confidence, tiers: [{ hop, label, hits }] }
 ```
+
+## Architecture
+
+```
+CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
+         \                        /
+          ---- Library API -------
+                    |
+            src/lib/index.ts
+           /        |        \
+     indexer     suggest    blast-radius
+        |        ranker          |
+   call-graph  (enriched    (BFS query
+    extractor   by calls)    over calls)
+        |
+    adapters/
+    typescript.ts
+    (web-tree-sitter WASM)
+        |
+   Cache: ~/.cache/ai-cortex/
+   (JSON, schema v3, per-repo keyed by path)
+```
+
+**Data flow:**
+
+1. `index` — tree-sitter parses TS/JS files, extracts functions and call edges, stores `RepoCache` as JSON
+2. `rehydrate` — loads cache, detects staleness, generates a Markdown briefing
+3. `suggest` — ranks files by TF-IDF + import graph + call graph proximity to the task and anchor
+4. `blast_radius` — BFS reverse traversal of call edges, returns callers by hop tier
+
+**Call graph:**
+- Extracts named functions, arrow functions, and class methods
+- Resolves cross-file calls through import bindings (named, default, namespace)
+- `CallEdge.from` / `to` use `"file::qualifiedName"` keys
+- `confidence: "full"` when all edges resolve statically; `"partial"` when dynamic call sites remain
+
+## Installation
+
+See [MANUAL.md](./MANUAL.md) for full installation and integration instructions.
 
 ## Primary references
 
 - `docs/shared/product_brief.md`
 - `docs/shared/high_level_plan.md`
-- `docs/shared/project_ai_cortex_spike.md`

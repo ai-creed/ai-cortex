@@ -1,12 +1,12 @@
 {
 	"name": "ai-cortex",
-	"version": "0.0.0-phase0",
-	"private": true,
+	"version": "0.1.0-beta.1",
 	"type": "module",
 	"bin": {
 		"ai-cortex": "dist/src/cli.js"
 	},
 	"scripts": {
+		"prepare": "tsc -p tsconfig.json",
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
