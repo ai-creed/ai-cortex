@@ -416,3 +416,129 @@ Force a reindex: `ai-cortex index --refresh [path]`
 
 **`confidence: "partial"` on blast_radius**
 Some call edges could not be resolved statically (dynamic dispatch, higher-order functions, computed property names). The graph is still useful but may be missing some callers. `unresolvedEdges` in the response gives the count.
+
+---
+
+## Benchmarking
+
+The benchmark suite measures both **performance** (latency regression detection) and **quality** (correctness of suggest and blast radius results). It runs locally against real repos on your machine and a committed synthetic fixture repo.
+
+### Quick start
+
+```bash
+pnpm bench                    # Run all suites (perf + quality), full protocol
+pnpm bench --fast             # Smoke run: 1 warmup, 3 measured runs instead of 3/20
+pnpm bench:perf               # Performance suite only
+pnpm bench:quality            # Quality suite only
+```
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--suite perf\|quality` | Run only one suite (default: both) |
+| `--repo <name>` | Filter to a single repo by name (e.g. `ai-cortex`) |
+| `--fast` | Reduce iterations for quick smoke tests (warmup: 1, runs: 3) |
+| `--json` | Write full results to `benchmarks/results.json` |
+| `--update-baseline` | Save current p50 values to `benchmarks/baselines.json` |
+
+### Performance suite
+
+Measures 5 scenarios across all discovered repos:
+
+| Scenario | What it measures | Cache precondition |
+|----------|------------------|--------------------|
+| `index:cold` | Full indexing from scratch | Cache cleared before each run |
+| `rehydrate:warm` | Rehydration with valid cache | Cache pre-built |
+| `rehydrate:stale` | Incremental reindex on dirty worktree | Clean cache built, then marker file added |
+| `suggest:warm` | File suggestion ranking | Cache pre-built |
+| `blastRadius:warm` | Call graph BFS query only | Cache + target captured in setup |
+
+Each scenario runs the configured number of iterations (default: 3 warmup + 20 measured) and reports p50, p95, min, and max timings.
+
+**Regression detection** compares the current p50 against a saved baseline:
+
+- **>10% slower** — warning
+- **>20% slower** — fail
+- **No baseline** — skip (pass with note)
+
+**SLO enforcement** checks the current p50 against per-scenario, per-size-bucket absolute thresholds. A result that passes regression but exceeds the SLO still fails.
+
+### Quality suite
+
+Runs against a committed 50-file synthetic TypeScript repo (`benchmarks/fixtures/synthetic/repo/`) with known call chains across 4 modules (auth, api, db, utils).
+
+**Golden set tests** — 5 suggest queries and 2 blast radius queries with known expected results:
+- Suggest: checks precision@k and recall@k (threshold: 0.6 each)
+- Blast radius: checks that expected (qualifiedName, file, hop) tuples are found
+
+**Ranking assertions** — verifies relative ordering on real repos (e.g. `suggest-ranker.ts` should rank higher than `README.md` for "fix the suggest ranker scoring").
+
+### Setting up baselines
+
+Baselines are per-machine (gitignored). On a fresh clone:
+
+```bash
+# 1. Copy the template
+cp benchmarks/baselines.example.json benchmarks/baselines.json
+
+# 2. Run the suite and save measurements
+pnpm bench --update-baseline
+
+# 3. Verify regression detection works
+pnpm bench:perf
+```
+
+Subsequent runs compare against these saved p50 values. Re-run with `--update-baseline` after intentional performance changes.
+
+### Repo discovery
+
+The suite always benchmarks the ai-cortex repo itself (derived from the git root at runtime). It also looks for optional repos:
+
+- `~/Dev/ai-samantha`, `~/Dev/ai-14all`, `~/Dev/ai-whisper` — checked by default, skipped if absent
+- `BENCH_REPOS` env var — comma-separated paths to additional repos
+
+Use `--repo <name>` to run against a single repo.
+
+### Directory structure
+
+```
+benchmarks/
+  runner.ts                  # CLI entry point
+  config.ts                  # Repo discovery, SLO table, ranking assertions
+  baselines.example.json     # Template (committed)
+  baselines.json             # Your machine's baselines (gitignored)
+  results.json               # JSON output from --json (gitignored)
+  tsconfig.json              # Type checking config for benchmark code
+  smoke.test.ts              # E2E vitest smoke test
+  lib/
+    types.ts                 # Shared types
+    measure.ts               # Timing harness (warmup + percentiles)
+    compare.ts               # Regression + SLO checks, baseline I/O
+  suites/
+    perf-suite.ts            # 5 performance scenarios
+    quality-suite.ts         # Golden sets + ranking assertions
+  reporters/
+    terminal.ts              # Table output to stdout
+    json.ts                  # JSON file output
+  fixtures/
+    synthetic/
+      generate.ts            # Generator script for the synthetic repo
+      golden-sets.json       # Expected results for quality tests
+      repo/                  # 50-file TypeScript fixture (committed)
+```
+
+### Calibrating SLOs
+
+If SLO values are too tight or too loose after hardware changes, recalibrate:
+
+```bash
+# Run and observe actual p50 values
+pnpm bench:perf --fast
+
+# Edit benchmarks/config.ts SLO_TABLE
+# Set each SLO to ~3-5x the observed p50
+
+# Verify no false failures
+pnpm bench:perf
+```

@@ -121,6 +121,19 @@ pnpm run release 0.2.0-beta.1
 
 Bumps the version in `package.json`, commits, tags, and pushes. Must be on `master` with a clean working tree.
 
+## Benchmarking
+
+```bash
+pnpm bench                          # Run all suites (perf + quality)
+pnpm bench:perf                     # Performance only
+pnpm bench:quality                  # Quality only
+pnpm bench --fast                   # Smoke run (1 warmup, 3 measured runs)
+pnpm bench --update-baseline        # Save current p50 values as baselines
+pnpm bench --repo ai-cortex --fast  # Single repo, fast mode
+```
+
+See [MANUAL.md](./MANUAL.md#benchmarking) for full details on scenarios, baselines, SLOs, and the quality suite.
+
 ## Installation
 
 See [MANUAL.md](./MANUAL.md) for full installation and integration instructions.
