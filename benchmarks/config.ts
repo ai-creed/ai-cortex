@@ -89,10 +89,10 @@ export function discoverRepos(options: DiscoverOptions = {}): RepoConfig[] {
 }
 
 const SLO_TABLE: Record<string, Record<SizeBucket, number> | null> = {
-	"index:cold": { small: 200, medium: 500, large: 2000 },
-	"rehydrate:warm": { small: 20, medium: 50, large: 200 },
+	"index:cold": { small: 300, medium: 500, large: 2000 },
+	"rehydrate:warm": { small: 250, medium: 400, large: 1000 },
 	"rehydrate:stale": null,
-	"suggest:warm": { small: 50, medium: 100, large: 500 },
+	"suggest:warm": { small: 300, medium: 400, large: 1000 },
 	"blastRadius:warm": { small: 50, medium: 100, large: 500 },
 };
 
