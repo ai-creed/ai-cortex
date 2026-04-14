@@ -29,6 +29,56 @@ function sameDirectory(a: string, b: string): boolean {
 	return a.split("/").slice(0, -1).join("/") === b.split("/").slice(0, -1).join("/");
 }
 
+function fileFromCallKey(key: string): string {
+	const idx = key.indexOf("::");
+	return idx === -1 ? key : key.slice(0, idx);
+}
+
+function buildCallConnectedFiles(
+	calls: { from: string; to: string }[],
+): Map<string, Set<string>> {
+	const connected = new Map<string, Set<string>>();
+	for (const edge of calls) {
+		if (edge.to.startsWith("::")) continue;
+		const fromFile = fileFromCallKey(edge.from);
+		const toFile = fileFromCallKey(edge.to);
+		if (fromFile === toFile) continue;
+		let fromSet = connected.get(fromFile);
+		if (!fromSet) {
+			fromSet = new Set();
+			connected.set(fromFile, fromSet);
+		}
+		fromSet.add(toFile);
+		let toSet = connected.get(toFile);
+		if (!toSet) {
+			toSet = new Set();
+			connected.set(toFile, toSet);
+		}
+		toSet.add(fromFile);
+	}
+	return connected;
+}
+
+function buildFanInCounts(calls: { from: string; to: string }[]): Map<string, number> {
+	const callersByTarget = new Map<string, Set<string>>();
+	for (const edge of calls) {
+		if (edge.to.startsWith("::")) continue;
+		let callers = callersByTarget.get(edge.to);
+		if (!callers) {
+			callers = new Set();
+			callersByTarget.set(edge.to, callers);
+		}
+		callers.add(edge.from);
+	}
+	const fanInByFile = new Map<string, number>();
+	for (const [target, callers] of callersByTarget) {
+		const file = fileFromCallKey(target);
+		const current = fanInByFile.get(file) ?? 0;
+		fanInByFile.set(file, Math.max(current, callers.size));
+	}
+	return fanInByFile;
+}
+
 function resolveImportTarget(target: string, filePaths: string[]): string[] {
 	const normalizedTarget = normalizePath(target);
 	return filePaths.filter((filePath) => {
@@ -65,6 +115,10 @@ export function rankSuggestions(
 			]
 		: [];
 
+	const calls = cache.calls ?? [];
+	const callConnected = calls.length > 0 ? buildCallConnectedFiles(calls) : new Map();
+	const fanInCounts = calls.length > 0 ? buildFanInCounts(calls) : new Map();
+
 	const candidates: RankedSuggestion[] = [];
 
 	for (const file of cache.files) {
@@ -90,6 +144,20 @@ export function rankSuggestions(
 			score += 4;
 		}
 
+		// Call graph: connected to anchor
+		if (normalizedFrom && normalizedPath !== normalizedFrom) {
+			const anchorConnections = callConnected.get(normalizedFrom);
+			if (anchorConnections?.has(normalizedPath)) {
+				score += 3;
+			}
+		}
+
+		// Call graph: fan-in bonus
+		const maxFanIn = fanInCounts.get(normalizedPath) ?? 0;
+		if (maxFanIn > 5) {
+			score += 1;
+		}
+
 		if (score > 0) {
 			candidates.push({
 				path: file.path,
@@ -106,6 +174,39 @@ export function rankSuggestions(
 									? "entry file with matching repo context"
 									: "near anchor file via imports",
 			});
+		}
+	}
+
+	// Second pass: boost files call-connected to the current top-scoring file
+	if (calls.length > 0 && candidates.length > 0) {
+		const sorted = [...candidates].sort((a, b) => b.score - a.score);
+		const topPath = normalizePath(sorted[0].path);
+		const topConnections = callConnected.get(topPath);
+		if (topConnections) {
+			// Boost existing candidates
+			for (const candidate of candidates) {
+				const candPath = normalizePath(candidate.path);
+				if (candPath !== topPath && topConnections.has(candPath)) {
+					candidate.score += 2;
+				}
+			}
+			// Also add newly discovered connected files
+			for (const file of cache.files) {
+				if (docPathSet.has(file.path)) continue;
+				const candPath = normalizePath(file.path);
+				if (
+					candPath !== topPath &&
+					topConnections.has(candPath) &&
+					!candidates.some((c) => normalizePath(c.path) === candPath)
+				) {
+					candidates.push({
+						path: file.path,
+						kind: "file",
+						score: 2,
+						reason: "call-connected to top-ranked file",
+					});
+				}
+			}
 		}
 	}
 

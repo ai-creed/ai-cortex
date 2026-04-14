@@ -121,3 +121,80 @@ describe("rankSuggestions", () => {
 		expect(result).toHaveLength(1);
 	});
 });
+
+describe("call graph enrichment", () => {
+	it("boosts file call-connected to anchor", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/server.ts", kind: "file" },
+				{ path: "src/ranker.ts", kind: "file" },
+			],
+			calls: [
+				{ from: "src/server.ts::handle", to: "src/ranker.ts::rank", kind: "call" },
+			],
+			functions: [
+				{ qualifiedName: "handle", file: "src/server.ts", exported: true, isDefaultExport: false, line: 1 },
+				{ qualifiedName: "rank", file: "src/ranker.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		const result = rankSuggestions("ranking", cache, { from: "src/server.ts" });
+		const ranker = result.find((r) => r.path === "src/ranker.ts");
+		expect(ranker).toBeDefined();
+		expect(ranker!.score).toBeGreaterThan(0);
+	});
+
+	it("boosts file call-connected to top-scoring file", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/ranker.ts", kind: "file" },
+				{ path: "src/scorer.ts", kind: "file" },
+			],
+			calls: [
+				{ from: "src/ranker.ts::rank", to: "src/scorer.ts::score", kind: "call" },
+			],
+			functions: [
+				{ qualifiedName: "rank", file: "src/ranker.ts", exported: true, isDefaultExport: false, line: 1 },
+				{ qualifiedName: "score", file: "src/scorer.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		const result = rankSuggestions("ranker", cache);
+		const scorer = result.find((r) => r.path === "src/scorer.ts");
+		expect(scorer).toBeDefined();
+		expect(scorer!.score).toBeGreaterThan(0);
+	});
+
+	it("adds fan-in bonus for files with heavily-called functions", () => {
+		const calls = Array.from({ length: 6 }, (_, i) => ({
+			from: `src/caller${i}.ts::fn${i}`,
+			to: "src/hub.ts::process",
+			kind: "call" as const,
+		}));
+		const cache = makeCache({
+			files: [
+				{ path: "src/hub.ts", kind: "file" },
+				{ path: "src/other.ts", kind: "file" },
+			],
+			calls,
+			functions: [
+				{ qualifiedName: "process", file: "src/hub.ts", exported: true, isDefaultExport: false, line: 1 },
+			],
+		});
+		const resultHub = rankSuggestions("hub", cache);
+		const hub = resultHub.find((r) => r.path === "src/hub.ts");
+		expect(hub).toBeDefined();
+	});
+
+	it("works correctly when calls array is empty (no regression)", () => {
+		const cache = makeCache({ calls: [], functions: [] });
+		const result = rankSuggestions("persistence store", cache);
+		expect(result[0]?.path).toBe("src/persistence/store.ts");
+	});
+
+	it("works correctly when calls field is undefined (v2 cache)", () => {
+		const cache = makeCache();
+		delete (cache as Record<string, unknown>).calls;
+		delete (cache as Record<string, unknown>).functions;
+		const result = rankSuggestions("persistence store", cache);
+		expect(result[0]?.path).toBe("src/persistence/store.ts");
+	});
+});
