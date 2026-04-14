@@ -1,0 +1,10 @@
+{
+	"_comment": "Copy this file to baselines.json and run pnpm bench --update-baseline to populate with your machine's measurements.",
+	"ai-cortex": {
+		"index:cold": 0,
+		"rehydrate:warm": 0,
+		"rehydrate:stale": 0,
+		"suggest:warm": 0,
+		"blastRadius:warm": 0
+	}
+}

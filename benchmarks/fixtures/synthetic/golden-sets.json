@@ -1,0 +1,55 @@
+{
+	"suggest": [
+		{
+			"task": "fix the login token validation",
+			"expected": ["auth/tokens.ts", "auth/login.ts", "auth/middleware.ts"],
+			"limit": 5
+		},
+		{
+			"task": "fix password hashing",
+			"expected": ["auth/crypto.ts", "auth/register.ts", "auth/reset-password.ts"],
+			"limit": 5
+		},
+		{
+			"task": "fix the database connection pool",
+			"expected": ["db/connection.ts"],
+			"limit": 5
+		},
+		{
+			"task": "add a new API endpoint for comments",
+			"expected": ["api/comment-routes.ts", "db/comment-queries.ts"],
+			"limit": 5
+		},
+		{
+			"task": "fix user registration validation",
+			"expected": ["auth/register.ts", "utils/validation.ts"],
+			"limit": 5
+		}
+	],
+	"blastRadius": [
+		{
+			"function": "hashPassword",
+			"file": "auth/crypto.ts",
+			"minConfidence": "full",
+			"expectedHits": [
+				{ "qualifiedName": "register", "file": "auth/register.ts", "hop": 1 },
+				{ "qualifiedName": "resetPassword", "file": "auth/reset-password.ts", "hop": 1 },
+				{ "qualifiedName": "handleOAuthCallback", "file": "auth/oauth.ts", "hop": 1 },
+				{ "qualifiedName": "handleUserCreate", "file": "api/user-routes.ts", "hop": 2 },
+				{ "qualifiedName": "handlePasswordReset", "file": "api/user-routes.ts", "hop": 2 }
+			]
+		},
+		{
+			"function": "getConnection",
+			"file": "db/connection.ts",
+			"minConfidence": "full",
+			"expectedHits": [
+				{ "qualifiedName": "findUserByEmail", "file": "db/user-queries.ts", "hop": 1 },
+				{ "qualifiedName": "findUserById", "file": "db/user-queries.ts", "hop": 1 },
+				{ "qualifiedName": "createUser", "file": "db/user-queries.ts", "hop": 1 },
+				{ "qualifiedName": "findPostsByUser", "file": "db/post-queries.ts", "hop": 1 },
+				{ "qualifiedName": "createPost", "file": "db/post-queries.ts", "hop": 1 }
+			]
+		}
+	]
+}

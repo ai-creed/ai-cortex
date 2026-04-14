@@ -10,12 +10,17 @@
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:bench": "tsc --noEmit -p benchmarks/tsconfig.json",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --check .",
 		"format:write": "prettier --write .",
 		"cortex": "tsx src/cli.ts",
-		"release": "bash scripts/release.sh"
+		"release": "bash scripts/release.sh",
+		"bench": "tsx benchmarks/runner.ts",
+		"bench:perf": "tsx benchmarks/runner.ts --suite perf",
+		"bench:quality": "tsx benchmarks/runner.ts --suite quality",
+		"bench:update-baseline": "tsx benchmarks/runner.ts --update-baseline"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.0",

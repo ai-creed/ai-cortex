@@ -12,3 +12,6 @@ docs/superpowers/plans/
 .superpowers/
 release/
 .cache/
+benchmarks/baselines.json
+benchmarks/results.json
+benchmarks/fixtures/synthetic/repo/.git/
