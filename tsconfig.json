@@ -4,7 +4,7 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"strict": true,
-		"skipLibCheck": true,
+		"skipLibCheck": true, // web-tree-sitter has incomplete .d.ts declarations
 		"noEmit": false,
 		"outDir": "dist",
 		"rootDir": ".",
