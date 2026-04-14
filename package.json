@@ -19,6 +19,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.0",
+		"node-gyp-build": "^4.8.2",
 		"tree-sitter-javascript": "^0.25.0",
 		"tree-sitter-typescript": "^0.23.2",
 		"web-tree-sitter": "^0.26.8",

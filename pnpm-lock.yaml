@@ -11,6 +11,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.29.0(zod@3.25.76)
+      node-gyp-build:
+        specifier: ^4.8.2
+        version: 4.8.4
       tree-sitter-javascript:
         specifier: ^0.25.0
         version: 0.25.0
