@@ -15,7 +15,6 @@ export function parseStreamJson(output: string): ParsedMetrics {
 	let totalToolCalls = 0;
 	let firstMutationIdx = -1;
 	let durationMs = 0;
-	const toolIndices: number[] = [];
 
 	for (const line of lines) {
 		let obj: Record<string, unknown>;
@@ -26,7 +25,7 @@ export function parseStreamJson(output: string): ParsedMetrics {
 		}
 
 		if (obj.type === "result") {
-			durationMs = (obj.duration_ms as number) ?? 0;
+			durationMs = typeof obj.duration_ms === "number" ? obj.duration_ms : 0;
 			continue;
 		}
 
@@ -42,7 +41,6 @@ export function parseStreamJson(output: string): ParsedMetrics {
 			const name = b.name as string;
 			if (!EXPLORATION_TOOLS.has(name) && !MUTATION_TOOLS.has(name)) continue;
 
-			toolIndices.push(totalToolCalls);
 			totalToolCalls++;
 
 			if (firstMutationIdx < 0 && MUTATION_TOOLS.has(name)) {
