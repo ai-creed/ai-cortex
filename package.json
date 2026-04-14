@@ -6,7 +6,7 @@
 		"ai-cortex": "dist/src/cli.js"
 	},
 	"scripts": {
-		"prepare": "npm_config_global= npm install --ignore-scripts --no-save 2>/dev/null; ./node_modules/.bin/tsc -p tsconfig.json",
+		"prepare": "tsc -p tsconfig.json",
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
@@ -19,7 +19,6 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.0.0",
-		"node-gyp-build": "^4.8.2",
 		"tree-sitter-javascript": "^0.25.0",
 		"tree-sitter-typescript": "^0.23.2",
 		"web-tree-sitter": "^0.26.8",

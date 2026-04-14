@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // src/cli.ts
 import os from "node:os";
 import {

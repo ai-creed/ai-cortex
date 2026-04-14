@@ -10,24 +10,9 @@ It stores all data locally (`~/.cache/ai-cortex/`), never writes into the target
 
 ## Installation
 
-### Method A: Global install from GitHub (recommended)
+### Method A: Clone, build, and link (recommended)
 
-Requires Node.js 20+ and npm.
-
-```bash
-npm install -g github:vuphanse/ai-cortex
-```
-
-npm will clone the repo, install dependencies, build the TypeScript, and link the `ai-cortex` binary globally.
-
-Verify:
-```bash
-ai-cortex --help
-```
-
-### Method B: Clone, build, and link manually
-
-Use this if you want to inspect or modify the source.
+Requires Node.js 20+, pnpm, and npm.
 
 ```bash
 git clone git@github.com:vuphanse/ai-cortex.git
@@ -42,7 +27,7 @@ Verify:
 ai-cortex --help
 ```
 
-### Method C: Run without installing globally
+### Method B: Run without installing globally
 
 If you only want to use it from the cloned directory:
 
@@ -57,12 +42,6 @@ node dist/src/cli.js index /path/to/your/project
 
 ### Updating
 
-**Method A:**
-```bash
-npm install -g github:vuphanse/ai-cortex
-```
-
-**Method B:**
 ```bash
 cd ai-cortex
 git pull
@@ -406,7 +385,7 @@ registerAdapter(myCustomAdapter);  // implements LangAdapter interface
 ## Troubleshooting
 
 **`ai-cortex: command not found`**
-Run `npm install -g .` from the ai-cortex directory (Method B), or reinstall via Method A.
+Run `npm install -g .` from the ai-cortex directory (Method A).
 
 **`IndexError: Cannot find package 'web-tree-sitter'`**
 Dependencies are missing. Run `npm install` (or `pnpm install`) in the ai-cortex directory, then rebuild with `pnpm build` and reinstall globally.
