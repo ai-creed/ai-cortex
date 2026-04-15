@@ -10,10 +10,12 @@ function parseArgs(argv: string[]): {
 	reps: number;
 	taskFilter: string | null;
 	condition: "both" | "with" | "without";
+	dryRun: boolean;
 } {
 	let reps = 3;
 	let taskFilter: string | null = null;
 	let condition: "both" | "with" | "without" = "both";
+	let dryRun = false;
 
 	for (let i = 2; i < argv.length; i++) {
 		const arg = argv[i];
@@ -33,10 +35,40 @@ function parseArgs(argv: string[]): {
 				process.exit(1);
 			}
 			condition = val;
+		} else if (arg === "--dry-run") {
+			dryRun = true;
 		}
 	}
 
-	return { reps, taskFilter, condition };
+	return { reps, taskFilter, condition, dryRun };
+}
+
+function pad(str: string, len: number): string {
+	return str.padEnd(len);
+}
+
+function printDryRun(
+	tasks: ReturnType<typeof getEvalTasks>,
+	conditions: Array<"with" | "without">,
+	reps: number,
+): boolean {
+	const totalRuns = tasks.length * conditions.length * reps;
+	console.log("ai-cortex evaluation harness [DRY RUN]\n");
+	console.log(`Tasks: ${tasks.map((t) => t.name).join(", ")}`);
+	console.log(`Conditions: ${conditions.join(", ")}`);
+	console.log(`Reps: ${reps}`);
+	console.log(`Total runs: ${totalRuns}\n`);
+
+	let allExist = true;
+	for (const task of tasks) {
+		const exists = fs.existsSync(task.repoPath);
+		if (!exists) allExist = false;
+		const marker = exists ? "✓" : "✗ (not found)";
+		console.log(`  ${pad(task.name, 24)}${pad(task.repo, 12)}${pad(task.repoPath, 44)}${marker}`);
+	}
+
+	console.log("\nNo agents spawned.");
+	return allExist;
 }
 
 const RESULTS_DIR = path.join(
@@ -47,10 +79,11 @@ const RESULTS_DIR = path.join(
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv);
 
-	console.log("ai-cortex evaluation harness\n");
+	const conditions: Array<"with" | "without"> =
+		args.condition === "both" ? ["with", "without"] : [args.condition];
 
+	// Load all tasks, apply only the name filter (not the repo-existence filter)
 	let tasks = getEvalTasks();
-
 	if (args.taskFilter) {
 		tasks = tasks.filter((t) => t.name === args.taskFilter);
 		if (tasks.length === 0) {
@@ -59,7 +92,15 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Filter tasks whose repo path doesn't exist
+	// Dry-run: print preview table using unfiltered task list, then exit
+	if (args.dryRun) {
+		const allExist = printDryRun(tasks, conditions, args.reps);
+		process.exit(allExist ? 0 : 1);
+	}
+
+	console.log("ai-cortex evaluation harness\n");
+
+	// For real runs, filter out tasks whose repo doesn't exist
 	tasks = tasks.filter((t) => {
 		if (fs.existsSync(t.repoPath)) return true;
 		console.error(`Skipping ${t.name}: repo not found at ${t.repoPath}`);
@@ -69,9 +110,6 @@ async function main(): Promise<void> {
 		console.error("No tasks to run.");
 		process.exit(1);
 	}
-
-	const conditions: Array<"with" | "without"> =
-		args.condition === "both" ? ["with", "without"] : [args.condition];
 
 	const totalRuns = tasks.length * conditions.length * args.reps;
 	console.log(`Tasks: ${tasks.map((t) => t.name).join(", ")}`);
