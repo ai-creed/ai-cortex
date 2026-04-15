@@ -138,5 +138,5 @@ No new files. No schema changes. No dependency additions.
 
 - **Fix 1:** Run `pnpm eval --tasks cli-help-flag --reps 1` and verify `totalToolCalls > explorationCalls` (agent makes at least one Edit/Write call).
 - **Fix 2:** Temporarily break the briefing path and confirm stderr shows the relevant `[briefing]` message.
-- **Fix 3:** Unit test in `verify.test.ts`: mock `execFileSync` to return different files for each git command, assert union is returned.
+- **Fix 3:** Unit test in `verify.test.ts`: use `vi.mock("node:child_process")` to stub `execFileSync`, return different file lists for `diff` vs `ls-files` calls, assert the union is returned with no duplicates.
 - **Fix 4:** Run `pnpm eval --dry-run` and verify output lists all tasks with repo existence markers; run with a non-existent repo and verify exit code 1.
