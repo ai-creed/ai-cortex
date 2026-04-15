@@ -1,5 +1,6 @@
 // src/lib/suggest-ranker.ts
 import type { RepoCache } from "./models.js";
+import { tokenize as tokenizePath, tokenizeTask } from "./tokenize.js";
 
 export type RankSuggestionsOptions = {
 	from?: string | null;
@@ -13,9 +14,6 @@ export type RankedSuggestion = {
 	reason: string;
 };
 
-function tokenize(value: string): string[] {
-	return [...new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))];
-}
 
 function normalizePath(value: string): string {
 	return value.replace(/\\/g, "/").replace(/^\.?\//, "");
@@ -97,7 +95,7 @@ export function rankSuggestions(
 	cache: RepoCache,
 	options: RankSuggestionsOptions = {},
 ): RankedSuggestion[] {
-	const tokens = tokenize(task);
+	const tokens = tokenizeTask(task);
 	const normalizedFrom = options.from ? normalizePath(options.from) : null;
 	const filePaths = cache.files.map((file) => file.path);
 	const docPathSet = new Set(cache.docs.map((doc) => doc.path));
@@ -125,7 +123,7 @@ export function rankSuggestions(
 		if (docPathSet.has(file.path)) continue;
 
 		const normalizedPath = normalizePath(file.path);
-		const pathTokens = tokenize(normalizedPath);
+		const pathTokens = tokenizePath(normalizedPath);
 		const matchedPathTokens = tokens.filter((token) => pathTokens.includes(token));
 		let score = matchedPathTokens.length * 5;
 
@@ -211,7 +209,7 @@ export function rankSuggestions(
 	}
 
 	for (const doc of cache.docs) {
-		const docTokens = tokenize(`${doc.title} ${doc.body} ${doc.path}`);
+		const docTokens = tokenizePath(`${doc.title} ${doc.body} ${doc.path}`);
 		const matchedDocTokens = tokens.filter((token) => docTokens.includes(token));
 		const score = matchedDocTokens.length * 4;
 		if (score > 0) {
