@@ -211,3 +211,41 @@ describe("suggestRepo", () => {
 		expect(exportedSuggestRepo).toBe(suggestRepo);
 	});
 });
+
+describe("suggestRepo — option validation", () => {
+	beforeEach(() => {
+		const cache = makeCache();
+		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+	});
+
+	it("rejects non-integer poolSize", async () => {
+		await expect(
+			suggestRepo("/repo", "task", { poolSize: 1.5 }),
+		).rejects.toThrow(IndexError);
+	});
+
+	it("rejects NaN poolSize (regression: CLI Number('foo'))", async () => {
+		await expect(
+			suggestRepo("/repo", "task", { poolSize: Number.NaN }),
+		).rejects.toThrow(IndexError);
+	});
+
+	it("rejects poolSize > 200", async () => {
+		await expect(
+			suggestRepo("/repo", "task", { poolSize: 201 }),
+		).rejects.toThrow(IndexError);
+	});
+
+	it("rejects poolSize < 1", async () => {
+		await expect(
+			suggestRepo("/repo", "task", { poolSize: 0 }),
+		).rejects.toThrow(IndexError);
+	});
+
+	it("rejects unknown mode string", async () => {
+		await expect(
+			suggestRepo("/repo", "task", { mode: "turbo" as "fast" }),
+		).rejects.toThrow(IndexError);
+	});
+});

@@ -6,7 +6,10 @@ export { suggestRepo } from "./suggest.js";
 export type {
 	SuggestOptions,
 	SuggestItem,
+	DeepSuggestItem,
 	SuggestResult,
+	FastSuggestResult,
+	DeepSuggestResult,
 } from "./suggest.js";
 export { RepoIdentityError, IndexError } from "./models.js";
 export type {

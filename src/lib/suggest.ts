@@ -16,6 +16,9 @@ export type SuggestOptions = {
 	from?: string;
 	limit?: number;
 	stale?: boolean;
+	mode?: "fast" | "deep";
+	/** Deep-only. Default 60, max 200. Ignored in fast mode. */
+	poolSize?: number;
 };
 
 export type SuggestItem = {
@@ -25,12 +28,32 @@ export type SuggestItem = {
 	reason: string;
 };
 
-export type SuggestResult = {
+export type DeepSuggestItem = SuggestItem & {
+	contentHits?: { line: number; snippet: string }[];
+	trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[];
+};
+
+type SuggestResultCommon = {
 	cacheStatus: "fresh" | "reindexed" | "stale";
+	durationMs: number;
 	task: string;
 	from: string | null;
+};
+
+export type FastSuggestResult = SuggestResultCommon & {
+	mode: "fast";
 	results: SuggestItem[];
 };
+
+export type DeepSuggestResult = SuggestResultCommon & {
+	mode: "deep";
+	results: DeepSuggestItem[];
+	poolSize: number;
+	contentScanTruncated?: boolean;
+	staleMixedEvidence?: boolean;
+};
+
+export type SuggestResult = FastSuggestResult | DeepSuggestResult;
 
 function normalizeFrom(value: string | undefined, cache: RepoCache): string | null {
 	if (!value) return null;
@@ -57,8 +80,20 @@ export async function suggestRepo(
 		const identity = resolveRepoIdentity(repoPath);
 		const cached = readCacheForWorktree(identity.repoKey, identity.worktreeKey);
 
+		if (
+			options.poolSize !== undefined &&
+			(!Number.isInteger(options.poolSize) ||
+				options.poolSize < 1 ||
+				options.poolSize > 200)
+		) {
+			throw new IndexError("suggest poolSize must be an integer in [1, 200]");
+		}
+		if (options.mode !== undefined && options.mode !== "fast" && options.mode !== "deep") {
+			throw new IndexError(`suggest mode must be 'fast' or 'deep' (got '${options.mode}')`);
+		}
+
 		let cache: RepoCache;
-		let cacheStatus: SuggestResult["cacheStatus"];
+		let cacheStatus: SuggestResultCommon["cacheStatus"];
 
 		if (!cached) {
 			cache = await indexRepo(repoPath);
@@ -93,12 +128,43 @@ export async function suggestRepo(
 		}
 
 		const from = normalizeFrom(options.from, cache);
-		const results = rankSuggestions(task, cache, {
+		const mode = options.mode ?? "fast";
+		const startedAt = Date.now();
+
+		if (mode === "fast") {
+			const results = rankSuggestions(task, cache, {
+				from,
+				limit: options.limit,
+			});
+			return {
+				mode: "fast",
+				cacheStatus,
+				task,
+				from,
+				results,
+				durationMs: Date.now() - startedAt,
+			} satisfies FastSuggestResult;
+		}
+
+		// mode === "deep" — delegated to Task 9
+		const { rankSuggestionsDeep } = await import("./suggest-ranker-deep.js");
+		const deepResult = await rankSuggestionsDeep(task, cache, identity.worktreePath, {
 			from,
 			limit: options.limit,
+			poolSize: options.poolSize,
+			stale: cacheStatus === "stale",
 		});
-
-		return { cacheStatus, task, from, results };
+		return {
+			mode: "deep",
+			cacheStatus,
+			task,
+			from,
+			results: deepResult.results,
+			poolSize: deepResult.poolSize,
+			contentScanTruncated: deepResult.contentScanTruncated,
+			staleMixedEvidence: deepResult.staleMixedEvidence,
+			durationMs: Date.now() - startedAt,
+		} satisfies DeepSuggestResult;
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
 		if (err instanceof IndexError) throw err;

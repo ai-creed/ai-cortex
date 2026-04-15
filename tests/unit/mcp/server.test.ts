@@ -114,9 +114,11 @@ describe("rehydrate_project", () => {
 describe("suggest_files", () => {
 	it("calls suggestRepo with task and options and returns formatted text", async () => {
 		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "fast",
 			task: "persistence layer",
 			from: null,
 			cacheStatus: "fresh",
+			durationMs: 0,
 			results: [
 				{
 					path: "src/store.ts",
