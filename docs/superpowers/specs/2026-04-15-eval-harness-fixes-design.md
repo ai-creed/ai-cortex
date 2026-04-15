@@ -40,22 +40,27 @@ No cleanup needed — the worktree is removed in the `finally` block.
 
 ---
 
-## Fix 2: Briefing Failure Logging
+## Fix 2: Briefing Path and Failure Logging
 
 **File:** `benchmarks/eval/harness.ts`
 
-`generateBriefing` currently returns `""` silently on any error. Add `process.stderr.write` at each failure point so the operator can see what went wrong.
+Two changes to `generateBriefing`:
 
-Four cases to log (all to stderr, prefixed with `  [briefing]`):
+**2a — Use `worktreePath`, not `task.repoPath`.**
+The original design (2026-04-14-eval-harness-design.md lines 68, 108) requires both conditions to start from identical isolated state. Generating the briefing from `task.repoPath` risks injecting context for uncommitted source-repo changes that are absent from the clean worktree. Change the call in `executeRun` from `generateBriefing(task.repoPath)` to `generateBriefing(worktreePath)`. Accept the re-index cost per run — correctness over speed.
+
+**2b — Surface all failure metadata.**
+`generateBriefing` currently returns `""` silently. Log to stderr at every failure point (prefix `  [briefing]`):
 
 | Case | Message |
 |------|---------|
-| `spawnSync` stdout is empty | `[briefing] empty stdout from rehydrate` |
-| JSON parse fails or `briefingPath` missing | `[briefing] unexpected rehydrate output` |
+| `result.stderr` non-empty (always, unconditional) | `[briefing] rehydrate stderr: <trimmed stderr>` |
+| `result.status !== 0` or `result.signal` set or `result.error` set | `[briefing] rehydrate failed: status=<n> signal=<s> error=<msg>` |
+| stdout is empty after a clean exit | `[briefing] empty stdout from rehydrate` |
+| JSON parse fails or `briefingPath` field missing | `[briefing] unexpected rehydrate output` |
 | `fs.readFileSync` throws | `[briefing] failed to read briefing file: <err.message>` |
-| `result.stderr` is non-empty (any case) | `[briefing] rehydrate stderr: <trimmed stderr>` |
 
-The stderr log fires whenever `result.stderr` is non-empty — regardless of whether stdout succeeded — so actionable error messages from the CLI (e.g., "repo not found") are always surfaced. It is logged in addition to any of the first three messages, not instead of them.
+The first two rows cover timeout and spawn-error cases where stdout and stderr may both be empty; they fire before the stdout checks. All rows may fire together when multiple conditions are true.
 
 No changes to `RunResult`, report output, or any other file.
 
@@ -91,23 +96,20 @@ export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): st
 }
 ```
 
-**Exclusion set built in `harness.ts`** inside `runVerification`'s call site. The harness knows exactly which paths it wrote:
+**Exclusion set built in `harness.ts`** at the `runVerification` call site. The harness knows exactly which paths it wrote:
 - `CLAUDE.md` (Fix 1, always present)
-- The fixture file path, if `copyFixtures` placed one (e.g., `tests/unit/lib/briefing-eval.test.ts`)
+- The fixture file path returned by `copyFixtures` (if any)
 
-`runVerification` in `verify.ts` already has a call to `getTouchedFiles`. The caller in `harness.ts` passes the exclusion set:
+To avoid duplicating the fixture map, **`copyFixtures` changes its return type from `void` to `string | null`** — returning the repo-relative destination path it wrote, or `null` if no fixture applies. The caller collects it:
 
 ```ts
+const fixturePath = copyFixtures(task, worktreePath);  // string | null
 const harnessFiles = new Set<string>(["CLAUDE.md"]);
-const fixtureMap: Record<string, string> = {
-    "briefing-doc-limit": "tests/unit/lib/briefing-eval.test.ts",
-    "node-framework-detection": "tests/unit/lib/entry-files-eval.test.ts",
-};
-if (fixtureMap[task.name]) harnessFiles.add(fixtureMap[task.name]);
+if (fixturePath) harnessFiles.add(fixturePath);
 const verification = runVerification(task, worktreePath, task.timeoutMs, harnessFiles);
 ```
 
-`runVerification` signature gains an optional `exclude?: Set<string>` parameter, forwarded to `getTouchedFiles`.
+`runVerification` signature gains an optional `exclude?: Set<string>` parameter, forwarded to `getTouchedFiles`. Adding a new fixture-backed task only requires updating `copyFixtures` — the exclusion logic follows automatically.
 
 **Why this matters:** Without exclusion, a perfect single-file task would score `1 / (1 ground-truth + 1 CLAUDE.md) = 0.5` instead of `1.0`.
 
@@ -152,7 +154,7 @@ Exits with code 0 if all repos exist, code 1 if any repo is missing (so it can b
 
 | File | Change |
 |------|--------|
-| `benchmarks/eval/harness.ts` | Add `writeEvalClaudeMd`, call in `executeRun`, add briefing failure logs, pass exclusion set to `runVerification` |
+| `benchmarks/eval/harness.ts` | Add `writeEvalClaudeMd`; switch briefing to `worktreePath`; add full failure logging; change `copyFixtures` return to `string \| null`; build exclusion set from returned path; pass to `runVerification` |
 | `benchmarks/eval/verify.ts` | Update `getTouchedFiles` (union modified + untracked, optional `exclude`), update `runVerification` signature |
 | `benchmarks/eval/runner.ts` | Add `--dry-run` flag to `parseArgs` and main; bypass repo-existence filter in dry-run mode |
 
