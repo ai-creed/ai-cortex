@@ -20,6 +20,7 @@ export function resolveRepoIdentity(inputPath: string): RepoIdentity {
 	try {
 		const resolved = path.resolve(inputPath);
 		const gitCommonDir = path.resolve(
+			resolved,
 			execGit(resolved, ["rev-parse", "--git-common-dir"]),
 		);
 		const worktreePath = path.resolve(
