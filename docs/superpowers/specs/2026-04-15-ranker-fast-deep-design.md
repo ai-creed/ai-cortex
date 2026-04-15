@@ -96,14 +96,17 @@ Rationale:
 
 ### Rules
 
-1. Split on non-alphanumeric.
-2. Additionally split on camelCase / PascalCase boundaries: `fooBarBaz` → `foo`, `bar`, `baz`.
-3. Handle ALLCAPS boundary correctly: `XMLParser` → `xml`, `parser` (not `x`, `m`, `l`, `parser`).
-4. Keep the original **joined** lowercased form as an extra token (`cardview`) — preserves exact-match ability.
-5. Lowercase all tokens.
-6. Apply stopwords **to task tokens only** (not path tokens).
-7. Drop single-char tokens except pure digits.
-8. Dedup.
+1. Split on path separators (`/`, `\`) — no cross-segment joining.
+2. Within each segment, split on every other non-alphanumeric character (`_`, `-`, `.`, spaces, etc.).
+3. Additionally split each raw word on camelCase / PascalCase boundaries: `fooBarBaz` → `foo`, `bar`, `baz`.
+4. Handle ALLCAPS boundary correctly: `XMLParser` → `xml`, `parser` (not `x`, `m`, `l`, `parser`).
+5. Emit the **joined** lowercased form as an extra token:
+   - For any raw word: just its lowercase (`CardView` → `cardview`).
+   - For a segment split purely by `_` / `-` separators (snake/kebab): the concatenation of its alnum parts (`my_work_panel` → `myworkpanel`). Segments containing other non-alphanumeric characters (notably `.`, as in `Card.tsx`) do **not** emit a cross-separator join, to avoid polluting tokens with things like `cardtsx`.
+6. Lowercase all tokens.
+7. Apply stopwords **to task tokens only** (not path tokens).
+8. Drop single-char tokens except pure digits.
+9. Dedup.
 
 ### Stopwords
 
@@ -111,9 +114,11 @@ Kept short and domain-aware. Applied only when tokenizing the **task** string.
 
 ```
 English noise:  a, an, the, of, in, on, at, to, for, from, by, with, and, or, is, are, be
-Task noise:     my, your, our, this, that, new, add, fix, make, create, update, use, using
+Task noise:     my, your, our, this, that, new
 Code noise:     src, lib, index, utils, helper, helpers, common
 ```
+
+**Deliberately NOT in STOPWORDS:** task-verb words `create`, `update`, `add`, `fix`, `make`, `use`, `using`. These appear in real code identifiers (`createCard`, `addUser`, `useFetch`, `fixBug`); filtering them from tasks would drop meaningful query tokens and prevent fuzzy matches against those identifiers.
 
 **Example** — task `"card creation title editing in My Work right panel"`:
 
@@ -533,11 +538,14 @@ tests/integration/
 
 **`trigram-index.test.ts`:**
 
-- `editing` vs `editor` → sim > 0.4
-- `card` vs `carding` → sim > 0.4
-- `foo` vs `bar` → sim = 0
+- `editing` vs `editor` → sim ≈ 2/7 (0.286) — below default minOverlap (0.4); documents actual Jaccard value.
+- `card` vs `carding` → sim = 0.4 (exactly at default minOverlap).
+- `edit` vs `editor` → sim = 0.5 (clearly above threshold; substring-style morphology matches reliably).
+- `foo` vs `bar` → sim = 0.
 - Empty input doesn't crash.
 - Non-ASCII doesn't crash.
+
+> **Jaccard threshold reality check (v1.6):** Pure Jaccard-on-trigrams is not generous with derivational morphology — `editing`/`editor` shares only 2 of 7 trigrams (`edi`, `dit`), yielding 0.286. That's intentionally below the default 0.4 `minOverlap` because we prefer precision over recall in the rescue path; we don't want the trigram-only pool saturated by every distant morphological cousin. The cases that DO cross the threshold in practice are substring-style matches (`edit`↔`editor` = 0.5), extension/shortening by one syllable (`card`↔`carding` = 0.4), and exact matches (`editor`↔`editor` = 1.0). The deep ranker's content scan (§7.2) handles the morphology cases that trigrams miss.
 
 **`content-scanner.test.ts`:**
 
@@ -637,3 +645,9 @@ Suggested sequence (to be refined by writing-plans step):
   - Plan Task 10 — explicit update to the **existing** `tests/unit/mcp/server.test.ts` mocks and `toHaveBeenCalledWith` assertions for the new `mode`/`durationMs` shape (previously the plan only added new tests and would have left the old ones broken).
   - Plan Task 9 — pool-union regression test rewritten to use a genuinely trigram-only rescue (`src/misc.ts` with fn `editorBootstrap`, query `"foo edit"`) instead of `src/CardTitleEditor.tsx`, whose path now tokenizes to include the exact query token `editor` and wouldn't actually exercise the rescue path.
   - Plan Task 8 — commit step now stages `tests/unit/lib/suggest.test.ts` along with the source files.
+- **2026-04-15 v1.5** — Task 1 implementer escalation, two tokenizer inconsistencies resolved:
+  - §5 Rules — split semantics made explicit as **two-tier**: path separators (`/`, `\`) split into segments with no cross-segment join; within a segment, non-alphanumeric chars split into raw words; a snake/kebab-only segment additionally emits the concatenated form (`my_work_panel` → `myworkpanel`); segments containing `.` or other non-`_`/`-` separators do not emit a cross-separator join (so `Card.tsx` stays `card`, `tsx` without `cardtsx`). Previous phrasing "Split on non-alphanumeric" was ambiguous and the spec's reference impl never actually produced `myworkpanel` even though the regression table required it.
+  - §5 STOPWORDS — removed task-verb words `create`, `update`, `add`, `fix`, `make`, `use`, `using`. These collide with common code identifiers (`createCard`, `addUser`, `useFetch`, `fixBug`) and the spec test table already required `tokenizeTask("createCard")` to surface `"create"`. Previous STOPWORDS + test were mutually exclusive.
+  - Plan Task 1 — implementation snippet and STOPWORDS list updated to match.
+- **2026-04-15 v1.6** — Task 6 implementer escalation, Jaccard threshold math corrected:
+  - §10 trigram-index test expectations aligned with actual Jaccard values. Previous spec claimed `editing`/`editor` sim `> 0.4` and `card`/`carding` sim `> 0.4`; both are wrong. Correct values: 2/7 ≈ 0.286 and 0.400 exactly. The plan Task 6 test file was updated to use `toBeCloseTo` with the real values. Added an `edit`/`editor` case (0.5) to demonstrate a pair that reliably clears the default 0.4 threshold. Clarifying note added explaining that pure Jaccard trigrams are intentionally precision-biased and the content scan covers morphology cases trigrams miss.
