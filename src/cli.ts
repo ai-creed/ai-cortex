@@ -7,6 +7,7 @@ import {
 	rehydrateRepo,
 	suggestRepo,
 } from "./lib/index.js";
+import type { FastSuggestResult, DeepSuggestResult } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -20,11 +21,15 @@ function parseIndexOrRehydrateArgs(
 	return { repoPath, options };
 }
 
-function parseSuggestArgs(argv: string[]): {
+function parseSuggestArgs(
+	argv: string[],
+	options: { deep?: boolean } = {},
+): {
 	task: string;
 	repoPath: string;
 	from?: string;
 	limit?: number;
+	poolSize?: number;
 	json: boolean;
 	stale: boolean;
 } {
@@ -32,6 +37,7 @@ function parseSuggestArgs(argv: string[]): {
 	let repoPath: string | null = null;
 	let from: string | undefined;
 	let limit: number | undefined;
+	let poolSize: number | undefined;
 	let json = false;
 	let stale = false;
 
@@ -54,7 +60,26 @@ function parseSuggestArgs(argv: string[]): {
 		}
 		if (arg === "--limit") {
 			if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) {
-				limit = Number(argv[i + 1]);
+				const raw = argv[i + 1];
+				const parsed = Number(raw);
+				if (!Number.isFinite(parsed)) {
+					process.stderr.write(`ai-cortex: --limit must be a number (got '${raw}')\n`);
+					process.exit(1);
+				}
+				limit = parsed;
+				i += 1;
+			}
+			continue;
+		}
+		if (options.deep && arg === "--pool") {
+			if (argv[i + 1] !== undefined && !argv[i + 1].startsWith("--")) {
+				const raw = argv[i + 1];
+				const parsed = Number(raw);
+				if (!Number.isFinite(parsed)) {
+					process.stderr.write(`ai-cortex: --pool must be a number (got '${raw}')\n`);
+					process.exit(1);
+				}
+				poolSize = parsed;
 				i += 1;
 			}
 			continue;
@@ -73,9 +98,60 @@ function parseSuggestArgs(argv: string[]): {
 		repoPath: repoPath ?? process.cwd(),
 		from,
 		limit,
+		poolSize,
 		json,
 		stale,
 	};
+}
+
+function renderFastCli(r: FastSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files for: ${r.task}`);
+	lines.push(`mode: fast · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs}`);
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score}]`);
+		lines.push(`   reason: ${item.reason}`);
+	}
+	lines.push("");
+	lines.push(escalationHint(r));
+	return lines.join("\n").trimEnd();
+}
+
+function renderDeepCli(r: DeepSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files (deep) for: ${r.task}`);
+	lines.push(
+		`mode: deep · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
+	);
+	if (r.staleMixedEvidence) {
+		lines.push("warning: stale:true — ranking uses cached graph, snippets use current disk");
+	}
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score}]`);
+		lines.push(`   reason: ${item.reason}`);
+		if (item.contentHits && item.contentHits.length > 0) {
+			lines.push("   content:");
+			for (const h of item.contentHits) {
+				lines.push(`     L${h.line}: ${h.snippet}`);
+			}
+		}
+	}
+	return lines.join("\n").trimEnd();
+}
+
+function escalationHint(r: FastSuggestResult): string {
+	const topScore = r.results[0]?.score ?? 0;
+	const fileCount = r.results.filter((x) => x.kind === "file").length;
+	const reasons: string[] = [];
+	if (topScore < 10) reasons.push(`top score=${topScore} is low`);
+	if (fileCount === 0) reasons.push("no code files in top-N");
+	const summary =
+		reasons.length > 0
+			? `consider suggest_files_deep (${reasons.join("; ")})`
+			: "deep unlikely to help";
+	return `escalation hint: top score=${topScore}, ${fileCount} code files in top-${r.results.length} — ${summary}`;
 }
 
 async function main(): Promise<void> {
@@ -135,17 +211,34 @@ async function main(): Promise<void> {
 				from: parsed.from,
 				limit: parsed.limit,
 				stale: parsed.stale,
+				mode: "fast",
 			});
+			if (result.mode !== "fast") {
+				throw new Error("expected fast result for 'suggest'");
+			}
 
 			if (parsed.json) {
 				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 			} else {
-				process.stdout.write(`suggested files for: ${result.task}\n\n`);
-				for (const [index, item] of result.results.entries()) {
-					process.stdout.write(
-						`${index + 1}. ${item.path}\n   reason: ${item.reason}\n\n`,
-					);
-				}
+				process.stdout.write(renderFastCli(result) + "\n");
+			}
+		} else if (command === "suggest-deep") {
+			const parsed = parseSuggestArgs(args, { deep: true });
+			const result = await suggestRepo(parsed.repoPath, parsed.task, {
+				from: parsed.from,
+				limit: parsed.limit,
+				stale: parsed.stale,
+				poolSize: parsed.poolSize,
+				mode: "deep",
+			});
+			if (result.mode !== "deep") {
+				throw new Error("expected deep result for 'suggest-deep'");
+			}
+
+			if (parsed.json) {
+				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+			} else {
+				process.stdout.write(renderDeepCli(result) + "\n");
 			}
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);

@@ -110,6 +110,8 @@ describe("suggest CLI", () => {
 		expect(result.stdout).toContain("suggested files for: persistence");
 		expect(result.stdout).toMatch(/\n\n1\. /);
 		expect(result.stdout).toContain("reason:");
+		expect(result.stdout).toMatch(/\[(file|doc) · score \d+\]/);
+		expect(result.stdout).toMatch(/^escalation hint: /m);
 	});
 
 	it("supports --json output", () => {
@@ -153,5 +155,59 @@ describe("suggest CLI", () => {
 
 		expect(result.status).toBe(2);
 		expect(result.stderr).toContain("ai-cortex:");
+	});
+});
+
+describe("suggest-deep CLI", () => {
+	it("runs and emits JSON with mode:deep", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest-deep", "persistence", "--json", tmpDir],
+			{ encoding: "utf8" },
+		);
+		expect(result.status).toBe(0);
+		const json = JSON.parse(result.stdout);
+		expect(json.mode).toBe("deep");
+		expect(Array.isArray(json.results)).toBe(true);
+		expect(typeof json.poolSize).toBe("number");
+	});
+
+	it("text output has deep header and no escalation hint", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest-deep", "persistence", tmpDir],
+			{ encoding: "utf8" },
+		);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain("suggested files (deep) for: persistence");
+		expect(result.stdout).not.toMatch(/^escalation hint: /m);
+	});
+
+	it("exits with code 1 on --pool non-numeric", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest-deep", "persistence", "--pool", "foo", tmpDir],
+			{ encoding: "utf8" },
+		);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toMatch(/--pool must be a number/);
+	});
+
+	it("exits with code 1 on --limit non-numeric", () => {
+		seedSuggestRepo();
+
+		const result = spawnSync(
+			"node",
+			[CLI, "suggest", "persistence", "--limit", "foo", tmpDir],
+			{ encoding: "utf8" },
+		);
+		expect(result.status).toBe(1);
+		expect(result.stderr).toMatch(/--limit must be a number/);
 	});
 });
