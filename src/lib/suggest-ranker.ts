@@ -21,7 +21,6 @@ export type RankedSuggestion = {
 	reason: string;
 };
 
-
 function normalizePath(value: string): string {
 	return value.replace(/\\/g, "/").replace(/^\.?\//, "");
 }

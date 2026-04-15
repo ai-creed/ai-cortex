@@ -26,8 +26,8 @@ export const STOPWORDS: Set<string> = new Set([
 // A snake-joined form ("my_work_panel" -> "myworkpanel") is emitted only when
 // the whole segment is alnum-plus-underscore-or-dash (so "Card.tsx" does NOT
 // emit "cardtsx").
-const PATH_SEPARATOR_RE = /[\/\\]+/;
-const SUBWORD_SEPARATOR_RE = /[_\-]+/;
+const PATH_SEPARATOR_RE = /[/\\]+/;
+const SUBWORD_SEPARATOR_RE = /[_-]+/;
 const NON_WORD_RE = /[^a-zA-Z0-9]+/;
 const ALNUM_RE = /^[a-zA-Z0-9]+$/;
 
