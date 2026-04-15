@@ -1,6 +1,12 @@
 // benchmarks/eval/verify.test.ts
-import { describe, it, expect } from "vitest";
-import { checkStructural, computeFilesCorrect } from "./verify.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("node:child_process");
+
+import { execFileSync } from "node:child_process";
+import { checkStructural, computeFilesCorrect, getTouchedFiles } from "./verify.js";
+
+const mockExec = vi.mocked(execFileSync);
 
 describe("checkStructural", () => {
 	it("returns true when pattern matches and shouldMatch is true", () => {
@@ -43,5 +49,59 @@ describe("computeFilesCorrect", () => {
 
 	it("handles touched superset of ground truth", () => {
 		expect(computeFilesCorrect(["a.ts"], ["a.ts", "b.ts"])).toBeCloseTo(0.5);
+	});
+});
+
+describe("getTouchedFiles", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("unions modified tracked files and untracked new files", () => {
+		mockExec.mockImplementation(((_cmd: unknown, args: unknown) => {
+			const a = args as string[];
+			if (a[0] === "diff") return "src/foo.ts\nsrc/bar.ts";
+			if (a[0] === "ls-files") return "src/new.ts";
+			return "";
+		}) as typeof execFileSync);
+		expect(getTouchedFiles("/repo")).toEqual(["src/foo.ts", "src/bar.ts", "src/new.ts"]);
+	});
+
+	it("deduplicates files present in both git commands", () => {
+		mockExec.mockImplementation(((_cmd: unknown, args: unknown) => {
+			const a = args as string[];
+			if (a[0] === "diff") return "src/foo.ts";
+			if (a[0] === "ls-files") return "src/foo.ts\nsrc/new.ts";
+			return "";
+		}) as typeof execFileSync);
+		expect(getTouchedFiles("/repo")).toEqual(["src/foo.ts", "src/new.ts"]);
+	});
+
+	it("excludes harness-created paths when exclude set is provided", () => {
+		mockExec.mockImplementation(((_cmd: unknown, args: unknown) => {
+			const a = args as string[];
+			if (a[0] === "diff") return "src/foo.ts";
+			if (a[0] === "ls-files") return "CLAUDE.md\ntests/unit/lib/briefing-eval.test.ts";
+			return "";
+		}) as typeof execFileSync);
+		const exclude = new Set(["CLAUDE.md", "tests/unit/lib/briefing-eval.test.ts"]);
+		expect(getTouchedFiles("/repo", exclude)).toEqual(["src/foo.ts"]);
+	});
+
+	it("returns empty array when both git commands throw", () => {
+		mockExec.mockImplementation(() => {
+			throw new Error("not a git repo");
+		});
+		expect(getTouchedFiles("/repo")).toEqual([]);
+	});
+
+	it("returns results from the working command when one throws", () => {
+		mockExec.mockImplementation(((_cmd: unknown, args: unknown) => {
+			const a = args as string[];
+			if (a[0] === "diff") throw new Error("no HEAD");
+			if (a[0] === "ls-files") return "src/new.ts";
+			return "";
+		}) as typeof execFileSync);
+		expect(getTouchedFiles("/repo")).toEqual(["src/new.ts"]);
 	});
 });

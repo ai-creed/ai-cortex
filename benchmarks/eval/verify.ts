@@ -31,23 +31,30 @@ export function computeFilesCorrect(
 	return intersection.length / union.size;
 }
 
-export function getTouchedFiles(worktreePath: string): string[] {
-	try {
-		const output = execFileSync(
-			"git",
-			["diff", "--name-only", "HEAD"],
-			{ cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-		);
-		return output.trimEnd().split("\n").filter((l) => l.length > 0);
-	} catch {
-		return [];
-	}
+export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): string[] {
+	const run = (args: string[]): string[] => {
+		try {
+			return execFileSync("git", args, {
+				cwd: worktreePath,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trimEnd().split("\n").filter((l) => l.length > 0);
+		} catch {
+			return [];
+		}
+	};
+
+	const modified = run(["diff", "--name-only", "HEAD"]);
+	const untracked = run(["ls-files", "--others", "--exclude-standard"]);
+	const all = [...new Set([...modified, ...untracked])];
+	return exclude ? all.filter((f) => !exclude.has(f)) : all;
 }
 
 export function runVerification(
 	task: EvalTask,
 	worktreePath: string,
 	timeoutMs?: number,
+	exclude?: Set<string>,
 ): { structuralPass: boolean; verifyPass: boolean; filesCorrect: number } {
 	// Structural checks
 	let structuralPass = true;
@@ -89,8 +96,8 @@ export function runVerification(
 		verifyPass = false;
 	}
 
-	// Files correctness
-	const touched = getTouchedFiles(worktreePath);
+	// Files correctness — exclude harness-created files from scoring
+	const touched = getTouchedFiles(worktreePath, exclude);
 	const filesCorrect = computeFilesCorrect(task.groundTruthFiles, touched);
 
 	return { structuralPass, verifyPass, filesCorrect };
