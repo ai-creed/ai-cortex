@@ -236,15 +236,26 @@ export function rankSuggestions(
 	}
 
 	for (const doc of cache.docs) {
-		const docTokens = tokenizePath(`${doc.title} ${doc.body} ${doc.path}`);
-		const matchedDocTokens = tokens.filter((token) => docTokens.includes(token));
-		const score = matchedDocTokens.length * 4;
-		if (score > 0) {
+		const titleTokens = tokenizePath(doc.title);
+		const pathTokensDoc = tokenizePath(doc.path);
+		const bodyTokens = new Set(tokenizePath(doc.body));
+
+		const titleMatches = tokens.filter((t) => titleTokens.includes(t)).length;
+		const pathMatches = tokens.filter((t) => pathTokensDoc.includes(t)).length;
+		const bodyMatches = tokens.filter((t) => bodyTokens.has(t)).length;
+
+		const docScore = titleMatches * 8 + pathMatches * 5 + bodyMatches * 2;
+
+		if (docScore > 0) {
+			const parts: string[] = [];
+			if (titleMatches > 0) parts.push("title");
+			if (pathMatches > 0) parts.push("path");
+			if (bodyMatches > 0) parts.push("body");
 			candidates.push({
 				path: doc.path,
 				kind: "doc",
-				score,
-				reason: "doc title/body strongly matches task",
+				score: docScore,
+				reason: `doc match: ${parts.join("+")}`,
 			});
 		}
 	}

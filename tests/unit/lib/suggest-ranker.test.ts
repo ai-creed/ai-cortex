@@ -60,6 +60,10 @@ describe("rankSuggestions", () => {
 	});
 
 	it("prefers code over docs on comparable evidence", () => {
+		// Under the new scoring (title×8, path×5, body×2) a doc with matching title/body/path
+		// will outscore a code file with a matching path alone. This test asserts the
+		// tiebreaker: when both file and doc produce the SAME score (path-only match each),
+		// the code file is ranked first.
 		const cache = makeCache({
 			files: [
 				{ path: "src/persistence.ts", kind: "file" },
@@ -68,11 +72,14 @@ describe("rankSuggestions", () => {
 			docs: [
 				{
 					path: "docs/shared/persistence.md",
-					title: "Persistence",
-					body: "# Persistence\n",
+					title: "Misc notes", // title does NOT match "persistence"
+					body: "Unrelated content.", // body does NOT match "persistence"
 				},
 			],
 		});
+		// code: path-token "persistence" → 1×5 = 5
+		// doc:  path-token "persistence" → 1×5 = 5, title=0, body=0 → total 5
+		// Same score — sort tiebreaker (kind:"file" < kind:"doc") → src/persistence.ts wins.
 		const result = rankSuggestions("persistence", cache);
 		expect(result[0]?.path).toBe("src/persistence.ts");
 		expect(result[0]?.kind).toBe("file");
@@ -281,5 +288,55 @@ describe("rankSuggestions — functions[] scoring", () => {
 		const cache = makeCache({ functions: [] });
 		const result = rankSuggestions("persistence store", cache);
 		expect(result.length).toBeGreaterThan(0);
+	});
+});
+
+describe("rankSuggestions — doc title vs body weighting", () => {
+	it("file with task token in doc title outranks file with token buried in body", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "docs/title-hit.md", kind: "file" },
+				{ path: "docs/body-hit.md", kind: "file" },
+			],
+			docs: [
+				{
+					path: "docs/title-hit.md",
+					title: "Persistence Overview",
+					body: "Short body.",
+				},
+				{
+					path: "docs/body-hit.md",
+					title: "Misc notes",
+					body: "Lots of unrelated words. Persistence. More unrelated filler.",
+				},
+			],
+		});
+		const result = rankSuggestions("persistence", cache);
+		expect(result[0]?.path).toBe("docs/title-hit.md");
+	});
+
+	it("duplicate occurrences in body count once (no TF inflation)", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "docs/a.md", kind: "file" },
+				{ path: "docs/b.md", kind: "file" },
+			],
+			docs: [
+				{
+					path: "docs/a.md",
+					title: "A",
+					body: "persistence persistence persistence persistence persistence",
+				},
+				{
+					path: "docs/b.md",
+					title: "Persistence Store",
+					body: "Short.",
+				},
+			],
+		});
+		const result = rankSuggestions("persistence store", cache);
+		// doc/b title matches BOTH task tokens (persistence + store) -> 2*8 = 16 for title.
+		// doc/a title matches nothing. Body unique-match for "persistence" = 1*2 = 2.
+		expect(result[0]?.path).toBe("docs/b.md");
 	});
 });
