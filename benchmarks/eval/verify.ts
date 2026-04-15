@@ -47,6 +47,7 @@ export function getTouchedFiles(worktreePath: string): string[] {
 export function runVerification(
 	task: EvalTask,
 	worktreePath: string,
+	timeoutMs?: number,
 ): { structuralPass: boolean; verifyPass: boolean; filesCorrect: number } {
 	// Structural checks
 	let structuralPass = true;
@@ -81,7 +82,7 @@ export function runVerification(
 		execFileSync("bash", ["-c", task.verifyCommand], {
 			cwd: worktreePath,
 			stdio: "ignore",
-			timeout: 30000,
+			timeout: timeoutMs ?? 60000,
 		});
 		verifyPass = true;
 	} catch {

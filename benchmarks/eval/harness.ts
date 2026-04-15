@@ -10,6 +10,14 @@ const EVAL_WORKTREE_DIR = ".worktrees";
 
 function createWorktree(repoPath: string, name: string): string {
 	const worktreePath = path.join(repoPath, EVAL_WORKTREE_DIR, name);
+	// Clean up any stale worktree from a previous crashed run
+	try {
+		execFileSync("git", ["worktree", "remove", "--force", worktreePath], {
+			cwd: repoPath, stdio: "ignore",
+		});
+	} catch {
+		// Not stale, proceed
+	}
 	execFileSync(
 		"git",
 		["worktree", "add", "--detach", worktreePath],
@@ -30,14 +38,24 @@ function removeWorktree(repoPath: string, worktreePath: string): void {
 	}
 }
 
-function generateBriefing(worktreePath: string): string {
+function mainRepoCli(): string {
+	const evalDir = path.dirname(new URL(import.meta.url).pathname);
+	const repoRoot = path.resolve(evalDir, "..", "..");
+	return path.join(repoRoot, "dist", "src", "cli.js");
+}
+
+function generateBriefing(repoPath: string): string {
 	try {
 		const result = spawnSync(
 			"node",
-			[path.join(worktreePath, "dist", "src", "cli.js"), "rehydrate", worktreePath],
-			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 },
+			[mainRepoCli(), "rehydrate", repoPath, "--json"],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 },
 		);
-		return result.stdout || "";
+		if (!result.stdout) return "";
+		const json = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+		const briefingPath = json["briefingPath"] as string | undefined;
+		if (!briefingPath) return "";
+		return fs.readFileSync(briefingPath, "utf8");
 	} catch {
 		return "";
 	}
@@ -131,17 +149,7 @@ export function executeRun(options: RunOptions): RunResult {
 		// 3. Generate briefing (if needed)
 		let briefing = "";
 		if (condition === "with") {
-			// Build first so ai-cortex CLI is available
-			try {
-				execFileSync("pnpm", ["build"], {
-					cwd: worktreePath,
-					stdio: "ignore",
-					timeout: 30000,
-				});
-			} catch {
-				// Build might fail; briefing will be empty
-			}
-			briefing = generateBriefing(worktreePath);
+			briefing = generateBriefing(task.repoPath);
 		}
 
 		// 4. Build prompt and spawn agent
@@ -152,7 +160,7 @@ export function executeRun(options: RunOptions): RunResult {
 		const metrics = parseStreamJson(agentResult.stdout);
 
 		// 6. Run verification
-		const verification = runVerification(task, worktreePath);
+		const verification = runVerification(task, worktreePath, task.timeoutMs);
 
 		return {
 			task: task.name,
