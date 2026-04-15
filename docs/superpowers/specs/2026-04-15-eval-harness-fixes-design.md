@@ -44,15 +44,18 @@ No cleanup needed — the worktree is removed in the `finally` block.
 
 **File:** `benchmarks/eval/harness.ts`
 
-`generateBriefing` currently returns `""` silently on any error. Add `process.stderr.write` at each of the three failure points so the operator can see what went wrong without searching logs.
+`generateBriefing` currently returns `""` silently on any error. Add `process.stderr.write` at each failure point so the operator can see what went wrong.
 
-Three cases to log (all to stderr, prefixed with `  [briefing]`):
+Four cases to log (all to stderr, prefixed with `  [briefing]`):
 
 | Case | Message |
 |------|---------|
 | `spawnSync` stdout is empty | `[briefing] empty stdout from rehydrate` |
 | JSON parse fails or `briefingPath` missing | `[briefing] unexpected rehydrate output` |
 | `fs.readFileSync` throws | `[briefing] failed to read briefing file: <err.message>` |
+| `result.stderr` is non-empty (any case) | `[briefing] rehydrate stderr: <trimmed stderr>` |
+
+The stderr log fires whenever `result.stderr` is non-empty — regardless of whether stdout succeeded — so actionable error messages from the CLI (e.g., "repo not found") are always surfaced. It is logged in addition to any of the first three messages, not instead of them.
 
 No changes to `RunResult`, report output, or any other file.
 
@@ -60,14 +63,16 @@ No changes to `RunResult`, report output, or any other file.
 
 ## Fix 3: `filesCorrect` Includes Untracked New Files
 
-**File:** `benchmarks/eval/verify.ts`
+**Files:** `benchmarks/eval/verify.ts`, `benchmarks/eval/harness.ts`
 
 `getTouchedFiles` runs only `git diff --name-only HEAD`, which sees modifications to tracked files but misses files the agent creates from scratch (untracked, never committed).
 
-**Fix:** Run a second command and union the results:
+**Fix:** Run a second command, union the results, then exclude harness-created paths.
+
+`getTouchedFiles` gains an optional `exclude` parameter (a `Set<string>` of repo-relative paths written by the harness):
 
 ```ts
-export function getTouchedFiles(worktreePath: string): string[] {
+export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): string[] {
 	const run = (args: string[]) => {
 		try {
 			return execFileSync("git", args, {
@@ -81,11 +86,30 @@ export function getTouchedFiles(worktreePath: string): string[] {
 
 	const modified = run(["diff", "--name-only", "HEAD"]);
 	const untracked = run(["ls-files", "--others", "--exclude-standard"]);
-	return [...new Set([...modified, ...untracked])];
+	const all = [...new Set([...modified, ...untracked])];
+	return exclude ? all.filter((f) => !exclude.has(f)) : all;
 }
 ```
 
-No interface changes — return type stays `string[]`.
+**Exclusion set built in `harness.ts`** inside `runVerification`'s call site. The harness knows exactly which paths it wrote:
+- `CLAUDE.md` (Fix 1, always present)
+- The fixture file path, if `copyFixtures` placed one (e.g., `tests/unit/lib/briefing-eval.test.ts`)
+
+`runVerification` in `verify.ts` already has a call to `getTouchedFiles`. The caller in `harness.ts` passes the exclusion set:
+
+```ts
+const harnessFiles = new Set<string>(["CLAUDE.md"]);
+const fixtureMap: Record<string, string> = {
+    "briefing-doc-limit": "tests/unit/lib/briefing-eval.test.ts",
+    "node-framework-detection": "tests/unit/lib/entry-files-eval.test.ts",
+};
+if (fixtureMap[task.name]) harnessFiles.add(fixtureMap[task.name]);
+const verification = runVerification(task, worktreePath, task.timeoutMs, harnessFiles);
+```
+
+`runVerification` signature gains an optional `exclude?: Set<string>` parameter, forwarded to `getTouchedFiles`.
+
+**Why this matters:** Without exclusion, a perfect single-file task would score `1 / (1 ground-truth + 1 CLAUDE.md) = 0.5` instead of `1.0`.
 
 ---
 
@@ -102,6 +126,8 @@ let dryRun = false;
 // in loop:
 if (arg === "--dry-run") { dryRun = true; }
 ```
+
+**Control flow in `main`:** In dry-run mode, the existing repo-existence filter (`tasks.filter(fs.existsSync)`) must be bypassed. Instead, load all tasks (applying only the `--tasks` name filter if present), then print the full table — with ✓/✗ per row — using the unfiltered list. This ensures ✗ rows are visible. The `Total runs` line is computed from the unfiltered set so the user sees what a real run would attempt.
 
 **Dry-run output format:**
 
@@ -126,9 +152,9 @@ Exits with code 0 if all repos exist, code 1 if any repo is missing (so it can b
 
 | File | Change |
 |------|--------|
-| `benchmarks/eval/harness.ts` | Add `writeEvalClaudeMd`, call in `executeRun`, add briefing failure logs |
-| `benchmarks/eval/verify.ts` | Update `getTouchedFiles` to include untracked files |
-| `benchmarks/eval/runner.ts` | Add `--dry-run` flag to `parseArgs` and main |
+| `benchmarks/eval/harness.ts` | Add `writeEvalClaudeMd`, call in `executeRun`, add briefing failure logs, pass exclusion set to `runVerification` |
+| `benchmarks/eval/verify.ts` | Update `getTouchedFiles` (union modified + untracked, optional `exclude`), update `runVerification` signature |
+| `benchmarks/eval/runner.ts` | Add `--dry-run` flag to `parseArgs` and main; bypass repo-existence filter in dry-run mode |
 
 No new files. No schema changes. No dependency additions.
 
@@ -138,5 +164,5 @@ No new files. No schema changes. No dependency additions.
 
 - **Fix 1:** Run `pnpm eval --tasks cli-help-flag --reps 1` and verify `totalToolCalls > explorationCalls` (agent makes at least one Edit/Write call).
 - **Fix 2:** Temporarily break the briefing path and confirm stderr shows the relevant `[briefing]` message.
-- **Fix 3:** Unit test in `verify.test.ts`: use `vi.mock("node:child_process")` to stub `execFileSync`, return different file lists for `diff` vs `ls-files` calls, assert the union is returned with no duplicates.
+- **Fix 3:** Unit test in `verify.test.ts`: use `vi.mock("node:child_process")` to stub `execFileSync`, return different file lists for `diff` vs `ls-files` calls, assert the union is returned with no duplicates. Second test: pass an `exclude` set containing one of the returned paths, assert it is absent from the result.
 - **Fix 4:** Run `pnpm eval --dry-run` and verify output lists all tasks with repo existence markers; run with a non-existent repo and verify exit code 1.
