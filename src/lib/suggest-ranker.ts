@@ -156,21 +156,48 @@ export function rankSuggestions(
 			score += 1;
 		}
 
+		// Function name scoring — cap at 12 to prevent a single bag-o-functions file
+		// from dominating a single well-named feature file.
+		let fnScore = 0;
+		for (const fn of cache.functions ?? []) {
+			if (fn.file !== file.path) continue;
+			const fnTokens = tokenizePath(fn.qualifiedName);
+			const matched = tokens.filter((t) => fnTokens.includes(t)).length;
+			if (matched === 0) continue;
+			fnScore += matched * (fn.exported ? 3 : 1);
+		}
+		score += Math.min(fnScore, 12);
+
 		if (score > 0) {
+			const reasonParts: string[] = [];
+			if (matchedPathTokens.length > 0) {
+				reasonParts.push(`path:${matchedPathTokens.join(",")}`);
+			}
+			if (fnScore > 0) {
+				const matchedFnNames = (cache.functions ?? [])
+					.filter((fn) => fn.file === file.path)
+					.filter((fn) => tokens.some((t) => tokenizePath(fn.qualifiedName).includes(t)))
+					.map((fn) => fn.qualifiedName)
+					.slice(0, 3);
+				reasonParts.push(`fn:${matchedFnNames.join(",")}`);
+			}
+
+			const reason =
+				reasonParts.length > 0
+					? reasonParts.join(" | ")
+					: normalizedFrom && normalizedPath === normalizedFrom
+						? "anchor file"
+						: normalizedFrom && sameDirectory(normalizedPath, normalizedFrom)
+							? "near anchor file via path"
+							: cache.entryFiles.includes(file.path)
+								? "entry file with matching repo context"
+								: "near anchor file via imports";
+
 			candidates.push({
 				path: file.path,
 				kind: "file",
 				score,
-				reason:
-					matchedPathTokens.length > 0
-						? `matched task terms in path: ${matchedPathTokens.join(", ")}`
-						: normalizedFrom && normalizedPath === normalizedFrom
-							? "anchor file"
-							: normalizedFrom && sameDirectory(normalizedPath, normalizedFrom)
-								? "near anchor file via path"
-								: cache.entryFiles.includes(file.path)
-									? "entry file with matching repo context"
-									: "near anchor file via imports",
+				reason,
 			});
 		}
 	}

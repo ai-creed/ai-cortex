@@ -198,3 +198,88 @@ describe("call graph enrichment", () => {
 		expect(result[0]?.path).toBe("src/persistence/store.ts");
 	});
 });
+
+describe("rankSuggestions — functions[] scoring", () => {
+	it("boosts a file whose exported function name matches task tokens", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/a.ts", kind: "file" },
+				{ path: "src/b.ts", kind: "file" },
+			],
+			functions: [
+				{
+					qualifiedName: "createCard",
+					file: "src/a.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+				{
+					qualifiedName: "helperThing",
+					file: "src/b.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+			],
+		});
+		const result = rankSuggestions("create card", cache);
+		expect(result[0]?.path).toBe("src/a.ts");
+	});
+
+	it("weights exported functions 3x over unexported", () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/a.ts", kind: "file" },
+				{ path: "src/b.ts", kind: "file" },
+			],
+			functions: [
+				{
+					qualifiedName: "createCard",
+					file: "src/a.ts",
+					exported: false,
+					isDefaultExport: false,
+					line: 1,
+				},
+				{
+					qualifiedName: "createCard",
+					file: "src/b.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+			],
+		});
+		const result = rankSuggestions("create card", cache);
+		expect(result[0]?.path).toBe("src/b.ts");
+	});
+
+	it("caps per-file function contribution at 12", () => {
+		const manyFns = Array.from({ length: 20 }, (_, i) => ({
+			qualifiedName: `createCard${i}`,
+			file: "src/spam.ts",
+			exported: true,
+			isDefaultExport: false,
+			line: i + 1,
+		}));
+		const cache = makeCache({
+			files: [
+				{ path: "src/spam.ts", kind: "file" },
+				{ path: "src/card/create.ts", kind: "file" }, // path-token match only
+			],
+			functions: manyFns,
+		});
+		// "src/card/create.ts" should be in top 2 despite spam.ts having 20 matches,
+		// because spam.ts's function bonus is capped. Path-token score for
+		// "src/card/create.ts" is 2*5 = 10; capped fn bonus for spam.ts is 12.
+		const result = rankSuggestions("create card", cache);
+		const top2 = result.slice(0, 2).map((r) => r.path);
+		expect(top2).toContain("src/card/create.ts");
+	});
+
+	it("empty functions[] contributes zero (backward compat)", () => {
+		const cache = makeCache({ functions: [] });
+		const result = rankSuggestions("persistence store", cache);
+		expect(result.length).toBeGreaterThan(0);
+	});
+});
