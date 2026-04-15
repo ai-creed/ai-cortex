@@ -139,11 +139,15 @@ describe("suggest_files", () => {
 			from: undefined,
 			limit: 3,
 			stale: undefined,
+			mode: "fast",
 		});
 		const text = (result.content[0] as any).text as string;
 		expect(text).toContain("suggested files for: persistence layer");
-		expect(text).toContain("src/store.ts");
+		expect(text).toMatch(/src\/store\.ts\s+\[file · score 10\]/);
 		expect(text).toContain("matched task terms in path: persistence");
+		expect(text).toMatch(/^escalation hint: /m);
+		expect(result.structuredContent).toBeDefined();
+		expect((result.structuredContent as any).mode).toBe("fast");
 	});
 
 	it("returns isError for blank task without calling suggestRepo", async () => {
@@ -197,6 +201,82 @@ describe("suggest_files", () => {
 
 		expect(result.isError).toBe(true);
 		expect((result.content[0] as any).text).toContain("ranking failed");
+	});
+});
+
+describe("suggest_files_deep", () => {
+	it("calls suggestRepo with mode:deep and returns deep structuredContent + text", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "deep",
+			task: "persistence layer",
+			from: null,
+			cacheStatus: "fresh",
+			durationMs: 42,
+			poolSize: 60,
+			results: [
+				{
+					path: "src/store.ts",
+					kind: "file",
+					score: 15,
+					reason: "matched task terms in path: persistence",
+					contentHits: [{ line: 12, snippet: "export function persistStore()" }],
+				},
+			],
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_deep",
+			arguments: { task: "persistence layer", path: "/repo", limit: 5, poolSize: 60 },
+		});
+
+		expect(suggestRepo).toHaveBeenCalledWith("/repo", "persistence layer", {
+			from: undefined,
+			limit: 5,
+			stale: undefined,
+			poolSize: 60,
+			mode: "deep",
+		});
+		const text = (result.content[0] as any).text as string;
+		expect(text).toContain("suggested files (deep) for: persistence layer");
+		expect(text).toMatch(/src\/store\.ts\s+\[file · score 15\]/);
+		expect(text).toContain("L12: export function persistStore()");
+		// Deep output MUST NOT have an escalation hint.
+		expect(text).not.toMatch(/^escalation hint: /m);
+		expect(result.structuredContent).toBeDefined();
+		expect((result.structuredContent as any).mode).toBe("deep");
+		expect((result.structuredContent as any).poolSize).toBe(60);
+	});
+
+	it("returns isError for blank task without calling suggestRepo", async () => {
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_deep",
+			arguments: { task: "" },
+		});
+		expect(result.isError).toBe(true);
+		expect(suggestRepo).not.toHaveBeenCalled();
+	});
+
+	it("surfaces staleMixedEvidence warning line in text output", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "deep",
+			task: "x",
+			from: null,
+			cacheStatus: "stale",
+			durationMs: 3,
+			poolSize: 60,
+			staleMixedEvidence: true,
+			results: [],
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_deep",
+			arguments: { task: "x", path: "/repo", stale: true },
+		});
+		const text = (result.content[0] as any).text as string;
+		expect(text).toMatch(/warning: stale:true/);
 	});
 });
 

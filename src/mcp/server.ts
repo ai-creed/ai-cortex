@@ -9,6 +9,8 @@ import {
 	suggestRepo,
 	queryBlastRadius,
 } from "../lib/index.js";
+import type { FastSuggestResult, DeepSuggestResult } from "../lib/suggest.js";
+import { FastSuggestResultSchema, DeepSuggestResultSchema } from "../lib/suggest.js";
 
 // Keep in sync with package.json "version".
 const SERVER_VERSION = "0.0.0-phase0";
@@ -35,27 +37,72 @@ export function createServer(): McpServer {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"suggest_files",
-		"Get a ranked list of files relevant to a specific task. Call this when you have a clear task before reading the codebase — it surfaces the most relevant files so you know where to start.",
 		{
-			task: z.string().min(1, "task must not be blank"),
-			path: z.string().optional(),
-			from: z.string().optional(),
-			limit: z.number().int().positive().optional(),
-			stale: z.boolean().optional(),
+			description:
+				"Get a ranked list of files relevant to a task. Fast (~10ms), uses " +
+				"path tokens, function names, import/call graph. If results look off " +
+				"(all docs, or low relevance), call `suggest_files_deep` for fuzzy + content search.",
+			inputSchema: {
+				task: z.string().min(1, "task must not be blank"),
+				path: z.string().optional(),
+				from: z.string().optional(),
+				limit: z.number().int().positive().max(20).optional(),
+				stale: z.boolean().optional(),
+			},
+			outputSchema: FastSuggestResultSchema.shape,
 		},
 		async ({ task, path, from, limit, stale }) => {
 			const repoPath = path ?? process.cwd();
-			const result = await suggestRepo(repoPath, task, { from, limit, stale });
-			const lines = [`suggested files for: ${result.task}`, ""];
-			for (const [i, item] of result.results.entries()) {
-				lines.push(`${i + 1}. ${item.path}`);
-				lines.push(`   reason: ${item.reason}`);
-				lines.push("");
+			const result = await suggestRepo(repoPath, task, {
+				from,
+				limit,
+				stale,
+				mode: "fast",
+			});
+			if (result.mode !== "fast") {
+				throw new Error("suggestRepo returned non-fast result for suggest_files");
 			}
 			return {
-				content: [{ type: "text" as const, text: lines.join("\n").trimEnd() }],
+				content: [{ type: "text" as const, text: renderFastText(result) }],
+				structuredContent: result,
+			};
+		},
+	);
+
+	server.registerTool(
+		"suggest_files_deep",
+		{
+			description:
+				"Deeper file search. Superset of suggest_files: adds trigram fuzzy " +
+				"match and content scan over top candidates. Slower (~300ms typical, " +
+				"700ms max). Use when `suggest_files` returns low-relevance results.",
+			inputSchema: {
+				task: z.string().min(1, "task must not be blank"),
+				path: z.string().optional(),
+				from: z.string().optional(),
+				limit: z.number().int().positive().max(20).optional(),
+				stale: z.boolean().optional(),
+				poolSize: z.number().int().positive().max(200).optional(),
+			},
+			outputSchema: DeepSuggestResultSchema.shape,
+		},
+		async ({ task, path, from, limit, stale, poolSize }) => {
+			const repoPath = path ?? process.cwd();
+			const result = await suggestRepo(repoPath, task, {
+				from,
+				limit,
+				stale,
+				poolSize,
+				mode: "deep",
+			});
+			if (result.mode !== "deep") {
+				throw new Error("suggestRepo returned non-deep result for suggest_files_deep");
+			}
+			return {
+				content: [{ type: "text" as const, text: renderDeepText(result) }],
+				structuredContent: result,
 			};
 		},
 	);
@@ -107,6 +154,56 @@ export function createServer(): McpServer {
 	);
 
 	return server;
+}
+
+function renderFastText(r: FastSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files for: ${r.task}`);
+	lines.push(`mode: fast · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs}`);
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score}]`);
+		lines.push(`   reason: ${item.reason}`);
+	}
+	lines.push("");
+	lines.push(escalationHint(r));
+	return lines.join("\n").trimEnd();
+}
+
+function renderDeepText(r: DeepSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files (deep) for: ${r.task}`);
+	lines.push(
+		`mode: deep · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
+	);
+	if (r.staleMixedEvidence) {
+		lines.push("warning: stale:true — ranking uses cached graph, snippets use current disk");
+	}
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score}]`);
+		lines.push(`   reason: ${item.reason}`);
+		if (item.contentHits && item.contentHits.length > 0) {
+			lines.push("   content:");
+			for (const h of item.contentHits) {
+				lines.push(`     L${h.line}: ${h.snippet}`);
+			}
+		}
+	}
+	return lines.join("\n").trimEnd();
+}
+
+function escalationHint(r: FastSuggestResult): string {
+	const topScore = r.results[0]?.score ?? 0;
+	const fileCount = r.results.filter((x) => x.kind === "file").length;
+	const reasons: string[] = [];
+	if (topScore < 10) reasons.push(`top score=${topScore} is low`);
+	if (fileCount === 0) reasons.push("no code files in top-N");
+	const summary =
+		reasons.length > 0
+			? `consider suggest_files_deep (${reasons.join("; ")})`
+			: "deep unlikely to help";
+	return `escalation hint: top score=${topScore}, ${fileCount} code files in top-${r.results.length} — ${summary}`;
 }
 
 export async function startMcpServer(): Promise<void> {

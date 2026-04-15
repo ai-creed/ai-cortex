@@ -11,6 +11,7 @@ import { IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 import { rankSuggestions } from "./suggest-ranker.js";
+import { z } from "zod";
 
 export type SuggestOptions = {
 	from?: string;
@@ -172,3 +173,45 @@ export async function suggestRepo(
 		throw new IndexError(msg);
 	}
 }
+
+const SuggestItemSchema = z.object({
+	path: z.string(),
+	kind: z.enum(["file", "doc"]),
+	score: z.number(),
+	reason: z.string(),
+});
+
+const DeepSuggestItemSchema = SuggestItemSchema.extend({
+	contentHits: z
+		.array(z.object({ line: z.number(), snippet: z.string() }))
+		.optional(),
+	trigramMatches: z
+		.array(
+			z.object({
+				taskToken: z.string(),
+				matchedToken: z.string(),
+				sim: z.number(),
+			}),
+		)
+		.optional(),
+});
+
+const SuggestResultCommonSchema = z.object({
+	cacheStatus: z.enum(["fresh", "reindexed", "stale"]),
+	durationMs: z.number(),
+	task: z.string(),
+	from: z.string().nullable(),
+});
+
+export const FastSuggestResultSchema = SuggestResultCommonSchema.extend({
+	mode: z.literal("fast"),
+	results: z.array(SuggestItemSchema),
+});
+
+export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
+	mode: z.literal("deep"),
+	results: z.array(DeepSuggestItemSchema),
+	poolSize: z.number(),
+	contentScanTruncated: z.boolean().optional(),
+	staleMixedEvidence: z.boolean().optional(),
+});
