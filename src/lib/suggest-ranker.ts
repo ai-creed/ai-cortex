@@ -5,6 +5,13 @@ import { tokenize as tokenizePath, tokenizeTask } from "./tokenize.js";
 export type RankSuggestionsOptions = {
 	from?: string | null;
 	limit?: number;
+	/**
+	 * When set, the final slice uses this value INSTEAD OF `limit`. Used by the
+	 * deep ranker to request a large candidate pool regardless of the caller's
+	 * user-facing `limit`. Deep then slices to `limit` itself at the very end.
+	 * See docs/superpowers/specs/2026-04-15-ranker-fast-deep-design.md §7.2.
+	 */
+	poolSize?: number;
 };
 
 export type RankedSuggestion = {
@@ -267,5 +274,5 @@ export function rankSuggestions(
 				(a.kind === b.kind ? 0 : a.kind === "file" ? -1 : 1) ||
 				a.path.localeCompare(b.path),
 		)
-		.slice(0, options.limit ?? 5);
+		.slice(0, options.poolSize ?? options.limit ?? 5);
 }

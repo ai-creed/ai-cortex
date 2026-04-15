@@ -340,3 +340,27 @@ describe("rankSuggestions — doc title vs body weighting", () => {
 		expect(result[0]?.path).toBe("docs/b.md");
 	});
 });
+
+describe("rankSuggestions — poolSize option", () => {
+	it("when poolSize is set, honors it instead of limit", () => {
+		// Use paths like `src/module/item0.ts` so the segment "module" matches
+		// task token "module" — all 30 files score equally.
+		const files = Array.from({ length: 30 }, (_, i) => ({
+			path: `src/module/item${i}.ts`,
+			kind: "file" as const,
+		}));
+		const cache = makeCache({ files, functions: [], docs: [], imports: [] });
+		const result = rankSuggestions("module", cache, { limit: 5, poolSize: 25 });
+		expect(result).toHaveLength(25);
+	});
+
+	it("without poolSize, preserves existing limit behavior (default 5)", () => {
+		const files = Array.from({ length: 30 }, (_, i) => ({
+			path: `src/module/item${i}.ts`,
+			kind: "file" as const,
+		}));
+		const cache = makeCache({ files, functions: [], docs: [], imports: [] });
+		const result = rankSuggestions("module", cache);
+		expect(result).toHaveLength(5);
+	});
+});
