@@ -10,5 +10,6 @@
 		"rootDir": ".",
 		"types": ["node"]
 	},
-	"include": ["src/**/*.ts", "tests/**/*.ts"]
+	"include": ["src/**/*.ts", "tests/**/*.ts"],
+	"exclude": ["tests/fixtures"]
 }

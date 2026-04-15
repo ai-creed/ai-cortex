@@ -95,7 +95,12 @@ export async function rankSuggestionsDeep(
 	}
 
 	// 3. Content scan over the current candidate pool.
-	const candidatePaths = buildCandidatePool(byPath, trigramOnlyPaths, poolSize);
+	// allFilePaths is passed so that any remaining budget (after fast+trigram
+	// candidates) is filled with zero-scored files — essential for tiny repos or
+	// queries with no path/function-name overlap, where content scan is the only
+	// rescue path.
+	const allFilePaths = cache.files.map((f) => f.path);
+	const candidatePaths = buildCandidatePool(byPath, trigramOnlyPaths, poolSize, allFilePaths);
 	const scanResult = contentScan(worktreePath, candidatePaths, taskTokens);
 
 	for (const [path, hits] of scanResult.hits) {
@@ -148,11 +153,15 @@ export async function rankSuggestionsDeep(
  * 2. Total length is always ≤ `poolSize`.
  * 3. Remaining budget after trigram-only selection is filled with
  *    highest-scoring fast entries.
+ * 4. Any remaining budget after fast+trigram entries is filled with zero-scored
+ *    files from `allFilePaths` (essential for tiny repos or queries with no
+ *    path/function-name overlap — content scan is the only rescue path there).
  */
 function buildCandidatePool(
 	byPath: Map<string, DeepSuggestItem>,
 	trigramOnlyPaths: Set<string>,
 	poolSize: number,
+	allFilePaths: string[] = [],
 ): string[] {
 	const trigramOnlyRanked = [...trigramOnlyPaths]
 		.filter((p) => byPath.has(p))
@@ -170,5 +179,21 @@ function buildCandidatePool(
 		.slice(0, budget)
 		.map((v) => v.path);
 
-	return [...fastLike, ...trigramOnlyRanked];
+	const chosen = new Set([...fastLike, ...trigramOnlyRanked]);
+
+	// Fill any remaining budget with zero-scored files not yet in the pool.
+	// This ensures content scan can rescue files invisible to fast + trigram.
+	const remaining = Math.max(0, poolSize - chosen.size);
+	if (remaining > 0 && allFilePaths.length > 0) {
+		let added = 0;
+		for (const p of allFilePaths) {
+			if (added >= remaining) break;
+			if (!chosen.has(p)) {
+				chosen.add(p);
+				added++;
+			}
+		}
+	}
+
+	return [...chosen];
 }
