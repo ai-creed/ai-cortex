@@ -20,6 +20,8 @@ export type SuggestOptions = {
 	mode?: "fast" | "deep";
 	/** Deep-only. Default 60, max 200. Ignored in fast mode. */
 	poolSize?: number;
+	/** Include trigramMatches in deep results. Default false. */
+	verbose?: boolean;
 };
 
 export type SuggestItem = {
@@ -155,12 +157,15 @@ export async function suggestRepo(
 			poolSize: options.poolSize,
 			stale: cacheStatus === "stale",
 		});
+		const results = options.verbose
+			? deepResult.results
+			: deepResult.results.map(({ trigramMatches, ...rest }) => rest);
 		return {
 			mode: "deep",
 			cacheStatus,
 			task,
 			from,
-			results: deepResult.results,
+			results,
 			poolSize: deepResult.poolSize,
 			contentScanTruncated: deepResult.contentScanTruncated,
 			staleMixedEvidence: deepResult.staleMixedEvidence,

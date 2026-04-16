@@ -32,6 +32,7 @@ function parseSuggestArgs(
 	poolSize?: number;
 	json: boolean;
 	stale: boolean;
+	verbose: boolean;
 } {
 	let task: string | null = null;
 	let repoPath: string | null = null;
@@ -40,6 +41,7 @@ function parseSuggestArgs(
 	let poolSize: number | undefined;
 	let json = false;
 	let stale = false;
+	let verbose = false;
 
 	for (let i = 0; i < argv.length; i += 1) {
 		const arg = argv[i];
@@ -49,6 +51,10 @@ function parseSuggestArgs(
 		}
 		if (arg === "--stale") {
 			stale = true;
+			continue;
+		}
+		if (arg === "--verbose") {
+			verbose = true;
 			continue;
 		}
 		if (arg === "--from") {
@@ -101,6 +107,7 @@ function parseSuggestArgs(
 		poolSize,
 		json,
 		stale,
+		verbose,
 	};
 }
 
@@ -229,6 +236,7 @@ async function main(): Promise<void> {
 				limit: parsed.limit,
 				stale: parsed.stale,
 				poolSize: parsed.poolSize,
+				verbose: parsed.verbose,
 				mode: "deep",
 			});
 			if (result.mode !== "deep") {

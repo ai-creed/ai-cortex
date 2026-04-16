@@ -173,6 +173,41 @@ describe("rankSuggestionsDeep", () => {
 		spy.mockRestore();
 	});
 
+	it("populates trigramMatches on results (ranker layer, before stripping)", async () => {
+		const cache = makeCache({
+			files: [
+				{ path: "src/widgetLockManager.ts", kind: "file" },
+				{ path: "src/other.ts", kind: "file" },
+			],
+			functions: [
+				{
+					file: "src/widgetLockManager.ts",
+					qualifiedName: "getManagerInstance",
+					exported: true,
+					isDefaultExport: false,
+					line: 10,
+				},
+			],
+		});
+		const spy = vi.spyOn(contentScanner, "contentScan").mockReturnValue({
+			hits: new Map(),
+			truncated: false,
+			durationMs: 1,
+		});
+		const r = await rankSuggestionsDeep("widgetlock manager", cache, "/w", {
+			limit: 5,
+			poolSize: 10,
+		});
+		const hit = r.results.find((x) => x.path === "src/widgetLockManager.ts");
+		expect(hit).toBeDefined();
+		expect(hit!.trigramMatches).toBeDefined();
+		expect(hit!.trigramMatches!.length).toBeGreaterThan(0);
+		expect(hit!.trigramMatches![0]).toHaveProperty("taskToken");
+		expect(hit!.trigramMatches![0]).toHaveProperty("matchedToken");
+		expect(hit!.trigramMatches![0]).toHaveProperty("sim");
+		spy.mockRestore();
+	});
+
 	it("propagates contentScanTruncated", async () => {
 		const cache = makeCache({ files: [{ path: "src/a.ts", kind: "file" }] });
 		const spy = vi.spyOn(contentScanner, "contentScan").mockReturnValue({

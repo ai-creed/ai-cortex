@@ -60,4 +60,31 @@ describe("suggest deep — synthetic repo", () => {
 		});
 		expect(result.durationMs).toBeLessThan(1000);
 	});
+
+	it("omits trigramMatches from results by default", async () => {
+		const result = await suggestRepo(
+			tmp,
+			"card creation title editing in My Work right panel",
+			{ mode: "deep", limit: 5, poolSize: 60 },
+		);
+		expect(result.mode).toBe("deep");
+		if (result.mode !== "deep") throw new Error("expected deep");
+		for (const item of result.results) {
+			expect(item).not.toHaveProperty("trigramMatches");
+		}
+	});
+
+	it("includes trigramMatches when verbose is true", async () => {
+		const result = await suggestRepo(
+			tmp,
+			"card creation title editing in My Work right panel",
+			{ mode: "deep", limit: 5, poolSize: 60, verbose: true },
+		);
+		expect(result.mode).toBe("deep");
+		if (result.mode !== "deep") throw new Error("expected deep");
+		const withTrigrams = result.results.filter(
+			(item) => item.trigramMatches && item.trigramMatches.length > 0,
+		);
+		expect(withTrigrams.length).toBeGreaterThan(0);
+	});
 });

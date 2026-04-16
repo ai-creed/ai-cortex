@@ -90,15 +90,17 @@ export function createServer(): McpServer {
 				from: z.string().optional(),
 				limit: z.number().int().positive().max(20).optional(),
 				stale: z.boolean().optional(),
+				verbose: z.boolean().optional(),
 			},
 			outputSchema: DeepSuggestResultSchema.shape,
 		},
-		logged("suggest_files", (p) => ({ task: p.task, path: p.path }), async ({ task, path, from, limit, stale }) => {
+		logged("suggest_files", (p) => ({ task: p.task, path: p.path }), async ({ task, path, from, limit, stale, verbose }) => {
 			const repoPath = path ?? process.cwd();
 			const result = await suggestRepo(repoPath, task, {
 				from,
 				limit,
 				stale,
+				verbose,
 				mode: "deep",
 			});
 			if (result.mode !== "deep") {
@@ -126,16 +128,18 @@ export function createServer(): McpServer {
 				limit: z.number().int().positive().max(20).optional(),
 				stale: z.boolean().optional(),
 				poolSize: z.number().int().positive().max(200).optional(),
+				verbose: z.boolean().optional(),
 			},
 			outputSchema: DeepSuggestResultSchema.shape,
 		},
-		logged("suggest_files_deep", (p) => ({ task: p.task, path: p.path, poolSize: p.poolSize }), async ({ task, path, from, limit, stale, poolSize }) => {
+		logged("suggest_files_deep", (p) => ({ task: p.task, path: p.path, poolSize: p.poolSize }), async ({ task, path, from, limit, stale, poolSize, verbose }) => {
 			const repoPath = path ?? process.cwd();
 			const result = await suggestRepo(repoPath, task, {
 				from,
 				limit,
 				stale,
 				poolSize,
+				verbose,
 				mode: "deep",
 			});
 			if (result.mode !== "deep") {
