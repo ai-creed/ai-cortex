@@ -115,9 +115,10 @@ export function createServer(): McpServer {
 		"suggest_files_deep",
 		{
 			description:
-				"Deeper file search. Superset of suggest_files: adds trigram fuzzy " +
-				"match and content scan over top candidates. Slower (~300ms typical, " +
-				"700ms max). Use when `suggest_files` returns low-relevance results.",
+				"Explicit deep search with pool size control. Same deep ranking as " +
+				"suggest_files but accepts an additional poolSize parameter. Use when " +
+				"you need to tune the candidate pool (e.g. larger pool for broad " +
+				"queries on big repos).",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),

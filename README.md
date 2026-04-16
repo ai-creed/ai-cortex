@@ -59,14 +59,14 @@ claude mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
 | Tool | When to call | What it returns |
 |------|-------------|-----------------|
 | `rehydrate_project` | Once at session start when working in a git repo | Markdown briefing: structure, key files, entry points, recent changes |
-| `suggest_files` | Before reading the codebase for a specific task | Ranked top-5 files with scores and reasons (fast: path + fn + call-graph) |
-| `suggest_files_deep` | When fast results are weak or task needs fuzzy matching | Ranked top-5 with trigram similarity, content snippets, and line numbers |
+| `suggest_files` | Before reading the codebase for a specific task | Ranked top-5 files with deep ranking (path + fn + call-graph + trigram + content scan) |
+| `suggest_files_deep` | When you need explicit `poolSize` control for tuning | Same as `suggest_files` plus configurable candidate pool size |
 | `index_project` | After large structural changes to force a rebuild | Confirmation with file and doc counts |
 | `blast_radius` | Before modifying a function, to assess impact | Callers organized by hop distance (direct, transitive) with export visibility |
 
 The `rehydrate_project` and `index_project` tools accept an optional `path` argument (defaults to `cwd`). The `suggest_files` tool requires a `task` string and also accepts `path`, `from`, `limit`, and `stale`. The `suggest_files_deep` tool accepts the same arguments plus `poolSize` (candidate pool, default 60). The `blast_radius` tool requires `qualifiedName` and `file`, and also accepts `path`, `maxHops`, and `stale`.
 
-Both suggest tools return `structuredContent` with typed JSON (`mode`, `results[]`, `cacheStatus`, `durationMs`). The fast tool includes an `escalationHint` line when confidence is low; the deep tool includes `contentHits` with line-level snippets.
+Both suggest tools return `structuredContent` with typed JSON (`mode`, `results[]`, `cacheStatus`, `durationMs`) and include `contentHits` with line-level snippets.
 
 ## Library API
 
