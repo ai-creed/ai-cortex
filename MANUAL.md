@@ -15,7 +15,7 @@ It stores all data locally (`~/.cache/ai-cortex/`), never writes into the target
 Requires Node.js 20+, pnpm, and npm.
 
 ```bash
-git clone git@github.com:vuphanse/ai-cortex.git
+git clone git@github.com:ai-creed/ai-cortex.git
 cd ai-cortex
 pnpm install
 pnpm build
@@ -32,7 +32,7 @@ ai-cortex --help
 If you only want to use it from the cloned directory:
 
 ```bash
-git clone git@github.com:vuphanse/ai-cortex.git
+git clone git@github.com:ai-creed/ai-cortex.git
 cd ai-cortex
 pnpm install
 pnpm build
@@ -117,9 +117,28 @@ ai-cortex suggest "error handling" --limit 10 --json
 
 ---
 
+### `suggest-deep`
+
+Deep file ranking with trigram fuzzy matching and content scan. Superset of `suggest`.
+
+```bash
+ai-cortex suggest-deep "<task>" [path]           # Top 5 relevant files (default: cwd)
+ai-cortex suggest-deep "<task>" --from <file>    # Anchor ranking to a known file
+ai-cortex suggest-deep "<task>" --limit <n>      # Return at most n results
+ai-cortex suggest-deep "<task>" --pool <n>       # Candidate pool size (default 60)
+ai-cortex suggest-deep "<task>" --stale          # Skip staleness check
+ai-cortex suggest-deep "<task>" --json           # Machine-readable output
+```
+
+**Additional signals beyond `suggest`:**
+- Per-token trigram Jaccard similarity (min 0.4) — catches morphological variants (e.g. `editing` matches `editor`, `assignment` matches `assignments`)
+- Content scan of top candidates (400ms budget, 500KB cap, 3 hits/file) — returns line-level snippets
+
+---
+
 ### `mcp`
 
-Start the MCP server on stdio transport. Used by MCP clients (Claude, etc.) — not called directly.
+Start the MCP server on stdio transport. Used by MCP clients (Claude, Codex, etc.) — not called directly.
 
 ```bash
 ai-cortex mcp
@@ -151,6 +170,45 @@ Or use the full node invocation directly:
 claude mcp add ai-cortex -- node $(npm root -g)/ai-cortex/dist/src/cli.js mcp
 ```
 
+### Setting up with Codex CLI
+
+OpenAI's [Codex CLI](https://github.com/openai/codex) supports MCP servers via `~/.codex/config.toml`.
+
+**Option A: CLI command (recommended)**
+
+```bash
+codex mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
+```
+
+**Option B: Edit config.toml directly**
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.ai-cortex]
+command = "node"
+args = ["/absolute/path/to/ai-cortex/dist/src/cli.js", "mcp"]
+```
+
+Optional fields:
+
+| Field | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Set `false` to skip initialization |
+| `required` | `false` | If `true`, Codex exits on init failure |
+| `startup_timeout_sec` | — | Timeout for server init + tool listing |
+| `tool_timeout_sec` | — | Default timeout for tool calls |
+| `env` | — | Env vars: `env = { NODE_ENV = "production" }` |
+| `cwd` | — | Working directory for the server process |
+
+**Manage servers:**
+
+```bash
+codex mcp list              # List all configured servers
+codex mcp get ai-cortex     # Show details for one server
+codex mcp remove ai-cortex  # Remove a server
+```
+
 ### Available tools
 
 #### `rehydrate_project`
@@ -163,7 +221,7 @@ Call once at the start of a session when working in a git repo. Returns a Markdo
 
 #### `suggest_files`
 
-Call before reading the codebase for a specific task. Returns a ranked list of likely relevant files with short reasons.
+Call before reading the codebase for a specific task. Uses deep ranking by default (trigram fuzzy match + content scan). Returns a ranked list of relevant files with reasons, trigram match details, and content snippets.
 
 **Parameters:**
 - `task` (required) — what you're trying to do
@@ -171,6 +229,18 @@ Call before reading the codebase for a specific task. Returns a ranked list of l
 - `from` (optional) — anchor file path to bias ranking
 - `limit` (optional, integer) — max results (default 5)
 - `stale` (optional, boolean) — skip staleness check
+
+#### `suggest_files_deep`
+
+Explicit deep search with pool size control. Same as `suggest_files` but accepts an additional `poolSize` parameter. Use when you need to tune the candidate pool (e.g. larger pool for broad queries on big repos).
+
+**Parameters:**
+- `task` (required) — what you're trying to do
+- `path` (optional) — repo path (defaults to cwd)
+- `from` (optional) — anchor file path to bias ranking
+- `limit` (optional, integer) — max results (default 5)
+- `stale` (optional, boolean) — skip staleness check
+- `poolSize` (optional, integer) — candidate pool size (default 60, max 200)
 
 #### `index_project`
 
@@ -217,9 +287,9 @@ Call before modifying a function to understand what else might break. Returns ca
 
 Install as a dependency:
 ```bash
-npm install github:vuphanse/ai-cortex
+npm install github:ai-creed/ai-cortex
 # or
-pnpm add github:vuphanse/ai-cortex
+pnpm add github:ai-creed/ai-cortex
 ```
 
 ```ts
@@ -254,18 +324,29 @@ const { cache, briefing, cacheStatus } = await rehydrateRepo("/path/to/repo");
 
 Options: `{ stale?: boolean }`
 
-### `suggestRepo(worktreePath, options): Promise<SuggestResult>`
+### `suggestRepo(worktreePath, task, options?): Promise<SuggestResult>`
 
-Rank files by relevance to a task.
+Rank files by relevance to a task. Returns a discriminated union — `FastSuggestResult` or `DeepSuggestResult` — based on the `mode` option.
 
 ```ts
-const result = await suggestRepo("/path/to/repo", {
-  task: "authentication middleware",
+// Fast mode (default at library level) — path/fn/call-graph token matching
+const fast = await suggestRepo("/path/to/repo", "authentication middleware", {
+  mode: "fast",
   from: "src/server.ts",   // optional anchor
   limit: 5,                // optional, default 5
 });
-// result.results: [{ path, kind, score, reason }]
+// fast.results: [{ path, kind, score, reason }]
+
+// Deep mode — adds trigram fuzzy match + content scan
+const deep = await suggestRepo("/path/to/repo", "authentication middleware", {
+  mode: "deep",
+  poolSize: 60,            // optional, candidate pool size
+});
+// deep.results: [{ path, kind, score, reason, contentHits? }]
+// deep.poolSize: 60
 ```
+
+Note: The MCP `suggest_files` tool defaults to deep mode. The library API defaults to fast — pass `mode: "deep"` explicitly when needed.
 
 ### `queryBlastRadius(target, calls, functions, options?): BlastRadiusResult`
 
