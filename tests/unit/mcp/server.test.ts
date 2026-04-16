@@ -1,9 +1,9 @@
 // tests/unit/mcp/server.test.ts
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import fs from "node:fs";
-import { rehydrateRepo, suggestRepo, indexRepo } from "../../../src/lib/index.js";
+import { rehydrateRepo, suggestRepo, indexRepo, queryBlastRadius } from "../../../src/lib/index.js";
 import { IndexError, RepoIdentityError } from "../../../src/lib/models.js";
 import { createServer } from "../../../src/mcp/server.js";
 
@@ -341,5 +341,112 @@ describe("index_project", () => {
 
 		expect(result.isError).toBe(true);
 		expect((result.content[0] as any).text).toContain("scan failed");
+	});
+});
+
+describe("tool call logging", () => {
+	let stderrSpy: any;
+
+	beforeEach(() => {
+		stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((() => true) as any);
+	});
+
+	afterEach(() => {
+		stderrSpy.mockRestore();
+	});
+
+	it("logs successful rehydrate_project call with duration", async () => {
+		vi.mocked(rehydrateRepo).mockResolvedValue({
+			briefingPath: "/cache/key.md",
+			cacheStatus: "fresh",
+			cache: {} as any,
+		});
+		vi.mocked(fs.readFileSync).mockReturnValue("# Briefing" as any);
+
+		const client = await makeClient();
+		await client.callTool({ name: "rehydrate_project", arguments: { path: "/repo" } });
+
+		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
+		expect(logged).toMatch(/\[ai-cortex\] tool=rehydrate_project/);
+		expect(logged).toMatch(/path=\/repo/);
+		expect(logged).toMatch(/dur=\d+ms/);
+		expect(logged).toMatch(/status=ok/);
+	});
+
+	it("logs successful suggest_files call with task", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "deep",
+			task: "auth fix",
+			from: null,
+			cacheStatus: "fresh",
+			durationMs: 10,
+			poolSize: 60,
+			results: [],
+		});
+
+		const client = await makeClient();
+		await client.callTool({
+			name: "suggest_files",
+			arguments: { task: "auth fix", path: "/repo" },
+		});
+
+		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
+		expect(logged).toMatch(/\[ai-cortex\] tool=suggest_files/);
+		expect(logged).toMatch(/task=auth fix/);
+		expect(logged).toMatch(/dur=\d+ms/);
+		expect(logged).toMatch(/status=ok/);
+	});
+
+	it("logs error status when tool handler throws", async () => {
+		vi.mocked(rehydrateRepo).mockImplementation(() => {
+			throw new RepoIdentityError("not a git repo");
+		});
+
+		const client = await makeClient();
+		await client.callTool({ name: "rehydrate_project", arguments: { path: "/x" } });
+
+		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
+		expect(logged).toMatch(/\[ai-cortex\] tool=rehydrate_project/);
+		expect(logged).toMatch(/status=error/);
+		expect(logged).toMatch(/err="not a git repo"/);
+	});
+
+	it("logs index_project call", async () => {
+		vi.mocked(indexRepo).mockResolvedValue({
+			files: [{ path: "a.ts", kind: "file", contentHash: "h" }],
+			docs: [],
+		} as any);
+
+		const client = await makeClient();
+		await client.callTool({ name: "index_project", arguments: { path: "/repo" } });
+
+		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
+		expect(logged).toMatch(/\[ai-cortex\] tool=index_project/);
+		expect(logged).toMatch(/status=ok/);
+	});
+
+	it("logs blast_radius call with qualifiedName", async () => {
+		vi.mocked(rehydrateRepo).mockResolvedValue({
+			briefingPath: "/cache/key.md",
+			cacheStatus: "fresh",
+			cache: { calls: [], functions: [] } as any,
+		});
+		vi.mocked(queryBlastRadius).mockReturnValue({
+			target: { qualifiedName: "myFn", file: "src/a.ts" },
+			totalAffected: 0,
+			confidence: "full",
+			tiers: [],
+		} as any);
+
+		const client = await makeClient();
+		await client.callTool({
+			name: "blast_radius",
+			arguments: { qualifiedName: "myFn", file: "src/a.ts", path: "/repo" },
+		});
+
+		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
+		expect(logged).toMatch(/\[ai-cortex\] tool=blast_radius/);
+		expect(logged).toMatch(/qualifiedName=myFn/);
+		expect(logged).toMatch(/status=ok/);
 	});
 });
