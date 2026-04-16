@@ -112,19 +112,21 @@ describe("rehydrate_project", () => {
 });
 
 describe("suggest_files", () => {
-	it("calls suggestRepo with task and options and returns formatted text", async () => {
+	it("calls suggestRepo with mode:deep and returns deep-formatted text", async () => {
 		vi.mocked(suggestRepo).mockResolvedValue({
-			mode: "fast",
+			mode: "deep",
 			task: "persistence layer",
 			from: null,
 			cacheStatus: "fresh",
-			durationMs: 0,
+			durationMs: 12,
+			poolSize: 60,
 			results: [
 				{
 					path: "src/store.ts",
 					kind: "file",
-					score: 10,
+					score: 15,
 					reason: "matched task terms in path: persistence",
+					contentHits: [{ line: 5, snippet: "export function persistStore()" }],
 				},
 			],
 		});
@@ -139,15 +141,16 @@ describe("suggest_files", () => {
 			from: undefined,
 			limit: 3,
 			stale: undefined,
-			mode: "fast",
+			mode: "deep",
 		});
 		const text = (result.content[0] as any).text as string;
-		expect(text).toContain("suggested files for: persistence layer");
-		expect(text).toMatch(/src\/store\.ts\s+\[file · score 10\]/);
-		expect(text).toContain("matched task terms in path: persistence");
-		expect(text).toMatch(/^escalation hint: /m);
+		expect(text).toContain("suggested files (deep) for: persistence layer");
+		expect(text).toMatch(/src\/store\.ts\s+\[file · score 15\]/);
+		expect(text).toContain("L5: export function persistStore()");
+		// Deep output MUST NOT have an escalation hint.
+		expect(text).not.toMatch(/^escalation hint: /m);
 		expect(result.structuredContent).toBeDefined();
-		expect((result.structuredContent as any).mode).toBe("fast");
+		expect((result.structuredContent as any).mode).toBe("deep");
 	});
 
 	it("returns isError for blank task without calling suggestRepo", async () => {

@@ -41,9 +41,10 @@ export function createServer(): McpServer {
 		"suggest_files",
 		{
 			description:
-				"Get a ranked list of files relevant to a task. Fast (~10ms), uses " +
-				"path tokens, function names, import/call graph. If results look off " +
-				"(all docs, or low relevance), call `suggest_files_deep` for fuzzy + content search.",
+				"Get a ranked list of files relevant to a task. Uses deep ranking by " +
+				"default: path tokens, function names, import/call graph, trigram fuzzy " +
+				"match, and content scan. For explicit deep options (poolSize), use " +
+				"`suggest_files_deep`.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),
@@ -51,7 +52,7 @@ export function createServer(): McpServer {
 				limit: z.number().int().positive().max(20).optional(),
 				stale: z.boolean().optional(),
 			},
-			outputSchema: FastSuggestResultSchema.shape,
+			outputSchema: DeepSuggestResultSchema.shape,
 		},
 		async ({ task, path, from, limit, stale }) => {
 			const repoPath = path ?? process.cwd();
@@ -59,13 +60,13 @@ export function createServer(): McpServer {
 				from,
 				limit,
 				stale,
-				mode: "fast",
+				mode: "deep",
 			});
-			if (result.mode !== "fast") {
-				throw new Error("suggestRepo returned non-fast result for suggest_files");
+			if (result.mode !== "deep") {
+				throw new Error("suggestRepo returned non-deep result for suggest_files");
 			}
 			return {
-				content: [{ type: "text" as const, text: renderFastText(result) }],
+				content: [{ type: "text" as const, text: renderDeepText(result) }],
 				structuredContent: result,
 			};
 		},
