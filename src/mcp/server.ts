@@ -13,7 +13,7 @@ import type { DeepSuggestResult, SemanticSuggestResult } from "../lib/suggest.js
 import { DeepSuggestResultSchema, SemanticSuggestResultSchema } from "../lib/suggest.js";
 
 // Keep in sync with package.json "version".
-const SERVER_VERSION = "0.0.0-phase0";
+const SERVER_VERSION = "0.3.0-beta.1";
 
 function logCall(
 	tool: string,
