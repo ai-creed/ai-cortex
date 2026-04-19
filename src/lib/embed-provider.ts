@@ -8,11 +8,14 @@ export type EmbedProvider = {
 	embed(texts: string[]): Promise<Float32Array[]>;
 };
 
-let providerCache: EmbedProvider | null = null;
+let providerPromise: Promise<EmbedProvider> | null = null;
 
 export async function getProvider(): Promise<EmbedProvider> {
-	if (providerCache) return providerCache;
+	if (!providerPromise) providerPromise = _loadProvider();
+	return providerPromise;
+}
 
+async function _loadProvider(): Promise<EmbedProvider> {
 	let pipe: (text: string) => Promise<{ data: Float32Array; dims: number[] }>;
 	try {
 		const { pipeline, env } = await import("@xenova/transformers");
@@ -27,7 +30,7 @@ export async function getProvider(): Promise<EmbedProvider> {
 		);
 	}
 
-	providerCache = {
+	return {
 		async embed(texts: string[]): Promise<Float32Array[]> {
 			const results: Float32Array[] = [];
 			for (const text of texts) {
@@ -39,13 +42,17 @@ export async function getProvider(): Promise<EmbedProvider> {
 						`embedding inference failed: ${err instanceof Error ? err.message : String(err)}`,
 					);
 				}
+				if (output.data.length < EMBEDDING_DIM) {
+					throw new EmbeddingInferenceError(
+						`model returned ${output.data.length} dims, expected ${EMBEDDING_DIM}`,
+					);
+				}
 				const vec = l2Normalize(output.data.slice(0, EMBEDDING_DIM));
 				results.push(vec);
 			}
 			return results;
 		},
 	};
-	return providerCache;
 }
 
 function l2Normalize(vec: Float32Array): Float32Array {

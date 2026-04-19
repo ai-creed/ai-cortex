@@ -84,4 +84,22 @@ describe("embed-provider", () => {
 		const provider = await getProvider();
 		await expect(provider.embed(["test"])).rejects.toThrow(FreshEmbeddingInferenceError);
 	});
+
+	it("l2Normalize passes through zero vector unchanged", async () => {
+		const { pipeline } = await import("@xenova/transformers");
+		const zeroVec = new Float32Array(384).fill(0);
+		const mockEmbed = vi.fn().mockResolvedValue({
+			data: zeroVec,
+			dims: [1, 384],
+		});
+		(pipeline as ReturnType<typeof vi.fn>).mockResolvedValue(mockEmbed);
+
+		const { getProvider } = await import("../../../src/lib/embed-provider.js");
+		const provider = await getProvider();
+		const results = await provider.embed(["empty"]);
+
+		expect(results[0]).toBeInstanceOf(Float32Array);
+		// Zero vector remains zero (norm = 0 → unchanged)
+		expect(results[0]![0]).toBe(0);
+	});
 });
