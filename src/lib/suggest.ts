@@ -190,7 +190,7 @@ export async function suggestRepo(
 				mode: "semantic" as const,
 				cacheStatus,
 				task,
-				from,
+				from, // echoed for API consistency; semantic ranking does not use caller context
 				results: semanticResult.results,
 				poolSize: semanticResult.poolSize,
 				durationMs: Date.now() - startedAt,

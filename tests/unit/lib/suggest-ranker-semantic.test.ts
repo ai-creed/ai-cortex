@@ -39,10 +39,14 @@ function makeCache(filePaths: string[]): RepoCache {
 
 function makeIndex(paths: string[], dim: number = 384) {
 	const entries = paths.map((p) => ({ path: p, hash: "h" }));
-	// Give each file a distinct unit vector along first axis
+	// L2-normalized vectors with decreasing similarity to query [1, 0, 0, ...]
+	// Row i uses angle = i*π/(2*n) so cos(angle) decreases with i (cos²+sin²=1 → unit norm)
 	const matrix = new Float32Array(paths.length * dim);
+	const n = Math.max(paths.length, 1);
 	for (let i = 0; i < paths.length; i++) {
-		matrix[i * dim] = 1.0 / (i + 1); // decreasing similarity
+		const angle = (i * Math.PI) / (2 * n);
+		matrix[i * dim] = Math.cos(angle);
+		if (dim > 1) matrix[i * dim + 1] = Math.sin(angle);
 	}
 	return {
 		meta: { modelName: "Xenova/all-MiniLM-L6-v2", dim, count: paths.length, entries },
@@ -157,6 +161,29 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		expect(result.results).toHaveLength(2);
+	});
+
+	it("returns empty results for empty index (zero-file repo)", async () => {
+		const { readVectorIndex } = await import("../../../src/lib/vector-sidecar.js");
+		const { getProvider } = await import("../../../src/lib/embed-provider.js");
+
+		const index = makeIndex([]);
+		(readVectorIndex as ReturnType<typeof vi.fn>).mockReturnValue(index);
+
+		const queryVec = new Float32Array(384).fill(0);
+		queryVec[0] = 1.0;
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: vi.fn().mockResolvedValue([queryVec]),
+		});
+
+		const { rankSuggestionsSemanticCore } = await import(
+			"../../../src/lib/suggest-ranker-semantic.js"
+		);
+		const cache = makeCache([]);
+		const result = await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo");
+
+		expect(result.results).toHaveLength(0);
+		expect(result.poolSize).toBe(0);
 	});
 
 	it("classifies .md files as doc kind", async () => {
