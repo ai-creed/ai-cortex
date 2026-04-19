@@ -56,7 +56,20 @@ export type DeepSuggestResult = SuggestResultCommon & {
 	staleMixedEvidence?: boolean;
 };
 
-export type SuggestResult = FastSuggestResult | DeepSuggestResult;
+export type SemanticSuggestItem = {
+	path: string;
+	kind: "file" | "doc";
+	score: number;
+	reason: string;
+};
+
+export type SemanticSuggestResult = SuggestResultCommon & {
+	mode: "semantic";
+	results: SemanticSuggestItem[];
+	poolSize: number;
+};
+
+export type SuggestResult = FastSuggestResult | DeepSuggestResult | SemanticSuggestResult;
 
 function normalizeFrom(value: string | undefined, cache: RepoCache): string | null {
 	if (!value) return null;
@@ -185,16 +198,15 @@ export async function suggestRepo(
 				limit: options.limit,
 				stale: cacheStatus === "stale",
 			});
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			return {
 				mode: "semantic" as const,
 				cacheStatus,
 				task,
 				from, // echoed for API consistency; semantic ranking does not use caller context
-				results: semanticResult.results,
+				results: semanticResult.results as SemanticSuggestItem[],
 				poolSize: semanticResult.poolSize,
 				durationMs: Date.now() - startedAt,
-			} as any; // SemanticSuggestResult type added in Task 6
+			} satisfies SemanticSuggestResult;
 		}
 
 		throw new IndexError(`unhandled suggest mode: '${mode}'`);
@@ -246,4 +258,17 @@ export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
 	poolSize: z.number(),
 	contentScanTruncated: z.boolean().optional(),
 	staleMixedEvidence: z.boolean().optional(),
+});
+
+const SemanticSuggestItemSchema = z.object({
+	path: z.string(),
+	kind: z.enum(["file", "doc"]),
+	score: z.number(),
+	reason: z.string(),
+});
+
+export const SemanticSuggestResultSchema = SuggestResultCommonSchema.extend({
+	mode: z.literal("semantic"),
+	results: z.array(SemanticSuggestItemSchema),
+	poolSize: z.number(),
 });
