@@ -16,3 +16,4 @@ benchmarks/baselines.json
 benchmarks/results.json
 benchmarks/fixtures/synthetic/repo/.git/
 benchmarks/eval/results/
+benchmarks/ranker-quality/out/
