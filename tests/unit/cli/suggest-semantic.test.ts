@@ -39,6 +39,13 @@ describe("renderSemanticText", () => {
 		expect(output).not.toContain("1."); // no results
 	});
 
+	it("blank line separates meta from results", () => {
+		const lines = renderSemanticText(makeResult()).split("\n");
+		// line 0: header, line 1: meta, line 2: blank, line 3+: results
+		expect(lines[2]).toBe("");
+		expect(lines[3]).toMatch(/^1\./);
+	});
+
 	it("score formatting: 0.9 renders as 0.900", () => {
 		const output = renderSemanticText(
 			makeResult({
