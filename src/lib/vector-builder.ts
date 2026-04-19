@@ -1,4 +1,5 @@
 // src/lib/vector-builder.ts
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EMBEDDING_DIM, MODEL_NAME, getProvider } from "./embed-provider.js";
@@ -48,6 +49,7 @@ export async function buildVectorIndex(
 	};
 
 	const sidecarDir = getSidecarDir(cache.worktreeKey);
+	fs.mkdirSync(sidecarDir, { recursive: true });
 	writeVectorIndex(sidecarDir, index);
 	return index;
 }
@@ -104,6 +106,7 @@ export async function refreshVectorIndex(
 	};
 
 	const sidecarDir = getSidecarDir(cache.worktreeKey);
+	fs.mkdirSync(sidecarDir, { recursive: true });
 	writeVectorIndex(sidecarDir, index);
 	return index;
 }
