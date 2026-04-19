@@ -148,7 +148,7 @@ function renderDeepCli(r: DeepSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
-function renderSemanticCli(r: SemanticSuggestResult): string {
+export function renderSemanticText(r: SemanticSuggestResult): string {
 	const lines: string[] = [];
 	lines.push(`suggested files (semantic) for: ${r.task}`);
 	lines.push(
@@ -263,21 +263,52 @@ async function main(): Promise<void> {
 				process.stdout.write(renderDeepCli(result) + "\n");
 			}
 		} else if (command === "suggest-semantic") {
-			const parsed = parseSuggestArgs(args);
-			const result = await suggestRepo(parsed.repoPath, parsed.task, {
-				limit: parsed.limit,
-				stale: parsed.stale,
+			let task: string | null = null;
+			let repoPath: string | null = null;
+			let limit = 10;
+			let stale = false;
+
+			for (let i = 0; i < args.length; i += 1) {
+				const arg = args[i];
+				if (arg === "--stale") {
+					stale = true;
+					continue;
+				}
+				if (arg === "-p" || arg === "--path") {
+					if (args[i + 1] !== undefined && !args[i + 1]!.startsWith("-")) {
+						repoPath = args[i + 1]!;
+						i += 1;
+					}
+					continue;
+				}
+				if (arg === "-l" || arg === "--limit") {
+					if (args[i + 1] !== undefined && !args[i + 1]!.startsWith("-")) {
+						const raw = args[i + 1]!;
+						const parsed = Number(raw);
+						if (!Number.isFinite(parsed)) {
+							process.stderr.write(`ai-cortex: --limit must be a number (got '${raw}')\n`);
+							process.exit(1);
+						}
+						limit = parsed;
+						i += 1;
+					}
+					continue;
+				}
+				if (task === null) {
+					task = arg;
+				}
+			}
+
+			const result = await suggestRepo(repoPath ?? process.cwd(), task ?? "", {
+				limit,
+				stale,
 				mode: "semantic",
 			});
 			if (result.mode !== "semantic") {
-				throw new Error("expected semantic result for 'suggest-semantic'");
+				process.stderr.write("unexpected mode: " + result.mode + "\n");
+				process.exit(1);
 			}
-
-			if (parsed.json) {
-				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-			} else {
-				process.stdout.write(renderSemanticCli(result) + "\n");
-			}
+			process.stdout.write(renderSemanticText(result) + "\n");
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
 			process.exit(1);
