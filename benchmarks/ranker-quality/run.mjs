@@ -41,13 +41,15 @@ process.stderr.write("[bench] warming up index...\n");
 spawnSync("node", [CLI, "index", repoPath], { encoding: "utf8" });
 // Build semantic sidecar before bench loop (first call downloads model ~23 MB).
 process.stderr.write("[bench] warming semantic sidecar (first call may download ~23 MB)...\n");
-spawnSync("node", [CLI, "suggest-semantic", "warmup", repoPath, "--limit", "1"], { encoding: "utf8" });
+spawnSync("node", [CLI, "suggest-semantic", "warmup", "--path", repoPath, "--limit", "1"], { encoding: "utf8" });
 process.stderr.write("[bench] warmup complete.\n");
 
 // --- Run one mode ---
 function runMode(title, repoPath, mode) {
 	// semantic errors if --stale is passed with no sidecar; warm it up before bench loop instead
-	const args = [CLI, mode === "semantic" ? "suggest-semantic" : (mode === "deep" ? "suggest-deep" : "suggest"), title, repoPath, "--json", "--limit", "60"];
+	const args = mode === "semantic"
+		? [CLI, "suggest-semantic", title, "--path", repoPath, "--json", "--limit", "60"]
+		: [CLI, mode === "deep" ? "suggest-deep" : "suggest", title, repoPath, "--json", "--limit", "60"];
 	if (mode !== "semantic") args.push("--stale");
 	if (mode === "deep") args.push("--pool", "60");
 	const r = spawnSync("node", args, { encoding: "utf8", timeout: 30_000 });

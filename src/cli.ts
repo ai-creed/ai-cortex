@@ -267,9 +267,14 @@ async function main(): Promise<void> {
 			let repoPath: string | null = null;
 			let limit = 10;
 			let stale = false;
+			let json = false;
 
 			for (let i = 0; i < args.length; i += 1) {
 				const arg = args[i];
+				if (arg === "--json") {
+					json = true;
+					continue;
+				}
 				if (arg === "--stale") {
 					stale = true;
 					continue;
@@ -308,7 +313,11 @@ async function main(): Promise<void> {
 				process.stderr.write("unexpected mode: " + result.mode + "\n");
 				process.exit(1);
 			}
-			process.stdout.write(renderSemanticText(result) + "\n");
+			if (json) {
+				process.stdout.write(JSON.stringify(result) + "\n");
+			} else {
+				process.stdout.write(renderSemanticText(result) + "\n");
+			}
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
 			process.exit(1);
