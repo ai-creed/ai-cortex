@@ -30,10 +30,13 @@ export function writeVectorIndex(dir: string, index: VectorIndex): void {
 	const binTmp = binPath + ".tmp";
 	const metaTmp = metaPath + ".tmp";
 
-	fs.writeFileSync(binTmp, Buffer.from(index.matrix.buffer));
+	fs.writeFileSync(
+		binTmp,
+		Buffer.from(index.matrix.buffer, index.matrix.byteOffset, index.matrix.byteLength),
+	);
 	fs.writeFileSync(metaTmp, JSON.stringify(index.meta), "utf8");
-	fs.renameSync(binTmp, binPath);
 	fs.renameSync(metaTmp, metaPath);
+	fs.renameSync(binTmp, binPath);
 }
 
 export function readVectorIndex(dir: string, modelName: string): VectorIndex | null {

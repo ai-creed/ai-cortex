@@ -129,4 +129,26 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			VectorIndexCorruptError,
 		);
 	});
+
+	it("throws VectorIndexCorruptError when meta JSON is corrupt", () => {
+		// Write a valid sidecar first
+		const index: VectorIndex = {
+			meta: {
+				modelName: "Xenova/all-MiniLM-L6-v2",
+				dim: 2,
+				count: 1,
+				entries: [{ path: "a.ts", hash: "h1" }],
+			},
+			matrix: new Float32Array([1, 2]),
+		};
+		writeVectorIndex(tmpDir, index);
+
+		// Overwrite meta.json with invalid JSON
+		const metaPath = path.join(tmpDir, ".vectors.meta.json");
+		fs.writeFileSync(metaPath, "{ not valid json }", "utf8");
+
+		expect(() => readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).toThrow(
+			VectorIndexCorruptError,
+		);
+	});
 });
