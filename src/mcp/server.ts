@@ -256,6 +256,7 @@ function renderDeepText(r: DeepSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
+// Intentional copy of cli.ts renderSemanticText — keeps server and CLI independent.
 function renderSemanticText(r: SemanticSuggestResult): string {
 	const lines: string[] = [];
 	lines.push(`suggested files (semantic) for: ${r.task}`);
