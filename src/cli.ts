@@ -7,7 +7,7 @@ import {
 	rehydrateRepo,
 	suggestRepo,
 } from "./lib/index.js";
-import type { FastSuggestResult, DeepSuggestResult } from "./lib/suggest.js";
+import type { FastSuggestResult, DeepSuggestResult, SemanticSuggestResult } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -148,6 +148,20 @@ function renderDeepCli(r: DeepSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
+function renderSemanticCli(r: SemanticSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files (semantic) for: ${r.task}`);
+	lines.push(
+		`mode: semantic · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
+	);
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score.toFixed(3)}]`);
+		lines.push(`   reason: ${item.reason}`);
+	}
+	return lines.join("\n").trimEnd();
+}
+
 function escalationHint(r: FastSuggestResult): string {
 	const topScore = r.results[0]?.score ?? 0;
 	const fileCount = r.results.filter((x) => x.kind === "file").length;
@@ -247,6 +261,22 @@ async function main(): Promise<void> {
 				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 			} else {
 				process.stdout.write(renderDeepCli(result) + "\n");
+			}
+		} else if (command === "suggest-semantic") {
+			const parsed = parseSuggestArgs(args);
+			const result = await suggestRepo(parsed.repoPath, parsed.task, {
+				limit: parsed.limit,
+				stale: parsed.stale,
+				mode: "semantic",
+			});
+			if (result.mode !== "semantic") {
+				throw new Error("expected semantic result for 'suggest-semantic'");
+			}
+
+			if (parsed.json) {
+				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+			} else {
+				process.stdout.write(renderSemanticCli(result) + "\n");
 			}
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
