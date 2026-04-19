@@ -31,8 +31,9 @@ export async function buildVectorIndex(
 
 	for (const file of files) {
 		const [vec] = await provider.embed([file.path]);
+		if (!vec) throw new Error(`embed returned no vector for ${file.path}`);
 		entries.push({ path: file.path, hash: file.contentHash ?? "" });
-		vectors.push(vec!);
+		vectors.push(vec);
 	}
 
 	const matrix = concatVectors(vectors, EMBEDDING_DIM);
@@ -84,7 +85,8 @@ export async function refreshVectorIndex(
 		} else {
 			// New or modified — re-embed
 			const [vec] = await provider.embed([file.path]);
-			vectors.push(vec!);
+			if (!vec) throw new Error(`embed returned no vector for ${file.path}`);
+			vectors.push(vec);
 		}
 
 		entries.push({ path: file.path, hash: fileHash });
