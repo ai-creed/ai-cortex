@@ -121,9 +121,9 @@ function agg(key) {
 const outDir = path.join(__dirname, "out");
 fs.mkdirSync(outDir, { recursive: true });
 
-let agg_md = `# Ranker Quality Benchmark — target-repo 20-PR Sample\n\n`;
+let agg_md = "# Ranker Quality Benchmark — target-repo 20-PR Sample\n\n";
 agg_md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n\n`;
-agg_md += `| Mode | hit@5 | P@5 | R@5 |\n|---|---:|---:|---:|\n`;
+agg_md += "| Mode | hit@5 | P@5 | R@5 |\n|---|---:|---:|---:|\n";
 for (const m of ["fast", "deep", "semantic", "rrf"]) {
 	const a = agg(m);
 	agg_md += `| ${m} | ${a.hit}/20 | ${a.p}% | ${a.r}% |\n`;
@@ -133,14 +133,14 @@ fs.writeFileSync(path.join(outDir, "aggregate.md"), agg_md);
 process.stdout.write(agg_md);
 
 // --- Per-PR ---
-let perpr_md = `# Per-PR Results\n\n`;
+let perpr_md = "# Per-PR Results\n\n";
 for (const row of results) {
 	perpr_md += `## PR #${row.pr} — ${row.title}\n\n`;
 	perpr_md += `Truth: ${row.truth.join(", ")}\n\n`;
-	perpr_md += `| Mode | hit@5 | Top-5 |\n|---|---|---|\n`;
+	perpr_md += "| Mode | hit@5 | Top-5 |\n|---|---|---|\n";
 	for (const m of ["fast", "deep", "semantic", "rrf"]) {
 		const r = row[m];
-		perpr_md += `| ${m} | ${r?.hit5 ?? 0} | ${(r?.top5 ?? []).map((p, i) => (new Set(row.truth).has(p) ? `✅ \`${p}\`` : `\`${p}\``)).join("<br>")} |\n`;
+		perpr_md += `| ${m} | ${r?.hit5 ?? 0} | ${(r?.top5 ?? []).map((p, _i) => (new Set(row.truth).has(p) ? `✅ \`${p}\`` : `\`${p}\``)).join("<br>")} |\n`;
 	}
 	perpr_md += "\n---\n\n";
 }

@@ -75,7 +75,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache(paths);
 		const result = await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo");
@@ -103,7 +103,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache(paths);
 		await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo");
@@ -128,7 +128,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache(paths);
 		await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo", {
@@ -153,7 +153,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache(paths);
 		const result = await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo", {
@@ -177,7 +177,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache([]);
 		const result = await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo");
@@ -201,7 +201,7 @@ describe("rankSuggestionsSemanticCore", () => {
 		});
 
 		const { rankSuggestionsSemanticCore } = await import(
-			"../../../src/lib/suggest-ranker-semantic.js"
+			"../../../src/lib/suggest-ranker-semantic.js",
 		);
 		const cache = makeCache(paths);
 		const result = await rankSuggestionsSemanticCore("find something", cache, "/tmp/test-repo");

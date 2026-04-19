@@ -173,7 +173,7 @@ export async function suggestRepo(
 			});
 			const results = options.verbose
 				? deepResult.results
-				: deepResult.results.map(({ trigramMatches, ...rest }) => rest);
+				: deepResult.results.map(({ trigramMatches: _trigramMatches, ...rest }) => rest);
 			return {
 				mode: "deep",
 				cacheStatus,

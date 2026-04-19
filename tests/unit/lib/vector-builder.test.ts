@@ -1,5 +1,5 @@
 // tests/unit/lib/vector-builder.test.ts
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepoCache } from "../../../src/lib/models.js";
 import { EMBEDDING_DIM, MODEL_NAME } from "../../../src/lib/embed-provider.js";
 import type { VectorIndex } from "../../../src/lib/vector-sidecar.js";

@@ -1,6 +1,5 @@
 // tests/unit/lib/embed-provider.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ModelLoadError, EmbeddingInferenceError } from "../../../src/lib/models.js";
 import { EMBEDDING_DIM, MODEL_NAME } from "../../../src/lib/embed-provider.js";
 
 // We mock @xenova/transformers so we don't download ~23MB during unit tests

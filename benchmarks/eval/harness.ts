@@ -80,7 +80,7 @@ function generateBriefing(worktreePath: string): string {
 	}
 
 	if (!result.stdout) {
-		process.stderr.write(`  [briefing] empty stdout from rehydrate\n`);
+		process.stderr.write("  [briefing] empty stdout from rehydrate\n");
 		return "";
 	}
 
@@ -88,13 +88,13 @@ function generateBriefing(worktreePath: string): string {
 	try {
 		json = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
 	} catch {
-		process.stderr.write(`  [briefing] unexpected rehydrate output\n`);
+		process.stderr.write("  [briefing] unexpected rehydrate output\n");
 		return "";
 	}
 
 	const briefingPath = json["briefingPath"] as string | undefined;
 	if (typeof briefingPath !== "string") {
-		process.stderr.write(`  [briefing] unexpected rehydrate output\n`);
+		process.stderr.write("  [briefing] unexpected rehydrate output\n");
 		return "";
 	}
 

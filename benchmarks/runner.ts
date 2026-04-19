@@ -1,12 +1,12 @@
 // benchmarks/runner.ts
 import path from "node:path";
-import { discoverRepos, getConfig } from "./config.js";
+import { discoverRepos } from "./config.js";
 import { runPerfSuite } from "./suites/perf-suite.js";
 import { runQualitySuite } from "./suites/quality-suite.js";
 import { printReport } from "./reporters/terminal.js";
 import { writeJsonReport } from "./reporters/json.js";
 import { saveBaselines, loadBaselines } from "./lib/compare.js";
-import type { SuiteReport, ScenarioName } from "./lib/types.js";
+import type { SuiteReport } from "./lib/types.js";
 
 function parseArgs(argv: string[]): {
 	suite: "all" | "perf" | "quality";

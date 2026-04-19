@@ -35,11 +35,11 @@ describe("measureN", () => {
 
 	it("calls beforeEach before each measured run", async () => {
 		let beforeCount = 0;
-		let runOrder: string[] = [];
+		const runOrder: string[] = [];
 		const fn = async () => { runOrder.push("run"); };
 		const beforeEach = async () => { beforeCount++; runOrder.push("before"); };
 
-		const result = await measureN(fn, { warmup: 1, runs: 3, beforeEach });
+		await measureN(fn, { warmup: 1, runs: 3, beforeEach });
 
 		expect(beforeCount).toBe(3); // only measured runs, not warmup
 		// Verify interleaving: before-run-before-run-before-run
