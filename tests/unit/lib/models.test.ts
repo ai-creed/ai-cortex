@@ -32,6 +32,7 @@ describe("semantic error classes", () => {
 	it("existing IndexError still follows same pattern", () => {
 		const e = new IndexError("existing");
 		expect(e.name).toBe("IndexError");
+		expect(e.message).toBe("existing");
 		expect(e).toBeInstanceOf(Error);
 	});
 });
