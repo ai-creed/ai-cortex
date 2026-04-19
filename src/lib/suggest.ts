@@ -17,7 +17,7 @@ export type SuggestOptions = {
 	from?: string;
 	limit?: number;
 	stale?: boolean;
-	mode?: "fast" | "deep";
+	mode?: "fast" | "deep" | "semantic";
 	/** Deep-only. Default 60, max 200. Ignored in fast mode. */
 	poolSize?: number;
 	/** Include trigramMatches in deep results. Default false. */
@@ -56,7 +56,15 @@ export type DeepSuggestResult = SuggestResultCommon & {
 	staleMixedEvidence?: boolean;
 };
 
-export type SuggestResult = FastSuggestResult | DeepSuggestResult;
+export type SemanticSuggestItem = SuggestItem;
+
+export type SemanticSuggestResult = SuggestResultCommon & {
+	mode: "semantic";
+	results: SemanticSuggestItem[];
+	poolSize: number;
+};
+
+export type SuggestResult = FastSuggestResult | DeepSuggestResult | SemanticSuggestResult;
 
 function normalizeFrom(value: string | undefined, cache: RepoCache): string | null {
 	if (!value) return null;
@@ -91,8 +99,13 @@ export async function suggestRepo(
 		) {
 			throw new IndexError("suggest poolSize must be an integer in [1, 200]");
 		}
-		if (options.mode !== undefined && options.mode !== "fast" && options.mode !== "deep") {
-			throw new IndexError(`suggest mode must be 'fast' or 'deep' (got '${options.mode}')`);
+		if (
+			options.mode !== undefined &&
+			options.mode !== "fast" &&
+			options.mode !== "deep" &&
+			options.mode !== "semantic"
+		) {
+			throw new IndexError(`suggest mode must be 'fast', 'deep', or 'semantic' (got '${options.mode}')`);
 		}
 
 		let cache: RepoCache;
@@ -149,28 +162,49 @@ export async function suggestRepo(
 			} satisfies FastSuggestResult;
 		}
 
-		// mode === "deep" — delegated to Task 9
-		const { rankSuggestionsDeep } = await import("./suggest-ranker-deep.js");
-		const deepResult = await rankSuggestionsDeep(task, cache, identity.worktreePath, {
-			from,
-			limit: options.limit,
-			poolSize: options.poolSize,
-			stale: cacheStatus === "stale",
-		});
-		const results = options.verbose
-			? deepResult.results
-			: deepResult.results.map(({ trigramMatches, ...rest }) => rest);
-		return {
-			mode: "deep",
-			cacheStatus,
-			task,
-			from,
-			results,
-			poolSize: deepResult.poolSize,
-			contentScanTruncated: deepResult.contentScanTruncated,
-			staleMixedEvidence: deepResult.staleMixedEvidence,
-			durationMs: Date.now() - startedAt,
-		} satisfies DeepSuggestResult;
+		if (mode === "deep") {
+			// mode === "deep" — delegated to Task 9
+			const { rankSuggestionsDeep } = await import("./suggest-ranker-deep.js");
+			const deepResult = await rankSuggestionsDeep(task, cache, identity.worktreePath, {
+				from,
+				limit: options.limit,
+				poolSize: options.poolSize,
+				stale: cacheStatus === "stale",
+			});
+			const results = options.verbose
+				? deepResult.results
+				: deepResult.results.map(({ trigramMatches: _trigramMatches, ...rest }) => rest);
+			return {
+				mode: "deep",
+				cacheStatus,
+				task,
+				from,
+				results,
+				poolSize: deepResult.poolSize,
+				contentScanTruncated: deepResult.contentScanTruncated,
+				staleMixedEvidence: deepResult.staleMixedEvidence,
+				durationMs: Date.now() - startedAt,
+			} satisfies DeepSuggestResult;
+		}
+
+		if (mode === "semantic") {
+			const { rankSuggestionsSemanticCore } = await import("./suggest-ranker-semantic.js");
+			const semanticResult = await rankSuggestionsSemanticCore(task, cache, identity.worktreePath, {
+				limit: options.limit,
+				stale: cacheStatus === "stale",
+			});
+			return {
+				mode: "semantic" as const,
+				cacheStatus,
+				task,
+				from, // echoed for API consistency; semantic ranking does not use caller context
+				results: semanticResult.results as SemanticSuggestItem[],
+				poolSize: semanticResult.poolSize,
+				durationMs: Date.now() - startedAt,
+			} satisfies SemanticSuggestResult;
+		}
+
+		throw new IndexError(`unhandled suggest mode: '${mode}'`);
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
 		if (err instanceof IndexError) throw err;
@@ -219,4 +253,10 @@ export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
 	poolSize: z.number(),
 	contentScanTruncated: z.boolean().optional(),
 	staleMixedEvidence: z.boolean().optional(),
+});
+
+export const SemanticSuggestResultSchema = SuggestResultCommonSchema.extend({
+	mode: z.literal("semantic"),
+	results: z.array(SuggestItemSchema),
+	poolSize: z.number(),
 });

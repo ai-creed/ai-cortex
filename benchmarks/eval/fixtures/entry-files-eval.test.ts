@@ -23,7 +23,7 @@ describe("node-framework-detection eval", () => {
 				name: "my-cli",
 				version: "1.0.0",
 				devDependencies: { tsx: "^4.0.0" },
-			}) as any,
+			}) as unknown as Buffer,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("node");
 	});
@@ -35,7 +35,7 @@ describe("node-framework-detection eval", () => {
 				name: "my-cli",
 				version: "1.0.0",
 				devDependencies: { "@types/node": "^22.0.0" },
-			}) as any,
+			}) as unknown as Buffer,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("node");
 	});
@@ -47,7 +47,7 @@ describe("node-framework-detection eval", () => {
 				name: "app",
 				version: "1.0.0",
 				devDependencies: { electron: "^30.0.0", tsx: "^4.0.0" },
-			}) as any,
+			}) as unknown as Buffer,
 		);
 		expect(readPackageMeta("/repo").framework).toBe("electron");
 	});

@@ -13,7 +13,6 @@ import {
 	checkRegression,
 	checkSlo,
 	loadBaselines,
-	type Baselines,
 } from "../lib/compare.js";
 import { getSloForScenario, getConfig } from "../config.js";
 import type {

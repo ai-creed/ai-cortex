@@ -16,6 +16,27 @@ export class IndexError extends Error {
 	}
 }
 
+export class ModelLoadError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ModelLoadError";
+	}
+}
+
+export class VectorIndexCorruptError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "VectorIndexCorruptError";
+	}
+}
+
+export class EmbeddingInferenceError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "EmbeddingInferenceError";
+	}
+}
+
 export type RepoIdentity = {
 	repoKey: string;
 	worktreeKey: string;

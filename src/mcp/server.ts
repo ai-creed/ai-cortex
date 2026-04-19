@@ -9,11 +9,11 @@ import {
 	suggestRepo,
 	queryBlastRadius,
 } from "../lib/index.js";
-import type { DeepSuggestResult } from "../lib/suggest.js";
-import { DeepSuggestResultSchema } from "../lib/suggest.js";
+import type { DeepSuggestResult, SemanticSuggestResult } from "../lib/suggest.js";
+import { DeepSuggestResultSchema, SemanticSuggestResultSchema } from "../lib/suggest.js";
 
 // Keep in sync with package.json "version".
-const SERVER_VERSION = "0.0.0-phase0";
+const SERVER_VERSION = "0.3.0-beta.1";
 
 function logCall(
 	tool: string,
@@ -152,6 +152,38 @@ export function createServer(): McpServer {
 		}),
 	);
 
+	server.registerTool(
+		"suggest_files_semantic",
+		{
+			description:
+				"Rank files by semantic similarity using sentence embeddings. " +
+				"Builds or refreshes a local vector index (Xenova/all-MiniLM-L6-v2, 384-dim). " +
+				"First call downloads ~23 MB model; subsequent calls are fast.",
+			inputSchema: {
+				task: z.string().min(1, "task must not be blank"),
+				path: z.string().optional(),
+				limit: z.number().int().positive().max(20).optional(),
+				stale: z.boolean().optional(),
+			},
+			outputSchema: SemanticSuggestResultSchema.shape,
+		},
+		logged("suggest_files_semantic", (p) => ({ task: p.task, path: p.path }), async ({ task, path, limit, stale }) => {
+			const repoPath = path ?? process.cwd();
+			const result = await suggestRepo(repoPath, task, {
+				limit,
+				stale,
+				mode: "semantic",
+			});
+			if (result.mode !== "semantic") {
+				throw new Error("suggestRepo returned non-semantic result for suggest_files_semantic");
+			}
+			return {
+				content: [{ type: "text" as const, text: renderSemanticText(result) }],
+				structuredContent: result,
+			};
+		}),
+	);
+
 	server.tool(
 		"index_project",
 		"Build or force-refresh the project index. Usually not needed — rehydrate_project handles freshness automatically. Use this to explicitly rebuild after large structural changes.",
@@ -220,6 +252,21 @@ function renderDeepText(r: DeepSuggestResult): string {
 				lines.push(`     L${h.line}: ${h.snippet}`);
 			}
 		}
+	}
+	return lines.join("\n").trimEnd();
+}
+
+// Intentional copy of cli.ts renderSemanticText — keeps server and CLI independent.
+function renderSemanticText(r: SemanticSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files (semantic) for: ${r.task}`);
+	lines.push(
+		`mode: semantic · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
+	);
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score.toFixed(3)}]`);
+		lines.push(`   reason: ${item.reason}`);
 	}
 	return lines.join("\n").trimEnd();
 }

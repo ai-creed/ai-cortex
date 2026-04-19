@@ -344,6 +344,119 @@ describe("index_project", () => {
 	});
 });
 
+describe("suggest_files_semantic", () => {
+	it("calls suggestRepo with mode:semantic and returns semantic-formatted text", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "semantic",
+			task: "vector search",
+			from: null,
+			cacheStatus: "fresh",
+			durationMs: 88,
+			poolSize: 50,
+			results: [
+				{
+					path: "src/embedder.ts",
+					kind: "file",
+					score: 0.912,
+					reason: "high cosine similarity to query",
+				},
+			],
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_semantic",
+			arguments: { task: "vector search", path: "/repo", limit: 5 },
+		});
+
+		expect(suggestRepo).toHaveBeenCalledWith("/repo", "vector search", {
+			limit: 5,
+			stale: undefined,
+			mode: "semantic",
+		});
+		const text = (result.content[0] as any).text as string;
+		expect(text).toContain("suggested files (semantic) for: vector search");
+		expect(text).toContain("mode: semantic");
+		expect(text).toContain("cacheStatus: fresh");
+		expect(text).toMatch(/src\/embedder\.ts\s+\[file · score 0\.912\]/);
+		expect(text).toContain("high cosine similarity to query");
+		expect(result.structuredContent).toBeDefined();
+		expect((result.structuredContent as any).mode).toBe("semantic");
+		expect((result.structuredContent as any).poolSize).toBe(50);
+	});
+
+	it("returns isError for blank task without calling suggestRepo", async () => {
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_semantic",
+			arguments: { task: "" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect(suggestRepo).not.toHaveBeenCalled();
+	});
+
+	it("defaults path to process.cwd() when not provided", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "semantic",
+			task: "auth",
+			from: null,
+			cacheStatus: "fresh",
+			durationMs: 10,
+			poolSize: 50,
+			results: [],
+		});
+
+		const client = await makeClient();
+		await client.callTool({
+			name: "suggest_files_semantic",
+			arguments: { task: "auth" },
+		});
+
+		expect(suggestRepo).toHaveBeenCalledWith(process.cwd(), "auth", {
+			limit: undefined,
+			stale: undefined,
+			mode: "semantic",
+		});
+	});
+
+	it("throws if suggestRepo returns non-semantic mode", async () => {
+		vi.mocked(suggestRepo).mockResolvedValue({
+			mode: "deep",
+			task: "auth",
+			from: null,
+			cacheStatus: "fresh",
+			durationMs: 5,
+			poolSize: 60,
+			results: [],
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_semantic",
+			arguments: { task: "auth", path: "/repo" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("non-semantic");
+	});
+
+	it("returns isError result for RepoIdentityError", async () => {
+		vi.mocked(suggestRepo).mockImplementation(() => {
+			throw new RepoIdentityError("not a git repo");
+		});
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "suggest_files_semantic",
+			arguments: { task: "auth" },
+		});
+
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as any).text).toContain("not a git repo");
+	});
+});
+
 describe("tool call logging", () => {
 	let stderrSpy: any;
 

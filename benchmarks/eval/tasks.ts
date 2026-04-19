@@ -46,7 +46,7 @@ export function getEvalTasks(): EvalTask[] {
 			name: "briefing-doc-limit",
 			repo: "ai-cortex",
 			repoPath: cortexPath,
-			prompt: 'The `renderKeyDocs` function in `src/lib/briefing.ts` hardcodes `slice(0, 3)` to show only 3 docs, but `loadDocs` in `doc-inputs.ts` loads up to 8. Fix `renderKeyDocs` so it doesn\'t truncate to 3.',
+			prompt: "The `renderKeyDocs` function in `src/lib/briefing.ts` hardcodes `slice(0, 3)` to show only 3 docs, but `loadDocs` in `doc-inputs.ts` loads up to 8. Fix `renderKeyDocs` so it doesn't truncate to 3.",
 			groundTruthFiles: ["src/lib/briefing.ts"],
 			structuralChecks: [
 				{ file: "src/lib/briefing.ts", pattern: "slice\\(0,\\s*3\\)", shouldMatch: false },

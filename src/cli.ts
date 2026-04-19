@@ -7,7 +7,7 @@ import {
 	rehydrateRepo,
 	suggestRepo,
 } from "./lib/index.js";
-import type { FastSuggestResult, DeepSuggestResult } from "./lib/suggest.js";
+import type { FastSuggestResult, DeepSuggestResult, SemanticSuggestResult } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -148,6 +148,20 @@ function renderDeepCli(r: DeepSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
+export function renderSemanticText(r: SemanticSuggestResult): string {
+	const lines: string[] = [];
+	lines.push(`suggested files (semantic) for: ${r.task}`);
+	lines.push(
+		`mode: semantic · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
+	);
+	lines.push("");
+	for (const [i, item] of r.results.entries()) {
+		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score.toFixed(3)}]`);
+		lines.push(`   reason: ${item.reason}`);
+	}
+	return lines.join("\n").trimEnd();
+}
+
 function escalationHint(r: FastSuggestResult): string {
 	const topScore = r.results[0]?.score ?? 0;
 	const fileCount = r.results.filter((x) => x.kind === "file").length;
@@ -247,6 +261,62 @@ async function main(): Promise<void> {
 				process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 			} else {
 				process.stdout.write(renderDeepCli(result) + "\n");
+			}
+		} else if (command === "suggest-semantic") {
+			let task: string | null = null;
+			let repoPath: string | null = null;
+			let limit = 10;
+			let stale = false;
+			let json = false;
+
+			for (let i = 0; i < args.length; i += 1) {
+				const arg = args[i];
+				if (arg === "--json") {
+					json = true;
+					continue;
+				}
+				if (arg === "--stale") {
+					stale = true;
+					continue;
+				}
+				if (arg === "-p" || arg === "--path") {
+					if (args[i + 1] !== undefined && !args[i + 1]!.startsWith("-")) {
+						repoPath = args[i + 1]!;
+						i += 1;
+					}
+					continue;
+				}
+				if (arg === "-l" || arg === "--limit") {
+					if (args[i + 1] !== undefined && !args[i + 1]!.startsWith("-")) {
+						const raw = args[i + 1]!;
+						const parsed = Number(raw);
+						if (!Number.isFinite(parsed)) {
+							process.stderr.write(`ai-cortex: --limit must be a number (got '${raw}')\n`);
+							process.exit(1);
+						}
+						limit = parsed;
+						i += 1;
+					}
+					continue;
+				}
+				if (task === null) {
+					task = arg;
+				}
+			}
+
+			const result = await suggestRepo(repoPath ?? process.cwd(), task ?? "", {
+				limit,
+				stale,
+				mode: "semantic",
+			});
+			if (result.mode !== "semantic") {
+				process.stderr.write("unexpected mode: " + result.mode + "\n");
+				process.exit(1);
+			}
+			if (json) {
+				process.stdout.write(JSON.stringify(result) + "\n");
+			} else {
+				process.stdout.write(renderSemanticText(result) + "\n");
 			}
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);

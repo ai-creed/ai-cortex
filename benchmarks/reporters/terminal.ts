@@ -92,11 +92,11 @@ export function printReport(report: SuiteReport): void {
 	const hasFail = perfFail > 0 || qualFail > 0;
 	const hasWarn = perfWarn > 0;
 	if (hasFail) {
-		console.log(`  result:  FAIL`);
+		console.log("  result:  FAIL");
 	} else if (hasWarn) {
-		console.log(`  result:  PASS (warnings only)`);
+		console.log("  result:  PASS (warnings only)");
 	} else {
-		console.log(`  result:  PASS`);
+		console.log("  result:  PASS");
 	}
 	console.log();
 }
