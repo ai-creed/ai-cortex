@@ -1,8 +1,11 @@
 // tests/integration/semantic.test.ts
 // Integration tests for semantic ranking.
 // Requires AI_CORTEX_SEMANTIC_INTEGRATION=1 to run (downloads ~23 MB model).
+// Note: sidecar (.vectors.bin + .vectors.meta.json) is intentionally left in
+// ~/.cache/ai-cortex/v1/<worktreeKey>/ after the suite — test 6 depends on
+// the cached vectors, and subsequent CI runs reuse them as expected.
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { suggestRepo } from "../../src/lib/suggest.js";
 import type { SemanticSuggestResult } from "../../src/lib/suggest.js";
 
