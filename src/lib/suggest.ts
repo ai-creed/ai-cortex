@@ -56,12 +56,7 @@ export type DeepSuggestResult = SuggestResultCommon & {
 	staleMixedEvidence?: boolean;
 };
 
-export type SemanticSuggestItem = {
-	path: string;
-	kind: "file" | "doc";
-	score: number;
-	reason: string;
-};
+export type SemanticSuggestItem = SuggestItem;
 
 export type SemanticSuggestResult = SuggestResultCommon & {
 	mode: "semantic";
@@ -260,15 +255,8 @@ export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
 	staleMixedEvidence: z.boolean().optional(),
 });
 
-const SemanticSuggestItemSchema = z.object({
-	path: z.string(),
-	kind: z.enum(["file", "doc"]),
-	score: z.number(),
-	reason: z.string(),
-});
-
 export const SemanticSuggestResultSchema = SuggestResultCommonSchema.extend({
 	mode: z.literal("semantic"),
-	results: z.array(SemanticSuggestItemSchema),
+	results: z.array(SuggestItemSchema),
 	poolSize: z.number(),
 });
