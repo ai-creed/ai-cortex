@@ -152,7 +152,43 @@ See [MANUAL.md](./MANUAL.md#benchmarking) for full details on scenarios, baselin
 
 ## Installation
 
-See [MANUAL.md](./MANUAL.md) for full installation and integration instructions.
+Requires Node ≥ 20, pnpm, and a git repository to analyze.
+
+### From source (until npm publish)
+
+```bash
+git clone git@github.com:vuphanse/ai-cortex.git
+cd ai-cortex
+pnpm install
+pnpm build
+pnpm link --global      # makes `ai-cortex` available on PATH
+```
+
+### Register as MCP server
+
+```bash
+claude mcp add -s user ai-cortex -- ai-cortex mcp
+```
+
+`-s user` makes it available in all your projects. Verify with `claude mcp get ai-cortex`.
+
+### First use
+
+```bash
+ai-cortex index /path/to/your/repo
+```
+
+From an agent session, call `rehydrate_project` or `suggest_files` — no manual step needed.
+
+See [MANUAL.md](./MANUAL.md) for advanced configuration and integration details.
+
+## Known limitations
+
+- **TypeScript / JavaScript only.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`. Python/Go/Rust repos will index but yield no call graph.
+- **Semantic ranker embeds file paths, not file bodies.** Good for "which file is about X"; not a replacement for grep on file content.
+- **First semantic call downloads ~23 MB** (`Xenova/all-MiniLM-L6-v2`) into `~/.cache/ai-cortex/models/`.
+- **Cache is local** — not shared across machines or users. Worktree-keyed.
+- **MCP tool discovery:** in Claude Code, ai-cortex tools are deferred. Agents may default to Grep/Glob unless nudged. If adoption stays low, add a rule to your `CLAUDE.md` preferring `suggest_files` for file discovery.
 
 ## Primary references
 
