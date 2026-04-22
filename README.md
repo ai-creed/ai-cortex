@@ -157,7 +157,7 @@ Requires Node ≥ 20, pnpm, and a git repository to analyze.
 ### From source (until npm publish)
 
 ```bash
-git clone git@github.com:vuphanse/ai-cortex.git
+git clone git@github.com:ai-creed/ai-cortex.git
 cd ai-cortex
 pnpm install
 pnpm build
