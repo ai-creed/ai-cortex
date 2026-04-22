@@ -13,7 +13,7 @@ import type { DeepSuggestResult, SemanticSuggestResult } from "../lib/suggest.js
 import { DeepSuggestResultSchema, SemanticSuggestResultSchema } from "../lib/suggest.js";
 
 // Keep in sync with package.json "version".
-const SERVER_VERSION = "0.3.0-beta.1";
+const SERVER_VERSION = "0.3.0-beta.2";
 
 function logCall(
 	tool: string,
@@ -80,10 +80,12 @@ export function createServer(): McpServer {
 		"suggest_files",
 		{
 			description:
-				"Get a ranked list of files relevant to a task. Uses deep ranking by " +
-				"default: path tokens, function names, import/call graph, trigram fuzzy " +
-				"match, and content scan. For explicit deep options (poolSize), use " +
-				"`suggest_files_deep`.",
+				"USE FIRST for file discovery — call this before Grep or Glob when you " +
+				"need to find which files are relevant to a task. Returns ranked files " +
+				"using path tokens, function names, import/call graph, trigram fuzzy " +
+				"match, and content scan. Fall back to Grep/Glob only for: exact-string " +
+				"lookup of a known symbol, verifying edits, or when `suggest_files` " +
+				"returns nothing useful. For explicit poolSize, use `suggest_files_deep`.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),
@@ -156,8 +158,9 @@ export function createServer(): McpServer {
 		"suggest_files_semantic",
 		{
 			description:
-				"Rank files by semantic similarity using sentence embeddings. " +
-				"Builds or refreshes a local vector index (Xenova/all-MiniLM-L6-v2, 384-dim). " +
+				"Rank files by semantic similarity when the task is conceptual or " +
+				"fuzzy and keyword/graph ranking (`suggest_files`) returns nothing " +
+				"useful. Uses sentence embeddings (Xenova/all-MiniLM-L6-v2, 384-dim). " +
 				"First call downloads ~23 MB model; subsequent calls are fast.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
