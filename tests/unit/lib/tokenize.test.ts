@@ -52,13 +52,41 @@ describe("tokenize (path/identifier mode — no stopword filter)", () => {
 });
 
 describe("tokenizeTask (task mode — stopword filter applied)", () => {
-  it("drops English and code stopwords", () => {
+  it("drops English and code stopwords but keeps 'my' (domain-meaningful)", () => {
     const toks = tokenizeTask("card in my work panel");
     expect(toks).toContain("card");
     expect(toks).toContain("work");
     expect(toks).toContain("panel");
     expect(toks).not.toContain("in");
-    expect(toks).not.toContain("my");
+    // "my" is kept as domain-meaningful (e.g. a "My Work" feature name)
+    expect(toks).toContain("my");
+  });
+
+  it("emits plural stems so 'sheets' matches paths containing 'sheet'", () => {
+    const toks = tokenizeTask("sheets duplicate button");
+    expect(toks).toContain("sheets");
+    expect(toks).toContain("sheet");
+  });
+
+  it("stems '-ies' to '-y' (flies → fly)", () => {
+    expect(tokenizeTask("flies")).toEqual(expect.arrayContaining(["flies", "fly"]));
+  });
+
+  it("stems '-xes/-ches/-shes/-sses/-zes' by trimming 'es'", () => {
+    expect(tokenizeTask("boxes")).toEqual(expect.arrayContaining(["boxes", "box"]));
+    expect(tokenizeTask("matches")).toEqual(expect.arrayContaining(["matches", "match"]));
+    expect(tokenizeTask("hashes")).toEqual(expect.arrayContaining(["hashes", "hash"]));
+  });
+
+  it("does NOT stem words ending in 'ss', 'us', 'is', 'os', 'as'", () => {
+    expect(tokenizeTask("address")).not.toContain("addres");
+    expect(tokenizeTask("status")).not.toContain("statu");
+    expect(tokenizeTask("this")).not.toContain("thi"); // also a stopword, extra safety
+    expect(tokenizeTask("gas")).not.toContain("ga");
+  });
+
+  it("does not stem short words (len <= 3)", () => {
+    expect(tokenize("as")).not.toContain("a");
   });
 
   it("still splits camelCase in task strings", () => {
@@ -72,10 +100,11 @@ describe("tokenizeTask (task mode — stopword filter applied)", () => {
 });
 
 describe("STOPWORDS", () => {
-  it("includes expected English, task, and code noise", () => {
+  it("includes expected English and code noise (but not 'my')", () => {
     expect(STOPWORDS.has("the")).toBe(true);
-    expect(STOPWORDS.has("my")).toBe(true);
     expect(STOPWORDS.has("utils")).toBe(true);
+    // "my" removed because it is load-bearing in domain names like "My Work"
+    expect(STOPWORDS.has("my")).toBe(false);
   });
   it("does not include domain words", () => {
     expect(STOPWORDS.has("card")).toBe(false);

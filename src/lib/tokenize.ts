@@ -13,8 +13,10 @@ export const STOPWORDS: Set<string> = new Set([
   "by", "with", "and", "or", "is", "are", "be",
   // Task noise (task-verb words like "create", "update", "add", "fix",
   // "make", "use", "using" intentionally NOT included — they appear in
-  // real identifiers: createCard, addUser, useFetch, fixBug)
-  "my", "your", "our", "this", "that", "new",
+  // real identifiers: createCard, addUser, useFetch, fixBug).
+  // "my" is intentionally NOT a stopword: it is load-bearing in domain
+  // names (e.g. a feature called "My Work") and would mask such matches.
+  "your", "our", "this", "that", "new",
   // Code noise
   "src", "lib", "index", "utils", "helper", "helpers", "common",
 ]);
@@ -52,6 +54,38 @@ function shouldKeep(tok: string): boolean {
   return true;
 }
 
+/**
+ * Simple English plural stemmer. Returns the singular form for common plural
+ * patterns, or null when the word should not be stemmed. Conservative by
+ * design — only emits a stem for patterns with low collision risk.
+ *   flies  -> fly     (-ies ending, swap to -y)
+ *   boxes  -> box     (-xes/-ches/-shes/-sses/-zes: strip 'es')
+ *   cards  -> card    (plain -s ending)
+ * Non-plural endings left untouched: ss (address), us (status), is (this),
+ * os (memos), as (gas), short words (<=3 chars).
+ */
+function pluralStem(word: string): string | null {
+  if (word.length <= 3) return null;
+  if (/(ss|us|is|os|as)$/u.test(word)) return null;
+  if (/ies$/u.test(word) && word.length > 4) {
+    return word.slice(0, -3) + "y";
+  }
+  if (/(xes|ches|shes|sses|zes)$/u.test(word) && word.length > 4) {
+    return word.slice(0, -2);
+  }
+  if (/s$/u.test(word)) {
+    return word.slice(0, -1);
+  }
+  return null;
+}
+
+function addToken(out: Set<string>, tok: string): void {
+  if (!shouldKeep(tok)) return;
+  out.add(tok);
+  const stem = pluralStem(tok);
+  if (stem && stem !== tok && shouldKeep(stem)) out.add(stem);
+}
+
 function tokensFor(value: string): string[] {
   const out = new Set<string>();
   for (const segment of value.split(PATH_SEPARATOR_RE)) {
@@ -59,17 +93,14 @@ function tokensFor(value: string): string[] {
     // Snake/kebab joined form — only when the whole segment is alnum + [_-].
     const snakeParts = segment.split(SUBWORD_SEPARATOR_RE).filter(Boolean);
     if (snakeParts.length > 1 && snakeParts.every((p) => ALNUM_RE.test(p))) {
-      const joined = snakeParts.join("").toLowerCase();
-      if (shouldKeep(joined)) out.add(joined);
+      addToken(out, snakeParts.join("").toLowerCase());
     }
     // Tokenize every raw word (splitting on ANY non-alphanumeric within the segment).
     for (const rawWord of segment.split(NON_WORD_RE)) {
       if (!rawWord) continue;
-      const lowerJoined = rawWord.toLowerCase();
-      if (shouldKeep(lowerJoined)) out.add(lowerJoined);
+      addToken(out, rawWord.toLowerCase());
       for (const part of splitCamel(rawWord)) {
-        const lower = part.toLowerCase();
-        if (shouldKeep(lower)) out.add(lower);
+        addToken(out, part.toLowerCase());
       }
     }
   }

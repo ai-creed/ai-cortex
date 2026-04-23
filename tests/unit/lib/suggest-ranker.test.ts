@@ -127,6 +127,67 @@ describe("rankSuggestions", () => {
 		const result = rankSuggestions("persistence", makeCache(), { limit: 1 });
 		expect(result).toHaveLength(1);
 	});
+
+	it("boosts files whose basename-without-extension equals a query token", () => {
+		// Both files have "github" in the path. The one where the BASENAME is exactly
+		// "github" (no suffix/prefix) should rank first — dev intent signal.
+		const cache = makeCache({
+			files: [
+				{ path: "src/integrations/github/github_wrappers.ts", kind: "file" },
+				{ path: "src/integrations/github/github.ts", kind: "file" },
+			],
+			docs: [],
+			imports: [],
+			functions: [],
+		});
+		const result = rankSuggestions("github", cache);
+		expect(result[0]?.path).toBe("src/integrations/github/github.ts");
+	});
+
+	it("breaks score ties by shorter path first", () => {
+		// Both files have the same path-token match profile for "github" and
+		// neither basename equals "github" (so no basename bonus). Alphabetical
+		// localeCompare would pick the longer "a..." path first — path-length
+		// tiebreak must override and pick the shorter "z..." path.
+		const cache = makeCache({
+			files: [
+				{ path: "a/very/long/path/deep/nested/github-helpers.ts", kind: "file" },
+				{ path: "z-github-helpers.ts", kind: "file" },
+			],
+			docs: [],
+			imports: [],
+			functions: [],
+		});
+		const result = rankSuggestions("github", cache);
+		expect(result[0]?.path).toBe("z-github-helpers.ts");
+	});
+
+	it("de-weights doc body matches so body-only docs do not outrank files with path match", () => {
+		// Doc whose title and path do NOT match the query but whose body hits many
+		// query tokens used to score body×2 and outrank a path-matching file.
+		// Under body×1 the file's path match wins.
+		const cache = makeCache({
+			files: [
+				// basename "alpha-group" != any single query token → no basename bonus
+				{ path: "src/alpha-group.ts", kind: "file" },
+			],
+			docs: [
+				{
+					path: "docs/notes.md",
+					title: "Misc Notes",
+					body: "alpha beta gamma delta everywhere",
+				},
+			],
+			imports: [],
+			functions: [],
+		});
+		const result = rankSuggestions("alpha beta gamma delta", cache);
+		// file: path "alpha" × 5 = 5
+		// doc (new body×1): body matches {alpha, beta, gamma, delta} = 4 × 1 = 4  (was 8 under body×2)
+		// file should rank first under body×1; under body×2 the doc would have won 8 vs 5
+		expect(result[0]?.path).toBe("src/alpha-group.ts");
+		expect(result[0]?.kind).toBe("file");
+	});
 });
 
 describe("call graph enrichment", () => {

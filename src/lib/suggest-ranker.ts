@@ -133,6 +133,13 @@ export function rankSuggestions(
 		const matchedPathTokens = tokens.filter((token) => pathTokens.includes(token));
 		let score = matchedPathTokens.length * 5;
 
+		// Basename bonus: when the filename (minus any single extension) is
+		// *exactly* one of the query tokens, the file is the likely subject of
+		// the task. Distinguishes `github.ts` from `github_apiwrappers.ts` etc.
+		const basename = normalizedPath.split("/").pop() ?? "";
+		const basenameNoExt = basename.replace(/\.[a-z]+$/u, "");
+		if (basenameNoExt && tokens.includes(basenameNoExt)) score += 4;
+
 		if (cache.entryFiles.includes(file.path)) score += 2;
 		if (normalizedFrom && normalizedPath === normalizedFrom) score += 6;
 		if (normalizedFrom && normalizedPath !== normalizedFrom && sameDirectory(normalizedPath, normalizedFrom)) score += 2;
@@ -250,7 +257,9 @@ export function rankSuggestions(
 		const pathMatches = tokens.filter((t) => pathTokensDoc.includes(t)).length;
 		const bodyMatches = tokens.filter((t) => bodyTokens.has(t)).length;
 
-		const docScore = titleMatches * 8 + pathMatches * 5 + bodyMatches * 2;
+		// Body weight reduced from 2 → 1: body-only matches were dominating
+		// path-matching files on large repos with many body-heavy `.md` files.
+		const docScore = titleMatches * 8 + pathMatches * 5 + bodyMatches * 1;
 
 		if (docScore > 0) {
 			const parts: string[] = [];
@@ -271,6 +280,7 @@ export function rankSuggestions(
 			(a, b) =>
 				b.score - a.score ||
 				(a.kind === b.kind ? 0 : a.kind === "file" ? -1 : 1) ||
+				a.path.length - b.path.length ||
 				a.path.localeCompare(b.path),
 		)
 		.slice(0, options.poolSize ?? options.limit ?? 5);
