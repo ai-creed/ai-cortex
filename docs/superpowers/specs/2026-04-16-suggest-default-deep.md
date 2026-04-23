@@ -6,7 +6,7 @@
 
 ## Context
 
-The target-repo benchmark (`docs/shared/ranker_target-repo_benchmark.md`) showed that on verbatim PR-title queries against a large real-world codebase (~8K files):
+A benchmark on verbatim PR-title queries against a large real-world codebase (~8K files) showed:
 
 | Mode | hit@5 | avg durationMs | avg output bytes |
 |---|---:|---:|---:|

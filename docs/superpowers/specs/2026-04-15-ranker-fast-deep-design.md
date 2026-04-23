@@ -10,7 +10,7 @@
 
 `suggest_files` (MCP tool exposed by ai-cortex) ranks repo files against a natural-language task. Current ranker lives in `src/lib/suggest-ranker.ts` and scores files purely by bag-of-tokens matching against **file paths only**, ignoring the 27k+ function names already captured in `cache.functions[]`.
 
-Concrete failure, verified against indexed target-repo repo:
+Concrete failure, verified against a large indexed repo:
 
 ```
 task: "card creation title editing in My Work right panel"
@@ -589,7 +589,7 @@ Small synthetic repo under `tests/fixtures/deep-repo/` with a real `git init`. R
 
 ### Golden test
 
-A pinned test with a synthetic cache mimicking target-repo's structure. Fast path must return ≥1 code file in top-5; deep path must return the simulated `CardTitleEditor.tsx` at #1. Regression guard for the originating failure.
+A pinned test with a synthetic cache mimicking a large monorepo's structure. Fast path must return ≥1 code file in top-5; deep path must return the simulated `CardTitleEditor.tsx` at #1. Regression guard for the originating failure.
 
 ### Coverage target
 
@@ -597,12 +597,12 @@ A pinned test with a synthetic cache mimicking target-repo's structure. Fast pat
 
 ### Out of scope
 
-- Latency benchmarks on target-repo-sized repos — belongs in a manual script, not CI.
+- Latency benchmarks on large-monorepo-sized repos — belongs in a manual script, not CI.
 - Non-TypeScript adapters.
 
 ## 11. Open questions / future work
 
-- **Approach C (persistent inverted index)** — revisit if deep path is too slow on larger repos than target-repo.
+- **Approach C (persistent inverted index)** — revisit if deep path is too slow on very large monorepos.
 - **Git recency boost** — files touched in the last N commits scored higher. Out of scope now.
 - **LSP integration** — could extract richer symbol info (types, interfaces). Out of scope.
 - **Non-TS languages** — adapter pattern exists (`adapters/typescript.ts`); add more when needed.
@@ -619,7 +619,7 @@ Suggested sequence (to be refined by writing-plans step):
 6. Update `src/lib/suggest.ts` types to the discriminated union in §9 (review finding #3); wire `mode` through.
 7. Migrate both suggest MCP tools from the deprecated `server.tool(...)` to `server.registerTool(...)` with `outputSchema`. Return `content` (text with `score`/`kind`/escalation hint for fast, snippets for deep) and native `structuredContent` carrying the full `SuggestResult` (review findings #1 and v1.2). Define zod schemas `FastSuggestResultSchema` / `DeepSuggestResultSchema` co-located with the TS types from §9. Add `suggest-deep` CLI subcommand.
 8. Integration test on synthetic repo; MCP handler tests.
-9. Manual benchmark on target-repo; confirm latency budgets.
+9. Manual benchmark on a large real-world repo; confirm latency budgets.
 
 ## 13. Changelog
 

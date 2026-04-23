@@ -195,4 +195,4 @@ See [MANUAL.md](./MANUAL.md) for advanced configuration and integration details.
 - `docs/shared/product_brief.md`
 - `docs/shared/high_level_plan.md`
 - `docs/superpowers/specs/2026-04-15-ranker-fast-deep-design.md` — fast + deep ranker design spec
-- `docs/shared/ranker_target-repo_benchmark.md` — benchmark report (grep vs fast vs deep on target-repo)
+- `benchmarks/ranker-quality/README.md` — ranker quality bench harness (grep vs fast vs deep vs semantic)

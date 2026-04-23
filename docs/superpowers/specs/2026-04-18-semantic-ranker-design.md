@@ -10,18 +10,15 @@
 
 `suggest_files_deep` ranks by literal overlap: path tokens, function names, trigram fuzzy match, content scan. It misses files whose concept matches the query but whose vocabulary does not.
 
-Concrete failures from the 2026-04-15 target-repo benchmark (`docs/shared/ranker_target-repo_benchmark.md`), 20-PR sample, verbatim titles:
+Concrete failures seen on real-world PR-title bench runs: deep misses when the path-and-function-name vocabulary diverges from how a human (or agent) phrases the task. Examples of miss patterns:
 
-| PR | Query | Truth file | Why deep missed |
-|---|---|---|---|
-| #2286 | "My Work cards do not include a card ID in the URL" | `MainApp/lib/mywork/client/navigation.ts` | `url` ≢ `navigation` literally |
-| #2287 | "My cards not closing on mobile ..." | `MainApp/lib/pages/events.client.ts` | no "mobile" or "card" in path |
-| #2265 | `"Don't remind me again" box ...` | `MainApp/client/views/ui/mentions/mentions.ts` | `remind` ≢ `mentions` |
-| #2283 | "Unable to close My Work ..." | `MainApp/lib/mywork/client/entrypoints.ts` | no "close" in path |
+- query "... include a card ID in the URL" → truth path under `.../navigation.ts` (the word `url` never appears in the path)
+- query "... cards not closing on mobile ..." → truth path under `.../events.client.ts` (no `mobile` or `card` token)
+- query `"Don't remind me again" box ...` → truth path under `.../mentions.ts` (`remind` ≢ `mentions`)
 
-Pattern: deep loses when the path and function-name vocabulary diverges from how a human (or agent) phrases the task. Trigram fuzzy matches sub-strings, not concepts.
+Pattern: trigram fuzzy matches sub-strings, not concepts.
 
-Current deep bench: `hit@5 = 20%` on verbatim titles. Target: raise this via semantic similarity without regressing the 4 PRs deep already hits (#2298, #2292, #2282, #2277).
+Target: raise deep's hit@5 on such queries via semantic similarity without regressing PRs that deep already hits.
 
 ## 2. Goals & non-goals
 
@@ -29,7 +26,7 @@ Current deep bench: `hit@5 = 20%` on verbatim titles. Target: raise this via sem
 
 - Add a third mode `semantic` that ranks by sentence-embedding cosine similarity between query and per-file text.
 - Local embedding model bundled as default; API-provider opt-in via config.
-- Re-bench against the same 20-PR target-repo sample. Success: `semantic hit@5 ≥ deep hit@5 + 10pts` AND deep's existing 4 hits preserved.
+- Re-bench against the same PR-title sample. Success: `semantic hit@5 ≥ deep hit@5 + 10pts` AND deep's existing hits preserved.
 - Reversible: ships as its own mode, does not alter `deep` or `fast`. Fold into `deep` via fusion only after bench wins.
 - Incremental-index compatible: per-file embeddings, no cross-file graph invalidation.
 
@@ -102,7 +99,7 @@ src/cli.ts                    (mod) add `suggest-semantic` command;
 src/mcp/server.ts             (mod) add `suggest_files_semantic` tool
 
 benchmarks/ranker-quality/    (new) in-repo bench harness
-  corpus-target-repo.json             (new) 20 PRs: title + truth paths (no repo contents)
+  corpus-example.json           (new) schema example: title + truth paths (user supplies their own)
   run.mjs                       (new) runs 4 modes, emits aggregate.md + per-pr.md
   README.md                     (new) usage + env vars
 ```
@@ -371,20 +368,20 @@ Follows exact convention of `IndexError` (`models.ts:12`) and `RepoIdentityError
 - `tests/integration/mcp-server.test.ts` — extend: `suggest_files_semantic` tool schema, arg validation, structuredContent shape.
 - `tests/unit/lib/models.test.ts` — **new file**. Asserts `ModelLoadError`, `VectorIndexCorruptError`, `EmbeddingInferenceError` each: `instanceof Error`, `.name === "<ClassName>"`, `.message` is preserved, and behaves consistently with the existing `IndexError` / `RepoIdentityError` classes (verified by reading `src/lib/models.ts`).
 
-### 10.3 Bench harness (non-CI, manual against real target-repo clone)
+### 10.3 Bench harness (non-CI, manual against a user-supplied repo)
 
-- Corpus: `benchmarks/ranker-quality/corpus-target-repo.json` — 20 PRs, `{ prNumber, title, truthPaths[] }`. Checked into repo. No repo contents.
+- Corpus: `benchmarks/ranker-quality/corpus-example.json` shows the schema; user supplies their own corpus via `--corpus`.
 - Runner: `benchmarks/ranker-quality/run.mjs --repo "$BENCH_RANKER_REPO"`.
   - Warms cache (one index build).
   - Runs `fast`, `deep`, `semantic`, `deep+semantic` (RRF) per PR.
   - Emits `out/aggregate.md` (hit@5, P@5, R@5 per mode) + `out/per-pr.md` (side-by-side top-5).
 - Success gate (for promoting fusion into `deep`):
   - `semantic hit@5 ≥ deep hit@5 + 10pts`, AND
-  - `semantic` or `deep+semantic` keeps all 4 existing deep hits (#2298, #2292, #2282, #2277).
+  - `semantic` or `deep+semantic` keeps all PRs that deep already hit.
 
 ### 10.4 Not tested
 
-- No quality regression test in CI — target-repo clone is not in CI. Bench is manual.
+- No quality regression test in CI — a real monorepo clone is not in CI. Bench is manual.
 - No perf benchmark in CI for embedding — first-index cost is one-time and user-visible.
 
 ## 11. Rollout
