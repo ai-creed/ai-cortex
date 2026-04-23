@@ -1,0 +1,52 @@
+{
+	"description": "Synthetic example corpus for the ranker-quality bench. Each entry has a PR-style title, an optional dev-query form, and a list of truth files the fix touched. Supply your own corpus in this shape to run the bench against a real repo.",
+	"prs": [
+		{
+			"pr": 1001,
+			"title": "Login button misaligned on mobile viewport",
+			"query": "login button mobile viewport alignment",
+			"truth": [
+				"src/auth/login-form.tsx",
+				"src/auth/login.module.css"
+			]
+		},
+		{
+			"pr": 1002,
+			"title": "Cart total incorrect when applying percentage coupon to taxed items",
+			"query": "cart total coupon percentage tax",
+			"truth": [
+				"src/checkout/pricing.ts",
+				"src/checkout/coupon.ts",
+				"tests/checkout/pricing.test.ts"
+			]
+		},
+		{
+			"pr": 1003,
+			"title": "Notifications are not cleared from client state after logout",
+			"query": "notifications clear logout client state",
+			"truth": [
+				"src/notifications/store.ts",
+				"src/auth/session.ts"
+			]
+		},
+		{
+			"pr": 1004,
+			"title": "CSV export truncates fields longer than 255 characters",
+			"query": "csv export truncate long fields",
+			"truth": [
+				"src/exports/csv-writer.ts",
+				"tests/exports/csv-writer.test.ts"
+			]
+		},
+		{
+			"pr": 1005,
+			"title": "Dashboard loads slowly when a workspace has more than 1000 projects",
+			"query": "dashboard load slow workspace large projects pagination",
+			"truth": [
+				"src/dashboard/projects-list.tsx",
+				"src/dashboard/use-projects.ts",
+				"src/api/projects.ts"
+			]
+		}
+	]
+}

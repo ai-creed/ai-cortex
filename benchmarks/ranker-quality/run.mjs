@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // benchmarks/ranker-quality/run.mjs
-// Usage: node benchmarks/ranker-quality/run.mjs --repo /path/to/target-repo
+// Usage: node benchmarks/ranker-quality/run.mjs --repo /path/to/target-repo \
+//          [--corpus path/to/corpus.json] [--query-source title|card|both]
 //
-// Runs fast, deep, semantic, and deep+semantic (RRF) against the 20-PR corpus.
+// Runs fast, deep, semantic, and deep+semantic (RRF) against the corpus.
+// Default --query-source=both runs each mode with PR title AND distilled card query
+// (the latter is only present when the corpus entries have a `query` field).
 // Writes out/aggregate.md and out/per-pr.md.
-// Requires BENCH_RANKER_REPO env var or --repo flag pointing to a target-repo clone.
+// Requires BENCH_RANKER_REPO env var or --repo flag pointing to a repo clone.
 // Must run `pnpm build` first.
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -15,21 +18,30 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
 const CLI = path.join(ROOT, "dist/src/cli.js");
-const corpus = JSON.parse(
-	fs.readFileSync(path.join(__dirname, "corpus-target-repo.json"), "utf8"),
-);
 
 // --- CLI arg parsing ---
 let repoPath = process.env["BENCH_RANKER_REPO"] ?? null;
+let corpusPath = path.join(__dirname, "corpus-example.json");
+let querySource = "both"; // title | card | both
 for (let i = 2; i < process.argv.length; i++) {
 	if (process.argv[i] === "--repo" && process.argv[i + 1]) {
 		repoPath = process.argv[++i];
+	} else if (process.argv[i] === "--corpus" && process.argv[i + 1]) {
+		corpusPath = process.argv[++i];
+	} else if (process.argv[i] === "--query-source" && process.argv[i + 1]) {
+		querySource = process.argv[++i];
 	}
 }
 if (!repoPath) {
-	process.stderr.write("Usage: node run.mjs --repo /path/to/target-repo\n  or set BENCH_RANKER_REPO env var\n");
+	process.stderr.write("Usage: node run.mjs --repo /path/to/target-repo [--corpus path] [--query-source title|card|both]\n  or set BENCH_RANKER_REPO env var\n");
 	process.exit(1);
 }
+const corpus = JSON.parse(fs.readFileSync(corpusPath, "utf8"));
+if (!["title", "card", "both"].includes(querySource)) {
+	process.stderr.write(`Invalid --query-source: ${querySource} (expected title|card|both)\n`);
+	process.exit(1);
+}
+const sources = querySource === "both" ? ["title", "card"] : [querySource];
 
 // --- Build first ---
 process.stderr.write("[bench] building...\n");
@@ -89,23 +101,31 @@ function metrics(top5Paths, truth) {
 const modes = ["fast", "deep", "semantic"];
 const results = [];
 
+function queryFor(pr, source) {
+	if (source === "card") return pr.query ?? pr.title;
+	return pr.title;
+}
+
 for (const pr of corpus.prs) {
 	process.stderr.write(`[bench] PR #${pr.pr}...\n`);
-	const row = { pr: pr.pr, title: pr.title, truth: pr.truth };
+	const row = { pr: pr.pr, title: pr.title, query: pr.query ?? null, truth: pr.truth };
 
-	for (const mode of modes) {
-		const res = runMode(pr.title, repoPath, mode);
-		const allPaths = res?.results?.map((r) => r.path) ?? [];
-		const top5 = allPaths.slice(0, 5);
-		row[mode] = { top5, allPaths, ...metrics(top5, pr.truth), durationMs: res?.durationMs ?? 0 };
+	for (const source of sources) {
+		const queryText = queryFor(pr, source);
+		for (const mode of modes) {
+			const res = runMode(queryText, repoPath, mode);
+			const allPaths = res?.results?.map((r) => r.path) ?? [];
+			const top5 = allPaths.slice(0, 5);
+			row[`${source}_${mode}`] = { top5, allPaths, ...metrics(top5, pr.truth), durationMs: res?.durationMs ?? 0 };
+		}
+
+		// RRF fusion: fuse full top-60 lists from deep + semantic, output top-5
+		const rrfTop5 = rrf(
+			row[`${source}_deep`]?.allPaths.map((p) => ({ path: p })) ?? [],
+			row[`${source}_semantic`]?.allPaths.map((p) => ({ path: p })) ?? [],
+		);
+		row[`${source}_rrf`] = { top5: rrfTop5, ...metrics(rrfTop5, pr.truth) };
 	}
-
-	// RRF fusion: fuse full top-60 lists from deep + semantic, output top-5
-	const rrfTop5 = rrf(
-		row["deep"]?.allPaths.map((p) => ({ path: p })) ?? [],
-		row["semantic"]?.allPaths.map((p) => ({ path: p })) ?? [],
-	);
-	row["rrf"] = { top5: rrfTop5, ...metrics(rrfTop5, pr.truth) };
 
 	results.push(row);
 }
@@ -121,12 +141,15 @@ function agg(key) {
 const outDir = path.join(__dirname, "out");
 fs.mkdirSync(outDir, { recursive: true });
 
-let agg_md = "# Ranker Quality Benchmark — target-repo 20-PR Sample\n\n";
-agg_md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n\n`;
-agg_md += "| Mode | hit@5 | P@5 | R@5 |\n|---|---:|---:|---:|\n";
-for (const m of ["fast", "deep", "semantic", "rrf"]) {
-	const a = agg(m);
-	agg_md += `| ${m} | ${a.hit}/20 | ${a.p}% | ${a.r}% |\n`;
+let agg_md = "# Ranker Quality Benchmark\n\n";
+agg_md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n`;
+agg_md += `**Query source:** ${querySource}\n\n`;
+agg_md += "| Source | Mode | hit@5 | P@5 | R@5 |\n|---|---|---:|---:|---:|\n";
+for (const source of sources) {
+	for (const m of ["fast", "deep", "semantic", "rrf"]) {
+		const a = agg(`${source}_${m}`);
+		agg_md += `| ${source} | ${m} | ${a.hit}/20 | ${a.p}% | ${a.r}% |\n`;
+	}
 }
 
 fs.writeFileSync(path.join(outDir, "aggregate.md"), agg_md);
@@ -137,10 +160,13 @@ let perpr_md = "# Per-PR Results\n\n";
 for (const row of results) {
 	perpr_md += `## PR #${row.pr} — ${row.title}\n\n`;
 	perpr_md += `Truth: ${row.truth.join(", ")}\n\n`;
-	perpr_md += "| Mode | hit@5 | Top-5 |\n|---|---|---|\n";
-	for (const m of ["fast", "deep", "semantic", "rrf"]) {
-		const r = row[m];
-		perpr_md += `| ${m} | ${r?.hit5 ?? 0} | ${(r?.top5 ?? []).map((p, _i) => (new Set(row.truth).has(p) ? `✅ \`${p}\`` : `\`${p}\``)).join("<br>")} |\n`;
+	if (row.query) perpr_md += `Card query: \`${row.query}\`\n\n`;
+	perpr_md += "| Source | Mode | hit@5 | Top-5 |\n|---|---|---|---|\n";
+	for (const source of sources) {
+		for (const m of ["fast", "deep", "semantic", "rrf"]) {
+			const r = row[`${source}_${m}`];
+			perpr_md += `| ${source} | ${m} | ${r?.hit5 ?? 0} | ${(r?.top5 ?? []).map((p) => (new Set(row.truth).has(p) ? `✅ \`${p}\`` : `\`${p}\``)).join("<br>")} |\n`;
+		}
 	}
 	perpr_md += "\n---\n\n";
 }

@@ -1,28 +1,49 @@
 # Ranker Quality Bench
 
-Runs fast, deep, semantic, and deep+semantic (RRF) against the 20-PR target-repo sample
-from the 2026-04-15 benchmark.
+Runs fast, deep, semantic, and deep+semantic (RRF) against a user-supplied corpus
+of real PRs and measures hit@5 / P@5 / R@5 against known truth files.
+
+## Corpus format
+
+`corpus-example.json` shows the expected schema. Each entry:
+
+```json
+{
+  "pr": 1001,
+  "title": "Login button misaligned on mobile viewport",
+  "query": "login button mobile viewport alignment",
+  "truth": ["src/auth/login-form.tsx", "src/auth/login.module.css"]
+}
+```
+
+- `title` — verbatim PR title, used as the query when `--query-source=title`.
+- `query` (optional) — a distilled dev-style keyword query, used when `--query-source=card`.
+- `truth` — list of paths the fix actually touched, as returned by `git show --stat`.
+
+Point `--corpus` at your own JSON to benchmark against your repo.
 
 ## Prerequisites
 
-- target-repo repo clone accessible locally
-- `pnpm build` (runner does this automatically)
-- First run downloads the embedding model (~23 MB) and builds a vector index
+- A local clone of the target repo accessible at `$BENCH_RANKER_REPO` or passed via `--repo`.
+- `pnpm build` (runner does this automatically).
+- First run downloads the embedding model (~23 MB) and builds a vector index.
 
 ## Usage
 
 ```bash
-node benchmarks/ranker-quality/run.mjs --repo /path/to/target-repo-clone
-# or
-BENCH_RANKER_REPO=/path/to/target-repo-clone node benchmarks/ranker-quality/run.mjs
+# run against your repo with the built-in example corpus
+node benchmarks/ranker-quality/run.mjs --repo /path/to/target-repo
+
+# or with your own corpus
+BENCH_RANKER_REPO=/path/to/target-repo \
+  node benchmarks/ranker-quality/run.mjs --corpus /path/to/corpus.json
+
+# grep baseline for comparison
+node benchmarks/ranker-quality/grep-baseline.mjs --repo /path/to/target-repo
 ```
 
 ## Output
 
-- `benchmarks/ranker-quality/out/aggregate.md` — hit@5, P@5, R@5 per mode
-- `benchmarks/ranker-quality/out/per-pr.md` — top-5 per mode per PR with truth markers
-
-## Success gate (for promoting semantic into deep)
-
-- `semantic hit@5 ≥ deep hit@5 + 10pts` (≥ 6/20 if deep stays at 4/20)
-- `semantic` or `rrf` keeps all 4 existing deep wins (PRs #2298, #2292, #2282, #2277)
+- `out/aggregate.md` — hit@5, P@5, R@5 per (source, mode)
+- `out/per-pr.md` — top-5 per mode per PR with truth markers
+- `out/grep-baseline.md` — filename/content grep numbers for the same corpus
