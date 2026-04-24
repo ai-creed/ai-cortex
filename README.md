@@ -5,18 +5,7 @@
 Its purpose is to give new agent sessions fast, consistent cached knowledge
 about a project without broad repo scans or writes into the target repository.
 
-## Status
-
-Beta — all core phases complete, in active personal workflow testing.
-
-| Phase | Goal | Status |
-|-------|------|--------|
-| 0 | Plausibility spike | complete |
-| 1 | Core indexing spine | complete |
-| 2 | Rehydration flow | complete |
-| 3 | Suggest flow | complete |
-| 4 | Hardening for real repos | complete |
-| 5 | Call graph & blast radius | complete |
+> Beta — actively used in personal workflow.
 
 ## Commands
 
@@ -54,6 +43,10 @@ ai-cortex exposes its capabilities as an MCP server so agents can use it automat
 claude mcp add -s user ai-cortex -- ai-cortex mcp
 ```
 
+`-s user` makes it available in all your projects. Verify with `claude mcp get ai-cortex`.
+
+For Codex CLI setup, see [MANUAL.md](./MANUAL.md#setting-up-with-codex-cli).
+
 **Tools:**
 
 | Tool | When to call | What it returns |
@@ -64,9 +57,7 @@ claude mcp add -s user ai-cortex -- ai-cortex mcp
 | `index_project` | After large structural changes to force a rebuild | Confirmation with file and doc counts |
 | `blast_radius` | Before modifying a function, to assess impact | Callers organized by hop distance (direct, transitive) with export visibility |
 
-The `rehydrate_project` and `index_project` tools accept an optional `path` argument (defaults to `cwd`). The `suggest_files` tool requires a `task` string and also accepts `path`, `from`, `limit`, and `stale`. The `suggest_files_deep` tool accepts the same arguments plus `poolSize` (candidate pool, default 60). The `blast_radius` tool requires `qualifiedName` and `file`, and also accepts `path`, `maxHops`, and `stale`.
-
-Both suggest tools return `structuredContent` with typed JSON (`mode`, `results[]`, `cacheStatus`, `durationMs`) and include `contentHits` with line-level snippets.
+See [MANUAL.md](./MANUAL.md#mcp-server-integration) for full parameter reference.
 
 ## Library API
 
@@ -90,6 +81,8 @@ const blast = queryBlastRadius(
 );
 // { target, totalAffected, confidence, tiers: [{ hop, label, hits }] }
 ```
+
+See [MANUAL.md](./MANUAL.md#library-api) for full API reference.
 
 ## Architecture
 
@@ -115,41 +108,6 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
    (JSON, schema v3, per-repo keyed by path)
 ```
 
-**Data flow:**
-
-1. `index` — tree-sitter parses TS/JS files, extracts functions and call edges, stores `RepoCache` as JSON
-2. `rehydrate` — loads cache, detects staleness, generates a Markdown briefing
-3. `suggest` (fast) — ranks files by path/function token overlap + import graph + call graph proximity to the task and anchor
-4. `suggest-deep` — extends fast with per-token trigram fuzzy matching (Jaccard ≥ 0.4) and query-time content scan (400 ms budget, 500 KB cap, 3 hits/file)
-5. `blast_radius` — BFS reverse traversal of call edges, returns callers by hop tier
-
-**Call graph:**
-- Extracts named functions, arrow functions, and class methods
-- Resolves cross-file calls through import bindings (named, default, namespace)
-- `CallEdge.from` / `to` use `"file::qualifiedName"` keys
-- `confidence: "full"` when all edges resolve statically; `"partial"` when dynamic call sites remain
-
-## Releasing
-
-```bash
-pnpm run release 0.2.0-beta.1
-```
-
-Bumps the version in `package.json`, commits, tags, and pushes. Must be on `master` with a clean working tree.
-
-## Benchmarking
-
-```bash
-pnpm bench                          # Run all suites (perf + quality)
-pnpm bench:perf                     # Performance only
-pnpm bench:quality                  # Quality only
-pnpm bench --fast                   # Smoke run (1 warmup, 3 measured runs)
-pnpm bench --update-baseline        # Save current p50 values as baselines
-pnpm bench --repo ai-cortex --fast  # Single repo, fast mode
-```
-
-See [MANUAL.md](./MANUAL.md#benchmarking) for full details on scenarios, baselines, SLOs, and the quality suite.
-
 ## Installation
 
 Requires Node ≥ 20, pnpm, and a git repository to analyze.
@@ -170,10 +128,6 @@ pnpm link --global      # makes `ai-cortex` available on PATH
 claude mcp add -s user ai-cortex -- ai-cortex mcp
 ```
 
-`-s user` makes it available in all your projects. Verify with `claude mcp get ai-cortex`.
-
-For Codex CLI setup, see [MANUAL.md](./MANUAL.md#setting-up-with-codex-cli).
-
 ### First use
 
 ```bash
@@ -191,10 +145,3 @@ See [MANUAL.md](./MANUAL.md) for advanced configuration and integration details.
 - **First semantic call downloads ~23 MB** (`Xenova/all-MiniLM-L6-v2`) into `~/.cache/ai-cortex/models/`.
 - **Cache is local** — not shared across machines or users. Worktree-keyed.
 - **MCP tool discovery:** in Claude Code, ai-cortex tools are deferred. Agents may default to Grep/Glob unless nudged. If adoption stays low, add a rule to your `CLAUDE.md` preferring `suggest_files` for file discovery.
-
-## Primary references
-
-- `docs/shared/product_brief.md`
-- `docs/shared/high_level_plan.md`
-- `docs/superpowers/specs/2026-04-15-ranker-fast-deep-design.md` — fast + deep ranker design spec
-- `benchmarks/ranker-quality/README.md` — ranker quality bench harness (grep vs fast vs deep vs semantic)

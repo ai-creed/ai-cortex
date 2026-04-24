@@ -395,6 +395,24 @@ type BlastRadiusResult = {
 
 ---
 
+## Architecture
+
+**Data flow:**
+
+1. `index` — tree-sitter parses TS/JS files, extracts functions and call edges, stores `RepoCache` as JSON
+2. `rehydrate` — loads cache, detects staleness, generates a Markdown briefing
+3. `suggest` (fast) — ranks files by path/function token overlap + import graph + call graph proximity to the task and anchor
+4. `suggest-deep` — extends fast with per-token trigram fuzzy matching (Jaccard ≥ 0.4) and query-time content scan (400 ms budget, 500 KB cap, 3 hits/file)
+5. `blast_radius` — BFS reverse traversal of call edges, returns callers by hop tier
+
+**Call graph:**
+- Extracts named functions, arrow functions, and class methods
+- Resolves cross-file calls through import bindings (named, default, namespace)
+- `CallEdge.from` / `to` use `"file::qualifiedName"` keys
+- `confidence: "full"` when all edges resolve statically; `"partial"` when dynamic call sites remain
+
+---
+
 ## Cache Storage
 
 All data is stored in `~/.cache/ai-cortex/`. The directory is organized as:
