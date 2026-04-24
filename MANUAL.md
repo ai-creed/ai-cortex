@@ -12,14 +12,14 @@ It stores all data locally (`~/.cache/ai-cortex/`), never writes into the target
 
 ### Method A: Clone, build, and link (recommended)
 
-Requires Node.js 20+, pnpm, and npm.
+Requires Node.js 20+ and pnpm.
 
 ```bash
 git clone git@github.com:ai-creed/ai-cortex.git
 cd ai-cortex
 pnpm install
 pnpm build
-npm install -g .
+pnpm link --global
 ```
 
 Verify:
@@ -47,7 +47,7 @@ cd ai-cortex
 git pull
 pnpm install
 pnpm build
-npm install -g .
+pnpm link --global
 ```
 
 ---
@@ -152,23 +152,13 @@ The MCP server lets AI agents use ai-cortex automatically during conversations w
 
 ### Setting up with Claude Code
 
-Run this once from the ai-cortex install directory (after building):
+Run this once after installing globally:
 
 ```bash
-claude mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
+claude mcp add -s user ai-cortex -- ai-cortex mcp
 ```
 
-For a global install, find the path with:
-```bash
-which ai-cortex                       # e.g. /usr/local/bin/ai-cortex
-# The actual script is at:
-node -e "console.log(require.resolve('ai-cortex/dist/src/cli.js'))"
-```
-
-Or use the full node invocation directly:
-```bash
-claude mcp add ai-cortex -- node $(npm root -g)/ai-cortex/dist/src/cli.js mcp
-```
+`-s user` makes it available in all your projects. Verify with `claude mcp get ai-cortex`.
 
 ### Setting up with Codex CLI
 
@@ -466,10 +456,10 @@ registerAdapter(myCustomAdapter);  // implements LangAdapter interface
 ## Troubleshooting
 
 **`ai-cortex: command not found`**
-Run `npm install -g .` from the ai-cortex directory (Method A).
+Run `pnpm link --global` from the ai-cortex directory (Method A).
 
 **`IndexError: Cannot find package 'web-tree-sitter'`**
-Dependencies are missing. Run `npm install` (or `pnpm install`) in the ai-cortex directory, then rebuild with `pnpm build` and reinstall globally.
+Dependencies are missing. Run `pnpm install` in the ai-cortex directory, then rebuild with `pnpm build` and relink with `pnpm link --global`.
 
 **Cache seems stale / blast_radius returns empty results**
 Force a reindex: `ai-cortex index --refresh [path]`

@@ -48,10 +48,10 @@ ai-cortex mcp                                  # Start MCP server (stdio transpo
 
 ai-cortex exposes its capabilities as an MCP server so agents can use it automatically without manual CLI invocations.
 
-**Registration (one-time, run from the install directory after building):**
+**Registration (one-time, after installing globally):**
 
-```
-claude mcp add ai-cortex -- node /absolute/path/to/ai-cortex/dist/src/cli.js mcp
+```bash
+claude mcp add -s user ai-cortex -- ai-cortex mcp
 ```
 
 **Tools:**
