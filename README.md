@@ -172,6 +172,8 @@ claude mcp add -s user ai-cortex -- ai-cortex mcp
 
 `-s user` makes it available in all your projects. Verify with `claude mcp get ai-cortex`.
 
+For Codex CLI setup, see [MANUAL.md](./MANUAL.md#setting-up-with-codex-cli).
+
 ### First use
 
 ```bash
