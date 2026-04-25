@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { getCacheDir } from "../cache-store.js";
 
@@ -23,4 +24,58 @@ export function chunksJsonlPath(repoKey: string, sessionId: string): string {
 
 export function lockPath(repoKey: string, sessionId: string): string {
 	return path.join(sessionDir(repoKey, sessionId), ".lock");
+}
+
+const LOCK_STALE_MS = 10 * 60_000;
+
+export type AcquireResult =
+	| { acquired: true; stoleFrom?: number }
+	| { acquired: false; reason: "locked" };
+
+export function acquireLock(repoKey: string, sessionId: string): AcquireResult {
+	fs.mkdirSync(sessionDir(repoKey, sessionId), { recursive: true });
+	const p = lockPath(repoKey, sessionId);
+	const payload = JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() });
+	try {
+		const fd = fs.openSync(p, "wx");
+		fs.writeSync(fd, payload);
+		fs.closeSync(fd);
+		return { acquired: true };
+	} catch (err) {
+		if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+	}
+
+	// Lock exists — check if stale.
+	let existing: { pid: number; startedAt: string };
+	try {
+		existing = JSON.parse(fs.readFileSync(p, "utf8")) as { pid: number; startedAt: string };
+	} catch {
+		// Corrupt lock — steal.
+		fs.writeFileSync(p, payload);
+		return { acquired: true, stoleFrom: -1 };
+	}
+	const age = Date.now() - new Date(existing.startedAt).getTime();
+	const dead = !isPidAlive(existing.pid);
+	if (dead || age > LOCK_STALE_MS) {
+		fs.writeFileSync(p, payload);
+		return { acquired: true, stoleFrom: existing.pid };
+	}
+	return { acquired: false, reason: "locked" };
+}
+
+export function releaseLock(repoKey: string, sessionId: string): void {
+	try {
+		fs.unlinkSync(lockPath(repoKey, sessionId));
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+	}
+}
+
+function isPidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return (err as NodeJS.ErrnoException).code === "EPERM";
+	}
 }
