@@ -1,4 +1,5 @@
-import { readSession, readChunkVectors, getChunkText } from "./store.js";
+import { readSession, readChunkVectors, getChunkText, listSessions } from "./store.js";
+import { detectCurrentSession } from "./session-detect.js";
 
 export type HitKind = "summary" | "userPrompt" | "correction" | "toolCall" | "filePath" | "rawChunk";
 
@@ -86,6 +87,79 @@ export async function searchSession(input: SearchSessionInputExtended): Promise<
 
 	hits.sort((a, b) => b.score - a.score);
 	return input.limit ? hits.slice(0, input.limit) : hits;
+}
+
+export type Scope = "session" | "project";
+
+export type SearchHistoryInput = {
+	repoKey: string;
+	cwd: string;
+	query: string;
+	sessionId?: string;
+	scope?: Scope;
+	limit?: number;
+	embedQuery?: EmbedQueryFn;
+};
+
+export type SearchHistoryResult = {
+	hits: Hit[];
+	broadened: boolean;
+	error: null | "session-not-detected";
+	resolvedSessionId: string | null;
+};
+
+export async function searchHistory(input: SearchHistoryInput): Promise<SearchHistoryResult> {
+	const scope: Scope = input.scope ?? "session";
+
+	if (input.sessionId) {
+		const hits = await searchSession({
+			repoKey: input.repoKey,
+			sessionId: input.sessionId,
+			query: input.query,
+			limit: input.limit,
+			embedQuery: input.embedQuery,
+		});
+		return { hits, broadened: false, error: null, resolvedSessionId: input.sessionId };
+	}
+
+	if (scope === "project") {
+		const all = await searchAllSessions(input);
+		return { hits: all, broadened: false, error: null, resolvedSessionId: null };
+	}
+
+	// scope === "session" — needs detection
+	const detected = detectCurrentSession({ cwd: input.cwd });
+	if (!detected) {
+		return { hits: [], broadened: false, error: "session-not-detected", resolvedSessionId: null };
+	}
+	const sessionHits = await searchSession({
+		repoKey: input.repoKey,
+		sessionId: detected.sessionId,
+		query: input.query,
+		limit: input.limit,
+		embedQuery: input.embedQuery,
+	});
+	if (sessionHits.length > 0) {
+		return { hits: sessionHits, broadened: false, error: null, resolvedSessionId: detected.sessionId };
+	}
+	const broadened = await searchAllSessions(input);
+	return { hits: broadened, broadened: true, error: null, resolvedSessionId: detected.sessionId };
+}
+
+async function searchAllSessions(input: SearchHistoryInput): Promise<Hit[]> {
+	const ids = listSessions(input.repoKey);
+	const all: Hit[] = [];
+	for (const id of ids) {
+		const hits = await searchSession({
+			repoKey: input.repoKey,
+			sessionId: id,
+			query: input.query,
+			embedQuery: input.embedQuery,
+		});
+		all.push(...hits);
+	}
+	all.sort((a, b) => b.score - a.score);
+	return input.limit ? all.slice(0, input.limit) : all;
 }
 
 function cosine(a: Float32Array, b: Float32Array): number {
