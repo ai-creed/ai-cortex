@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // src/cli.ts
+import fs from "node:fs";
+import path from "node:path";
 import os from "node:os";
 import {
 	getCachedIndex,
@@ -162,6 +164,23 @@ export function renderSemanticText(r: SemanticSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
+function flagValue(argv: string[], name: string): string | undefined {
+	const idx = argv.indexOf(name);
+	if (idx === -1 || idx === argv.length - 1) return undefined;
+	return argv[idx + 1];
+}
+
+async function resolveRepoKeyOrExit(cwd: string): Promise<string> {
+	try {
+		const { resolveRepoIdentity } = await import("./lib/repo-identity.js");
+		return resolveRepoIdentity(cwd).repoKey;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`history: not in a git repo (${msg}). Use --repo-key to override.\n`);
+		process.exit(1);
+	}
+}
+
 function escalationHint(r: FastSuggestResult): string {
 	const topScore = r.results[0]?.score ?? 0;
 	const fileCount = r.results.filter((x) => x.kind === "file").length;
@@ -318,6 +337,95 @@ async function main(): Promise<void> {
 			} else {
 				process.stdout.write(renderSemanticText(result) + "\n");
 			}
+		} else if (command === "history") {
+			const sub = args[0];
+			const rest = args.slice(1);
+			switch (sub) {
+				case "off": {
+					const { getHistoryDisabledFlagPath } = await import("./lib/history/config.js");
+					const p = getHistoryDisabledFlagPath();
+					fs.mkdirSync(path.dirname(p), { recursive: true });
+					fs.writeFileSync(p, "");
+					process.stdout.write("history capture disabled\n");
+					break;
+				}
+				case "on": {
+					const { getHistoryDisabledFlagPath } = await import("./lib/history/config.js");
+					const p = getHistoryDisabledFlagPath();
+					if (fs.existsSync(p)) fs.unlinkSync(p);
+					process.stdout.write("history capture enabled\n");
+					break;
+				}
+				case "capture": {
+					const { captureSession } = await import("./lib/history/capture.js");
+					const { resolveTranscriptPath } = await import("./lib/history/session-detect.js");
+					const sessionId = flagValue(rest, "--session");
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const transcript = flagValue(rest, "--transcript") ?? (sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
+					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					if (!sessionId || !transcript) {
+						process.stderr.write("usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n");
+						process.exit(1);
+					}
+					if (!fs.existsSync(transcript)) {
+						process.stderr.write(`history: transcript not found: ${transcript}\n`);
+						process.exit(1);
+					}
+					const result = await captureSession({ repoKey, sessionId, transcriptPath: transcript, embed: true });
+					process.stdout.write(JSON.stringify(result) + "\n");
+					break;
+				}
+				case "list": {
+					const { listSessions, readSession } = await import("./lib/history/store.js");
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					for (const id of listSessions(repoKey)) {
+						const rec = readSession(repoKey, id);
+						process.stdout.write(`${id}\t${rec?.startedAt ?? ""}\thasRaw=${rec?.hasRaw ?? "?"}\n`);
+					}
+					break;
+				}
+				case "prune": {
+					const { listSessions, readSession, pruneSession } = await import("./lib/history/store.js");
+					const before = flagValue(rest, "--before");
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					if (!before) {
+						process.stderr.write("usage: history prune --before YYYY-MM-DD [--cwd <dir>] [--repo-key <key>]\n");
+						process.exit(1);
+					}
+					const cutoff = new Date(before).getTime();
+					let removed = 0;
+					for (const id of listSessions(repoKey)) {
+						const rec = readSession(repoKey, id);
+						if (rec && new Date(rec.startedAt).getTime() < cutoff) {
+							pruneSession(repoKey, id);
+							removed += 1;
+						}
+					}
+					process.stdout.write(`pruned ${removed} sessions\n`);
+					break;
+				}
+				case "install-hooks": {
+					const { installHooks } = await import("./lib/history/hooks-install.js");
+					const yes = rest.includes("--yes") || rest.includes("-y");
+					await installHooks({ yes });
+					process.stdout.write("hooks installed\n");
+					break;
+				}
+				case "uninstall-hooks": {
+					const { uninstallHooks } = await import("./lib/history/hooks-install.js");
+					const yes = rest.includes("--yes") || rest.includes("-y");
+					await uninstallHooks({ yes });
+					process.stdout.write("hooks uninstalled\n");
+					break;
+				}
+				default: {
+					process.stderr.write("usage: ai-cortex history <off|on|capture|list|prune|install-hooks|uninstall-hooks>\n");
+					process.exit(1);
+				}
+			}
+			process.exit(0);
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
 			process.exit(1);
