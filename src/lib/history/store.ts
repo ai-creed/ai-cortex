@@ -182,3 +182,33 @@ function parseChunkId(p: string): number | null {
 	const m = /^chunk:(\d+)$/.exec(p);
 	return m ? Number(m[1]) : null;
 }
+
+export function listSessions(repoKey: string): string[] {
+	const dir = sessionsDir(repoKey);
+	if (!fs.existsSync(dir)) return [];
+	const out: string[] = [];
+	for (const name of fs.readdirSync(dir)) {
+		const sjson = path.join(dir, name, "session.json");
+		if (fs.existsSync(sjson)) out.push(name);
+	}
+	return out;
+}
+
+export function pruneSessionRaw(repoKey: string, sessionId: string, droppedAtIso: string): void {
+	const dir = sessionDir(repoKey, sessionId);
+	for (const name of ["chunks.jsonl", ".vectors.bin", ".vectors.meta.json"]) {
+		const p = path.join(dir, name);
+		if (fs.existsSync(p)) fs.unlinkSync(p);
+	}
+	const rec = readSession(repoKey, sessionId);
+	if (!rec) return;
+	rec.hasRaw = false;
+	rec.rawDroppedAt = droppedAtIso;
+	rec.chunks = [];
+	writeSession(repoKey, rec);
+}
+
+export function pruneSession(repoKey: string, sessionId: string): void {
+	const dir = sessionDir(repoKey, sessionId);
+	if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+}
