@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getCacheDir } from "../cache-store.js";
+import type { SessionRecord } from "./types.js";
 
 export function historyDir(repoKey: string): string {
 	return path.join(getCacheDir(repoKey), "history");
@@ -78,4 +79,19 @@ function isPidAlive(pid: number): boolean {
 	} catch (err) {
 		return (err as NodeJS.ErrnoException).code === "EPERM";
 	}
+}
+
+export function writeSession(repoKey: string, rec: SessionRecord): void {
+	const dir = sessionDir(repoKey, rec.id);
+	fs.mkdirSync(dir, { recursive: true });
+	const finalPath = sessionJsonPath(repoKey, rec.id);
+	const tmp = finalPath + ".tmp";
+	fs.writeFileSync(tmp, JSON.stringify(rec, null, 2) + "\n");
+	fs.renameSync(tmp, finalPath);
+}
+
+export function readSession(repoKey: string, sessionId: string): SessionRecord | null {
+	const p = sessionJsonPath(repoKey, sessionId);
+	if (!fs.existsSync(p)) return null;
+	return JSON.parse(fs.readFileSync(p, "utf8")) as SessionRecord;
 }
