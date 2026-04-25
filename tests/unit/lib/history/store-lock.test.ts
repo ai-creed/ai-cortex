@@ -27,7 +27,7 @@ describe("acquireLock / releaseLock", () => {
 		fs.writeFileSync(lockPath("REPO", "abc"), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
 		const result = acquireLock("REPO", "abc");
 		expect(result.acquired).toBe(false);
-		expect(result.reason).toBe("locked");
+		expect((result as Extract<typeof result, { acquired: false }>).reason).toBe("locked");
 	});
 
 	it("steals lock when existing pid is dead", () => {
@@ -36,7 +36,7 @@ describe("acquireLock / releaseLock", () => {
 		fs.writeFileSync(lockPath("REPO", "abc"), JSON.stringify({ pid: deadPid, startedAt: new Date().toISOString() }));
 		const result = acquireLock("REPO", "abc");
 		expect(result.acquired).toBe(true);
-		expect(result.stoleFrom).toBe(deadPid);
+		expect((result as Extract<typeof result, { acquired: true }>).stoleFrom).toBe(deadPid);
 	});
 
 	it("steals lock when existing lock older than 10 minutes", () => {
@@ -45,7 +45,7 @@ describe("acquireLock / releaseLock", () => {
 		fs.writeFileSync(lockPath("REPO", "abc"), JSON.stringify({ pid: process.pid, startedAt: eleven }));
 		const result = acquireLock("REPO", "abc");
 		expect(result.acquired).toBe(true);
-		expect(result.stoleFrom).toBe(process.pid);
+		expect((result as Extract<typeof result, { acquired: true }>).stoleFrom).toBe(process.pid);
 	});
 
 	it("releaseLock removes the lock file", () => {
