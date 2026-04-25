@@ -9,11 +9,14 @@ import {
 	chunksJsonlPath,
 	sessionDir,
 	readAllChunks,
+	writeChunkVectors,
+	readChunkVectors,
 } from "./store.js";
 import { parseTranscript, extractEvidence, liftHarnessSummary, chunkTurns } from "./compact.js";
 import { isHistoryEnabled } from "./config.js";
 import { HISTORY_SCHEMA_VERSION } from "./types.js";
 import type { SessionRecord } from "./types.js";
+import { getProvider, MODEL_NAME, EMBEDDING_DIM } from "../embed-provider.js";
 
 export type CaptureInput = {
 	repoKey: string;
@@ -75,7 +78,15 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 		// If we crash before writeSession, session.json (or absence thereof) reflects the
 		// PRIOR state — next run will detect inconsistency or new turns and re-process.
 		writeAllChunks(input.repoKey, input.sessionId, chunks.map((c) => ({ id: c.id, text: c.text })));
-		// Embeddings written here in Task 14; intentionally skipped when embed:false.
+		if (input.embed && chunks.length > 0) {
+			const provider = await getProvider();
+			const vectors = await provider.embed(chunks.map((c) => c.text));
+			writeChunkVectors(input.repoKey, input.sessionId, {
+				modelName: MODEL_NAME,
+				dim: EMBEDDING_DIM,
+				chunks: chunks.map((c, i) => ({ id: c.id, text: c.text, vector: vectors[i] })),
+			});
+		}
 		writeSession(input.repoKey, rec);
 
 		return { status: "captured", turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length };
@@ -89,17 +100,17 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 
 function isCompleteOnDisk(input: CaptureInput, rec: SessionRecord): boolean {
 	if (!rec.hasRaw) {
-		// raw was pruned — chunks/vectors must be absent.
 		const dir = sessionDir(input.repoKey, input.sessionId);
 		return (
 			!fs.existsSync(chunksJsonlPath(input.repoKey, input.sessionId)) &&
 			!fs.existsSync(path.join(dir, ".vectors.bin"))
 		);
 	}
-	// hasRaw — chunks.jsonl must have exactly rec.chunks.length entries.
 	const onDiskChunks = readAllChunks(input.repoKey, input.sessionId);
 	if (onDiskChunks.length !== rec.chunks.length) return false;
-	// Vectors completeness verified in Task 14 once embeddings are wired.
-	// For Task 13 (embed:false), chunks parity is sufficient.
+	if (input.embed) {
+		const vecs = readChunkVectors(input.repoKey, input.sessionId, MODEL_NAME);
+		if (!vecs || vecs.byChunkId.size !== rec.chunks.length) return false;
+	}
 	return true;
 }

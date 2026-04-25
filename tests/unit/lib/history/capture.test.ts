@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureSession } from "../../../../src/lib/history/capture.js";
-import { readSession, listSessions, readAllChunks, acquireLock } from "../../../../src/lib/history/store.js";
+import { readSession, listSessions, readAllChunks, acquireLock, readChunkVectors } from "../../../../src/lib/history/store.js";
+import { MODEL_NAME } from "../../../../src/lib/embed-provider.js";
 
 const FIXTURE = path.join(
 	path.dirname(fileURLToPath(import.meta.url)),
@@ -79,5 +80,17 @@ describe("captureSession", () => {
 		const second = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
 		expect(second.status).toBe("captured"); // not "up-to-date" — completeness check forces re-run
 		expect(readAllChunks("REPO", "s1").length).toBeGreaterThan(0);
+	});
+});
+
+describe("captureSession with embed:true", () => {
+	// First call downloads ~23 MB model — give it room.
+	it("writes vector index for chunks", { timeout: 120_000 }, async () => {
+		const result = await captureSession({ repoKey: "REPO", sessionId: "se", transcriptPath: FIXTURE, embed: true });
+		expect(result.status).toBe("captured");
+		const vecs = readChunkVectors("REPO", "se", MODEL_NAME);
+		expect(vecs).not.toBeNull();
+		expect(vecs!.byChunkId.size).toBeGreaterThan(0);
+		expect(vecs!.dim).toBe(384);
 	});
 });
