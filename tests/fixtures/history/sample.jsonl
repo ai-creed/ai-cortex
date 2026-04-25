@@ -1,0 +1,8 @@
+{"type":"user","turn":0,"message":{"content":[{"type":"text","text":"please look at src/foo.ts"}]}}
+{"type":"assistant","turn":1,"message":{"content":[{"type":"text","text":"Looking now."},{"type":"tool_use","name":"Read","input":{"file_path":"src/foo.ts"}}]}}
+{"type":"user","turn":2,"message":{"content":[{"type":"text","text":"Now run the tests."}]}}
+{"type":"assistant","turn":3,"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pnpm vitest run"}}]}}
+{"type":"user","turn":4,"message":{"content":[{"type":"text","text":"no, use the watch mode instead"}]}}
+{"type":"assistant","turn":5,"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pnpm vitest"}}]}}
+{"type":"summary","turn":6,"summary":"Looked at foo.ts, then ran tests; user corrected to watch mode."}
+{"type":"user","turn":7,"message":{"content":[{"type":"text","text":"thanks"}]}}
