@@ -1,4 +1,4 @@
-import { readSession } from "./store.js";
+import { readSession, readChunkVectors, getChunkText } from "./store.js";
 
 export type HitKind = "summary" | "userPrompt" | "correction" | "toolCall" | "filePath" | "rawChunk";
 
@@ -17,6 +17,12 @@ export type SearchSessionInput = {
 	limit?: number;
 };
 
+export type EmbedQueryFn = (q: string) => Promise<{ vector: Float32Array; modelName: string }>;
+
+export type SearchSessionInputExtended = SearchSessionInput & {
+	embedQuery?: EmbedQueryFn;
+};
+
 const WEIGHTS: Record<HitKind, number> = {
 	correction: 1.0,
 	userPrompt: 0.7,
@@ -26,7 +32,7 @@ const WEIGHTS: Record<HitKind, number> = {
 	rawChunk: 0.5,
 };
 
-export async function searchSession(input: SearchSessionInput): Promise<Hit[]> {
+export async function searchSession(input: SearchSessionInputExtended): Promise<Hit[]> {
 	const rec = readSession(input.repoKey, input.sessionId);
 	if (!rec) return [];
 
@@ -58,6 +64,37 @@ export async function searchSession(input: SearchSessionInput): Promise<Hit[]> {
 		}
 	}
 
+	if (input.embedQuery && rec.hasRaw) {
+		const { vector: qv, modelName } = await input.embedQuery(input.query);
+		const vecs = readChunkVectors(input.repoKey, input.sessionId, modelName);
+		if (vecs) {
+			for (const [chunkId, cv] of vecs.byChunkId) {
+				const score = cosine(qv, cv);
+				if (score > 0.3) {
+					const text = getChunkText(input.repoKey, input.sessionId, chunkId) ?? "";
+					hits.push({
+						sessionId: rec.id,
+						kind: "rawChunk",
+						turn: null,
+						score: WEIGHTS.rawChunk * score,
+						text,
+					});
+				}
+			}
+		}
+	}
+
 	hits.sort((a, b) => b.score - a.score);
 	return input.limit ? hits.slice(0, input.limit) : hits;
+}
+
+function cosine(a: Float32Array, b: Float32Array): number {
+	let dot = 0, na = 0, nb = 0;
+	for (let i = 0; i < a.length; i += 1) {
+		dot += a[i] * b[i];
+		na += a[i] * a[i];
+		nb += b[i] * b[i];
+	}
+	const denom = Math.sqrt(na) * Math.sqrt(nb);
+	return denom === 0 ? 0 : dot / denom;
 }
