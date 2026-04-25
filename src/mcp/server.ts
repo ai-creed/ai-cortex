@@ -11,6 +11,12 @@ import {
 } from "../lib/index.js";
 import type { DeepSuggestResult, SemanticSuggestResult } from "../lib/suggest.js";
 import { DeepSuggestResultSchema, SemanticSuggestResultSchema } from "../lib/suggest.js";
+import { searchHistory } from "../lib/history/search.js";
+import { captureSession } from "../lib/history/capture.js";
+import { isHistoryEnabled } from "../lib/history/config.js";
+import { detectCurrentSession, resolveTranscriptPath } from "../lib/history/session-detect.js";
+import { resolveRepoIdentity } from "../lib/repo-identity.js";
+import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
 
 // Keep in sync with package.json "version".
 const SERVER_VERSION = "0.3.0-beta.2";
@@ -52,6 +58,93 @@ function logged<P, R>(
 			throw err;
 		}
 	};
+}
+
+let noticeSent = false;
+export function resetFirstCallNoticeForTest(): void { noticeSent = false; }
+export function hasNoticeBeenSent(): boolean { return noticeSent; }
+
+function maybeNotice(): string {
+	if (noticeSent) return "";
+	noticeSent = true;
+	if (isHistoryEnabled()) {
+		return "<!-- history: capture active. disable with AI_CORTEX_HISTORY=0 or 'ai-cortex history off'. install hooks for best results: 'ai-cortex history install-hooks'. -->\n";
+	}
+	return "<!-- history: capture disabled. enable with AI_CORTEX_HISTORY=1 or 'ai-cortex history on'. -->\n";
+}
+
+async function embedQueryWithProvider(q: string): Promise<{ vector: Float32Array; modelName: string }> {
+	const provider = await getProvider();
+	const [vector] = await provider.embed([q]);
+	return { vector, modelName: MODEL_NAME };
+}
+
+async function lazyCaptureCurrentSession(repoKey: string, cwd: string): Promise<void> {
+	if (!isHistoryEnabled()) return;
+	const detected = detectCurrentSession({ cwd });
+	if (!detected) return;
+	const transcriptPath = resolveTranscriptPath(cwd, detected.sessionId);
+	if (!fs.existsSync(transcriptPath)) return;
+	await captureSession({ repoKey, sessionId: detected.sessionId, transcriptPath, embed: true });
+}
+
+export type SearchHistoryArgs = {
+	query: string;
+	sessionId?: string;
+	scope?: "session" | "project";
+	limit?: number;
+	path?: string;
+};
+
+export async function handleSearchHistory(args: SearchHistoryArgs): Promise<{ content: { type: "text"; text: string }[] }> {
+	const cwd = args.path ?? process.cwd();
+	let repoKey: string;
+	try {
+		repoKey = resolveRepoIdentity(cwd).repoKey;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return {
+			content: [{
+				type: "text" as const,
+				text: `${maybeNotice()}history: not in a git repo (${msg}). search_history requires a git repo for cache scoping.`,
+			}],
+		};
+	}
+
+	if (!args.sessionId) {
+		try {
+			await lazyCaptureCurrentSession(repoKey, cwd);
+		} catch (err) {
+			process.stderr.write(`[ai-cortex] history: lazy capture failed: ${err instanceof Error ? err.message : String(err)}\n`);
+		}
+	}
+
+	const result = await searchHistory({
+		repoKey,
+		cwd,
+		query: args.query,
+		sessionId: args.sessionId,
+		scope: args.scope,
+		limit: args.limit,
+		embedQuery: embedQueryWithProvider,
+	});
+
+	const lines: string[] = [maybeNotice()];
+	if (result.error === "session-not-detected") {
+		lines.push("could not detect current session; pass sessionId, set AI_CORTEX_SESSION_ID, or use scope=project");
+	} else if (result.hits.length === 0) {
+		lines.push("(no results)");
+	} else {
+		for (const h of result.hits) {
+			lines.push(`[session ${h.sessionId} · ${h.kind}${h.turn !== null ? ` · turn ${h.turn}` : ""} · score ${h.score.toFixed(2)}]`);
+			lines.push(`> ${h.text.slice(0, 200)}`);
+			lines.push("");
+		}
+		if (result.broadened) {
+			lines.push("(broadened to project scope: current session had no matches)");
+		}
+	}
+	return { content: [{ type: "text" as const, text: lines.join("\n").trimEnd() }] };
 }
 
 export function createServer(): McpServer {
@@ -231,6 +324,29 @@ export function createServer(): McpServer {
 				content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
 			};
 		}),
+	);
+
+	server.registerTool(
+		"search_history",
+		{
+			description:
+				"Search compacted history of past agent sessions in this project. " +
+				"Defaults to the current session. Use this to recover context lost to harness compaction " +
+				"(decisions, file paths, user corrections, prior discussion). " +
+				"Auto-broadens to the whole project if the current-session search returns nothing.",
+			inputSchema: {
+				query: z.string().min(1, "query must not be blank"),
+				sessionId: z.string().optional(),
+				scope: z.enum(["session", "project"]).optional(),
+				limit: z.number().int().positive().max(50).optional(),
+				path: z.string().optional(),
+			},
+		},
+		logged(
+			"search_history",
+			(p: SearchHistoryArgs) => ({ query: p.query, scope: p.scope, sessionId: p.sessionId }),
+			handleSearchHistory,
+		),
 	);
 
 	return server;
