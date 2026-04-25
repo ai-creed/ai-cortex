@@ -1,0 +1,105 @@
+import fs from "node:fs";
+import path from "node:path";
+import {
+	acquireLock,
+	releaseLock,
+	readSession,
+	writeSession,
+	writeAllChunks,
+	chunksJsonlPath,
+	sessionDir,
+	readAllChunks,
+} from "./store.js";
+import { parseTranscript, extractEvidence, liftHarnessSummary, chunkTurns } from "./compact.js";
+import { isHistoryEnabled } from "./config.js";
+import { HISTORY_SCHEMA_VERSION } from "./types.js";
+import type { SessionRecord } from "./types.js";
+
+export type CaptureInput = {
+	repoKey: string;
+	sessionId: string;
+	transcriptPath: string;
+	embed: boolean;
+};
+
+export type CaptureResult =
+	| { status: "captured"; turnsProcessed: number }
+	| { status: "up-to-date" }
+	| { status: "skipped-locked" }
+	| { status: "disabled" }
+	| { status: "error"; message: string };
+
+export async function captureSession(input: CaptureInput): Promise<CaptureResult> {
+	// Enabled check FIRST — before any disk read or lock acquisition.
+	// Hooks call into this; `ai-cortex history off` must stop them too.
+	if (!isHistoryEnabled()) return { status: "disabled" };
+
+	const lock = acquireLock(input.repoKey, input.sessionId);
+	if (!lock.acquired) return { status: "skipped-locked" };
+
+	try {
+		const turns = parseTranscript(input.transcriptPath);
+		const existing = readSession(input.repoKey, input.sessionId);
+		const lastProcessed = existing?.lastProcessedTurn ?? -1;
+		const newTurns = turns.filter((t) => t.turn > lastProcessed);
+
+		// Up-to-date only if no new turns AND on-disk side files match the recorded state.
+		// Crash-resume: if session.json says hasRaw but chunks.jsonl is missing, re-run.
+		if (newTurns.length === 0 && existing && isCompleteOnDisk(input, existing)) {
+			return { status: "up-to-date" };
+		}
+
+		const allTurns = turns;
+		const evidence = extractEvidence(allTurns);
+		const summary = liftHarnessSummary(allTurns);
+		const chunks = chunkTurns(allTurns);
+
+		const startedAt = existing?.startedAt ?? new Date().toISOString();
+		const rec: SessionRecord = {
+			version: HISTORY_SCHEMA_VERSION,
+			id: input.sessionId,
+			startedAt,
+			endedAt: new Date().toISOString(),
+			turnCount: allTurns.length,
+			lastProcessedTurn: allTurns[allTurns.length - 1]?.turn ?? lastProcessed,
+			hasSummary: summary.length > 0,
+			hasRaw: true,
+			rawDroppedAt: null,
+			transcriptPath: input.transcriptPath,
+			summary,
+			evidence,
+			chunks: chunks.map((c) => ({ id: c.id, tokenStart: c.tokenStart, tokenEnd: c.tokenEnd, preview: c.preview })),
+		};
+
+		// Commit-last ordering: write side files first, session.json last.
+		// If we crash before writeSession, session.json (or absence thereof) reflects the
+		// PRIOR state — next run will detect inconsistency or new turns and re-process.
+		writeAllChunks(input.repoKey, input.sessionId, chunks.map((c) => ({ id: c.id, text: c.text })));
+		// Embeddings written here in Task 14; intentionally skipped when embed:false.
+		writeSession(input.repoKey, rec);
+
+		return { status: "captured", turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { status: "error", message: msg };
+	} finally {
+		releaseLock(input.repoKey, input.sessionId);
+	}
+}
+
+function isCompleteOnDisk(input: CaptureInput, rec: SessionRecord): boolean {
+	if (!rec.hasRaw) {
+		// raw was pruned — chunks/vectors must be absent.
+		const dir = sessionDir(input.repoKey, input.sessionId);
+		return (
+			!fs.existsSync(chunksJsonlPath(input.repoKey, input.sessionId)) &&
+			!fs.existsSync(path.join(dir, ".vectors.bin"))
+		);
+	}
+	// hasRaw — chunks.jsonl must have exactly rec.chunks.length entries.
+	const onDiskChunks = readAllChunks(input.repoKey, input.sessionId);
+	if (onDiskChunks.length !== rec.chunks.length) return false;
+	// Vectors completeness verified in Task 14 once embeddings are wired.
+	// For Task 13 (embed:false), chunks parity is sufficient.
+	return true;
+}
