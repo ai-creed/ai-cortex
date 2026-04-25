@@ -1,0 +1,58 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const KNOWN_HARNESS_ENV_VARS = [
+	"CLAUDE_SESSION_ID",
+	"CODEX_SESSION_ID",
+	"CURSOR_SESSION_ID",
+] as const;
+
+export type DetectionSource = `env:${string}` | "mtime-heuristic";
+
+export type DetectionResult = { sessionId: string; source: DetectionSource };
+
+export function detectCurrentSession(opts: { cwd: string }): DetectionResult | null {
+	const canon = process.env.AI_CORTEX_SESSION_ID;
+	if (canon && canon.length > 0) {
+		return { sessionId: canon, source: "env:AI_CORTEX_SESSION_ID" };
+	}
+	for (const name of KNOWN_HARNESS_ENV_VARS) {
+		const v = process.env[name];
+		if (v && v.length > 0) {
+			return { sessionId: v, source: `env:${name}` };
+		}
+	}
+	const heuristic = mostRecentClaudeJsonl(opts.cwd);
+	if (heuristic) {
+		process.stderr.write(
+			`[ai-cortex] history: using mtime-heuristic for current session — set AI_CORTEX_SESSION_ID for reliable detection\n`,
+		);
+		return { sessionId: heuristic, source: "mtime-heuristic" };
+	}
+	return null;
+}
+
+function mostRecentClaudeJsonl(cwd: string): string | null {
+	const dir = claudeProjectDir(cwd);
+	if (!fs.existsSync(dir)) return null;
+	let best: { id: string; mtime: number } | null = null;
+	for (const name of fs.readdirSync(dir)) {
+		if (!name.endsWith(".jsonl")) continue;
+		const stat = fs.statSync(path.join(dir, name));
+		const mtime = stat.mtimeMs;
+		if (!best || mtime > best.mtime) {
+			best = { id: name.replace(/\.jsonl$/, ""), mtime };
+		}
+	}
+	return best?.id ?? null;
+}
+
+function claudeProjectDir(cwd: string): string {
+	const encoded = cwd.replace(/\//g, "-");
+	return path.join(os.homedir(), ".claude", "projects", encoded);
+}
+
+export function resolveTranscriptPath(cwd: string, sessionId: string): string {
+	return path.join(claudeProjectDir(cwd), `${sessionId}.jsonl`);
+}
