@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureSession } from "../../src/lib/history/capture.js";
 import { searchHistory } from "../../src/lib/history/search.js";
+import { acquireLock, releaseLock } from "../../src/lib/history/store.js";
 
 const FIXTURE = path.join(
 	path.dirname(fileURLToPath(import.meta.url)),
@@ -46,5 +47,33 @@ describe("history pipeline end-to-end", () => {
 		const second = await captureSession({ repoKey: "REPO", sessionId: "int-sess", transcriptPath: FIXTURE, embed: false });
 		expect(first.status).toBe("captured");
 		expect(second.status).toBe("up-to-date");
+	});
+});
+
+describe("history concurrency", () => {
+	it("second concurrent capture skips when lock held", async () => {
+		const lockHandle = acquireLock("REPO", "race-sess");
+		expect(lockHandle.acquired).toBe(true);
+		const result = await captureSession({
+			repoKey: "REPO",
+			sessionId: "race-sess",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
+		expect(result.status).toBe("skipped-locked");
+		releaseLock("REPO", "race-sess");
+	});
+
+	it("after lock released, subsequent capture succeeds", async () => {
+		const lockHandle = acquireLock("REPO", "after-sess");
+		expect(lockHandle.acquired).toBe(true);
+		releaseLock("REPO", "after-sess");
+		const result = await captureSession({
+			repoKey: "REPO",
+			sessionId: "after-sess",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
+		expect(result.status).toBe("captured");
 	});
 });
