@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getCacheDir } from "../cache-store.js";
+import { readVectorIndex, writeVectorIndex } from "../vector-sidecar.js";
 import type { ChunkText, SessionRecord } from "./types.js";
 
 export function historyDir(repoKey: string): string {
@@ -122,4 +124,61 @@ export function getChunkText(repoKey: string, sessionId: string, id: number): st
 		if (c.id === id) return c.text;
 	}
 	return null;
+}
+
+export type ChunkVectorInput = { id: number; text: string; vector: Float32Array };
+
+export type ChunkVectors = {
+	byChunkId: Map<number, Float32Array>;
+	dim: number;
+};
+
+export function writeChunkVectors(
+	repoKey: string,
+	sessionId: string,
+	input: { modelName: string; dim: number; chunks: ChunkVectorInput[] },
+): void {
+	const dir = sessionDir(repoKey, sessionId);
+	fs.mkdirSync(dir, { recursive: true });
+	const matrix = new Float32Array(input.dim * input.chunks.length);
+	const entries = input.chunks.map((c, i) => {
+		matrix.set(c.vector, i * input.dim);
+		return {
+			path: `chunk:${c.id}`,
+			hash: crypto.createHash("sha256").update(c.text).digest("hex"),
+		};
+	});
+	writeVectorIndex(dir, {
+		matrix,
+		meta: {
+			modelName: input.modelName,
+			dim: input.dim,
+			count: input.chunks.length,
+			entries,
+		},
+	});
+}
+
+export function readChunkVectors(
+	repoKey: string,
+	sessionId: string,
+	modelName: string,
+): ChunkVectors | null {
+	const dir = sessionDir(repoKey, sessionId);
+	const idx = readVectorIndex(dir, modelName);
+	if (!idx) return null;
+	const byChunkId = new Map<number, Float32Array>();
+	for (let i = 0; i < idx.meta.count; i += 1) {
+		const entry = idx.meta.entries[i];
+		const id = parseChunkId(entry.path);
+		if (id === null) continue;
+		const slice = idx.matrix.slice(i * idx.meta.dim, (i + 1) * idx.meta.dim);
+		byChunkId.set(id, slice);
+	}
+	return { byChunkId, dim: idx.meta.dim };
+}
+
+function parseChunkId(p: string): number | null {
+	const m = /^chunk:(\d+)$/.exec(p);
+	return m ? Number(m[1]) : null;
 }
