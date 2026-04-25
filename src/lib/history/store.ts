@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getCacheDir } from "../cache-store.js";
-import type { SessionRecord } from "./types.js";
+import type { ChunkText, SessionRecord } from "./types.js";
 
 export function historyDir(repoKey: string): string {
 	return path.join(getCacheDir(repoKey), "history");
@@ -94,4 +94,32 @@ export function readSession(repoKey: string, sessionId: string): SessionRecord |
 	const p = sessionJsonPath(repoKey, sessionId);
 	if (!fs.existsSync(p)) return null;
 	return JSON.parse(fs.readFileSync(p, "utf8")) as SessionRecord;
+}
+
+export function writeAllChunks(repoKey: string, sessionId: string, chunks: ChunkText[]): void {
+	fs.mkdirSync(sessionDir(repoKey, sessionId), { recursive: true });
+	const finalPath = chunksJsonlPath(repoKey, sessionId);
+	const tmp = finalPath + ".tmp";
+	const body = chunks.map((c) => JSON.stringify(c)).join("\n") + (chunks.length > 0 ? "\n" : "");
+	fs.writeFileSync(tmp, body);
+	fs.renameSync(tmp, finalPath);
+}
+
+export function readAllChunks(repoKey: string, sessionId: string): ChunkText[] {
+	const p = chunksJsonlPath(repoKey, sessionId);
+	if (!fs.existsSync(p)) return [];
+	const out: ChunkText[] = [];
+	for (const line of fs.readFileSync(p, "utf8").split("\n")) {
+		if (line.length === 0) continue;
+		out.push(JSON.parse(line) as ChunkText);
+	}
+	out.sort((a, b) => a.id - b.id);
+	return out;
+}
+
+export function getChunkText(repoKey: string, sessionId: string, id: number): string | null {
+	for (const c of readAllChunks(repoKey, sessionId)) {
+		if (c.id === id) return c.text;
+	}
+	return null;
 }
