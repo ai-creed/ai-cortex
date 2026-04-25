@@ -1,0 +1,118 @@
+// tests/integration/history-hook.test.ts
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resolveRepoIdentity } from "../../src/lib/repo-identity.js";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const CLI = path.join(ROOT, "dist", "src", "cli.js");
+const FIXTURE = path.join(ROOT, "tests", "fixtures", "history", "sample.jsonl");
+
+let home: string;
+
+beforeEach(() => {
+	home = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-hook-"));
+});
+
+afterEach(() => {
+	fs.rmSync(home, { recursive: true, force: true });
+});
+
+function runCli(args: string[], opts: { extraEnv?: Record<string, string>; cwd?: string } = {}): string {
+	return execFileSync("node", [CLI, ...args], {
+		env: { ...process.env, HOME: home, ...(opts.extraEnv ?? {}) },
+		cwd: opts.cwd,
+		encoding: "utf8",
+	});
+}
+
+function setupGitRepo(): string {
+	const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-hook-repo-"));
+	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+	execFileSync("git", ["-C", repo, "config", "user.email", "test@test.invalid"]);
+	execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
+	execFileSync("git", ["-C", repo, "commit", "--allow-empty", "-q", "-m", "init"]);
+	return repo;
+}
+
+function placeTranscriptForHookSim(repoCwd: string, sessionId: string): void {
+	// Use realpath so encoding matches what process.cwd() returns inside the CLI subprocess.
+	const real = fs.realpathSync(repoCwd);
+	const encoded = real.replace(/\//g, "-");
+	const dir = path.join(home, ".claude", "projects", encoded);
+	fs.mkdirSync(dir, { recursive: true });
+	fs.copyFileSync(FIXTURE, path.join(dir, `${sessionId}.jsonl`));
+}
+
+describe("hook install simulation", () => {
+	it("install-hooks writes settings.json with PreCompact + SessionEnd entries", () => {
+		runCli(["history", "install-hooks", "--yes"]);
+		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+		const cmds = [
+			...(settings.hooks.PreCompact ?? []),
+			...(settings.hooks.SessionEnd ?? []),
+		].map((h: { command: string }) => h.command);
+		expect(cmds.some((c) => c.includes("ai-cortex history capture"))).toBe(true);
+	});
+
+	it("installed command shape (only --session) captures via auto-discovery + git repoKey", () => {
+		// 1. Install the hook to read what the command actually contains.
+		runCli(["history", "install-hooks", "--yes"]);
+		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+		const installedCmd = settings.hooks.PreCompact[0].command as string;
+
+		// 2. Set up a real git repo (cwd) and the transcript at the auto-discovery path.
+		const repoCwdRaw = setupGitRepo();
+		// Resolve symlinks so path encoding matches what process.cwd() returns inside the CLI subprocess.
+		const repoCwd = fs.realpathSync(repoCwdRaw);
+		const sessionId = "hooked-sess";
+		placeTranscriptForHookSim(repoCwd, sessionId);
+
+		// 3. Run the installed command verbatim (substituting $CLAUDE_SESSION_ID) from the repo cwd.
+		//    No --transcript, no --repo-key, no --cwd — exactly what the real hook fires.
+		const subbed = installedCmd.replace("$CLAUDE_SESSION_ID", sessionId);
+		// Strip the leading "ai-cortex" — we exec node + CLI directly. Take args after that token.
+		const argv = subbed.split(/\s+/).slice(1); // ["history", "capture", "--session", "hooked-sess"]
+		runCli(argv, { extraEnv: { CLAUDE_SESSION_ID: sessionId }, cwd: repoCwd });
+
+		// 4. Verify capture wrote to the git-identity-derived cache path.
+		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
+		const sessionJson = path.join(home, ".cache", "ai-cortex", "v1", repoKey, "history", "sessions", sessionId, "session.json");
+		expect(fs.existsSync(sessionJson)).toBe(true);
+
+		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
+	});
+
+	it("history off blocks hook capture (CLI returns disabled status)", () => {
+		runCli(["history", "off"]);
+		const repoCwdRaw = setupGitRepo();
+		// Resolve symlinks so path encoding matches what process.cwd() returns inside the CLI subprocess.
+		const repoCwd = fs.realpathSync(repoCwdRaw);
+		const sessionId = "off-sess";
+		placeTranscriptForHookSim(repoCwd, sessionId);
+
+		const out = runCli(["history", "capture", "--session", sessionId], { extraEnv: { CLAUDE_SESSION_ID: sessionId }, cwd: repoCwd });
+		expect(out).toContain('"status":"disabled"');
+
+		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
+		const sessionJson = path.join(home, ".cache", "ai-cortex", "v1", repoKey, "history", "sessions", sessionId, "session.json");
+		expect(fs.existsSync(sessionJson)).toBe(false);
+
+		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
+	});
+
+	it("uninstall-hooks removes our entries but leaves others", () => {
+		fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+		fs.writeFileSync(
+			path.join(home, ".claude", "settings.json"),
+			JSON.stringify({ hooks: { PreCompact: [{ command: "third-party-hook" }] } }),
+		);
+		runCli(["history", "install-hooks", "--yes"]);
+		runCli(["history", "uninstall-hooks", "--yes"]);
+		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+		expect(settings.hooks.PreCompact).toEqual([{ command: "third-party-hook" }]);
+	});
+});
