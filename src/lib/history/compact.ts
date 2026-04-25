@@ -97,3 +97,38 @@ function pathFromToolInput(input: unknown): string | null {
 	}
 	return null;
 }
+
+export function liftHarnessSummary(turns: RawTurn[]): string {
+	return turns
+		.filter((t) => t.isCompactSummary && t.text.length > 0)
+		.map((t) => t.text)
+		.join("\n\n");
+}
+
+export type ChunkOut = { id: number; tokenStart: number; tokenEnd: number; preview: string; text: string };
+
+export function chunkTurns(
+	turns: RawTurn[],
+	opts: { targetTokens?: number } = {},
+): ChunkOut[] {
+	const target = opts.targetTokens ?? 512;
+	const flat: string[] = [];
+	for (const t of turns) {
+		if (t.text.length === 0) continue;
+		flat.push(`[${t.role} #${t.turn}] ${t.text}`);
+	}
+	const allTokens = flat.join("\n").split(/\s+/).filter((w) => w.length > 0);
+	const out: ChunkOut[] = [];
+	for (let start = 0, id = 0; start < allTokens.length; start += target, id += 1) {
+		const end = Math.min(start + target, allTokens.length);
+		const text = allTokens.slice(start, end).join(" ");
+		out.push({
+			id,
+			tokenStart: start,
+			tokenEnd: end,
+			preview: text.slice(0, 80),
+			text,
+		});
+	}
+	return out;
+}
