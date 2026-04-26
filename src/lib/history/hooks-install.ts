@@ -21,7 +21,7 @@ export type InstallOpts = {
 	answerForTest?: "y" | "n";
 };
 
-export async function installHooks(opts: InstallOpts): Promise<void> {
+export async function installHooks(opts: InstallOpts): Promise<"installed" | "no-op" | "aborted"> {
 	const settingsPath = getSettingsPath();
 	const dir = path.dirname(settingsPath);
 	fs.mkdirSync(dir, { recursive: true });
@@ -35,13 +35,13 @@ export async function installHooks(opts: InstallOpts): Promise<void> {
 
 	if (afterText.trim() === before.trim()) {
 		// Already installed; no-op, no output.
-		return;
+		return "no-op";
 	}
 
 	if (!opts.yes) {
 		printDiff(beforeText, afterText);
 		const proceed = await confirm("Apply these changes to ~/.claude/settings.json? [y/N] ", opts.answerForTest);
-		if (!proceed) return;
+		if (!proceed) return "aborted";
 	}
 
 	if (before.length > 0) {
@@ -51,11 +51,12 @@ export async function installHooks(opts: InstallOpts): Promise<void> {
 	const tmp = settingsPath + ".tmp";
 	fs.writeFileSync(tmp, afterText);
 	fs.renameSync(tmp, settingsPath);
+	return "installed";
 }
 
-export async function uninstallHooks(opts: InstallOpts): Promise<void> {
+export async function uninstallHooks(opts: InstallOpts): Promise<"uninstalled" | "no-op" | "aborted"> {
 	const settingsPath = getSettingsPath();
-	if (!fs.existsSync(settingsPath)) return;
+	if (!fs.existsSync(settingsPath)) return "no-op";
 	const dir = path.dirname(settingsPath);
 
 	const before = fs.readFileSync(settingsPath, "utf8");
@@ -63,12 +64,12 @@ export async function uninstallHooks(opts: InstallOpts): Promise<void> {
 	const next = applyUninstall(settings);
 	const afterText = JSON.stringify(next, null, 2) + "\n";
 
-	if (afterText.trim() === before.trim()) return;
+	if (afterText.trim() === before.trim()) return "no-op";
 
 	if (!opts.yes) {
 		printDiff(before, afterText);
 		const proceed = await confirm("Apply these changes? [y/N] ", opts.answerForTest);
-		if (!proceed) return;
+		if (!proceed) return "aborted";
 	}
 
 	const ts = new Date().toISOString().replace(/[:.]/g, "-");
@@ -76,6 +77,7 @@ export async function uninstallHooks(opts: InstallOpts): Promise<void> {
 	const tmp = settingsPath + ".tmp";
 	fs.writeFileSync(tmp, afterText);
 	fs.renameSync(tmp, settingsPath);
+	return "uninstalled";
 }
 
 function parseOrThrow(text: string, settingsPath: string): Settings {

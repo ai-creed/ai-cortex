@@ -409,15 +409,15 @@ async function main(): Promise<void> {
 				case "install-hooks": {
 					const { installHooks } = await import("./lib/history/hooks-install.js");
 					const yes = rest.includes("--yes") || rest.includes("-y");
-					await installHooks({ yes });
-					process.stdout.write("hooks installed\n");
+					const installResult = await installHooks({ yes });
+					if (installResult === "installed") process.stdout.write("hooks installed\n");
 					break;
 				}
 				case "uninstall-hooks": {
 					const { uninstallHooks } = await import("./lib/history/hooks-install.js");
 					const yes = rest.includes("--yes") || rest.includes("-y");
-					await uninstallHooks({ yes });
-					process.stdout.write("hooks uninstalled\n");
+					const uninstallResult = await uninstallHooks({ yes });
+					if (uninstallResult === "uninstalled") process.stdout.write("hooks uninstalled\n");
 					break;
 				}
 				default: {

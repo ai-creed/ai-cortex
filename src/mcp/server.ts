@@ -336,7 +336,7 @@ export function createServer(): McpServer {
 				"Auto-broadens to the whole project if the current-session search returns nothing.",
 			inputSchema: {
 				query: z.string().min(1, "query must not be blank"),
-				sessionId: z.string().optional(),
+				sessionId: z.string().regex(/^[\w-]+$/).optional(),
 				scope: z.enum(["session", "project"]).optional(),
 				limit: z.number().int().positive().max(50).optional(),
 				path: z.string().optional(),
