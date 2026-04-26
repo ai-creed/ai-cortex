@@ -13,7 +13,14 @@ export function sessionsDir(repoKey: string): string {
 	return path.join(historyDir(repoKey), "sessions");
 }
 
+export function validateSessionId(id: string): void {
+	if (id.includes("/") || id.includes("\\") || id.split(/[\\/]/).includes("..")) {
+		throw new Error(`invalid sessionId: ${JSON.stringify(id)}`);
+	}
+}
+
 export function sessionDir(repoKey: string, sessionId: string): string {
+	validateSessionId(sessionId);
 	return path.join(sessionsDir(repoKey), sessionId);
 }
 
@@ -167,14 +174,22 @@ export function readChunkVectors(
 	const dir = sessionDir(repoKey, sessionId);
 	const idx = readVectorIndex(dir, modelName);
 	if (!idx) return null;
+	// Build a text→hash map from current chunks for staleness detection
+	const currentHashes = new Map<number, string>();
+	for (const c of readAllChunks(repoKey, sessionId)) {
+		currentHashes.set(c.id, crypto.createHash("sha256").update(c.text).digest("hex"));
+	}
 	const byChunkId = new Map<number, Float32Array>();
 	for (let i = 0; i < idx.meta.count; i += 1) {
 		const entry = idx.meta.entries[i];
 		const id = parseChunkId(entry.path);
 		if (id === null) continue;
+		// Skip vectors whose text has changed since embedding
+		if (currentHashes.get(id) !== entry.hash) continue;
 		const slice = idx.matrix.slice(i * idx.meta.dim, (i + 1) * idx.meta.dim);
 		byChunkId.set(id, slice);
 	}
+	if (byChunkId.size === 0) return null;
 	return { byChunkId, dim: idx.meta.dim };
 }
 

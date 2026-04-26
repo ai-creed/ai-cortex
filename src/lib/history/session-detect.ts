@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { validateSessionId } from "./store.js";
 
 const KNOWN_HARNESS_ENV_VARS = [
 	"CLAUDE_SESSION_ID",
@@ -54,5 +55,6 @@ function claudeProjectDir(cwd: string): string {
 }
 
 export function resolveTranscriptPath(cwd: string, sessionId: string): string {
+	validateSessionId(sessionId);
 	return path.join(claudeProjectDir(cwd), `${sessionId}.jsonl`);
 }

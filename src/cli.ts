@@ -357,6 +357,11 @@ async function main(): Promise<void> {
 					break;
 				}
 				case "capture": {
+					const { isHistoryEnabled } = await import("./lib/history/config.js");
+					if (!isHistoryEnabled()) {
+						process.stdout.write(JSON.stringify({ status: "disabled" }) + "\n");
+						break;
+					}
 					const { captureSession } = await import("./lib/history/capture.js");
 					const { resolveTranscriptPath } = await import("./lib/history/session-detect.js");
 					const sessionId = flagValue(rest, "--session");

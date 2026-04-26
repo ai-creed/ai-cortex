@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeChunkVectors, readChunkVectors, sessionDir } from "../../../../src/lib/history/store.js";
+import { writeChunkVectors, readChunkVectors, writeAllChunks, sessionDir } from "../../../../src/lib/history/store.js";
 
 let tmp: string;
 
@@ -30,6 +30,10 @@ function sha(text: string): string {
 describe("writeChunkVectors + readChunkVectors", () => {
 	it("round-trips chunk vectors with id encoding", () => {
 		const matrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0]);
+		writeAllChunks("REPO", "abc", [
+			{ id: 0, text: "a" },
+			{ id: 1, text: "b" },
+		]);
 		writeChunkVectors("REPO", "abc", {
 			modelName: MODEL,
 			dim: DIM,
@@ -46,6 +50,7 @@ describe("writeChunkVectors + readChunkVectors", () => {
 	});
 
 	it("readChunkVectors returns null on model mismatch", () => {
+		writeAllChunks("REPO", "abc", [{ id: 0, text: "x" }]);
 		writeChunkVectors("REPO", "abc", {
 			modelName: MODEL,
 			dim: DIM,
