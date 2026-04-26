@@ -357,15 +357,12 @@ async function main(): Promise<void> {
 					break;
 				}
 				case "capture": {
-					const { isHistoryEnabled } = await import("./lib/history/config.js");
-					if (!isHistoryEnabled()) {
-						process.stdout.write(JSON.stringify({ status: "disabled" }) + "\n");
-						break;
-					}
 					const { captureSession } = await import("./lib/history/capture.js");
+					const { isHistoryEnabled } = await import("./lib/history/config.js");
 					const { resolveTranscriptPath } = await import("./lib/history/session-detect.js");
 					let sessionId = flagValue(rest, "--session");
 					let transcriptOverride = flagValue(rest, "--transcript");
+					let hookMode = false;
 					// Claude Code hooks pass session data via stdin JSON (not env vars)
 					if (!sessionId && !process.stdin.isTTY) {
 						try {
@@ -376,11 +373,16 @@ async function main(): Promise<void> {
 								process.stdin.on("end", () => resolve(buf));
 							});
 							const hookData = JSON.parse(raw) as { session_id?: string; transcript_path?: string };
+							hookMode = true;
 							if (hookData.session_id) sessionId = hookData.session_id;
 							if (!transcriptOverride && hookData.transcript_path) transcriptOverride = hookData.transcript_path;
 						} catch {
 							// not a JSON hook payload; fall through to usage error
 						}
+					}
+					if (!isHistoryEnabled()) {
+						process.stdout.write(JSON.stringify(hookMode ? { continue: true } : { status: "disabled" }) + "\n");
+						break;
 					}
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const transcript = transcriptOverride ?? (sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
@@ -394,7 +396,7 @@ async function main(): Promise<void> {
 						process.exit(1);
 					}
 					const result = await captureSession({ repoKey, sessionId, transcriptPath: transcript, embed: true });
-					process.stdout.write(JSON.stringify(result) + "\n");
+					process.stdout.write(JSON.stringify(hookMode ? { continue: true } : result) + "\n");
 					break;
 				}
 				case "list": {

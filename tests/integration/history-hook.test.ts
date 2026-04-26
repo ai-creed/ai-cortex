@@ -77,7 +77,8 @@ describe("hook install simulation", () => {
 		//    Claude Code passes { session_id, transcript_path, cwd, ... } — no env vars.
 		const argv = installedCmd.split(/\s+/).slice(1); // ["history", "capture"]
 		const hookPayload = JSON.stringify({ session_id: sessionId });
-		runCli(argv, { cwd: repoCwd, input: hookPayload });
+		const out = runCli(argv, { cwd: repoCwd, input: hookPayload });
+		expect(JSON.parse(out)).toEqual({ continue: true });
 
 		// 4. Verify capture wrote to the git-identity-derived cache path.
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
@@ -101,6 +102,20 @@ describe("hook install simulation", () => {
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
 		const sessionJson = path.join(home, ".cache", "ai-cortex", "v1", repoKey, "history", "sessions", sessionId, "session.json");
 		expect(fs.existsSync(sessionJson)).toBe(false);
+
+		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
+	});
+
+	it("history off returns Codex-safe JSON when capture is invoked as a stdin hook", () => {
+		runCli(["history", "off"]);
+		const repoCwdRaw = setupGitRepo();
+		const repoCwd = fs.realpathSync(repoCwdRaw);
+		const out = runCli(["history", "capture"], {
+			cwd: repoCwd,
+			input: JSON.stringify({ session_id: "off-sess" }),
+		});
+
+		expect(JSON.parse(out)).toEqual({ continue: true });
 
 		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
 	});

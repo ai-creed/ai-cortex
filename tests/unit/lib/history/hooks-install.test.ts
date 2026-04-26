@@ -2,7 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installHooks, uninstallHooks, getSettingsPath, HOOK_COMMAND_MARKER } from "../../../../src/lib/history/hooks-install.js";
+import {
+	installHooks,
+	uninstallHooks,
+	getSettingsPath,
+	getCodexConfigPath,
+	HOOK_COMMAND_MARKER,
+} from "../../../../src/lib/history/hooks-install.js";
 
 let tmp: string;
 
@@ -21,6 +27,14 @@ describe("installHooks", () => {
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
 		expect(s.hooks.PreCompact[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
 		expect(s.hooks.SessionEnd[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
+	});
+
+	it("creates Codex config.toml hooks for UserPromptSubmit and Stop", async () => {
+		await installHooks({ yes: true });
+		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(text).toContain("[[hooks.UserPromptSubmit]]");
+		expect(text).toContain("[[hooks.Stop]]");
+		expect(text.match(new RegExp(HOOK_COMMAND_MARKER, "g"))).toHaveLength(2);
 	});
 
 	it("appends to existing hooks without duplicating", async () => {
@@ -42,6 +56,8 @@ describe("installHooks", () => {
 			(entry.hooks ?? []).some((h) => h.command.includes(HOOK_COMMAND_MARKER)),
 		);
 		expect(ours).toHaveLength(1);
+		const codex = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(codex.match(new RegExp(HOOK_COMMAND_MARKER, "g"))).toHaveLength(2);
 	});
 
 	it("writes hooks in the correct Claude Code schema shape", async () => {
@@ -120,6 +136,47 @@ describe("uninstallHooks", () => {
 				(entry.hooks ?? []).every((h) => !h.command.includes(HOOK_COMMAND_MARKER)),
 			),
 		).toBe(true);
+	});
+
+	it("removes only ai-cortex Codex hook blocks", async () => {
+		await installHooks({ yes: true });
+		fs.appendFileSync(
+			getCodexConfigPath(),
+			[
+				"",
+				"[[hooks.Stop]]",
+				"matcher = \"\"",
+				"[[hooks.Stop.hooks]]",
+				"type = \"command\"",
+				"command = \"other-tool\"",
+				"",
+			].join("\n"),
+		);
+
+		await uninstallHooks({ yes: true });
+		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(text).not.toContain(HOOK_COMMAND_MARKER);
+		expect(text).toContain("command = \"other-tool\"");
+	});
+
+	it("uninstalls Codex hooks without creating Claude settings when only Codex config exists", async () => {
+		fs.mkdirSync(path.dirname(getCodexConfigPath()), { recursive: true });
+		fs.writeFileSync(
+			getCodexConfigPath(),
+			[
+				"[[hooks.Stop]]",
+				"matcher = \"\"",
+				"[[hooks.Stop.hooks]]",
+				"type = \"command\"",
+				`command = "${HOOK_COMMAND_MARKER}"`,
+				"",
+			].join("\n"),
+		);
+
+		await uninstallHooks({ yes: true });
+
+		expect(fs.existsSync(getSettingsPath())).toBe(false);
+		expect(fs.readFileSync(getCodexConfigPath(), "utf8")).not.toContain(HOOK_COMMAND_MARKER);
 	});
 
 	it("refuses on parse failure", async () => {

@@ -9,6 +9,13 @@ type RawLine = {
 	isSidechain?: boolean;
 	summary?: string;
 	message?: { content?: string | ContentBlock[] };
+	payload?: {
+		type?: string;
+		role?: string;
+		content?: string | ContentBlock[];
+		name?: string;
+		arguments?: unknown;
+	};
 };
 
 export function parseTranscript(transcriptPath: string): RawTurn[] {
@@ -32,6 +39,7 @@ export function parseTranscript(transcriptPath: string): RawTurn[] {
 }
 
 function toTurn(p: RawLine, lineIndex: number): RawTurn | null {
+	if (p.type === "response_item") return codexToTurn(p, lineIndex);
 	// Only process conversation and summary entries; skip metadata (file-history-snapshot, attachment, etc.)
 	if (p.type !== "user" && p.type !== "assistant" && p.type !== "summary") return null;
 	// Skip sidechain entries (tool result re-injections) — they duplicate main-flow content
@@ -60,6 +68,52 @@ function toTurn(p: RawLine, lineIndex: number): RawTurn | null {
 		text: textParts.join("\n"),
 		toolUses: toolUses.length > 0 ? toolUses : undefined,
 	};
+}
+
+function codexToTurn(p: RawLine, lineIndex: number): RawTurn | null {
+	const payload = p.payload;
+	if (!payload) return null;
+	if (payload.type === "message") {
+		const role: RawTurn["role"] =
+			payload.role === "user" ? "user" : payload.role === "assistant" ? "assistant" : "system";
+		return {
+			turn: lineIndex,
+			role,
+			text: textFromContent(payload.content),
+		};
+	}
+	if (payload.type === "function_call" && typeof payload.name === "string") {
+		return {
+			turn: lineIndex,
+			role: "assistant",
+			text: "",
+			toolUses: [{ name: payload.name, input: parseCodexArguments(payload.arguments) }],
+		};
+	}
+	return null;
+}
+
+function textFromContent(content: string | ContentBlock[] | undefined): string {
+	if (typeof content === "string") return content;
+	const textParts: string[] = [];
+	for (const b of content ?? []) {
+		if (
+			(b.type === "text" || b.type === "input_text" || b.type === "output_text") &&
+			typeof b.text === "string"
+		) {
+			textParts.push(b.text);
+		}
+	}
+	return textParts.join("\n");
+}
+
+function parseCodexArguments(args: unknown): unknown {
+	if (typeof args !== "string") return args;
+	try {
+		return JSON.parse(args) as unknown;
+	} catch {
+		return args;
+	}
 }
 
 const CORRECTION_RE = /^\s*(no|stop|don't|dont|wait|actually|instead|but)\b/i;
