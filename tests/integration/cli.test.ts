@@ -12,7 +12,9 @@ const CLI = path.join(ROOT, "dist/src/cli.js");
 let tmpDir: string;
 
 beforeAll(() => {
-	execFileSync("pnpm", ["build"], { cwd: ROOT, stdio: "ignore" });
+	if (!fs.existsSync(CLI)) {
+		execFileSync("pnpm", ["build"], { cwd: ROOT, stdio: "ignore" });
+	}
 
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-cli-test-"));
 	execFileSync("git", ["init", tmpDir]);
