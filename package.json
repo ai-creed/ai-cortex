@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.3.0-beta.2",
+	"version": "0.3.0-beta.3",
 	"description": "Local project rehydration engine and file-discovery MCP server for AI agents",
 	"type": "module",
 	"license": "MIT",
@@ -58,7 +58,12 @@
 		"zod": "^3.0.0"
 	},
 	"pnpm": {
-		"onlyBuiltDependencies": ["sharp", "web-tree-sitter", "tree-sitter-typescript", "tree-sitter-javascript"]
+		"onlyBuiltDependencies": [
+			"sharp",
+			"web-tree-sitter",
+			"tree-sitter-typescript",
+			"tree-sitter-javascript"
+		]
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.0.0",
