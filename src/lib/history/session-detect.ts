@@ -13,23 +13,36 @@ export type DetectionSource = `env:${string}` | "mtime-heuristic";
 
 export type DetectionResult = { sessionId: string; source: DetectionSource };
 
+function safeSessionId(raw: string, source: string): DetectionResult | null {
+	if (!/^[\w-]+$/.test(raw)) {
+		process.stderr.write(`[ai-cortex] history: ignoring invalid session ID from ${source}: ${JSON.stringify(raw)}\n`);
+		return null;
+	}
+	return { sessionId: raw, source: source as DetectionSource };
+}
+
 export function detectCurrentSession(opts: { cwd: string }): DetectionResult | null {
 	const canon = process.env.AI_CORTEX_SESSION_ID;
 	if (canon && canon.length > 0) {
-		return { sessionId: canon, source: "env:AI_CORTEX_SESSION_ID" };
+		const r = safeSessionId(canon, "env:AI_CORTEX_SESSION_ID");
+		if (r) return r;
 	}
 	for (const name of KNOWN_HARNESS_ENV_VARS) {
 		const v = process.env[name];
 		if (v && v.length > 0) {
-			return { sessionId: v, source: `env:${name}` };
+			const r = safeSessionId(v, `env:${name}`);
+			if (r) return r;
 		}
 	}
 	const heuristic = mostRecentClaudeJsonl(opts.cwd);
 	if (heuristic) {
-		process.stderr.write(
-			`[ai-cortex] history: using mtime-heuristic for current session — set AI_CORTEX_SESSION_ID for reliable detection\n`,
-		);
-		return { sessionId: heuristic, source: "mtime-heuristic" };
+		const r = safeSessionId(heuristic, "mtime-heuristic");
+		if (r) {
+			process.stderr.write(
+				`[ai-cortex] history: using mtime-heuristic for current session — set AI_CORTEX_SESSION_ID for reliable detection\n`,
+			);
+			return r;
+		}
 	}
 	return null;
 }

@@ -75,4 +75,16 @@ describe("writeChunkVectors + readChunkVectors", () => {
 		expect(meta.dim).toBe(DIM);
 		expect(meta.count).toBe(1);
 	});
+
+	it("returns null when all chunk texts have changed since embedding (stale vectors)", () => {
+		writeAllChunks("REPO", "abc", [{ id: 0, text: "original text" }]);
+		writeChunkVectors("REPO", "abc", {
+			modelName: MODEL,
+			dim: DIM,
+			chunks: [{ id: 0, text: "original text", vector: vec([1, 0, 0, 0]) }],
+		});
+		// Overwrite chunks with different text — vectors are now stale
+		writeAllChunks("REPO", "abc", [{ id: 0, text: "completely different text" }]);
+		expect(readChunkVectors("REPO", "abc", MODEL)).toBeNull();
+	});
 });

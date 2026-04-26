@@ -14,7 +14,7 @@ export function sessionsDir(repoKey: string): string {
 }
 
 export function validateSessionId(id: string): void {
-	if (id.includes("/") || id.includes("\\") || id.split(/[\\/]/).includes("..")) {
+	if (!/^[\w-]+$/.test(id)) {
 		throw new Error(`invalid sessionId: ${JSON.stringify(id)}`);
 	}
 }
