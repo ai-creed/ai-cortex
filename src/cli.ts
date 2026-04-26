@@ -364,9 +364,26 @@ async function main(): Promise<void> {
 					}
 					const { captureSession } = await import("./lib/history/capture.js");
 					const { resolveTranscriptPath } = await import("./lib/history/session-detect.js");
-					const sessionId = flagValue(rest, "--session");
+					let sessionId = flagValue(rest, "--session");
+					let transcriptOverride = flagValue(rest, "--transcript");
+					// Claude Code hooks pass session data via stdin JSON (not env vars)
+					if (!sessionId && !process.stdin.isTTY) {
+						try {
+							const raw = await new Promise<string>((resolve) => {
+								let buf = "";
+								process.stdin.setEncoding("utf8");
+								process.stdin.on("data", (chunk) => { buf += chunk; });
+								process.stdin.on("end", () => resolve(buf));
+							});
+							const hookData = JSON.parse(raw) as { session_id?: string; transcript_path?: string };
+							if (hookData.session_id) sessionId = hookData.session_id;
+							if (!transcriptOverride && hookData.transcript_path) transcriptOverride = hookData.transcript_path;
+						} catch {
+							// not a JSON hook payload; fall through to usage error
+						}
+					}
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
-					const transcript = flagValue(rest, "--transcript") ?? (sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
+					const transcript = transcriptOverride ?? (sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
 					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
 					if (!sessionId || !transcript) {
 						process.stderr.write("usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n");

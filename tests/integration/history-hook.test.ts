@@ -21,11 +21,12 @@ afterEach(() => {
 	fs.rmSync(home, { recursive: true, force: true });
 });
 
-function runCli(args: string[], opts: { extraEnv?: Record<string, string>; cwd?: string } = {}): string {
+function runCli(args: string[], opts: { extraEnv?: Record<string, string>; cwd?: string; input?: string } = {}): string {
 	return execFileSync("node", [CLI, ...args], {
 		env: { ...process.env, HOME: home, ...(opts.extraEnv ?? {}) },
 		cwd: opts.cwd,
 		encoding: "utf8",
+		...(opts.input !== undefined ? { input: opts.input } : {}),
 	});
 }
 
@@ -59,7 +60,7 @@ describe("hook install simulation", () => {
 		expect(cmds.some((c) => c.includes("ai-cortex history capture"))).toBe(true);
 	});
 
-	it("installed command shape (only --session) captures via auto-discovery + git repoKey", () => {
+	it("installed command captures via stdin hook JSON + git repoKey auto-discovery", () => {
 		// 1. Install the hook to read what the command actually contains.
 		runCli(["history", "install-hooks", "--yes"]);
 		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
@@ -72,12 +73,11 @@ describe("hook install simulation", () => {
 		const sessionId = "hooked-sess";
 		placeTranscriptForHookSim(repoCwd, sessionId);
 
-		// 3. Run the installed command verbatim (substituting $CLAUDE_SESSION_ID) from the repo cwd.
-		//    No --transcript, no --repo-key, no --cwd — exactly what the real hook fires.
-		const subbed = installedCmd.replace("$CLAUDE_SESSION_ID", sessionId);
-		// Strip the leading "ai-cortex" — we exec node + CLI directly. Take args after that token.
-		const argv = subbed.split(/\s+/).slice(1); // ["history", "capture", "--session", "hooked-sess"]
-		runCli(argv, { extraEnv: { CLAUDE_SESSION_ID: sessionId }, cwd: repoCwd });
+		// 3. Run the installed command from repo cwd, piping the Claude Code hook JSON payload via stdin.
+		//    Claude Code passes { session_id, transcript_path, cwd, ... } — no env vars.
+		const argv = installedCmd.split(/\s+/).slice(1); // ["history", "capture"]
+		const hookPayload = JSON.stringify({ session_id: sessionId });
+		runCli(argv, { cwd: repoCwd, input: hookPayload });
 
 		// 4. Verify capture wrote to the git-identity-derived cache path.
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
@@ -95,7 +95,7 @@ describe("hook install simulation", () => {
 		const sessionId = "off-sess";
 		placeTranscriptForHookSim(repoCwd, sessionId);
 
-		const out = runCli(["history", "capture", "--session", sessionId], { extraEnv: { CLAUDE_SESSION_ID: sessionId }, cwd: repoCwd });
+		const out = runCli(["history", "capture", "--session", sessionId], { cwd: repoCwd });
 		expect(out).toContain('"status":"disabled"');
 
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;

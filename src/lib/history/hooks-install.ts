@@ -6,7 +6,7 @@ import readline from "node:readline";
 export const HOOK_COMMAND_MARKER = "ai-cortex history capture";
 
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
-const HOOK_COMMAND = `${HOOK_COMMAND_MARKER} --session $CLAUDE_SESSION_ID`;
+const HOOK_COMMAND = HOOK_COMMAND_MARKER;
 
 type InnerHook = { type: "command"; command: string };
 type Hook = { matcher: string; hooks: InnerHook[] };
