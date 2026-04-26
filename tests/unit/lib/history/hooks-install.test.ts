@@ -19,13 +19,16 @@ describe("installHooks", () => {
 	it("creates settings.json with hooks if absent (yes:true)", async () => {
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
-		expect(s.hooks.PreCompact[0].command).toContain(HOOK_COMMAND_MARKER);
-		expect(s.hooks.SessionEnd[0].command).toContain(HOOK_COMMAND_MARKER);
+		expect(s.hooks.PreCompact[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
+		expect(s.hooks.SessionEnd[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
 	});
 
 	it("appends to existing hooks without duplicating", async () => {
 		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
-		fs.writeFileSync(getSettingsPath(), JSON.stringify({ hooks: { PreCompact: [{ command: "other" }] } }));
+		fs.writeFileSync(
+			getSettingsPath(),
+			JSON.stringify({ hooks: { PreCompact: [{ matcher: "", hooks: [{ type: "command", command: "other" }] }] } }),
+		);
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
 		expect(s.hooks.PreCompact).toHaveLength(2);
@@ -35,8 +38,27 @@ describe("installHooks", () => {
 		await installHooks({ yes: true });
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
-		const ours = s.hooks.PreCompact.filter((h: { command: string }) => h.command.includes(HOOK_COMMAND_MARKER));
+		const ours = s.hooks.PreCompact.filter((entry: { hooks: { command: string }[] }) =>
+			(entry.hooks ?? []).some((h) => h.command.includes(HOOK_COMMAND_MARKER)),
+		);
 		expect(ours).toHaveLength(1);
+	});
+
+	it("writes hooks in the correct Claude Code schema shape", async () => {
+		await installHooks({ yes: true });
+		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
+		for (const evt of ["PreCompact", "SessionEnd"]) {
+			const entries = s.hooks[evt];
+			expect(Array.isArray(entries)).toBe(true);
+			for (const entry of entries) {
+				expect(typeof entry.matcher).toBe("string");
+				expect(Array.isArray(entry.hooks)).toBe(true);
+				for (const h of entry.hooks) {
+					expect(h.type).toBe("command");
+					expect(typeof h.command).toBe("string");
+				}
+			}
+		}
 	});
 
 	it("writes a backup before any modification", async () => {
@@ -86,14 +108,18 @@ describe("installHooks", () => {
 describe("uninstallHooks", () => {
 	it("removes only entries with our marker", async () => {
 		await installHooks({ yes: true });
-		const beforeOther = { command: "untouchable" };
+		const beforeOther = { matcher: "", hooks: [{ type: "command", command: "untouchable" }] };
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
 		s.hooks.PreCompact.push(beforeOther);
 		fs.writeFileSync(getSettingsPath(), JSON.stringify(s));
 		await uninstallHooks({ yes: true });
 		const after = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
 		expect(after.hooks.PreCompact).toContainEqual(beforeOther);
-		expect(after.hooks.PreCompact.every((h: { command: string }) => !h.command.includes(HOOK_COMMAND_MARKER))).toBe(true);
+		expect(
+			after.hooks.PreCompact.every((entry: { hooks: { command: string }[] }) =>
+				(entry.hooks ?? []).every((h) => !h.command.includes(HOOK_COMMAND_MARKER)),
+			),
+		).toBe(true);
 	});
 
 	it("refuses on parse failure", async () => {

@@ -8,7 +8,8 @@ export const HOOK_COMMAND_MARKER = "ai-cortex history capture";
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
 const HOOK_COMMAND = `${HOOK_COMMAND_MARKER} --session $CLAUDE_SESSION_ID`;
 
-type Hook = { command: string };
+type InnerHook = { type: "command"; command: string };
+type Hook = { matcher: string; hooks: InnerHook[] };
 type Settings = { hooks?: Partial<Record<string, Hook[]>>; [k: string]: unknown };
 
 export function getSettingsPath(): string {
@@ -94,8 +95,11 @@ function applyInstall(s: Settings): Settings {
 	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
 	for (const evt of HOOK_EVENTS) {
 		const list = ((next.hooks![evt] ?? []) as Hook[]).slice();
-		if (!list.some((h) => h.command.includes(HOOK_COMMAND_MARKER))) {
-			list.push({ command: HOOK_COMMAND });
+		const alreadyInstalled = list.some((entry) =>
+			(entry.hooks ?? []).some((h) => h.command.includes(HOOK_COMMAND_MARKER)),
+		);
+		if (!alreadyInstalled) {
+			list.push({ matcher: "", hooks: [{ type: "command", command: HOOK_COMMAND }] });
 		}
 		next.hooks![evt] = list;
 	}
@@ -105,7 +109,12 @@ function applyInstall(s: Settings): Settings {
 function applyUninstall(s: Settings): Settings {
 	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
 	for (const evt of HOOK_EVENTS) {
-		const list = ((next.hooks![evt] ?? []) as Hook[]).filter((h) => !h.command.includes(HOOK_COMMAND_MARKER));
+		const list = ((next.hooks![evt] ?? []) as Hook[])
+			.map((entry) => ({
+				...entry,
+				hooks: (entry.hooks ?? []).filter((h) => !h.command.includes(HOOK_COMMAND_MARKER)),
+			}))
+			.filter((entry) => entry.hooks.length > 0);
 		next.hooks![evt] = list;
 	}
 	return next;

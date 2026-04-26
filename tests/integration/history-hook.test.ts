@@ -51,10 +51,11 @@ describe("hook install simulation", () => {
 	it("install-hooks writes settings.json with PreCompact + SessionEnd entries", () => {
 		runCli(["history", "install-hooks", "--yes"]);
 		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-		const cmds = [
+		const entries = [
 			...(settings.hooks.PreCompact ?? []),
 			...(settings.hooks.SessionEnd ?? []),
-		].map((h: { command: string }) => h.command);
+		] as Array<{ hooks: Array<{ command: string }> }>;
+		const cmds = entries.flatMap((entry) => (entry.hooks ?? []).map((h) => h.command));
 		expect(cmds.some((c) => c.includes("ai-cortex history capture"))).toBe(true);
 	});
 
@@ -62,7 +63,7 @@ describe("hook install simulation", () => {
 		// 1. Install the hook to read what the command actually contains.
 		runCli(["history", "install-hooks", "--yes"]);
 		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-		const installedCmd = settings.hooks.PreCompact[0].command as string;
+		const installedCmd = settings.hooks.PreCompact[0].hooks[0].command as string;
 
 		// 2. Set up a real git repo (cwd) and the transcript at the auto-discovery path.
 		const repoCwdRaw = setupGitRepo();
@@ -106,13 +107,14 @@ describe("hook install simulation", () => {
 
 	it("uninstall-hooks removes our entries but leaves others", () => {
 		fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+		const thirdParty = { matcher: "", hooks: [{ type: "command", command: "third-party-hook" }] };
 		fs.writeFileSync(
 			path.join(home, ".claude", "settings.json"),
-			JSON.stringify({ hooks: { PreCompact: [{ command: "third-party-hook" }] } }),
+			JSON.stringify({ hooks: { PreCompact: [thirdParty] } }),
 		);
 		runCli(["history", "install-hooks", "--yes"]);
 		runCli(["history", "uninstall-hooks", "--yes"]);
 		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-		expect(settings.hooks.PreCompact).toEqual([{ command: "third-party-hook" }]);
+		expect(settings.hooks.PreCompact).toEqual([thirdParty]);
 	});
 });
