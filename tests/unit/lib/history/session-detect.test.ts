@@ -47,11 +47,11 @@ describe("detectCurrentSession", () => {
 		expect(result).toEqual({ sessionId: "claude-id", source: "env:CLAUDE_SESSION_ID" });
 	});
 
-	it("scans known harness vars in declared order", () => {
+	it("ignores CODEX_SESSION_ID and CURSOR_SESSION_ID (those tools use stdin JSON)", () => {
 		process.env.CODEX_SESSION_ID = "codex-id";
 		process.env.CURSOR_SESSION_ID = "cursor-id";
 		const result = detectCurrentSession({ cwd: "/some/dir" });
-		expect(result?.sessionId).toBe("codex-id");
+		expect(result).toBeNull();
 	});
 
 	it("falls back to most-recent-mtime in Claude Code project dir", () => {

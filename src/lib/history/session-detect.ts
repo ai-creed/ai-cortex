@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { validateSessionId } from "./store.js";
 
+// Claude Code sets CLAUDE_SESSION_ID in MCP server and subagent spawn environments.
+// Codex and other tools pass session_id via stdin JSON instead of env vars —
+// that path is handled by `history capture` reading hook stdin.
 const KNOWN_HARNESS_ENV_VARS = [
 	"CLAUDE_SESSION_ID",
-	"CODEX_SESSION_ID",
-	"CURSOR_SESSION_ID",
 ] as const;
 
 export type DetectionSource = `env:${string}` | "mtime-heuristic";
