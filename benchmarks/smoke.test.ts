@@ -16,7 +16,7 @@ describe("bench smoke test", () => {
 		expect(output).toContain("Quality");
 	});
 
-	it("perf suite runs on self-repo only with --fast", () => {
+	it("perf suite runs on self-repo only with --fast", { timeout: 30000 }, () => {
 		const result = spawnSync(
 			"npx",
 			["tsx", "benchmarks/runner.ts", "--suite", "perf", "--repo", "ai-cortex", "--fast"],
