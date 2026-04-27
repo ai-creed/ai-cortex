@@ -232,6 +232,31 @@ Explicit deep search with pool size control. Same as `suggest_files` but accepts
 - `stale` (optional, boolean) — skip staleness check
 - `poolSize` (optional, integer) — candidate pool size (default 60, max 200)
 
+#### `suggest_files_semantic`
+
+Rank files by semantic similarity using sentence embeddings. Use when the task is conceptual or fuzzy and keyword/graph ranking (`suggest_files`) returns nothing useful. The first call downloads ~23 MB (`Xenova/all-MiniLM-L6-v2`, 384-dim) into `~/.cache/ai-cortex/models/`; subsequent calls are fast.
+
+**Parameters:**
+- `task` (required) — what you're trying to do
+- `path` (optional) — repo path (defaults to cwd)
+- `limit` (optional, integer) — max results (default 10, max 20)
+- `stale` (optional, boolean) — skip staleness check
+
+#### `search_history`
+
+Search the compacted history of past agent sessions in this project. Use this to recover context lost to harness compaction (decisions, file paths, user corrections, prior discussion). Defaults to the current session and auto-broadens to the whole project if the current-session search returns nothing.
+
+Captured sessions live under `~/.cache/ai-cortex/v1/<repo-key>/history/`; install hooks once with `ai-cortex history install-hooks` to populate them automatically. The installer wires hooks for both Claude Code (`~/.claude/settings.json`) and Codex CLI (`~/.codex/config.toml`), with timestamped `.bak.*` backups for any file it modifies.
+
+**Parameters:**
+- `query` (required) — text to match against summaries, user prompts, corrections, tool calls, and file paths
+- `sessionId` (optional) — restrict to a specific session id
+- `scope` (optional, `"session" | "project"`) — force a search scope; defaults to current session with auto-broadening
+- `limit` (optional, integer) — max hits (max 50)
+- `path` (optional) — repo path (defaults to cwd)
+
+**Hit kinds and weights** (higher means stronger signal): `correction` 1.0, `userPrompt` 0.7, `filePath` 0.7, `summary` 0.6, `toolCall` 0.5, `rawChunk` 0.5.
+
 #### `index_project`
 
 Call after large structural changes to force a full reindex.

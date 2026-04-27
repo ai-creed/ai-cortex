@@ -1,9 +1,11 @@
 # ai-cortex
 
-`ai-cortex` is a local project rehydration engine for AI agents.
+`ai-cortex` is a local project rehydration and context-recovery engine for AI agents.
 
-Its purpose is to give new agent sessions fast, consistent cached knowledge
-about a project without broad repo scans or writes into the target repository.
+It gives new agent sessions fast, consistent cached knowledge about a project
+without broad repo scans or writes into the target repository, and lets agents
+search the compacted history of past sessions to recover context lost to harness
+compaction (decisions, file paths, user corrections, prior discussion).
 
 > Beta — actively used in personal workflow.
 
@@ -30,6 +32,18 @@ ai-cortex suggest-deep "<task>" --limit <n>    # Return at most n results (defau
 ai-cortex suggest-deep "<task>" --stale        # Use cached data even if stale
 ai-cortex suggest-deep "<task>" --json         # Machine-readable output
 
+ai-cortex suggest-semantic "<task>" [path]     # Semantic embedding ranker (sentence embeddings)
+ai-cortex suggest-semantic "<task>" --limit <n>  # Return at most n results (default 10)
+ai-cortex suggest-semantic "<task>" --stale      # Use cached data even if stale
+ai-cortex suggest-semantic "<task>" --json       # Machine-readable output
+
+ai-cortex history install-hooks                # Install Claude Code + Codex hooks for auto-capture
+ai-cortex history uninstall-hooks              # Remove the installed hooks (both agents)
+ai-cortex history on | off                     # Enable / disable history capture globally
+ai-cortex history capture --session <id>       # Manually capture a session transcript
+ai-cortex history list                         # List captured sessions for the current repo
+ai-cortex history prune --before <YYYY-MM-DD>  # Drop sessions older than the cutoff
+
 ai-cortex mcp                                  # Start MCP server (stdio transport)
 ```
 
@@ -54,10 +68,31 @@ For Codex CLI setup, see [MANUAL.md](./MANUAL.md#setting-up-with-codex-cli).
 | `rehydrate_project` | Once at session start when working in a git repo | Markdown briefing: structure, key files, entry points, recent changes |
 | `suggest_files` | Before reading the codebase for a specific task | Ranked top-5 files with deep ranking (path + fn + call-graph + trigram + content scan) |
 | `suggest_files_deep` | When you need explicit `poolSize` control for tuning | Same as `suggest_files` plus configurable candidate pool size |
+| `suggest_files_semantic` | When keyword/graph ranking misses the conceptual or fuzzy match | Files ranked by sentence-embedding similarity (Xenova/all-MiniLM-L6-v2) |
+| `search_history` | When prior-session context (decisions, corrections, file paths) was lost to compaction | Hits across captured sessions, weighted by kind (corrections, user prompts, tool calls, file paths, summaries) |
 | `index_project` | After large structural changes to force a rebuild | Confirmation with file and doc counts |
 | `blast_radius` | Before modifying a function, to assess impact | Callers organized by hop distance (direct, transitive) with export visibility |
 
 See [MANUAL.md](./MANUAL.md#mcp-server-integration) for full parameter reference.
+
+## History capture
+
+ai-cortex captures compacted summaries of past agent sessions so that the
+`search_history` MCP tool can recover context lost to harness compaction.
+Both Claude Code and Codex CLI are supported.
+
+```bash
+ai-cortex history install-hooks   # one-time setup; wires Claude Code + Codex hooks
+ai-cortex history list            # list captured sessions for the current repo
+ai-cortex history off             # disable capture globally
+```
+
+`install-hooks` edits `~/.claude/settings.json` (Claude Code SessionStart / Stop
+hooks) and `~/.codex/config.toml` (Codex equivalents) and creates timestamped
+`.bak.*` backups for any file it modifies. Captures land under
+`~/.cache/ai-cortex/v1/<repo-key>/history/` and never write into the target
+repo. Search defaults to the current session and auto-broadens to the whole
+project when the current-session search returns nothing.
 
 ## Library API
 
@@ -104,8 +139,9 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
     (tree-sitter    tokenize.ts
      WASM parse)   trigram-index.ts
         |          content-scanner.ts
-   Cache: ~/.cache/ai-cortex/
-   (JSON, schema v3, per-repo keyed by path)
+   Cache: ~/.cache/ai-cortex/v1/<repoKey>/
+   (JSON, schema v3, per-repo keyed by path;
+    history/ subdir holds captured sessions)
 ```
 
 ## Installation
