@@ -8,7 +8,15 @@ vi.mock("../../../src/lib/doc-inputs.js");
 vi.mock("../../../src/lib/import-graph.js");
 vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/diff-files.js");
-vi.mock("../../../src/lib/call-graph.js");
+vi.mock("../../../src/lib/call-graph.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../../src/lib/call-graph.js")>();
+	return {
+		...actual,
+		extractCallGraph: vi.fn(),
+		extractCallGraphRaw: vi.fn(),
+		resolveCallSites: vi.fn(),
+	};
+});
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import { listIndexableFiles } from "../../../src/lib/indexable-files.js";
@@ -24,7 +32,9 @@ import {
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { hashFileContent } from "../../../src/lib/diff-files.js";
-import { extractCallGraph } from "../../../src/lib/call-graph.js";
+import { extractCallGraph, extractCallGraphRaw, resolveCallSites } from "../../../src/lib/call-graph.js";
+import { isAdapterExt, registerAdapter, clearAdapters } from "../../../src/lib/adapters/index.js";
+import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 import type { FilesDiff } from "../../../src/lib/diff-files.js";
@@ -42,7 +52,9 @@ const mockIdentity = {
 	worktreePath: "/repo",
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+	clearAdapters();
+	registerAdapter(await createTypescriptAdapter());
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
 	vi.mocked(listIndexableFiles).mockReturnValue(["README.md", "src/main.ts"]);
@@ -61,6 +73,8 @@ beforeEach(() => {
 	vi.mocked(writeCache).mockReturnValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
 	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
+	vi.mocked(extractCallGraphRaw).mockResolvedValue({ rawCalls: [], functions: [], bindingsByFile: new Map() });
+	vi.mocked(resolveCallSites).mockReturnValue([]);
 });
 
 it("uses schema version 3", () => {
@@ -467,12 +481,16 @@ describe("buildIncrementalIndex", () => {
 
 	it("removes call edges from changed files and re-extracts", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-		vi.mocked(extractCallGraph).mockResolvedValue({
-			calls: [{ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" }],
+		vi.mocked(extractCallGraphRaw).mockResolvedValue({
+			rawCalls: [],
 			functions: [
 				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 			],
+			bindingsByFile: new Map(),
 		});
+		vi.mocked(resolveCallSites).mockReturnValue([
+			{ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" },
+		]);
 		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
@@ -502,16 +520,18 @@ describe("buildIncrementalIndex", () => {
 
 	it("removes call edges from affected callers (files importing changed files)", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_utils_v2");
-		vi.mocked(extractCallGraph).mockResolvedValue({
-			calls: [
-				{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
-				{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
-			],
+		vi.mocked(extractCallGraphRaw).mockResolvedValue({
+			rawCalls: [],
 			functions: [
 				{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
 				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 			],
+			bindingsByFile: new Map(),
 		});
+		vi.mocked(resolveCallSites).mockReturnValue([
+			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
+			{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
+		]);
 		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
@@ -539,10 +559,22 @@ describe("buildIncrementalIndex", () => {
 		// Verify no duplicate functions for the affected-caller file
 		const mainFns = result.functions.filter(f => f.file === "src/main.ts");
 		expect(mainFns).toHaveLength(1);
-		// Verify extractCallGraph was called with both changed + affected-caller files
-		expect(extractCallGraph).toHaveBeenCalledWith(
+		// Verify extractCallGraphRaw was called with both changed + affected-caller files
+		expect(extractCallGraphRaw).toHaveBeenCalledWith(
 			"/repo",
 			expect.arrayContaining(["src/utils.ts", "src/main.ts"]),
 		);
+	});
+});
+
+describe("indexer adapter-driven filter", () => {
+	it("isAdapterExt accepts every TS extension after registration", async () => {
+		clearAdapters();
+		registerAdapter(await createTypescriptAdapter());
+		expect(isAdapterExt("foo.ts")).toBe(true);
+		expect(isAdapterExt("foo.tsx")).toBe(true);
+		expect(isAdapterExt("foo.js")).toBe(true);
+		expect(isAdapterExt("foo.jsx")).toBe(true);
+		expect(isAdapterExt("README.md")).toBe(false);
 	});
 });

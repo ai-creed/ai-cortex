@@ -4,7 +4,13 @@ import {
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
-import { extractCallGraph } from "./call-graph.js";
+import {
+	extractCallGraph,
+	extractCallGraphRaw,
+	resolveCallSites,
+	stripTsExt,
+} from "./call-graph.js";
+import { isAdapterExt } from "./adapters/index.js";
 import { hashFileContent } from "./diff-files.js";
 import type { FilesDiff } from "./diff-files.js";
 import { loadDocs } from "./doc-inputs.js";
@@ -12,12 +18,8 @@ import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
 import { listIndexableFiles } from "./indexable-files.js";
 import { SCHEMA_VERSION, IndexError, RepoIdentityError } from "./models.js";
-import type { RepoCache, RepoIdentity } from "./models.js";
+import type { RepoCache, RepoIdentity, ImportEdge } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
-
-function stripKnownExt(value: string): string {
-	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
-}
 
 export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 	try {
@@ -109,12 +111,10 @@ export async function buildIncrementalIndex(
 	const keptImports = existingCache.imports.filter(
 		(e) => !changedSet.has(e.from) && !removedSet.has(e.from),
 	);
-	const changedTsFiles = diff.changed.filter((p) =>
-		/\.(ts|tsx|js|jsx)$/.test(p),
-	);
+	const changedAdapterFiles = diff.changed.filter(isAdapterExt);
 	const newImports = await extractImports(
 		identity.worktreePath,
-		changedTsFiles,
+		changedAdapterFiles,
 		allFilePaths,
 	);
 	const imports = [...keptImports, ...newImports];
@@ -144,7 +144,7 @@ export async function buildIncrementalIndex(
 	for (const edge of existingCache.imports) {
 		if (touchedSet.has(edge.from)) continue;
 		for (const changed of touchedSet) {
-			const changedStripped = stripKnownExt(changed);
+			const changedStripped = stripTsExt(changed);
 			if (edge.to === changedStripped || edge.to === changedStripped.replace(/\/index$/, "")) {
 				affectedCallers.add(edge.from);
 			}
@@ -163,16 +163,27 @@ export async function buildIncrementalIndex(
 
 	// Reparse changed files + affected callers
 	const filesToReparse = [
-		...changedTsFiles,
-		...[...affectedCallers].filter((p) => /\.(ts|tsx|js|jsx)$/.test(p)),
+		...changedAdapterFiles,
+		...[...affectedCallers].filter(isAdapterExt),
 	];
-	const { calls: newCalls, functions: newFunctions } = await extractCallGraph(
-		identity.worktreePath,
-		filesToReparse,
+	const { rawCalls, functions: newFunctions, bindingsByFile } =
+		await extractCallGraphRaw(identity.worktreePath, filesToReparse);
+	const mergedFunctions = [...keptFunctions, ...newFunctions];
+	const includesByFile = new Map<string, ImportEdge[]>();
+	for (const edge of imports) {
+		const list = includesByFile.get(edge.from) ?? [];
+		list.push(edge);
+		includesByFile.set(edge.from, list);
+	}
+	const newCalls = resolveCallSites(
+		rawCalls,
+		mergedFunctions,
+		bindingsByFile,
+		includesByFile,
 	);
 
 	const calls = [...keptCalls, ...newCalls];
-	const functionNodes = [...keptFunctions, ...newFunctions];
+	const functionNodes = mergedFunctions;
 
 	return {
 		schemaVersion: SCHEMA_VERSION,
