@@ -5,6 +5,7 @@ import type { LangAdapter } from "../../../src/lib/lang-adapter.js";
 const stubAdapter: LangAdapter = {
 	extensions: [".ts", ".tsx"],
 	extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+	extractImportSites: () => [],
 };
 
 describe("adapter registry", () => {
@@ -44,6 +45,7 @@ describe("registry helpers", () => {
 		registerAdapter({
 			extensions: [".foo", ".bar"],
 			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+			extractImportSites: () => [],
 		});
 		expect(isAdapterExt("a.foo")).toBe(true);
 		expect(isAdapterExt("a.bar")).toBe(true);
@@ -55,10 +57,12 @@ describe("registry helpers", () => {
 		registerAdapter({
 			extensions: [".x"],
 			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+			extractImportSites: () => [],
 		});
 		registerAdapter({
 			extensions: [".y", ".z"],
 			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+			extractImportSites: () => [],
 		});
 		const exts = adapterExtensions();
 		expect(new Set(exts)).toEqual(new Set([".x", ".y", ".z"]));

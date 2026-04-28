@@ -193,6 +193,7 @@ describe("extractCallGraph", () => {
 				}],
 				importBindings: [],
 			}),
+			extractImportSites: vi.fn().mockReturnValue([]),
 		};
 		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
 

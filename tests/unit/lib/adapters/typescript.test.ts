@@ -301,3 +301,32 @@ describe("typescript adapter — edge cases", () => {
 		expect(result).toBeDefined();
 	});
 });
+
+describe("typescript adapter — import sites", () => {
+	it("emits a RawImportSite per relative import", () => {
+		const sites = adapter.extractImportSites(
+			`import x from "./foo";\nimport { y } from "../bar/baz";\nimport "external";`,
+			"src/main.ts",
+		);
+		expect(sites).toEqual([
+			{
+				from: "src/main.ts",
+				rawSpecifier: "./foo",
+				candidate: "src/foo",
+			},
+			{
+				from: "src/main.ts",
+				rawSpecifier: "../bar/baz",
+				candidate: "bar/baz",
+			},
+		]);
+	});
+
+	it("ignores non-relative imports", () => {
+		const sites = adapter.extractImportSites(
+			`import { x } from "react";`,
+			"src/main.ts",
+		);
+		expect(sites).toEqual([]);
+	});
+});

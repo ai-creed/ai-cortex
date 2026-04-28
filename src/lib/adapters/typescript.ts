@@ -7,6 +7,7 @@ import type {
 	FileExtractionResult,
 	RawCallSite,
 	ImportBinding,
+	RawImportSite,
 } from "../lang-adapter.js";
 
 // createRequire needed because repo is "type": "module" — no bare require()
@@ -341,6 +342,24 @@ function extractImportBindings(root: SyntaxNode): ImportBinding[] {
 	return bindings;
 }
 
+const TS_IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
+
+function extractImportSitesFromSource(
+	source: string,
+	filePath: string,
+): RawImportSite[] {
+	const sites: RawImportSite[] = [];
+	for (const match of source.matchAll(TS_IMPORT_RE)) {
+		const specifier = match[1];
+		if (!specifier.startsWith(".")) continue;
+		const candidate = path
+			.normalize(path.join(path.dirname(filePath), specifier))
+			.replace(/\\/g, "/");
+		sites.push({ from: filePath, rawSpecifier: specifier, candidate });
+	}
+	return sites;
+}
+
 export async function createTypescriptAdapter(): Promise<LangAdapter> {
 	await initParsers();
 
@@ -360,6 +379,9 @@ export async function createTypescriptAdapter(): Promise<LangAdapter> {
 			const importBindings = extractImportBindings(root);
 
 			return { functions, rawCalls, importBindings };
+		},
+		extractImportSites(source: string, filePath: string): RawImportSite[] {
+			return extractImportSitesFromSource(source, filePath);
 		},
 	};
 }

@@ -14,6 +14,12 @@ export type ImportBinding = {
 	bindingKind: "named" | "default" | "namespace";
 };
 
+export type RawImportSite = {
+	from: string;
+	rawSpecifier: string;
+	candidate: string;
+};
+
 export type FileExtractionResult = {
 	functions: FunctionNode[];
 	rawCalls: RawCallSite[];
@@ -23,4 +29,5 @@ export type FileExtractionResult = {
 export interface LangAdapter {
 	extensions: string[];
 	extractFile(source: string, filePath: string): FileExtractionResult;
+	extractImportSites(source: string, filePath: string): RawImportSite[];
 }
