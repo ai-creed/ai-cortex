@@ -338,6 +338,45 @@ describe("resolveCallSites — C/C++ repo-wide unique fallback", () => {
   });
 });
 
+describe("resolveCallSites — decl-only never becomes a call edge target", () => {
+	it("header prototype is in functions[] but call resolves to the definition", () => {
+		const fns: FunctionNode[] = [
+			// Header declaration
+			{ qualifiedName: "add", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: true },
+			// Live definition
+			{ qualifiedName: "add", file: "src/utils.cpp", exported: true, isDefaultExport: false, line: 3, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "add", kind: "call" },
+		];
+		const edges = resolveCallSites(calls, fns, new Map(), new Map());
+
+		// The call must resolve to the definition, not the declaration
+		expect(edges).toContainEqual({
+			from: "src/main.cpp::main",
+			to: "src/utils.cpp::add",
+			kind: "call",
+		});
+		// It must NOT point to the header prototype
+		expect(edges).not.toContainEqual(
+			expect.objectContaining({ to: "src/utils.h::add" }),
+		);
+	});
+
+	it("decl-only appears in functions[] output from extractFile", async () => {
+		// This tests the extractFile path: header decl shows up in functions list
+		const { createCppAdapter } = await import("../../../src/lib/adapters/cfamily.js");
+		const cppAdapter = await createCppAdapter();
+		const r = cppAdapter.extractFile(
+			`int add(int a, int b);`,   // declaration only
+			"src/utils.h",
+		);
+		const decl = r.functions.find((f) => f.qualifiedName === "add");
+		expect(decl).toBeDefined();
+		expect(decl?.isDeclarationOnly).toBe(true);
+	});
+});
+
 describe("extractCallGraph", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
