@@ -7,8 +7,15 @@ export async function ensureAdapters(): Promise<void> {
   if (ensurePromise) return ensurePromise;
   ensurePromise = (async () => {
     const { createTypescriptAdapter } = await import("./typescript.js");
-    const ts = await createTypescriptAdapter();
+    const { createCAdapter, createCppAdapter } = await import("./cfamily.js");
+    const [ts, c, cpp] = await Promise.all([
+      createTypescriptAdapter(),
+      createCAdapter(),
+      createCppAdapter(),
+    ]);
     registerAdapter(ts);
+    registerAdapter(c);
+    registerAdapter(cpp);
   })();
   return ensurePromise;
 }
