@@ -108,6 +108,57 @@ describe("c adapter — import sites (#include)", () => {
   });
 });
 
+describe("cpp adapter — namespace and class extraction", () => {
+  it("prefixes namespace name on functions", () => {
+    const r = cppAdapter.extractFile(
+      `namespace foo { void bar() {} }`,
+      "src/x.cpp",
+    );
+    expect(r.functions).toContainEqual(
+      expect.objectContaining({ qualifiedName: "foo::bar" }),
+    );
+  });
+
+  it("prefixes nested namespace on functions", () => {
+    const r = cppAdapter.extractFile(
+      `namespace a { namespace b { void c() {} } }`,
+      "src/x.cpp",
+    );
+    expect(r.functions).toContainEqual(
+      expect.objectContaining({ qualifiedName: "a::b::c" }),
+    );
+  });
+
+  it("emits Class::method for inline methods inside class body", () => {
+    const r = cppAdapter.extractFile(
+      `class Foo { public: void bar() {} };`,
+      "src/x.cpp",
+    );
+    expect(r.functions).toContainEqual(
+      expect.objectContaining({ qualifiedName: "Foo::bar" }),
+    );
+  });
+
+  it("emits Class::method for out-of-line definitions", () => {
+    const r = cppAdapter.extractFile(
+      `class Foo { public: void bar(); }; void Foo::bar() {}`,
+      "src/x.cpp",
+    );
+    expect(r.functions.filter((f) => f.qualifiedName === "Foo::bar"))
+      .toHaveLength(2); // declaration + definition
+    expect(
+      r.functions.find(
+        (f) => f.qualifiedName === "Foo::bar" && f.isDeclarationOnly === true,
+      ),
+    ).toBeDefined();
+    expect(
+      r.functions.find(
+        (f) => f.qualifiedName === "Foo::bar" && f.isDeclarationOnly === false,
+      ),
+    ).toBeDefined();
+  });
+});
+
 describe("cfamily adapter — boot", () => {
   it("c adapter reports the right extensions", () => {
     expect(cAdapter.extensions).toEqual([".c"]);

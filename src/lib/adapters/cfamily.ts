@@ -60,16 +60,18 @@ function getStorageClass(node: SyntaxNode): string | null {
 }
 
 function declaratorName(declarator: SyntaxNode): string | null {
-  const name = declarator.childForFieldName("declarator");
-  if (!name) {
-    if (declarator.type === "identifier" || declarator.type === "field_identifier") {
-      return declarator.text;
-    }
-    return null;
+  // If the node itself is a terminal name node, return its text directly
+  if (
+    declarator.type === "identifier" ||
+    declarator.type === "field_identifier" ||
+    declarator.type === "qualified_identifier" ||
+    declarator.type === "destructor_name" ||
+    declarator.type === "operator_name"
+  ) {
+    return declarator.text;
   }
-  if (name.type === "identifier" || name.type === "field_identifier") return name.text;
-  if (name.type === "qualified_identifier") return name.text;
-  if (name.type === "destructor_name" || name.type === "operator_name") return name.text;
+  const name = declarator.childForFieldName("declarator");
+  if (!name) return null;
   return declaratorName(name);
 }
 
@@ -82,51 +84,117 @@ function findFunctionDeclarator(node: SyntaxNode): SyntaxNode | null {
   return null;
 }
 
+function joinQualified(parts: string[], leaf: string): string {
+  if (parts.length === 0) return leaf;
+  return `${parts.join("::")}::${leaf}`;
+}
+
+/** Return the namespace_identifier text for a namespace_definition node, or null. */
+function namespaceIdentifier(node: SyntaxNode): string | null {
+  for (const child of node.children) {
+    if (child.type === "namespace_identifier") return child.text;
+  }
+  return null;
+}
+
+/** Return the type_identifier text for a class_specifier or struct_specifier node, or null. */
+function classIdentifier(node: SyntaxNode): string | null {
+  for (const child of node.children) {
+    if (child.type === "type_identifier") return child.text;
+  }
+  return null;
+}
+
 function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
   const fns: FunctionNode[] = [];
 
-  function walk(node: SyntaxNode): void {
+  function emit(
+    name: string,
+    node: SyntaxNode,
+    isStatic: boolean,
+    isDecl: boolean,
+  ): void {
+    fns.push({
+      qualifiedName: name,
+      file: filePath,
+      exported: !isStatic,
+      isDefaultExport: false,
+      line: node.startPosition.row + 1,
+      isDeclarationOnly: isDecl,
+    });
+  }
+
+  function walk(node: SyntaxNode, nsStack: string[], className: string | null): void {
+    if (node.type === "namespace_definition") {
+      const nsName = namespaceIdentifier(node);
+      const segs: string[] = [];
+      if (nsName) {
+        for (const part of nsName.split("::")) if (part) segs.push(part);
+      }
+      // The body of a namespace_definition is a declaration_list
+      for (const child of node.children) {
+        if (child.type === "declaration_list") {
+          walk(child, [...nsStack, ...segs], className);
+        }
+      }
+      return;
+    }
+
+    if (node.type === "class_specifier" || node.type === "struct_specifier") {
+      const cls = classIdentifier(node);
+      // The body is field_declaration_list
+      for (const child of node.children) {
+        if (child.type === "field_declaration_list") {
+          walk(child, nsStack, cls ?? className);
+        }
+      }
+      return;
+    }
+
     if (node.type === "function_definition") {
       const declarator = node.childForFieldName("declarator");
       const fnDecl = declarator ? findFunctionDeclarator(declarator) : null;
-      if (fnDecl) {
-        const inner = fnDecl.childForFieldName("declarator");
-        const name = inner ? declaratorName(inner) : null;
-        if (name) {
-          const isStatic = getStorageClass(node) === "static";
-          fns.push({
-            qualifiedName: name,
-            file: filePath,
-            exported: !isStatic,
-            isDefaultExport: false,
-            line: node.startPosition.row + 1,
-            isDeclarationOnly: false,
-          });
+      const inner = fnDecl?.childForFieldName("declarator");
+      let name = inner ? declaratorName(inner) : null;
+      if (name) {
+        // If the name already contains "::" (out-of-line Foo::bar), respect it.
+        // Otherwise, prepend className if inside a class body.
+        if (!name.includes("::") && className) {
+          name = `${className}::${name}`;
         }
+        const fullName = joinQualified(nsStack, name);
+        const isStatic = getStorageClass(node) === "static";
+        emit(fullName, node, isStatic, false);
       }
-    } else if (node.type === "declaration") {
+      // Walk body for nested lambdas etc., but reset className context
+      const body = node.childForFieldName("body");
+      if (body) walk(body, nsStack, null);
+      return;
+    }
+
+    // In-class declarations use "field_declaration" (not "declaration")
+    if (node.type === "declaration" || node.type === "field_declaration") {
       const fnDecl = findFunctionDeclarator(node);
       if (fnDecl) {
         const inner = fnDecl.childForFieldName("declarator");
-        const name = inner ? declaratorName(inner) : null;
+        let name = inner ? declaratorName(inner) : null;
         if (name) {
+          if (!name.includes("::") && className) {
+            name = `${className}::${name}`;
+          }
+          const fullName = joinQualified(nsStack, name);
           const isStatic = getStorageClass(node) === "static";
-          fns.push({
-            qualifiedName: name,
-            file: filePath,
-            exported: !isStatic,
-            isDefaultExport: false,
-            line: node.startPosition.row + 1,
-            isDeclarationOnly: true,
-          });
+          emit(fullName, node, isStatic, true);
         }
       }
+      // Don't recurse into declaration children to avoid double-emitting
+      return;
     }
 
-    for (const child of node.children) walk(child);
+    for (const child of node.children) walk(child, nsStack, className);
   }
 
-  walk(root);
+  walk(root, [], null);
   return fns;
 }
 
@@ -137,8 +205,45 @@ function findEnclosingFunctionName(node: SyntaxNode): string | null {
       const decl = cur.childForFieldName("declarator");
       const fnDecl = decl ? findFunctionDeclarator(decl) : null;
       const inner = fnDecl?.childForFieldName("declarator");
-      const name = inner ? declaratorName(inner) : null;
-      if (name) return name;
+      let name = inner ? declaratorName(inner) : null;
+      if (name) {
+        // If the name already has "::", it's already fully qualified (out-of-line method)
+        if (!name.includes("::")) {
+          // Check for enclosing class
+          let classNode: SyntaxNode | null = cur.parent;
+          while (classNode) {
+            if (
+              classNode.type === "class_specifier" ||
+              classNode.type === "struct_specifier"
+            ) {
+              const cls = classIdentifier(classNode);
+              if (cls) name = `${cls}::${name}`;
+              break;
+            }
+            if (
+              classNode.type === "function_definition" ||
+              classNode.type === "namespace_definition"
+            )
+              break;
+            classNode = classNode.parent;
+          }
+        }
+        // Collect outer namespaces
+        const outerNs: string[] = [];
+        let outer: SyntaxNode | null = cur.parent;
+        while (outer) {
+          if (outer.type === "namespace_definition") {
+            const nsName = namespaceIdentifier(outer);
+            if (nsName) {
+              for (const seg of nsName.split("::").reverse()) {
+                if (seg) outerNs.unshift(seg);
+              }
+            }
+          }
+          outer = outer.parent;
+        }
+        return outerNs.length > 0 ? `${outerNs.join("::")}::${name}` : name;
+      }
     }
     cur = cur.parent;
   }
