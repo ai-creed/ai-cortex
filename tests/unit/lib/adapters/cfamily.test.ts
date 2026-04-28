@@ -187,7 +187,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
   it("does not emit a function-pointer variable as a function declaration", async () => {
     const cppAdapter = await createCppAdapter();
     const r = cppAdapter.extractFile(
-      `int (*cmp)(const void*, const void*);`,
+      "int (*cmp)(const void*, const void*);",
       "src/x.cpp",
     );
     expect(r.functions).toHaveLength(0);
@@ -196,7 +196,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
   it("does not emit a function-pointer struct field as a method declaration", async () => {
     const cppAdapter = await createCppAdapter();
     const r = cppAdapter.extractFile(
-      `struct Sorter { int (*compare)(int, int); };`,
+      "struct Sorter { int (*compare)(int, int); };",
       "src/x.h",
     );
     const cmpFn = r.functions.find((f) => f.qualifiedName.includes("compare"));
@@ -206,7 +206,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
   it("still emits a real function prototype from a declaration", async () => {
     const cppAdapter = await createCppAdapter();
     const r = cppAdapter.extractFile(
-      `int add(int a, int b);`,
+      "int add(int a, int b);",
       "src/utils.h",
     );
     const fn = r.functions.find((f) => f.qualifiedName === "add");
