@@ -207,6 +207,89 @@ describe("resolveCallSites — includesByFile parameter", () => {
 	});
 });
 
+describe("resolveCallSites — C/C++ includesByFile resolution", () => {
+	it("resolves call to inline function defined in included header", () => {
+		const fns: FunctionNode[] = [
+			// Inline definition in header (not isDeclarationOnly)
+			{ qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [{ from: "src/main.cpp", to: "src/utils.h" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		expect(edges).toContainEqual({
+			from: "src/main.cpp::main",
+			to: "src/utils.h::helper",
+			kind: "call",
+		});
+	});
+
+	it("does not resolve decl-only function in included header", () => {
+		const fns: FunctionNode[] = [
+			// Declaration only in header
+			{ qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: true },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [{ from: "src/main.cpp", to: "src/utils.h" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		// Should fall back to unresolved
+		expect(edges).toContainEqual(
+			expect.objectContaining({ from: "src/main.cpp::main", to: "::helper" }),
+		);
+	});
+
+	it("resolves to first matching included file when multiple headers are included", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/other.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+			{ qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [
+				{ from: "src/main.cpp", to: "src/other.h" },
+				{ from: "src/main.cpp", to: "src/utils.h" },
+			]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		// Should resolve to the first included file that has a unique live definition
+		expect(edges).toContainEqual({
+			from: "src/main.cpp::main",
+			to: "src/other.h::helper",
+			kind: "call",
+		});
+	});
+
+	it("skips included file with no matching function and falls through to next", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [
+				{ from: "src/main.cpp", to: "src/unrelated.h" }, // no helper here
+				{ from: "src/main.cpp", to: "src/utils.h" },    // helper is here
+			]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		expect(edges).toContainEqual({
+			from: "src/main.cpp::main",
+			to: "src/utils.h::helper",
+			kind: "call",
+		});
+	});
+});
+
 describe("extractCallGraph", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

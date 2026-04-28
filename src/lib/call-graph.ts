@@ -149,6 +149,21 @@ export function resolveCallSites(
 			}
 		}
 
+		// C/C++ include-based lookup: check directly-included files for a live definition
+		const includes = includesByFile.get(raw.callerFile);
+		if (includes) {
+			for (const inc of includes) {
+				const incFile = inc.to;
+				const match = pickUnique(funcsByFile.get(incFile)?.get(raw.rawCallee));
+				if (match) {
+					edges.push({ from: fromKey, to: `${incFile}::${match.qualifiedName}`, kind: raw.kind });
+					resolved = true;
+					break;
+				}
+			}
+		}
+		if (resolved) continue;
+
 		edges.push({ from: fromKey, to: `::${raw.rawCallee}`, kind: raw.kind });
 	}
 
