@@ -1,5 +1,6 @@
 // src/lib/adapters/cfamily.ts
 import { createRequire } from "node:module";
+import * as path from "node:path";
 import type {
   LangAdapter,
   FileExtractionResult,
@@ -198,10 +199,32 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 }
 
 function extractImportSitesFromRoot(
-  _root: SyntaxNode,
-  _filePath: string,
+  root: SyntaxNode,
+  filePath: string,
 ): RawImportSite[] {
-  return []; // Implemented in Task 13
+  const sites: RawImportSite[] = [];
+
+  function walk(node: SyntaxNode): void {
+    if (node.type === "preproc_include") {
+      const pathNode = node.childForFieldName("path");
+      if (pathNode && pathNode.type === "string_literal") {
+        const raw = pathNode.text;
+        const m = raw.match(/^"([^"]+)"$/);
+        if (m) {
+          const rawSpecifier = m[1];
+          const candidate = path
+            .normalize(path.join(path.dirname(filePath), rawSpecifier))
+            .replace(/\\/g, "/");
+          sites.push({ from: filePath, rawSpecifier, candidate });
+        }
+      }
+      // system_lib_string nodes are ignored
+    }
+    for (const child of node.children) walk(child);
+  }
+
+  walk(root);
+  return sites;
 }
 
 function buildAdapter(

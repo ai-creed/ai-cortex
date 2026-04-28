@@ -85,6 +85,29 @@ describe("c adapter — raw call extraction", () => {
   });
 });
 
+describe("c adapter — import sites (#include)", () => {
+  it("emits a RawImportSite for #include \"foo.h\"", () => {
+    const sites = cAdapter.extractImportSites(
+      `#include "foo.h"\nint main(void) { return 0; }`,
+      "src/main.c",
+    );
+    expect(sites).toHaveLength(1);
+    expect(sites[0]).toEqual({
+      from: "src/main.c",
+      rawSpecifier: "foo.h",
+      candidate: "src/foo.h",
+    });
+  });
+
+  it("ignores #include <stdio.h> system headers", () => {
+    const sites = cAdapter.extractImportSites(
+      `#include <stdio.h>\nint main(void) { return 0; }`,
+      "src/main.c",
+    );
+    expect(sites).toEqual([]);
+  });
+});
+
 describe("cfamily adapter — boot", () => {
   it("c adapter reports the right extensions", () => {
     expect(cAdapter.extensions).toEqual([".c"]);
