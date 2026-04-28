@@ -159,6 +159,30 @@ describe("cpp adapter — namespace and class extraction", () => {
   });
 });
 
+describe("cpp adapter — qualified calls and new", () => {
+  it("extracts Foo::bar() as a call with callee 'Foo::bar'", async () => {
+    const cppAdapter = await createCppAdapter();
+    const r = cppAdapter.extractFile(
+      `class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }`,
+      "src/x.cpp",
+    );
+    expect(r.rawCalls).toContainEqual(
+      expect.objectContaining({ rawCallee: "Foo::bar", kind: "call" }),
+    );
+  });
+
+  it("extracts new Foo() as kind 'new'", async () => {
+    const cppAdapter = await createCppAdapter();
+    const r = cppAdapter.extractFile(
+      `class Foo {}; void main2() { Foo* f = new Foo(); }`,
+      "src/x.cpp",
+    );
+    expect(r.rawCalls).toContainEqual(
+      expect.objectContaining({ rawCallee: "Foo", kind: "new" }),
+    );
+  });
+});
+
 describe("cfamily adapter — boot", () => {
   it("c adapter reports the right extensions", () => {
     expect(cAdapter.extensions).toEqual([".c"]);
