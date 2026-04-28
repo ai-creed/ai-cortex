@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { adapterForFile } from "./adapters/index.js";
+import { ensureAdapters } from "./adapters/ensure.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
 import type { CallEdge, FunctionNode } from "./models.js";
 
@@ -110,20 +111,6 @@ export function resolveCallSites(
 	}
 
 	return edges;
-}
-
-// Lazy adapter registration with promise caching to prevent concurrent init
-let ensureAdaptersPromise: Promise<void> | null = null;
-
-async function ensureAdapters(): Promise<void> {
-	if (ensureAdaptersPromise) return ensureAdaptersPromise;
-	ensureAdaptersPromise = (async () => {
-		const { createTypescriptAdapter } = await import("./adapters/typescript.js");
-		const { registerAdapter } = await import("./adapters/index.js");
-		const adapter = await createTypescriptAdapter();
-		registerAdapter(adapter);
-	})();
-	return ensureAdaptersPromise;
 }
 
 export async function extractCallGraph(

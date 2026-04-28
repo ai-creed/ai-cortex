@@ -55,7 +55,7 @@ beforeEach(() => {
 	vi.mocked(loadDocs).mockReturnValue([
 		{ path: "README.md", title: "Test App", body: "# Test App\n" },
 	]);
-	vi.mocked(extractImports).mockReturnValue([]);
+	vi.mocked(extractImports).mockResolvedValue([]);
 	vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
 	vi.mocked(readCacheForWorktree).mockReturnValue(null);
 	vi.mocked(writeCache).mockReturnValue(undefined);
@@ -206,7 +206,7 @@ describe("buildIncrementalIndex", () => {
 
 	it("merges changed files into existing cache", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-		vi.mocked(extractImports).mockReturnValue([
+		vi.mocked(extractImports).mockResolvedValue([
 			{ from: "src/main.ts", to: "src/helper" },
 		]);
 
@@ -246,7 +246,7 @@ describe("buildIncrementalIndex", () => {
 
 	it("replaces import edges from changed files, keeps unchanged", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-		vi.mocked(extractImports).mockReturnValue([
+		vi.mocked(extractImports).mockResolvedValue([
 			{ from: "src/main.ts", to: "src/new-dep" },
 		]);
 
@@ -417,7 +417,7 @@ describe("buildIncrementalIndex", () => {
 
 	it("sets dirtyAtIndex true when passed true", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-		vi.mocked(extractImports).mockReturnValue([]);
+		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
 		const diff: FilesDiff = {
@@ -433,7 +433,7 @@ describe("buildIncrementalIndex", () => {
 
 	it("sets dirtyAtIndex false when passed false", async () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
-		vi.mocked(extractImports).mockReturnValue([]);
+		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
 		const diff: FilesDiff = {
@@ -473,7 +473,7 @@ describe("buildIncrementalIndex", () => {
 				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 			],
 		});
-		vi.mocked(extractImports).mockReturnValue([]);
+		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
 		existing.calls = [
@@ -512,7 +512,7 @@ describe("buildIncrementalIndex", () => {
 				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 			],
 		});
-		vi.mocked(extractImports).mockReturnValue([]);
+		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const existing = makeCacheForIncremental();
 		existing.calls = [

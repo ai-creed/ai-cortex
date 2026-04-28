@@ -1,53 +1,38 @@
-// tests/unit/lib/import-graph.test.ts
-import { describe, expect, it } from "vitest";
-import { extractImportEdgesFromSource } from "../../../src/lib/import-graph.js";
+import { describe, expect, it, beforeAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { extractImports } from "../../../src/lib/import-graph.js";
 
-describe("extractImportEdgesFromSource", () => {
-	it("extracts relative imports and resolves paths", () => {
-		const edges = extractImportEdgesFromSource(
-			"src/a.ts",
-			"import { b } from './b';\nimport c from '../shared/c';",
-		);
-		expect(edges).toEqual([
-			{ from: "src/a.ts", to: "src/b" },
-			{ from: "src/a.ts", to: "shared/c" },
-		]);
-	});
+describe("import-graph (adapter-driven)", () => {
+  let dir: string;
 
-	it("skips non-relative imports", () => {
-		const edges = extractImportEdgesFromSource(
-			"src/a.ts",
-			"import React from 'react';\nimport { x } from 'vitest';",
-		);
-		expect(edges).toHaveLength(0);
-	});
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "ig-"));
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(
+      path.join(dir, "src", "a.ts"),
+      `import { b } from "./b";\nimport "react";`,
+    );
+    fs.writeFileSync(path.join(dir, "src", "b.ts"), `export const b = 1;`);
+  });
 
-	it("strips file extensions from resolved paths", () => {
-		const edges = extractImportEdgesFromSource(
-			"src/a.ts",
-			"import { b } from './b.ts';\nimport c from './c.js';",
-		);
-		expect(edges[0]?.to).toBe("src/b");
-		expect(edges[1]?.to).toBe("src/c");
-	});
+  it("emits canonical edges by resolving against allFilePaths", async () => {
+    const edges = await extractImports(
+      dir,
+      ["src/a.ts", "src/b.ts"],
+      ["src/a.ts", "src/b.ts"],
+    );
+    expect(edges).toContainEqual({ from: "src/a.ts", to: "src/b" });
+    expect(edges.find((e) => e.to.includes("react"))).toBeUndefined();
+  });
 
-	it("does not match 'ui' as substring inside 'builder' (token-boundary check)", () => {
-		// 'electron-builder.yml' path contains 'ui' as substring — must not score
-		const edges = extractImportEdgesFromSource(
-			"src/a.ts",
-			"import { build } from './electron-builder';",
-		);
-		// resolved path is "src/electron-builder" — valid relative import, will be included
-		// but the scoring test belongs in suggest (Phase 3), not here
-		expect(edges[0]?.to).toBe("src/electron-builder");
-	});
-
-	it("uses forward slashes on all platforms", () => {
-		const edges = extractImportEdgesFromSource(
-			"src/deep/a.ts",
-			"import x from '../other';",
-		);
-		expect(edges[0]?.to).toBe("src/other");
-		expect(edges[0]?.to).not.toContain("\\");
-	});
+  it("drops unresolved sites", async () => {
+    const edges = await extractImports(
+      dir,
+      ["src/a.ts"],
+      ["src/a.ts"], // b.ts is not in allFilePaths
+    );
+    expect(edges).toEqual([]);
+  });
 });

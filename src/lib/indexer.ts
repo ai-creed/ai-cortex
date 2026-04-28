@@ -25,7 +25,7 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 		const packageMeta = readPackageMeta(identity.worktreePath);
 		const entryFiles = pickEntryFiles(filePaths, packageMeta);
 		const docs = loadDocs(identity.worktreePath, filePaths);
-		const imports = extractImports(identity.worktreePath, filePaths);
+		const imports = await extractImports(identity.worktreePath, filePaths, filePaths);
 		const fingerprint = buildRepoFingerprint(identity.worktreePath);
 		const files = filePaths.map((p) => ({
 			path: p,
@@ -112,7 +112,11 @@ export async function buildIncrementalIndex(
 	const changedTsFiles = diff.changed.filter((p) =>
 		/\.(ts|tsx|js|jsx)$/.test(p),
 	);
-	const newImports = extractImports(identity.worktreePath, changedTsFiles);
+	const newImports = await extractImports(
+		identity.worktreePath,
+		changedTsFiles,
+		allFilePaths,
+	);
 	const imports = [...keptImports, ...newImports];
 
 	// --- packageMeta ---
