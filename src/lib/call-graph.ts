@@ -6,7 +6,20 @@ import { ensureAdapters } from "./adapters/ensure.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
 import type { CallEdge, FunctionNode } from "./models.js";
 
-function stripKnownExt(value: string): string {
+const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
+const C_FAMILY_EXTS = new Set([
+  ".c", ".cpp", ".cc", ".cxx", ".c++",
+  ".h", ".hpp", ".hh", ".hxx", ".h++",
+]);
+
+function langOf(filePath: string): "ts" | "cfamily" | "other" {
+  const ext = path.extname(filePath);
+  if (TS_EXTS.has(ext)) return "ts";
+  if (C_FAMILY_EXTS.has(ext)) return "cfamily";
+  return "other";
+}
+
+export function stripTsExt(value: string): string {
 	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
 }
 
@@ -14,13 +27,30 @@ function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
 	return path.normalize(path.join(path.dirname(callerFile), fromSpecifier)).replace(/\\/g, "/");
 }
 
-function findTargetFile(normalizedSpecifier: string, allFiles: Map<string, FunctionNode[]>): string | null {
-	const strippedSpecifier = stripKnownExt(normalizedSpecifier);
-	for (const file of allFiles.keys()) {
-		if (stripKnownExt(file) === strippedSpecifier) return file;
+function findTargetFile(
+	normalizedSpecifier: string,
+	allFiles: Map<string, FunctionNode[]>,
+	callerLang: "ts" | "cfamily" | "other",
+): string | null {
+	if (callerLang === "ts") {
+		const stripped = stripTsExt(normalizedSpecifier);
+		for (const file of allFiles.keys()) {
+			if (stripTsExt(file) === stripped) return file;
+		}
+		for (const file of allFiles.keys()) {
+			if (stripTsExt(file) === `${stripped}/index`) return file;
+		}
+		return null;
 	}
-	for (const file of allFiles.keys()) {
-		if (stripKnownExt(file) === `${strippedSpecifier}/index`) return file;
+	if (callerLang === "cfamily") {
+		if (allFiles.has(normalizedSpecifier)) return normalizedSpecifier;
+		const baseName = path.basename(normalizedSpecifier);
+		const matches: string[] = [];
+		for (const file of allFiles.keys()) {
+			if (path.basename(file) === baseName) matches.push(file);
+		}
+		if (matches.length === 1) return matches[0];
+		return null;
 	}
 	return null;
 }
@@ -69,7 +99,7 @@ export function resolveCallSites(
 			const binding = bindings.find((b) => b.localName === receiver);
 			if (binding) {
 				const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-				const targetFile = findTargetFile(specifier, allFileNodes);
+				const targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
 				if (targetFile && binding.bindingKind === "namespace") {
 					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(member));
 					if (targetFunc) {
@@ -89,7 +119,7 @@ export function resolveCallSites(
 		const binding = bindings.find((b) => b.localName === raw.rawCallee);
 		if (binding) {
 			const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-			const targetFile = findTargetFile(specifier, allFileNodes);
+			const targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
 			if (targetFile) {
 				if (binding.bindingKind === "default") {
 					const defaultFunc = allFunctions.find((f) => f.file === targetFile && f.isDefaultExport);
