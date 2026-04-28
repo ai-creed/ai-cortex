@@ -81,6 +81,7 @@ export type FunctionNode = {
 	exported: boolean;
 	isDefaultExport: boolean;
 	line: number;
+	isDeclarationOnly?: boolean;
 };
 
 export type BlastHit = {
