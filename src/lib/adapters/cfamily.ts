@@ -51,25 +51,157 @@ const CPP_EXTS = [
   ".h",
 ];
 
-function extractFunctions(
-  _root: SyntaxNode,
-  _filePath: string,
-): FunctionNode[] {
-  return [];
+function getStorageClass(node: SyntaxNode): string | null {
+  for (const child of node.children) {
+    if (child.type === "storage_class_specifier") return child.text;
+  }
+  return null;
 }
 
-function extractRawCalls(
-  _root: SyntaxNode,
-  _filePath: string,
-): RawCallSite[] {
-  return [];
+function declaratorName(declarator: SyntaxNode): string | null {
+  const name = declarator.childForFieldName("declarator");
+  if (!name) {
+    if (declarator.type === "identifier" || declarator.type === "field_identifier") {
+      return declarator.text;
+    }
+    return null;
+  }
+  if (name.type === "identifier" || name.type === "field_identifier") return name.text;
+  if (name.type === "qualified_identifier") return name.text;
+  if (name.type === "destructor_name" || name.type === "operator_name") return name.text;
+  return declaratorName(name);
+}
+
+function findFunctionDeclarator(node: SyntaxNode): SyntaxNode | null {
+  if (node.type === "function_declarator") return node;
+  for (const child of node.children) {
+    const r = findFunctionDeclarator(child);
+    if (r) return r;
+  }
+  return null;
+}
+
+function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
+  const fns: FunctionNode[] = [];
+
+  function walk(node: SyntaxNode): void {
+    if (node.type === "function_definition") {
+      const declarator = node.childForFieldName("declarator");
+      const fnDecl = declarator ? findFunctionDeclarator(declarator) : null;
+      if (fnDecl) {
+        const inner = fnDecl.childForFieldName("declarator");
+        const name = inner ? declaratorName(inner) : null;
+        if (name) {
+          const isStatic = getStorageClass(node) === "static";
+          fns.push({
+            qualifiedName: name,
+            file: filePath,
+            exported: !isStatic,
+            isDefaultExport: false,
+            line: node.startPosition.row + 1,
+            isDeclarationOnly: false,
+          });
+        }
+      }
+    } else if (node.type === "declaration") {
+      const fnDecl = findFunctionDeclarator(node);
+      if (fnDecl) {
+        const inner = fnDecl.childForFieldName("declarator");
+        const name = inner ? declaratorName(inner) : null;
+        if (name) {
+          const isStatic = getStorageClass(node) === "static";
+          fns.push({
+            qualifiedName: name,
+            file: filePath,
+            exported: !isStatic,
+            isDefaultExport: false,
+            line: node.startPosition.row + 1,
+            isDeclarationOnly: true,
+          });
+        }
+      }
+    }
+
+    for (const child of node.children) walk(child);
+  }
+
+  walk(root);
+  return fns;
+}
+
+function findEnclosingFunctionName(node: SyntaxNode): string | null {
+  let cur: SyntaxNode | null = node.parent;
+  while (cur) {
+    if (cur.type === "function_definition") {
+      const decl = cur.childForFieldName("declarator");
+      const fnDecl = decl ? findFunctionDeclarator(decl) : null;
+      const inner = fnDecl?.childForFieldName("declarator");
+      const name = inner ? declaratorName(inner) : null;
+      if (name) return name;
+    }
+    cur = cur.parent;
+  }
+  return null;
+}
+
+function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
+  const calls: RawCallSite[] = [];
+
+  function walk(node: SyntaxNode): void {
+    if (node.type === "call_expression") {
+      const fnNode = node.childForFieldName("function");
+      if (fnNode) {
+        let rawCallee: string;
+        let kind: RawCallSite["kind"];
+        if (fnNode.type === "field_expression") {
+          const obj = fnNode.childForFieldName("argument")?.text ?? "";
+          const prop = fnNode.childForFieldName("field")?.text ?? "";
+          rawCallee = `${obj}.${prop}`;
+          kind = "method";
+        } else {
+          rawCallee = fnNode.text;
+          kind = "call";
+        }
+        const caller = findEnclosingFunctionName(node);
+        if (caller) {
+          calls.push({
+            callerQualifiedName: caller,
+            callerFile: filePath,
+            rawCallee,
+            kind,
+          });
+        }
+      }
+    }
+    if (node.type === "new_expression") {
+      const typeNode =
+        node.childForFieldName("type") ??
+        node.childForFieldName("constructor") ??
+        node.children.find((c: SyntaxNode) => c.type === "type_identifier");
+      if (typeNode) {
+        const caller = findEnclosingFunctionName(node);
+        if (caller) {
+          calls.push({
+            callerQualifiedName: caller,
+            callerFile: filePath,
+            rawCallee: typeNode.text,
+            kind: "new",
+          });
+        }
+      }
+    }
+    for (const child of node.children) walk(child);
+  }
+
+  walk(root);
+  return calls;
 }
 
 function extractImportSitesFromRoot(
   _root: SyntaxNode,
   _filePath: string,
 ): RawImportSite[] {
-  return [];
+  return []; // Implemented in Task 13
 }
 
 function buildAdapter(
