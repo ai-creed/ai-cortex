@@ -342,14 +342,14 @@ function extractImportBindings(root: SyntaxNode): ImportBinding[] {
 	return bindings;
 }
 
-const TS_IMPORT_RE = /from\s+['"]([^'"]+)['"]/g;
+const TS_STATIC_FROM_RE = /from\s+['"]([^'"]+)['"]/g;
 
 function extractImportSitesFromSource(
 	source: string,
 	filePath: string,
 ): RawImportSite[] {
 	const sites: RawImportSite[] = [];
-	for (const match of source.matchAll(TS_IMPORT_RE)) {
+	for (const match of source.matchAll(TS_STATIC_FROM_RE)) {
 		const specifier = match[1];
 		if (!specifier.startsWith(".")) continue;
 		const candidate = path
