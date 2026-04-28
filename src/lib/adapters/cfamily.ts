@@ -84,6 +84,15 @@ function findFunctionDeclarator(node: SyntaxNode): SyntaxNode | null {
   return null;
 }
 
+/** Returns true if the declarator chain (via "declarator" field) contains a pointer_declarator.
+ *  Used to distinguish function prototypes from function-pointer variable declarations. */
+function hasPointerInChain(node: SyntaxNode): boolean {
+  if (node.type === "pointer_declarator") return true;
+  const child = node.childForFieldName("declarator");
+  if (child) return hasPointerInChain(child);
+  return false;
+}
+
 function joinQualified(parts: string[], leaf: string): string {
   if (parts.length === 0) return leaf;
   return `${parts.join("::")}::${leaf}`;
@@ -177,6 +186,11 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
       const fnDecl = findFunctionDeclarator(node);
       if (fnDecl) {
         const inner = fnDecl.childForFieldName("declarator");
+        // Skip function-pointer variables: int (*cmp)(...) has a pointer_declarator in the chain
+        if (inner && hasPointerInChain(inner)) {
+          for (const child of node.children) walk(child, nsStack, className);
+          return;
+        }
         let name = inner ? declaratorName(inner) : null;
         if (name) {
           if (!name.includes("::") && className) {

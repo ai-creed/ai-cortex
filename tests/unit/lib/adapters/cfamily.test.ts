@@ -183,6 +183,38 @@ describe("cpp adapter — qualified calls and new", () => {
   });
 });
 
+describe("cfamily — function-pointer variables not emitted as declarations", () => {
+  it("does not emit a function-pointer variable as a function declaration", async () => {
+    const cppAdapter = await createCppAdapter();
+    const r = cppAdapter.extractFile(
+      `int (*cmp)(const void*, const void*);`,
+      "src/x.cpp",
+    );
+    expect(r.functions).toHaveLength(0);
+  });
+
+  it("does not emit a function-pointer struct field as a method declaration", async () => {
+    const cppAdapter = await createCppAdapter();
+    const r = cppAdapter.extractFile(
+      `struct Sorter { int (*compare)(int, int); };`,
+      "src/x.h",
+    );
+    const cmpFn = r.functions.find((f) => f.qualifiedName.includes("compare"));
+    expect(cmpFn).toBeUndefined();
+  });
+
+  it("still emits a real function prototype from a declaration", async () => {
+    const cppAdapter = await createCppAdapter();
+    const r = cppAdapter.extractFile(
+      `int add(int a, int b);`,
+      "src/utils.h",
+    );
+    const fn = r.functions.find((f) => f.qualifiedName === "add");
+    expect(fn).toBeDefined();
+    expect(fn?.isDeclarationOnly).toBe(true);
+  });
+});
+
 describe("cfamily adapter — boot", () => {
   it("c adapter reports the right extensions", () => {
     expect(cAdapter.extensions).toEqual([".c"]);
