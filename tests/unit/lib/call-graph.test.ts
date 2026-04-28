@@ -33,6 +33,7 @@ describe("resolveCallSites", () => {
 			rawCallsFixed,
 			funcsWithHelper,
 			new Map(),
+			new Map(),
 		);
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
@@ -56,7 +57,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "named",
 			}]],
 		]);
-		const edges = resolveCallSites(rawCalls, functions, bindings);
+		const edges = resolveCallSites(rawCalls, functions, bindings, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -79,7 +80,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "named",
 			}]],
 		]);
-		const edges = resolveCallSites(rawCalls, functions, bindings);
+		const edges = resolveCallSites(rawCalls, functions, bindings, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -102,7 +103,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "default",
 			}]],
 		]);
-		const edges = resolveCallSites(rawCalls, functions, bindings);
+		const edges = resolveCallSites(rawCalls, functions, bindings, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/c.ts::doThing",
@@ -125,7 +126,7 @@ describe("resolveCallSites", () => {
 				bindingKind: "namespace",
 			}]],
 		]);
-		const edges = resolveCallSites(rawCalls, functions, bindings);
+		const edges = resolveCallSites(rawCalls, functions, bindings, new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "src/b.ts::bar",
@@ -140,7 +141,7 @@ describe("resolveCallSites", () => {
 			rawCallee: "obj.unknown",
 			kind: "method",
 		}];
-		const edges = resolveCallSites(rawCalls, functions, new Map());
+		const edges = resolveCallSites(rawCalls, functions, new Map(), new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "::unknown",
@@ -155,7 +156,7 @@ describe("resolveCallSites", () => {
 			rawCallee: "mystery",
 			kind: "call",
 		}];
-		const edges = resolveCallSites(rawCalls, functions, new Map());
+		const edges = resolveCallSites(rawCalls, functions, new Map(), new Map());
 		expect(edges).toContainEqual({
 			from: "src/a.ts::foo",
 			to: "::mystery",
@@ -177,6 +178,7 @@ describe("resolveCallSites — overload ambiguity", () => {
 			calls,
 			fns,
 			new Map<string, ImportBinding[]>(),
+			new Map(),
 		);
 		expect(edges).toEqual([{ from: "x.cpp::main", to: "::foo", kind: "call" }]);
 	});
@@ -192,8 +194,16 @@ describe("resolveCallSites — overload ambiguity", () => {
 			calls,
 			fns,
 			new Map<string, ImportBinding[]>(),
+			new Map(),
 		);
 		expect(edges).toEqual([{ from: "x.ts::main", to: "x.ts::foo", kind: "call" }]);
+	});
+});
+
+describe("resolveCallSites — includesByFile parameter", () => {
+	it("accepts an empty includes map without throwing", () => {
+		const edges = resolveCallSites([], [], new Map(), new Map());
+		expect(edges).toEqual([]);
 	});
 });
 

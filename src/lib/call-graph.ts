@@ -4,7 +4,7 @@ import path from "node:path";
 import { adapterForFile } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
-import type { CallEdge, FunctionNode } from "./models.js";
+import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
 
 const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const C_FAMILY_EXTS = new Set([
@@ -68,6 +68,7 @@ export function resolveCallSites(
 	rawCalls: RawCallSite[],
 	allFunctions: FunctionNode[],
 	bindingsByFile: Map<string, ImportBinding[]>,
+	includesByFile: Map<string, ImportEdge[]>,
 ): CallEdge[] {
 	const funcsByFile = new Map<string, Map<string, FunctionNode[]>>();
 	for (const fn of allFunctions) {
@@ -154,10 +155,16 @@ export function resolveCallSites(
 	return edges;
 }
 
-export async function extractCallGraph(
+export type ExtractResult = {
+	rawCalls: RawCallSite[];
+	functions: FunctionNode[];
+	bindingsByFile: Map<string, ImportBinding[]>;
+};
+
+export async function extractCallGraphRaw(
 	worktreePath: string,
 	filePaths: string[],
-): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
+): Promise<ExtractResult> {
 	await ensureAdapters();
 	const allFunctions: FunctionNode[] = [];
 	const allRawCalls: RawCallSite[] = [];
@@ -186,6 +193,20 @@ export async function extractCallGraph(
 		}
 	}
 
-	const calls = resolveCallSites(allRawCalls, allFunctions, bindingsByFile);
-	return { calls, functions: allFunctions };
+	return { rawCalls: allRawCalls, functions: allFunctions, bindingsByFile };
+}
+
+export async function extractCallGraph(
+	worktreePath: string,
+	filePaths: string[],
+): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
+	const { rawCalls, functions, bindingsByFile } = await extractCallGraphRaw(
+		worktreePath,
+		filePaths,
+	);
+	// first-index callers don't need cross-include resolution beyond what
+	// bindings provide; pass an empty includes map. The incremental indexer
+	// builds a real includesByFile.
+	const calls = resolveCallSites(rawCalls, functions, bindingsByFile, new Map());
+	return { calls, functions };
 }
