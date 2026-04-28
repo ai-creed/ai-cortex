@@ -25,16 +25,27 @@ function findTargetFile(normalizedSpecifier: string, allFiles: Map<string, Funct
 	return null;
 }
 
+function pickUnique(
+	fns: FunctionNode[] | undefined,
+): FunctionNode | null {
+	if (!fns) return null;
+	const live = fns.filter((f) => !f.isDeclarationOnly);
+	if (live.length === 1) return live[0];
+	return null;
+}
+
 export function resolveCallSites(
 	rawCalls: RawCallSite[],
 	allFunctions: FunctionNode[],
 	bindingsByFile: Map<string, ImportBinding[]>,
 ): CallEdge[] {
-	const funcsByFile = new Map<string, Map<string, FunctionNode>>();
+	const funcsByFile = new Map<string, Map<string, FunctionNode[]>>();
 	for (const fn of allFunctions) {
 		let fileMap = funcsByFile.get(fn.file);
 		if (!fileMap) { fileMap = new Map(); funcsByFile.set(fn.file, fileMap); }
-		fileMap.set(fn.qualifiedName, fn);
+		const list = fileMap.get(fn.qualifiedName) ?? [];
+		list.push(fn);
+		fileMap.set(fn.qualifiedName, list);
 	}
 
 	const allFileNodes = new Map<string, FunctionNode[]>();
@@ -60,7 +71,7 @@ export function resolveCallSites(
 				const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
 				const targetFile = findTargetFile(specifier, allFileNodes);
 				if (targetFile && binding.bindingKind === "namespace") {
-					const targetFunc = funcsByFile.get(targetFile)?.get(member);
+					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(member));
 					if (targetFunc) {
 						edges.push({ from: fromKey, to: `${targetFile}::${targetFunc.qualifiedName}`, kind: raw.kind });
 						resolved = true;
@@ -87,7 +98,7 @@ export function resolveCallSites(
 						resolved = true;
 					}
 				} else {
-					const targetFunc = funcsByFile.get(targetFile)?.get(binding.importedName);
+					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(binding.importedName));
 					if (targetFunc) {
 						edges.push({ from: fromKey, to: `${targetFile}::${targetFunc.qualifiedName}`, kind: raw.kind });
 						resolved = true;
@@ -100,7 +111,7 @@ export function resolveCallSites(
 
 		const sameFile = funcsByFile.get(raw.callerFile);
 		if (sameFile) {
-			const match = sameFile.get(raw.rawCallee);
+			const match = pickUnique(sameFile.get(raw.rawCallee));
 			if (match) {
 				edges.push({ from: fromKey, to: `${raw.callerFile}::${match.qualifiedName}`, kind: raw.kind });
 				continue;

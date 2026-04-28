@@ -164,6 +164,39 @@ describe("resolveCallSites", () => {
 	});
 });
 
+describe("resolveCallSites — overload ambiguity", () => {
+	it("treats >1 same-file matches as unresolved", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "foo", file: "x.cpp", exported: true, isDefaultExport: false, line: 1 },
+			{ qualifiedName: "foo", file: "x.cpp", exported: true, isDefaultExport: false, line: 5 },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "x.cpp", rawCallee: "foo", kind: "call" },
+		];
+		const edges = resolveCallSites(
+			calls,
+			fns,
+			new Map<string, ImportBinding[]>(),
+		);
+		expect(edges).toEqual([{ from: "x.cpp::main", to: "::foo", kind: "call" }]);
+	});
+
+	it("links unique same-file match", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "foo", file: "x.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "x.ts", rawCallee: "foo", kind: "call" },
+		];
+		const edges = resolveCallSites(
+			calls,
+			fns,
+			new Map<string, ImportBinding[]>(),
+		);
+		expect(edges).toEqual([{ from: "x.ts::main", to: "x.ts::foo", kind: "call" }]);
+	});
+});
+
 describe("extractCallGraph", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
