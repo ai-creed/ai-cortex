@@ -106,3 +106,40 @@ describe("queryBlastRadius", () => {
 		expect(result.target.exported).toBe(true);
 	});
 });
+
+describe("queryBlastRadius — overload aggregation", () => {
+	it("aggregates callers across overloads sharing (qualifiedName, file)", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "Foo::bar", file: "x.cpp", exported: true, isDefaultExport: false, line: 10 },
+			{ qualifiedName: "Foo::bar", file: "x.cpp", exported: true, isDefaultExport: false, line: 20 },
+			{ qualifiedName: "callerA", file: "a.cpp", exported: true, isDefaultExport: false, line: 1 },
+			{ qualifiedName: "callerB", file: "b.cpp", exported: true, isDefaultExport: false, line: 1 },
+		];
+		const calls: CallEdge[] = [
+			{ from: "a.cpp::callerA", to: "x.cpp::Foo::bar", kind: "call" },
+			{ from: "b.cpp::callerB", to: "x.cpp::Foo::bar", kind: "call" },
+		];
+		const result = queryBlastRadius(
+			{ qualifiedName: "Foo::bar", file: "x.cpp" },
+			calls,
+			fns,
+		);
+		expect(result.overloadCount).toBe(2);
+		expect(result.totalAffected).toBeGreaterThanOrEqual(2);
+		const allHits = result.tiers.flatMap((t) => t.hits.map((h) => h.qualifiedName));
+		expect(allHits).toContain("callerA");
+		expect(allHits).toContain("callerB");
+	});
+
+	it("omits overloadCount when target identity is unambiguous", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "foo", file: "x.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+		const result = queryBlastRadius(
+			{ qualifiedName: "foo", file: "x.ts" },
+			[],
+			fns,
+		);
+		expect(result.overloadCount === undefined || result.overloadCount === 1).toBe(true);
+	});
+});

@@ -6,6 +6,7 @@ export type BlastRadiusResult = {
 	unresolvedEdges: number;
 	confidence: "full" | "partial";
 	tiers: BlastTier[];
+	overloadCount?: number;
 };
 
 export type BlastTier = {
@@ -23,9 +24,11 @@ export function queryBlastRadius(
 	const maxHops = options?.maxHops ?? 5;
 	const targetKey = `${target.file}::${target.qualifiedName}`;
 
-	const targetFunc = functions.find(
+	const matchingFns = functions.filter(
 		(f) => f.file === target.file && f.qualifiedName === target.qualifiedName,
 	);
+	const exported = matchingFns.some((f) => f.exported);
+	const overloadCount = matchingFns.length > 1 ? matchingFns.length : undefined;
 
 	// Build reverse adjacency: callee -> callers
 	const reverseAdj = new Map<string, Set<string>>();
@@ -114,11 +117,12 @@ export function queryBlastRadius(
 		target: {
 			qualifiedName: target.qualifiedName,
 			file: target.file,
-			exported: targetFunc?.exported ?? false,
+			exported,
 		},
 		totalAffected,
 		unresolvedEdges,
 		confidence: unresolvedEdges === 0 ? "full" : "partial",
 		tiers,
+		overloadCount,
 	};
 }
