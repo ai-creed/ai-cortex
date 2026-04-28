@@ -290,6 +290,54 @@ describe("resolveCallSites — C/C++ includesByFile resolution", () => {
 	});
 });
 
+describe("resolveCallSites — C/C++ repo-wide unique fallback", () => {
+  it("resolves unique repo-wide live definition for cfamily caller", () => {
+    const fns: FunctionNode[] = [
+      { qualifiedName: "helper", file: "src/utils.cpp", exported: true, isDefaultExport: false, line: 5, isDeclarationOnly: false },
+      // also a header decl — should be filtered
+      { qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: true },
+    ];
+    const calls: RawCallSite[] = [
+      { callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+    ];
+    const edges = resolveCallSites(calls, fns, new Map(), new Map());
+    expect(edges).toContainEqual({
+      from: "src/main.cpp::main",
+      to: "src/utils.cpp::helper",
+      kind: "call",
+    });
+  });
+
+  it("falls back to ::rawCallee when >1 live definition exists (ambiguous)", () => {
+    const fns: FunctionNode[] = [
+      { qualifiedName: "helper", file: "src/utils1.cpp", exported: true, isDefaultExport: false, line: 5, isDeclarationOnly: false },
+      { qualifiedName: "helper", file: "src/utils2.cpp", exported: true, isDefaultExport: false, line: 5, isDeclarationOnly: false },
+    ];
+    const calls: RawCallSite[] = [
+      { callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+    ];
+    const edges = resolveCallSites(calls, fns, new Map(), new Map());
+    expect(edges).toContainEqual(
+      expect.objectContaining({ to: "::helper" }),
+    );
+  });
+
+  it("does NOT apply repo-wide fallback for TS callers", () => {
+    const fns: FunctionNode[] = [
+      { qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 5 },
+    ];
+    const calls: RawCallSite[] = [
+      { callerQualifiedName: "main", callerFile: "src/main.ts", rawCallee: "helper", kind: "call" },
+    ];
+    // No bindings, no same-file match (different files)
+    const edges = resolveCallSites(calls, fns, new Map(), new Map());
+    // TS caller with no binding → fallback to ::helper (NOT resolved to utils.ts::helper)
+    expect(edges).toContainEqual(
+      expect.objectContaining({ to: "::helper" }),
+    );
+  });
+});
+
 describe("extractCallGraph", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

@@ -164,6 +164,18 @@ export function resolveCallSites(
 		}
 		if (resolved) continue;
 
+		// Repo-wide unique-name fallback for C/C++ callers only
+		if (!resolved && langOf(raw.callerFile) === "cfamily") {
+			const liveDefs = allFunctions.filter(
+				(f) => f.qualifiedName === raw.rawCallee && !f.isDeclarationOnly,
+			);
+			if (liveDefs.length === 1) {
+				edges.push({ from: fromKey, to: `${liveDefs[0].file}::${liveDefs[0].qualifiedName}`, kind: raw.kind });
+				resolved = true;
+			}
+		}
+		if (resolved) continue;
+
 		edges.push({ from: fromKey, to: `::${raw.rawCallee}`, kind: raw.kind });
 	}
 
