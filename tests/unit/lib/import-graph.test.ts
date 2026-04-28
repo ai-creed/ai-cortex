@@ -12,9 +12,9 @@ describe("import-graph (adapter-driven)", () => {
     fs.mkdirSync(path.join(dir, "src"));
     fs.writeFileSync(
       path.join(dir, "src", "a.ts"),
-      `import { b } from "./b";\nimport "react";`,
+      "import { b } from \"./b\";\nimport \"react\";",
     );
-    fs.writeFileSync(path.join(dir, "src", "b.ts"), `export const b = 1;`);
+    fs.writeFileSync(path.join(dir, "src", "b.ts"), "export const b = 1;");
   });
 
   it("emits canonical edges by resolving against allFilePaths", async () => {
@@ -50,13 +50,13 @@ describe("import-graph — C/C++ basename fallback", () => {
     // Caller: #include "utils.h" — no relative path component, just a basename
     fs.writeFileSync(
       path.join(dir, "src", "main.cpp"),
-      `#include "utils.h"\n\nint main() { return 0; }\n`,
+      "#include \"utils.h\"\n\nint main() { return 0; }\n",
     );
     // Target header is in lib/, not src/ — so candidate "src/utils.h" won't
     // exist in allFilePaths but "lib/utils.h" will match by basename.
     fs.writeFileSync(
       path.join(dir, "lib", "utils.h"),
-      `int helper();\n`,
+      "int helper();\n",
     );
   });
 
@@ -84,7 +84,7 @@ describe("import-graph — C/C++ basename fallback", () => {
   it("drops include when multiple files share the same basename (ambiguous)", async () => {
     // Two files both named utils.h → basename fallback returns null (ambiguous)
     fs.mkdirSync(path.join(dir, "alt"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "alt", "utils.h"), `// alt\n`);
+    fs.writeFileSync(path.join(dir, "alt", "utils.h"), "// alt\n");
 
     const edges = await extractImports(
       dir,

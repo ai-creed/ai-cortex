@@ -368,7 +368,7 @@ describe("resolveCallSites — decl-only never becomes a call edge target", () =
 		const { createCppAdapter } = await import("../../../src/lib/adapters/cfamily.js");
 		const cppAdapter = await createCppAdapter();
 		const r = cppAdapter.extractFile(
-			`int add(int a, int b);`,   // declaration only
+			"int add(int a, int b);",   // declaration only
 			"src/utils.h",
 		);
 		const decl = r.functions.find((f) => f.qualifiedName === "add");

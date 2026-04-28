@@ -88,7 +88,7 @@ describe("c adapter — raw call extraction", () => {
 describe("c adapter — import sites (#include)", () => {
   it("emits a RawImportSite for #include \"foo.h\"", () => {
     const sites = cAdapter.extractImportSites(
-      `#include "foo.h"\nint main(void) { return 0; }`,
+      "#include \"foo.h\"\nint main(void) { return 0; }",
       "src/main.c",
     );
     expect(sites).toHaveLength(1);
@@ -101,7 +101,7 @@ describe("c adapter — import sites (#include)", () => {
 
   it("ignores #include <stdio.h> system headers", () => {
     const sites = cAdapter.extractImportSites(
-      `#include <stdio.h>\nint main(void) { return 0; }`,
+      "#include <stdio.h>\nint main(void) { return 0; }",
       "src/main.c",
     );
     expect(sites).toEqual([]);
@@ -111,7 +111,7 @@ describe("c adapter — import sites (#include)", () => {
 describe("cpp adapter — namespace and class extraction", () => {
   it("prefixes namespace name on functions", () => {
     const r = cppAdapter.extractFile(
-      `namespace foo { void bar() {} }`,
+      "namespace foo { void bar() {} }",
       "src/x.cpp",
     );
     expect(r.functions).toContainEqual(
@@ -121,7 +121,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 
   it("prefixes nested namespace on functions", () => {
     const r = cppAdapter.extractFile(
-      `namespace a { namespace b { void c() {} } }`,
+      "namespace a { namespace b { void c() {} } }",
       "src/x.cpp",
     );
     expect(r.functions).toContainEqual(
@@ -131,7 +131,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 
   it("emits Class::method for inline methods inside class body", () => {
     const r = cppAdapter.extractFile(
-      `class Foo { public: void bar() {} };`,
+      "class Foo { public: void bar() {} };",
       "src/x.cpp",
     );
     expect(r.functions).toContainEqual(
@@ -141,7 +141,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 
   it("emits Class::method for out-of-line definitions", () => {
     const r = cppAdapter.extractFile(
-      `class Foo { public: void bar(); }; void Foo::bar() {}`,
+      "class Foo { public: void bar(); }; void Foo::bar() {}",
       "src/x.cpp",
     );
     expect(r.functions.filter((f) => f.qualifiedName === "Foo::bar"))
@@ -163,7 +163,7 @@ describe("cpp adapter — qualified calls and new", () => {
   it("extracts Foo::bar() as a call with callee 'Foo::bar'", async () => {
     const cppAdapter = await createCppAdapter();
     const r = cppAdapter.extractFile(
-      `class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }`,
+      "class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }",
       "src/x.cpp",
     );
     expect(r.rawCalls).toContainEqual(
@@ -174,7 +174,7 @@ describe("cpp adapter — qualified calls and new", () => {
   it("extracts new Foo() as kind 'new'", async () => {
     const cppAdapter = await createCppAdapter();
     const r = cppAdapter.extractFile(
-      `class Foo {}; void main2() { Foo* f = new Foo(); }`,
+      "class Foo {}; void main2() { Foo* f = new Foo(); }",
       "src/x.cpp",
     );
     expect(r.rawCalls).toContainEqual(

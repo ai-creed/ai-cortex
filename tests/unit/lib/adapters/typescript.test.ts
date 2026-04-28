@@ -305,7 +305,7 @@ describe("typescript adapter — edge cases", () => {
 describe("typescript adapter — import sites", () => {
 	it("emits a RawImportSite per relative import", () => {
 		const sites = adapter.extractImportSites(
-			`import x from "./foo";\nimport { y } from "../bar/baz";\nimport "external";`,
+			"import x from \"./foo\";\nimport { y } from \"../bar/baz\";\nimport \"external\";",
 			"src/main.ts",
 		);
 		expect(sites).toEqual([
@@ -324,7 +324,7 @@ describe("typescript adapter — import sites", () => {
 
 	it("ignores non-relative imports", () => {
 		const sites = adapter.extractImportSites(
-			`import { x } from "react";`,
+			"import { x } from \"react\";",
 			"src/main.ts",
 		);
 		expect(sites).toEqual([]);
