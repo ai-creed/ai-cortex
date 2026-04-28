@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { adapterForFile } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
+import { extractImports } from "./import-graph.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
 import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
 
@@ -11,6 +12,8 @@ const C_FAMILY_EXTS = new Set([
   ".c", ".cpp", ".cc", ".cxx", ".c++",
   ".h", ".hpp", ".hh", ".hxx", ".h++",
 ]);
+const H_EXTS = new Set([".h", ".hh", ".hpp", ".hxx", ".h++"]);
+const SRC_EXTS = [".cpp", ".cc", ".cxx", ".c++", ".c"];
 
 function langOf(filePath: string): "ts" | "cfamily" | "other" {
   const ext = path.extname(filePath);
@@ -62,6 +65,13 @@ function pickUnique(
 	const live = fns.filter((f) => !f.isDeclarationOnly);
 	if (live.length === 1) return live[0];
 	return null;
+}
+
+function companionSourceFiles(headerPath: string, known: Map<string, unknown>): string[] {
+	const ext = path.extname(headerPath);
+	if (!H_EXTS.has(ext)) return [];
+	const base = headerPath.slice(0, -ext.length);
+	return SRC_EXTS.map((e) => `${base}${e}`).filter((p) => known.has(p));
 }
 
 export function resolveCallSites(
@@ -152,13 +162,21 @@ export function resolveCallSites(
 		// C/C++ include-based lookup: check directly-included files for a live definition
 		const includes = includesByFile.get(raw.callerFile);
 		if (includes) {
-			for (const inc of includes) {
+			outer: for (const inc of includes) {
 				const incFile = inc.to;
 				const match = pickUnique(funcsByFile.get(incFile)?.get(raw.rawCallee));
 				if (match) {
 					edges.push({ from: fromKey, to: `${incFile}::${match.qualifiedName}`, kind: raw.kind });
 					resolved = true;
 					break;
+				}
+				for (const companion of companionSourceFiles(incFile, funcsByFile)) {
+					const compMatch = pickUnique(funcsByFile.get(companion)?.get(raw.rawCallee));
+					if (compMatch) {
+						edges.push({ from: fromKey, to: `${companion}::${compMatch.qualifiedName}`, kind: raw.kind });
+						resolved = true;
+						break outer;
+					}
 				}
 			}
 		}
@@ -167,7 +185,11 @@ export function resolveCallSites(
 		// Repo-wide unique-name fallback for C/C++ callers only
 		if (!resolved && langOf(raw.callerFile) === "cfamily") {
 			const liveDefs = allFunctions.filter(
-				(f) => f.qualifiedName === raw.rawCallee && !f.isDeclarationOnly,
+				(f) =>
+					f.qualifiedName === raw.rawCallee &&
+					!f.isDeclarationOnly &&
+					f.exported &&
+					langOf(f.file) === "cfamily",
 			);
 			if (liveDefs.length === 1) {
 				edges.push({ from: fromKey, to: `${liveDefs[0].file}::${liveDefs[0].qualifiedName}`, kind: raw.kind });
@@ -231,9 +253,13 @@ export async function extractCallGraph(
 		worktreePath,
 		filePaths,
 	);
-	// first-index callers don't need cross-include resolution beyond what
-	// bindings provide; pass an empty includes map. The incremental indexer
-	// builds a real includesByFile.
-	const calls = resolveCallSites(rawCalls, functions, bindingsByFile, new Map());
+	const importEdges = await extractImports(worktreePath, filePaths, filePaths);
+	const includesByFile = new Map<string, ImportEdge[]>();
+	for (const edge of importEdges) {
+		const list = includesByFile.get(edge.from) ?? [];
+		list.push(edge);
+		includesByFile.set(edge.from, list);
+	}
+	const calls = resolveCallSites(rawCalls, functions, bindingsByFile, includesByFile);
 	return { calls, functions };
 }

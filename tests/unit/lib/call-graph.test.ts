@@ -3,9 +3,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("node:fs");
 vi.mock("../../../src/lib/adapters/index.js");
+vi.mock("../../../src/lib/import-graph.js");
 
 import fs from "node:fs";
 import { adapterForFile } from "../../../src/lib/adapters/index.js";
+import { extractImports } from "../../../src/lib/import-graph.js";
 import type { LangAdapter, RawCallSite, ImportBinding } from "../../../src/lib/lang-adapter.js";
 import type { FunctionNode } from "../../../src/lib/models.js";
 import { resolveCallSites, extractCallGraph } from "../../../src/lib/call-graph.js";
@@ -384,6 +386,7 @@ describe("extractCallGraph", () => {
 
 	it("skips files with no adapter", async () => {
 		vi.mocked(adapterForFile).mockReturnValue(undefined);
+		vi.mocked(extractImports).mockResolvedValue([]);
 		const result = await extractCallGraph("/repo", ["src/styles.css"]);
 		expect(result.calls).toHaveLength(0);
 		expect(result.functions).toHaveLength(0);
@@ -409,6 +412,7 @@ describe("extractCallGraph", () => {
 			extractImportSites: vi.fn().mockReturnValue([]),
 		};
 		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const result = await extractCallGraph("/repo", ["src/main.ts"]);
 		expect(result.functions).toHaveLength(2);
@@ -417,5 +421,68 @@ describe("extractCallGraph", () => {
 			to: "src/main.ts::helper",
 			kind: "call",
 		});
+	});
+
+	it("calls extractImports with the file list and passes results to resolver", async () => {
+		vi.mocked(fs.readFileSync).mockReturnValue("");
+		const mockAdapter: LangAdapter = {
+			extensions: [".cpp"],
+			extractFile: vi.fn().mockReturnValue({ functions: [], rawCalls: [], importBindings: [] }),
+			extractImportSites: vi.fn().mockReturnValue([]),
+		};
+		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+		vi.mocked(extractImports).mockResolvedValue([]);
+
+		await extractCallGraph("/repo", ["src/main.cpp"]);
+		expect(vi.mocked(extractImports)).toHaveBeenCalledWith("/repo", ["src/main.cpp"], ["src/main.cpp"]);
+	});
+});
+
+describe("resolveCallSites — companion source file lookup", () => {
+	it("resolves call via companion .cpp when header has only a decl and another live def makes repo-wide ambiguous", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: true },
+			{ qualifiedName: "helper", file: "src/utils.cpp", exported: true, isDefaultExport: false, line: 5, isDeclarationOnly: false },
+			// second live def in unrelated file makes repo-wide fallback ambiguous
+			{ qualifiedName: "helper", file: "src/other.cpp", exported: true, isDefaultExport: false, line: 10, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [{ from: "src/main.cpp", to: "src/utils.h" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		expect(edges).toContainEqual({
+			from: "src/main.cpp::main",
+			to: "src/utils.cpp::helper",
+			kind: "call",
+		});
+	});
+});
+
+describe("resolveCallSites — repo-wide fallback guards", () => {
+	it("does not resolve C/C++ call to a unique TypeScript function", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const edges = resolveCallSites(calls, fns, new Map(), new Map());
+		expect(edges).toContainEqual(expect.objectContaining({ to: "::helper" }));
+		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/utils.ts::helper" }));
+	});
+
+	it("does not resolve C/C++ call to a static (non-exported) function in another translation unit", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/other.cpp", exported: false, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "helper", kind: "call" },
+		];
+		const edges = resolveCallSites(calls, fns, new Map(), new Map());
+		expect(edges).toContainEqual(expect.objectContaining({ to: "::helper" }));
+		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/other.cpp::helper" }));
 	});
 });
