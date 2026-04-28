@@ -24,6 +24,8 @@ function resolveSite(
   lang: "ts" | "cfamily" | "other",
 ): string | null {
   if (lang === "ts") {
+    // Returns extensionless canonical key (TS edges are keyed without extension).
+    // C-family returns the full repo path instead — intentional asymmetry.
     for (const ext of [".ts", ".tsx", ".js", ".jsx"]) {
       const guess = `${candidate}${ext}`;
       if (allFilePaths.has(guess)) return candidate;
