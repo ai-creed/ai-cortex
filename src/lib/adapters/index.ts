@@ -18,3 +18,13 @@ export function adapterForFile(filePath: string): LangAdapter | undefined {
 export function clearAdapters(): void {
 	adapters.clear();
 }
+
+export function isAdapterExt(filePath: string): boolean {
+	const ext = path.extname(filePath);
+	if (!ext) return false;
+	return adapters.has(ext);
+}
+
+export function adapterExtensions(): string[] {
+	return Array.from(adapters.keys());
+}

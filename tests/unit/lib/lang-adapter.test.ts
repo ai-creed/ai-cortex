@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { registerAdapter, adapterForFile, clearAdapters } from "../../../src/lib/adapters/index.js";
+import { registerAdapter, adapterForFile, clearAdapters, isAdapterExt, adapterExtensions } from "../../../src/lib/adapters/index.js";
 import type { LangAdapter } from "../../../src/lib/lang-adapter.js";
 
 const stubAdapter: LangAdapter = {
@@ -34,5 +34,33 @@ describe("adapter registry", () => {
 	it("returns undefined for file with no extension", () => {
 		registerAdapter(stubAdapter);
 		expect(adapterForFile("Makefile")).toBeUndefined();
+	});
+});
+
+describe("registry helpers", () => {
+	beforeEach(() => clearAdapters());
+
+	it("isAdapterExt returns true for any registered extension", () => {
+		registerAdapter({
+			extensions: [".foo", ".bar"],
+			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+		});
+		expect(isAdapterExt("a.foo")).toBe(true);
+		expect(isAdapterExt("a.bar")).toBe(true);
+		expect(isAdapterExt("a.baz")).toBe(false);
+		expect(isAdapterExt("noext")).toBe(false);
+	});
+
+	it("adapterExtensions returns the union of registered extensions", () => {
+		registerAdapter({
+			extensions: [".x"],
+			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+		});
+		registerAdapter({
+			extensions: [".y", ".z"],
+			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+		});
+		const exts = adapterExtensions();
+		expect(new Set(exts)).toEqual(new Set([".x", ".y", ".z"]));
 	});
 });
