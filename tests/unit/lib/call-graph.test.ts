@@ -486,3 +486,59 @@ describe("resolveCallSites — repo-wide fallback guards", () => {
 		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/other.cpp::helper" }));
 	});
 });
+
+describe("resolveCallSites — include lookup gated to cfamily only", () => {
+	it("does not use includesByFile for a TS caller that lacks a binding", () => {
+		const fns: FunctionNode[] = [
+			{ qualifiedName: "helper", file: "src/b.ts", exported: true, isDefaultExport: false, line: 1 },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/a.ts", rawCallee: "helper", kind: "call" },
+		];
+		// TS import edge exists, but no binding was extracted (e.g. side-effect import)
+		const includesByFile = new Map([
+			["src/a.ts", [{ from: "src/a.ts", to: "src/b.ts" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		// Must NOT resolve via include — TS callers use binding resolution only
+		expect(edges).toContainEqual(expect.objectContaining({ to: "::helper" }));
+		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/b.ts::helper" }));
+	});
+});
+
+describe("resolveCallSites — include lookup requires exported", () => {
+	it("does not resolve to a static function in an included header", () => {
+		const fns: FunctionNode[] = [
+			// static inline in header — exported: false
+			{ qualifiedName: "staticHelper", file: "src/utils.h", exported: false, isDefaultExport: false, line: 1, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "staticHelper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [{ from: "src/main.cpp", to: "src/utils.h" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		// static helper not visible outside its TU
+		expect(edges).toContainEqual(expect.objectContaining({ to: "::staticHelper" }));
+		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/utils.h::staticHelper" }));
+	});
+
+	it("does not resolve to a static function in a companion source file", () => {
+		const fns: FunctionNode[] = [
+			// decl in header
+			{ qualifiedName: "staticHelper", file: "src/utils.h", exported: true, isDefaultExport: false, line: 1, isDeclarationOnly: true },
+			// static definition in companion — exported: false
+			{ qualifiedName: "staticHelper", file: "src/utils.cpp", exported: false, isDefaultExport: false, line: 5, isDeclarationOnly: false },
+		];
+		const calls: RawCallSite[] = [
+			{ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee: "staticHelper", kind: "call" },
+		];
+		const includesByFile = new Map([
+			["src/main.cpp", [{ from: "src/main.cpp", to: "src/utils.h" }]],
+		]);
+		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
+		expect(edges).toContainEqual(expect.objectContaining({ to: "::staticHelper" }));
+		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/utils.cpp::staticHelper" }));
+	});
+});

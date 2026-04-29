@@ -60,9 +60,10 @@ function findTargetFile(
 
 function pickUnique(
 	fns: FunctionNode[] | undefined,
+	requireExported = false,
 ): FunctionNode | null {
 	if (!fns) return null;
-	const live = fns.filter((f) => !f.isDeclarationOnly);
+	const live = fns.filter((f) => !f.isDeclarationOnly && (!requireExported || f.exported));
 	if (live.length === 1) return live[0];
 	return null;
 }
@@ -160,27 +161,29 @@ export function resolveCallSites(
 		}
 
 		// C/C++ include-based lookup: check directly-included files for a live definition
-		const includes = includesByFile.get(raw.callerFile);
-		if (includes) {
-			outer: for (const inc of includes) {
-				const incFile = inc.to;
-				const match = pickUnique(funcsByFile.get(incFile)?.get(raw.rawCallee));
-				if (match) {
-					edges.push({ from: fromKey, to: `${incFile}::${match.qualifiedName}`, kind: raw.kind });
-					resolved = true;
-					break;
-				}
-				for (const companion of companionSourceFiles(incFile, funcsByFile)) {
-					const compMatch = pickUnique(funcsByFile.get(companion)?.get(raw.rawCallee));
-					if (compMatch) {
-						edges.push({ from: fromKey, to: `${companion}::${compMatch.qualifiedName}`, kind: raw.kind });
+		if (langOf(raw.callerFile) === "cfamily") {
+			const includes = includesByFile.get(raw.callerFile);
+			if (includes) {
+				outer: for (const inc of includes) {
+					const incFile = inc.to;
+					const match = pickUnique(funcsByFile.get(incFile)?.get(raw.rawCallee), true);
+					if (match) {
+						edges.push({ from: fromKey, to: `${incFile}::${match.qualifiedName}`, kind: raw.kind });
 						resolved = true;
-						break outer;
+						break;
+					}
+					for (const companion of companionSourceFiles(incFile, funcsByFile)) {
+						const compMatch = pickUnique(funcsByFile.get(companion)?.get(raw.rawCallee), true);
+						if (compMatch) {
+							edges.push({ from: fromKey, to: `${companion}::${compMatch.qualifiedName}`, kind: raw.kind });
+							resolved = true;
+							break outer;
+						}
 					}
 				}
 			}
+			if (resolved) continue;
 		}
-		if (resolved) continue;
 
 		// Repo-wide unique-name fallback for C/C++ callers only
 		if (!resolved && langOf(raw.callerFile) === "cfamily") {
