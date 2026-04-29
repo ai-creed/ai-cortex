@@ -235,6 +235,55 @@ function extractImportBindings(
   return bindings;
 }
 
+function extractImportSitesFromRoot(
+  root: SyntaxNode,
+  filePath: string,
+): RawImportSite[] {
+  const sites: RawImportSite[] = [];
+
+  function walk(node: SyntaxNode): void {
+    if (node.type === "import_from_statement") {
+      const modNode = node.children.find(
+        (c) => c.type === "relative_import" || c.type === "dotted_name",
+      );
+      if (modNode) {
+        const rawSpecifier =
+          modNode.type === "relative_import"
+            ? modNode.text.replace(/\s+/gu, "")
+            : modNode.text;
+        sites.push({
+          from: filePath,
+          rawSpecifier,
+          candidate: moduleSpecifier(modNode, filePath),
+        });
+      }
+      return;
+    }
+    if (node.type === "import_statement") {
+      for (const child of node.children) {
+        let nameNode: SyntaxNode | null = null;
+        if (child.type === "dotted_name") {
+          nameNode = child;
+        } else if (child.type === "aliased_import") {
+          nameNode = child.childForFieldName("name") ?? null;
+        }
+        if (nameNode) {
+          sites.push({
+            from: filePath,
+            rawSpecifier: nameNode.text,
+            candidate: nameNode.text.replace(/\./gu, "/"),
+          });
+        }
+      }
+      return;
+    }
+    for (const child of node.children) walk(child);
+  }
+
+  walk(root);
+  return sites;
+}
+
 export async function createPythonAdapter(): Promise<LangAdapter> {
   await initParser();
   return {
@@ -258,8 +307,20 @@ export async function createPythonAdapter(): Promise<LangAdapter> {
         return { functions: [], rawCalls: [], importBindings: [] };
       }
     },
-    extractImportSites(_source: string, _filePath: string): RawImportSite[] {
-      return [];
+    extractImportSites(source: string, filePath: string): RawImportSite[] {
+      if (!pyParser) return [];
+      let tree;
+      try {
+        tree = pyParser.parse(source);
+      } catch {
+        return [];
+      }
+      if (!tree) return [];
+      try {
+        return extractImportSitesFromRoot(tree.rootNode, filePath);
+      } catch {
+        return [];
+      }
     },
   };
 }

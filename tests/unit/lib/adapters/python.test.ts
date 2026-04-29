@@ -162,3 +162,50 @@ describe("python adapter — import bindings", () => {
     });
   });
 });
+
+describe("python adapter — import site extraction", () => {
+  it("extracts relative import site as repo-root-relative candidate", () => {
+    const sites = adapter.extractImportSites(
+      "from .utils import helper\n",
+      "mypackage/models.py",
+    );
+    expect(sites).toContainEqual(
+      expect.objectContaining({
+        from: "mypackage/models.py",
+        candidate: "mypackage/utils",
+      }),
+    );
+  });
+
+  it("extracts double-dot relative import site", () => {
+    const sites = adapter.extractImportSites(
+      "from ..base import Thing\n",
+      "mypackage/sub/models.py",
+    );
+    expect(sites).toContainEqual(
+      expect.objectContaining({ candidate: "mypackage/base" }),
+    );
+  });
+
+  it("extracts absolute import site as slash-separated candidate", () => {
+    const sites = adapter.extractImportSites(
+      "from mypackage.utils import helper\n",
+      "main.py",
+    );
+    expect(sites).toContainEqual(
+      expect.objectContaining({ candidate: "mypackage/utils" }),
+    );
+  });
+
+  it("extracts plain import statement as slash-separated candidate", () => {
+    const sites = adapter.extractImportSites("import os.path\n", "main.py");
+    expect(sites).toContainEqual(
+      expect.objectContaining({ candidate: "os/path" }),
+    );
+  });
+
+  it("returns empty array for empty file without throwing", () => {
+    expect(() => adapter.extractImportSites("", "pkg/empty.py")).not.toThrow();
+    expect(adapter.extractImportSites("", "pkg/empty.py")).toEqual([]);
+  });
+});
