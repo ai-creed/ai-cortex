@@ -130,6 +130,7 @@ describe("buildIndex", () => {
 		expect(extractCallGraph).toHaveBeenCalledWith(
 			"/repo",
 			["README.md", "src/main.ts"],
+			expect.any(Map),
 		);
 	});
 });

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashFileContent, diffChangedFiles } from "../../../src/lib/diff-files.js";
 import type { RepoCache, RepoIdentity } from "../../../src/lib/models.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
@@ -83,6 +83,18 @@ describe("hashFileContent", () => {
 		expect(hashFileContent(tmpDir, "a.ts")).toBe(
 			hashFileContent(tmpDir, "b.ts"),
 		);
+	});
+
+	it("hashes provided content string without reading the file when content is supplied", () => {
+		const content = "export const x = 1;\n";
+		const expected = createHash("sha256").update(content).digest("hex");
+
+		const spy = vi.spyOn(fs, "readFileSync");
+		const result = hashFileContent(tmpDir, "nonexistent.ts", content);
+
+		expect(result).toBe(expected);
+		expect(spy).not.toHaveBeenCalled();
+		spy.mockRestore();
 	});
 });
 

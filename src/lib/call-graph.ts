@@ -272,6 +272,7 @@ export type ExtractResult = {
 export async function extractCallGraphRaw(
 	worktreePath: string,
 	filePaths: string[],
+	contentMap?: Map<string, string>,
 ): Promise<ExtractResult> {
 	await ensureAdapters();
 	const allFunctions: FunctionNode[] = [];
@@ -283,10 +284,16 @@ export async function extractCallGraphRaw(
 		if (!adapter) continue;
 
 		let source: string;
-		try {
-			source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
-		} catch {
-			continue;
+		if (contentMap) {
+			const cached = contentMap.get(filePath);
+			if (cached === undefined) continue;
+			source = cached;
+		} else {
+			try {
+				source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
+			} catch {
+				continue;
+			}
 		}
 
 		try {
@@ -307,12 +314,14 @@ export async function extractCallGraphRaw(
 export async function extractCallGraph(
 	worktreePath: string,
 	filePaths: string[],
+	contentMap?: Map<string, string>,
 ): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
 	const { rawCalls, functions, bindingsByFile } = await extractCallGraphRaw(
 		worktreePath,
 		filePaths,
+		contentMap,
 	);
-	const importEdges = await extractImports(worktreePath, filePaths, filePaths);
+	const importEdges = await extractImports(worktreePath, filePaths, filePaths, contentMap);
 	const includesByFile = new Map<string, ImportEdge[]>();
 	for (const edge of importEdges) {
 		const list = includesByFile.get(edge.from) ?? [];

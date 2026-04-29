@@ -2,10 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import { rehydrateRepo, suggestRepo, indexRepo, queryBlastRadius } from "../../../src/lib/index.js";
 import { IndexError, RepoIdentityError } from "../../../src/lib/models.js";
 import { createServer } from "../../../src/mcp/server.js";
+
+const _require = createRequire(import.meta.url);
 
 vi.mock("../../../src/lib/index.js");
 vi.mock("node:fs");
@@ -454,6 +457,15 @@ describe("suggest_files_semantic", () => {
 
 		expect(result.isError).toBe(true);
 		expect((result.content[0] as any).text).toContain("not a git repo");
+	});
+});
+
+describe("SERVER_VERSION", () => {
+	it("matches package.json version", async () => {
+		const client = await makeClient();
+		const capturedServerVersion = client.getServerVersion()?.version;
+		const pkg = _require("../../../package.json") as { version: string };
+		expect(capturedServerVersion).toBe(pkg.version);
 	});
 });
 

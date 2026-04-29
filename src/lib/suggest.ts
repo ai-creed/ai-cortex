@@ -1,12 +1,5 @@
 // src/lib/suggest.ts
-import {
-	buildRepoFingerprint,
-	isWorktreeDirty,
-	readCacheForWorktree,
-	writeCache,
-} from "./cache-store.js";
-import { diffChangedFiles } from "./diff-files.js";
-import { buildIncrementalIndex, indexRepo } from "./indexer.js";
+import { resolveCacheWithFreshness } from "./cache-coordinator.js";
 import { IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
@@ -89,7 +82,6 @@ export async function suggestRepo(
 		}
 
 		const identity = resolveRepoIdentity(repoPath);
-		const cached = readCacheForWorktree(identity.repoKey, identity.worktreeKey);
 
 		if (
 			options.poolSize !== undefined &&
@@ -108,40 +100,7 @@ export async function suggestRepo(
 			throw new IndexError(`suggest mode must be 'fast', 'deep', or 'semantic' (got '${options.mode}')`);
 		}
 
-		let cache: RepoCache;
-		let cacheStatus: SuggestResultCommon["cacheStatus"];
-
-		if (!cached) {
-			cache = await indexRepo(repoPath);
-			cacheStatus = "reindexed";
-		} else {
-			const fingerprint = buildRepoFingerprint(identity.worktreePath);
-			const fingerprintStale = cached.fingerprint !== fingerprint;
-			const dirty = isWorktreeDirty(identity.worktreePath);
-			// Dirty-revert detection: cache was built from dirty worktree,
-			// but worktree is now clean — cached content is stale
-			const dirtyReverted = !dirty && !!cached.dirtyAtIndex;
-			const isStale = fingerprintStale || dirty || dirtyReverted;
-
-			if (!isStale) {
-				cache = cached;
-				cacheStatus = "fresh";
-			} else if (options.stale) {
-				cache = cached;
-				cacheStatus = "stale";
-			} else {
-				// Dirty-revert: git-diff sees no changes (worktree matches HEAD),
-				// but cached hashes are stale. Force hash-compare so it detects
-				// the delta between cached dirty hashes and clean disk content.
-				const diff = diffChangedFiles(identity, cached, {
-					forceHashCompare: dirtyReverted,
-				});
-				const isDirtyRefresh = dirty;
-				cache = await buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
-				writeCache(cache);
-				cacheStatus = "reindexed";
-			}
-		}
+		const { cache, cacheStatus } = await resolveCacheWithFreshness(identity, options);
 
 		const from = normalizeFrom(options.from, cache);
 		const mode = options.mode ?? "fast";

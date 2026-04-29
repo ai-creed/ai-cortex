@@ -434,7 +434,7 @@ describe("extractCallGraph", () => {
 		vi.mocked(extractImports).mockResolvedValue([]);
 
 		await extractCallGraph("/repo", ["src/main.cpp"]);
-		expect(vi.mocked(extractImports)).toHaveBeenCalledWith("/repo", ["src/main.cpp"], ["src/main.cpp"]);
+		expect(vi.mocked(extractImports)).toHaveBeenCalledWith("/repo", ["src/main.cpp"], ["src/main.cpp"], undefined);
 	});
 });
 
@@ -694,4 +694,29 @@ describe("resolveCallSites — Python named import cross-file", () => {
       kind: "call",
     });
   });
+});
+
+describe("extractCallGraph — contentMap skips file reads", () => {
+	beforeEach(() => {
+		vi.mocked(extractImports).mockResolvedValue([]);
+	});
+
+	it("performs zero fs.readFileSync calls when contentMap is provided", async () => {
+		const mockAdapter: LangAdapter = {
+			extensions: [".ts"],
+			extractImportSites: () => [],
+			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+		};
+		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+
+		const spy = vi.spyOn(fs, "readFileSync");
+		const contentMap = new Map([
+			["src/a.ts", "export function foo() {}"],
+		]);
+
+		await extractCallGraph("/fake", ["src/a.ts"], contentMap);
+
+		expect(spy).not.toHaveBeenCalled();
+		spy.mockRestore();
+	});
 });

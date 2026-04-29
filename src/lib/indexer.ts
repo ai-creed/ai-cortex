@@ -1,4 +1,6 @@
 // src/lib/indexer.ts
+import fs from "node:fs";
+import path from "node:path";
 import {
 	buildRepoFingerprint,
 	readCacheForWorktree,
@@ -22,22 +24,42 @@ import { SCHEMA_VERSION, IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache, RepoIdentity, ImportEdge } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 
+type FileContentMap = Map<string, string>;
+
+function readFileContents(
+	worktreePath: string,
+	filePaths: string[],
+): FileContentMap {
+	const map: FileContentMap = new Map();
+	for (const filePath of filePaths) {
+		try {
+			const content = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
+			map.set(filePath, content);
+		} catch {
+			// skip unreadable files
+		}
+	}
+	return map;
+}
+
 export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 	try {
 		const filePaths = listIndexableFiles(identity.worktreePath);
+		const contentMap = readFileContents(identity.worktreePath, filePaths);
 		const packageMeta = readPackageMeta(identity.worktreePath);
 		const entryFiles = pickEntryFiles(filePaths, packageMeta);
 		const docs = loadDocs(identity.worktreePath, filePaths);
-		const imports = await extractImports(identity.worktreePath, filePaths, filePaths);
+		const imports = await extractImports(identity.worktreePath, filePaths, filePaths, contentMap);
 		const fingerprint = buildRepoFingerprint(identity.worktreePath);
 		const files = filePaths.map((p) => ({
 			path: p,
 			kind: "file" as const,
-			contentHash: hashFileContent(identity.worktreePath, p),
+			contentHash: hashFileContent(identity.worktreePath, p, contentMap.get(p)),
 		}));
 		const { calls, functions: functionNodes } = await extractCallGraph(
 			identity.worktreePath,
 			filePaths,
+			contentMap,
 		);
 
 		return {

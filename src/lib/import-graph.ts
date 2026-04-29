@@ -109,6 +109,7 @@ export async function extractImports(
   worktreePath: string,
   filePaths: string[],
   allFilePaths: string[],
+  contentMap?: Map<string, string>,
 ): Promise<ImportEdge[]> {
   await ensureAdapters();
   const fileSet = new Set(allFilePaths);
@@ -121,10 +122,16 @@ export async function extractImports(
     const adapter = adapterForFile(filePath);
     if (!adapter) continue;
     let source: string;
-    try {
-      source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
-    } catch {
-      continue;
+    if (contentMap) {
+      const cached = contentMap.get(filePath);
+      if (cached === undefined) continue;
+      source = cached;
+    } else {
+      try {
+        source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
+      } catch {
+        continue;
+      }
     }
     let sites;
     try {

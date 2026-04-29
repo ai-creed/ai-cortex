@@ -17,9 +17,7 @@ import { isHistoryEnabled } from "../lib/history/config.js";
 import { detectCurrentSession, resolveTranscriptPath } from "../lib/history/session-detect.js";
 import { resolveRepoIdentity } from "../lib/repo-identity.js";
 import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
-
-// Keep in sync with package.json "version".
-const SERVER_VERSION = "0.3.0-beta.2";
+import { VERSION as SERVER_VERSION } from "../version.js";
 
 function logCall(
 	tool: string,

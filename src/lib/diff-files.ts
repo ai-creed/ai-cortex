@@ -15,9 +15,12 @@ export type FilesDiff = {
 export function hashFileContent(
 	worktreePath: string,
 	filePath: string,
+	content?: string,
 ): string {
-	const content = fs.readFileSync(path.join(worktreePath, filePath));
-	return createHash("sha256").update(content).digest("hex");
+	const data = content !== undefined
+		? content
+		: fs.readFileSync(path.join(worktreePath, filePath));
+	return createHash("sha256").update(data).digest("hex");
 }
 
 function diffByHashCompare(

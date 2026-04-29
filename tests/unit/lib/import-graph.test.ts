@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -211,5 +211,25 @@ describe("import-graph — Python resolveSite", () => {
     const edges = await extractImports(dir, ["main.py"], ["main.py"]);
     expect(edges).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("extractImports — contentMap skips file reads", () => {
+  it("performs zero fs.readFileSync calls when contentMap is provided", async () => {
+    const spy = vi.spyOn(fs, "readFileSync");
+    const contentMap = new Map([
+      ["src/a.ts", "import { b } from \"./b\";"],
+    ]);
+    const edges = await extractImports(
+      "/fake",
+      ["src/a.ts"],
+      ["src/a.ts", "src/b.ts"],
+      contentMap,
+    );
+    // readFileSync should not have been called for source file reads
+    expect(spy).not.toHaveBeenCalled();
+    // edges still resolved correctly from provided content
+    expect(edges).toContainEqual({ from: "src/a.ts", to: "src/b" });
+    spy.mockRestore();
   });
 });
