@@ -3,9 +3,7 @@ import { createRequire } from "node:module";
 import type {
   LangAdapter,
   FileExtractionResult,
-  RawCallSite,
   RawImportSite,
-  ImportBinding,
 } from "../lang-adapter.js";
 import type { FunctionNode } from "../models.js";
 

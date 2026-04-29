@@ -51,6 +51,16 @@ describe("python adapter — function extraction", () => {
     );
   });
 
+  it("extracts decorated method inside a class with ClassName.method name", () => {
+    const r = adapter.extractFile(
+      "class Model:\n  @property\n  def name(self):\n    pass\n",
+      "pkg/models.py",
+    );
+    expect(r.functions).toContainEqual(
+      expect.objectContaining({ qualifiedName: "Model.name" }),
+    );
+  });
+
   it("returns empty result for empty file without throwing", () => {
     expect(() => adapter.extractFile("", "pkg/empty.py")).not.toThrow();
     expect(adapter.extractFile("", "pkg/empty.py").functions).toEqual([]);
