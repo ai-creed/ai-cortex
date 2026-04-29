@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeAll } from "vitest";
+import { describe, expect, it, beforeAll, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { extractImports } from "../../../src/lib/import-graph.js";
+import { extractImports, discoverPythonPackageRoots } from "../../../src/lib/import-graph.js";
 
 describe("import-graph (adapter-driven)", () => {
   let dir: string;
@@ -92,5 +92,113 @@ describe("import-graph — C/C++ basename fallback", () => {
       ["src/main.cpp", "lib/utils.h", "alt/utils.h"],
     );
     expect(edges).toEqual([]);
+  });
+});
+
+describe("discoverPythonPackageRoots", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pyroots-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty string root when no config found", () => {
+    expect(discoverPythonPackageRoots(tmpDir)).toEqual(new Set([""]));
+  });
+
+  it("detects src layout from pyproject.toml [tool.setuptools.packages.find] where", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pyproject.toml"),
+      "[tool.setuptools.packages.find]\nwhere = [\"src\"]\n",
+    );
+    const roots = discoverPythonPackageRoots(tmpDir);
+    expect(roots).toContain("src");
+  });
+});
+
+describe("import-graph — Python resolveSite", () => {
+  it("resolves relative import candidate (already repo-root-relative) without double-prefix", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pyig-rel-"));
+    fs.mkdirSync(path.join(dir, "mypackage"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "mypackage", "models.py"),
+      "from .utils import helper\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "mypackage", "utils.py"),
+      "def helper(): pass\n",
+    );
+    const edges = await extractImports(
+      dir,
+      ["mypackage/models.py"],
+      ["mypackage/models.py", "mypackage/utils.py"],
+    );
+    expect(edges).toContainEqual({
+      from: "mypackage/models.py",
+      to: "mypackage/utils.py",
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("resolves absolute import in src-layout project", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pyig-abs-"));
+    fs.mkdirSync(path.join(dir, "src", "mypackage"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "pyproject.toml"),
+      "[tool.setuptools.packages.find]\nwhere = [\"src\"]\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "main.py"),
+      "from mypackage.utils import helper\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "src", "mypackage", "utils.py"),
+      "def helper(): pass\n",
+    );
+    const edges = await extractImports(
+      dir,
+      ["main.py"],
+      ["main.py", "src/mypackage/utils.py"],
+    );
+    expect(edges).toContainEqual({
+      from: "main.py",
+      to: "src/mypackage/utils.py",
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("resolves package directory via __init__.py", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pyig-init-"));
+    fs.mkdirSync(path.join(dir, "mypackage", "sub"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "mypackage", "models.py"),
+      "from mypackage import sub\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "mypackage", "sub", "__init__.py"),
+      "",
+    );
+    const edges = await extractImports(
+      dir,
+      ["mypackage/models.py"],
+      ["mypackage/models.py", "mypackage/sub/__init__.py"],
+    );
+    expect(edges).toContainEqual({
+      from: "mypackage/models.py",
+      to: "mypackage/sub/__init__.py",
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("drops absolute import that matches nothing (stdlib/third-party)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pyig-drop-"));
+    fs.writeFileSync(path.join(dir, "main.py"), "import os\n");
+    const edges = await extractImports(dir, ["main.py"], ["main.py"]);
+    expect(edges).toEqual([]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

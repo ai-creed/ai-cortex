@@ -251,11 +251,33 @@ function extractImportSitesFromRoot(
           modNode.type === "relative_import"
             ? modNode.text.replace(/\s+/gu, "")
             : modNode.text;
+        const baseCandidate = moduleSpecifier(modNode, filePath);
         sites.push({
           from: filePath,
           rawSpecifier,
-          candidate: moduleSpecifier(modNode, filePath),
+          candidate: baseCandidate,
         });
+        // Also emit candidate per imported name — covers "from pkg import sub"
+        // where `sub` is a subpackage (resolved via sub/__init__.py).
+        for (const child of node.children) {
+          let importedName: string | null = null;
+          if (
+            (child.type === "dotted_name" || child.type === "identifier") &&
+            child !== modNode
+          ) {
+            importedName = child.text.replace(/\./gu, "/");
+          } else if (child.type === "aliased_import") {
+            const nameNode = child.childForFieldName("name");
+            if (nameNode) importedName = nameNode.text.replace(/\./gu, "/");
+          }
+          if (importedName) {
+            sites.push({
+              from: filePath,
+              rawSpecifier: `${rawSpecifier}.${importedName}`,
+              candidate: `${baseCandidate}/${importedName}`,
+            });
+          }
+        }
       }
       return;
     }
