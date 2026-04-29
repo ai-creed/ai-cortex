@@ -9,8 +9,8 @@ import fs from "node:fs";
 import { adapterForFile } from "../../../src/lib/adapters/index.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
 import type { LangAdapter, RawCallSite, ImportBinding } from "../../../src/lib/lang-adapter.js";
-import type { FunctionNode } from "../../../src/lib/models.js";
-import { resolveCallSites, extractCallGraph } from "../../../src/lib/call-graph.js";
+import type { FunctionNode, ImportEdge } from "../../../src/lib/models.js";
+import { resolveCallSites, extractCallGraph, resolvePythonTargetFile } from "../../../src/lib/call-graph.js";
 
 describe("resolveCallSites", () => {
 	const functions: FunctionNode[] = [
@@ -541,4 +541,157 @@ describe("resolveCallSites — include lookup requires exported", () => {
 		expect(edges).toContainEqual(expect.objectContaining({ to: "::staticHelper" }));
 		expect(edges).not.toContainEqual(expect.objectContaining({ to: "src/utils.cpp::staticHelper" }));
 	});
+});
+
+describe("resolvePythonTargetFile", () => {
+  const makeNodes = (paths: string[]) => {
+    const m = new Map<string, FunctionNode[]>();
+    for (const p of paths) m.set(p, []);
+    return m;
+  };
+
+  it("resolves via exact edge.to match (flat layout)", () => {
+    const includesByFile = new Map<string, ImportEdge[]>([
+      ["mypackage/models.py", [{ from: "mypackage/models.py", to: "mypackage/utils.py" }]],
+    ]);
+    expect(
+      resolvePythonTargetFile(
+        "mypackage/utils",
+        "mypackage/models.py",
+        makeNodes([]),
+        includesByFile,
+      ),
+    ).toBe("mypackage/utils.py");
+  });
+
+  it("resolves via endsWith match (src layout)", () => {
+    const includesByFile = new Map<string, ImportEdge[]>([
+      ["main.py", [{ from: "main.py", to: "src/mypackage/utils.py" }]],
+    ]);
+    expect(
+      resolvePythonTargetFile(
+        "mypackage/utils",
+        "main.py",
+        makeNodes([]),
+        includesByFile,
+      ),
+    ).toBe("src/mypackage/utils.py");
+  });
+
+  it("resolves __init__.py via endsWith match", () => {
+    const includesByFile = new Map<string, ImportEdge[]>([
+      ["main.py", [{ from: "main.py", to: "src/mypackage/sub/__init__.py" }]],
+    ]);
+    expect(
+      resolvePythonTargetFile(
+        "mypackage/sub",
+        "main.py",
+        makeNodes([]),
+        includesByFile,
+      ),
+    ).toBe("src/mypackage/sub/__init__.py");
+  });
+
+  it("falls back to direct probe when no import edge exists", () => {
+    expect(
+      resolvePythonTargetFile(
+        "mypackage/utils",
+        "main.py",
+        makeNodes(["mypackage/utils.py"]),
+        new Map(),
+      ),
+    ).toBe("mypackage/utils.py");
+  });
+
+  it("returns null when no match found", () => {
+    expect(
+      resolvePythonTargetFile("os/path", "main.py", makeNodes([]), new Map()),
+    ).toBeNull();
+  });
+});
+
+describe("resolveCallSites — dotIndex same-file qualified lookup", () => {
+  it("resolves self.method() to same-file ClassName.method via dotIndex fix", () => {
+    const fns: FunctionNode[] = [
+      {
+        qualifiedName: "Model.save",
+        file: "pkg/models.py",
+        exported: true,
+        isDefaultExport: false,
+        line: 1,
+      },
+      {
+        qualifiedName: "Model.finalize",
+        file: "pkg/models.py",
+        exported: true,
+        isDefaultExport: false,
+        line: 5,
+      },
+    ];
+    const rawCalls: RawCallSite[] = [
+      {
+        callerQualifiedName: "Model.save",
+        callerFile: "pkg/models.py",
+        rawCallee: "Model.finalize",
+        kind: "method",
+      },
+    ];
+    const edges = resolveCallSites(rawCalls, fns, new Map(), new Map());
+    expect(edges).toContainEqual({
+      from: "pkg/models.py::Model.save",
+      to: "pkg/models.py::Model.finalize",
+      kind: "method",
+    });
+  });
+});
+
+describe("resolveCallSites — Python named import cross-file", () => {
+  it("resolves Python named import call via resolvePythonTargetFile (flat layout)", () => {
+    const fns: FunctionNode[] = [
+      {
+        qualifiedName: "run",
+        file: "main.py",
+        exported: true,
+        isDefaultExport: false,
+        line: 2,
+      },
+      {
+        qualifiedName: "helper",
+        file: "mypackage/utils.py",
+        exported: true,
+        isDefaultExport: false,
+        line: 1,
+      },
+    ];
+    const rawCalls: RawCallSite[] = [
+      {
+        callerQualifiedName: "run",
+        callerFile: "main.py",
+        rawCallee: "helper",
+        kind: "call",
+      },
+    ];
+    const bindings = new Map([
+      [
+        "main.py",
+        [
+          {
+            localName: "helper",
+            importedName: "helper",
+            fromSpecifier: "mypackage/utils",
+            bindingKind: "named" as const,
+          },
+        ],
+      ],
+    ]);
+    const includesByFile = new Map<string, ImportEdge[]>([
+      ["main.py", [{ from: "main.py", to: "mypackage/utils.py" }]],
+    ]);
+    const edges = resolveCallSites(rawCalls, fns, bindings, includesByFile);
+    expect(edges).toContainEqual({
+      from: "main.py::run",
+      to: "mypackage/utils.py::helper",
+      kind: "call",
+    });
+  });
 });

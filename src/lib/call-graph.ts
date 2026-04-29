@@ -15,15 +15,42 @@ const C_FAMILY_EXTS = new Set([
 const H_EXTS = new Set([".h", ".hh", ".hpp", ".hxx", ".h++"]);
 const SRC_EXTS = [".cpp", ".cc", ".cxx", ".c++", ".c"];
 
-function langOf(filePath: string): "ts" | "cfamily" | "other" {
+function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
   const ext = path.extname(filePath);
   if (TS_EXTS.has(ext)) return "ts";
   if (C_FAMILY_EXTS.has(ext)) return "cfamily";
+  if (ext === ".py") return "python";
   return "other";
 }
 
 export function stripTsExt(value: string): string {
 	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
+}
+
+export function resolvePythonTargetFile(
+	fromSpecifier: string,
+	callerFile: string,
+	allFileNodes: Map<string, FunctionNode[]>,
+	includesByFile: Map<string, ImportEdge[]>,
+): string | null {
+	const specPy = fromSpecifier + ".py";
+	const specInit = fromSpecifier + "/__init__.py";
+	// Use import-graph edges (already fully resolved by resolveSite) to find target.
+	// The suffix match handles src-layout projects where edge.to = "src/pkg/utils.py"
+	// but fromSpecifier = "pkg/utils".
+	const edges = includesByFile.get(callerFile) ?? [];
+	const edge = edges.find(
+		(e) =>
+			e.to === specPy ||
+			e.to === specInit ||
+			e.to.endsWith("/" + specPy) ||
+			e.to.endsWith("/" + specInit),
+	);
+	if (edge) return edge.to;
+	// Fallback: direct probe for flat-layout cases with no import edge
+	if (allFileNodes.has(specPy)) return specPy;
+	if (allFileNodes.has(specInit)) return specInit;
+	return null;
 }
 
 function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
@@ -33,7 +60,7 @@ function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
 function findTargetFile(
 	normalizedSpecifier: string,
 	allFiles: Map<string, FunctionNode[]>,
-	callerLang: "ts" | "cfamily" | "other",
+	callerLang: "ts" | "cfamily" | "python" | "other",
 ): string | null {
 	if (callerLang === "ts") {
 		const stripped = stripTsExt(normalizedSpecifier);
@@ -110,14 +137,36 @@ export function resolveCallSites(
 			const member = raw.rawCallee.slice(dotIndex + 1);
 			const binding = bindings.find((b) => b.localName === receiver);
 			if (binding) {
-				const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-				const targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+				let targetFile: string | null;
+				if (langOf(raw.callerFile) === "python") {
+					targetFile = resolvePythonTargetFile(
+						binding.fromSpecifier, raw.callerFile, allFileNodes, includesByFile,
+					);
+				} else {
+					const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
+					targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+				}
 				if (targetFile && binding.bindingKind === "namespace") {
 					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(member));
 					if (targetFunc) {
 						edges.push({ from: fromKey, to: `${targetFile}::${targetFunc.qualifiedName}`, kind: raw.kind });
 						resolved = true;
 					}
+				}
+			}
+			if (!resolved) {
+				// Try full qualified name in same file before falling back to ::member.
+				// Handles self.method() → ClassName.method where rawCallee = "ClassName.method".
+				const sameFileQual = pickUnique(
+					funcsByFile.get(raw.callerFile)?.get(raw.rawCallee),
+				);
+				if (sameFileQual) {
+					edges.push({
+						from: fromKey,
+						to: `${raw.callerFile}::${sameFileQual.qualifiedName}`,
+						kind: raw.kind,
+					});
+					resolved = true;
 				}
 			}
 			if (!resolved) {
@@ -130,8 +179,15 @@ export function resolveCallSites(
 
 		const binding = bindings.find((b) => b.localName === raw.rawCallee);
 		if (binding) {
-			const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-			const targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+			let targetFile: string | null;
+			if (langOf(raw.callerFile) === "python") {
+				targetFile = resolvePythonTargetFile(
+					binding.fromSpecifier, raw.callerFile, allFileNodes, includesByFile,
+				);
+			} else {
+				const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
+				targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+			}
 			if (targetFile) {
 				if (binding.bindingKind === "default") {
 					const defaultFunc = allFunctions.find((f) => f.file === targetFile && f.isDefaultExport);
