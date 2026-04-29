@@ -354,7 +354,8 @@ function extractImportSitesFromSource(
 		if (!specifier.startsWith(".")) continue;
 		const candidate = path
 			.normalize(path.join(path.dirname(filePath), specifier))
-			.replace(/\\/g, "/");
+			.replace(/\\/g, "/")
+			.replace(/\.(ts|tsx|js|jsx)$/u, "");
 		sites.push({ from: filePath, rawSpecifier: specifier, candidate });
 	}
 	return sites;

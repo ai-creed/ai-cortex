@@ -329,4 +329,23 @@ describe("typescript adapter — import sites", () => {
 		);
 		expect(sites).toEqual([]);
 	});
+
+	it("strips known TS extension from candidate for import './b.ts'", () => {
+		const sites = adapter.extractImportSites(
+			`import x from "./b.ts";`,
+			"src/a.ts",
+		);
+		expect(sites).toHaveLength(1);
+		expect(sites[0].candidate).toBe("src/b");
+		expect(sites[0].rawSpecifier).toBe("./b.ts");
+	});
+
+	it("strips .js extension from candidate for import './util.js'", () => {
+		const sites = adapter.extractImportSites(
+			`import { helper } from "./util.js";`,
+			"src/a.ts",
+		);
+		expect(sites).toHaveLength(1);
+		expect(sites[0].candidate).toBe("src/util");
+	});
 });
