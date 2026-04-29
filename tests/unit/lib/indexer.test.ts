@@ -8,6 +8,7 @@ vi.mock("../../../src/lib/doc-inputs.js");
 vi.mock("../../../src/lib/import-graph.js");
 vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/diff-files.js");
+vi.mock("../../../src/lib/adapters/ensure.js");
 vi.mock("../../../src/lib/call-graph.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../../src/lib/call-graph.js")>();
 	return {
@@ -34,6 +35,7 @@ import {
 import { hashFileContent } from "../../../src/lib/diff-files.js";
 import { extractCallGraph, extractCallGraphRaw, resolveCallSites } from "../../../src/lib/call-graph.js";
 import { isAdapterExt, registerAdapter, clearAdapters } from "../../../src/lib/adapters/index.js";
+import { ensureAdapters, resetEnsureAdapters } from "../../../src/lib/adapters/ensure.js";
 import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
@@ -75,6 +77,7 @@ beforeEach(async () => {
 	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
 	vi.mocked(extractCallGraphRaw).mockResolvedValue({ rawCalls: [], functions: [], bindingsByFile: new Map() });
 	vi.mocked(resolveCallSites).mockReturnValue([]);
+	vi.mocked(ensureAdapters).mockResolvedValue(undefined);
 });
 
 it("uses schema version 3", () => {
@@ -516,6 +519,19 @@ describe("buildIncrementalIndex", () => {
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({ qualifiedName: "helper", file: "src/utils.ts" }),
 		);
+	});
+
+	it("calls ensureAdapters before filtering changed files", async () => {
+		const existing = makeCacheForIncremental();
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			{ changed: ["src/main.ts"], removed: [], method: "fingerprint" },
+			false,
+		);
+		expect(vi.mocked(ensureAdapters)).toHaveBeenCalled();
+		// Ensure it completed successfully
+		expect(result).toBeDefined();
 	});
 
 	it("removes call edges from affected callers (files importing changed files)", async () => {

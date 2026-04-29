@@ -11,6 +11,7 @@ import {
 	stripTsExt,
 } from "./call-graph.js";
 import { isAdapterExt } from "./adapters/index.js";
+import { ensureAdapters } from "./adapters/ensure.js";
 import { hashFileContent } from "./diff-files.js";
 import type { FilesDiff } from "./diff-files.js";
 import { loadDocs } from "./doc-inputs.js";
@@ -74,6 +75,8 @@ export async function buildIncrementalIndex(
 	diff: FilesDiff,
 	dirtyAtIndex: boolean,
 ): Promise<RepoCache> {
+	await ensureAdapters();
+
 	const fingerprint = buildRepoFingerprint(identity.worktreePath);
 	const indexedAt = new Date().toISOString();
 
