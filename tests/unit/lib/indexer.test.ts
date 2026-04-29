@@ -35,7 +35,7 @@ import {
 import { hashFileContent } from "../../../src/lib/diff-files.js";
 import { extractCallGraph, extractCallGraphRaw, resolveCallSites } from "../../../src/lib/call-graph.js";
 import { isAdapterExt, registerAdapter, clearAdapters } from "../../../src/lib/adapters/index.js";
-import { ensureAdapters, resetEnsureAdapters } from "../../../src/lib/adapters/ensure.js";
+import { ensureAdapters } from "../../../src/lib/adapters/ensure.js";
 import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
@@ -526,7 +526,7 @@ describe("buildIncrementalIndex", () => {
 		const result = await buildIncrementalIndex(
 			mockIdentity,
 			existing,
-			{ changed: ["src/main.ts"], removed: [], method: "fingerprint" },
+			{ changed: ["src/main.ts"], removed: [], method: "hash-compare" },
 			false,
 		);
 		expect(vi.mocked(ensureAdapters)).toHaveBeenCalled();

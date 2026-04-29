@@ -332,7 +332,7 @@ describe("typescript adapter — import sites", () => {
 
 	it("strips known TS extension from candidate for import './b.ts'", () => {
 		const sites = adapter.extractImportSites(
-			`import x from "./b.ts";`,
+			"import x from \"./b.ts\";",
 			"src/a.ts",
 		);
 		expect(sites).toHaveLength(1);
@@ -342,7 +342,7 @@ describe("typescript adapter — import sites", () => {
 
 	it("strips .js extension from candidate for import './util.js'", () => {
 		const sites = adapter.extractImportSites(
-			`import { helper } from "./util.js";`,
+			"import { helper } from \"./util.js\";",
 			"src/a.ts",
 		);
 		expect(sites).toHaveLength(1);
