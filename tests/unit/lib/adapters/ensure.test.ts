@@ -29,4 +29,15 @@ describe("ensureAdapters", () => {
     await ensureAdapters();
     expect(adapterForFile("src/main.py")).toBeDefined();
   });
+
+  it("is safe when called concurrently before first resolution", async () => {
+    // Simulates the race that occurs on Linux when multiple code paths invoke
+    // ensureAdapters (or the adapter factories) simultaneously before the
+    // web-tree-sitter Emscripten module has finished initialising.
+    resetEnsureAdapters();
+    await Promise.all([ensureAdapters(), ensureAdapters(), ensureAdapters()]);
+    expect(adapterForFile("src/main.py")).toBeDefined();
+    expect(adapterForFile("src/main.c")).toBeDefined();
+    expect(adapterForFile("src/main.ts")).toBeDefined();
+  });
 });
