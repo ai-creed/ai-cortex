@@ -36,7 +36,7 @@ export function discoverPythonPackageRoots(worktreePath: string): Set<string> {
       path.join(worktreePath, "setup.cfg"),
       "utf8",
     );
-    const m = content.match(/package_dir\s*=\s*\w*\s*=\s*(\S+)/u);
+    const m = content.match(/package_dir\s*=\s*\w*\s*=\s*([^\s;#]+)/u);
     if (m) return new Set([m[1]]);
   } catch { /* not found */ }
 
