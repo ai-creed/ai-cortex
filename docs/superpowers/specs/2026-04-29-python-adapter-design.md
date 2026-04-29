@@ -181,17 +181,40 @@ function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
 }
 ```
 
-**2. Add Python branch to `findTargetFile`:**
+**2. Add `resolvePythonTargetFile` helper — replaces `resolveSpecifier` + `findTargetFile` for Python:**
+
+For Python callers, `resolveSpecifier` must NOT be called. It path-joins `fromSpecifier` against the caller's directory, which double-prefixes absolute imports: `path.join("src/mypackage", "mypackage/utils")` = `"src/mypackage/mypackage/utils"`. And `findTargetFile`'s extension probing has no package-root awareness — absolute imports in src-layout projects are never found.
+
+Instead, leverage `includesByFile`, which already carries fully-resolved `.py` paths from `import-graph.ts`'s package-root-aware `resolveSite`. Match `fromSpecifier` against import edges using a suffix check that handles both flat and src layouts:
+
 ```ts
-if (callerLang === "python") {
-  if (allFiles.has(normalizedSpecifier + ".py")) return normalizedSpecifier + ".py";
-  if (allFiles.has(normalizedSpecifier + "/__init__.py"))
-    return normalizedSpecifier + "/__init__.py";
+function resolvePythonTargetFile(
+  fromSpecifier: string,
+  callerFile: string,
+  allFileNodes: Map<string, FunctionNode[]>,
+  includesByFile: Map<string, ImportEdge[]>,
+): string | null {
+  const edges = includesByFile.get(callerFile) ?? [];
+  const specPy   = fromSpecifier + ".py";
+  const specInit = fromSpecifier + "/__init__.py";
+  const edge = edges.find(
+    (e) =>
+      e.to === specPy ||
+      e.to === specInit ||
+      e.to.endsWith("/" + specPy) ||
+      e.to.endsWith("/" + specInit),
+  );
+  if (edge) return edge.to;
+  // Fallback: direct probe for flat-layout cases where no import edge exists
+  if (allFileNodes.has(specPy))   return specPy;
+  if (allFileNodes.has(specInit)) return specInit;
   return null;
 }
 ```
 
-`normalizedSpecifier` for a relative import `fromSpecifier = "./utils"` in `mypackage/models.py` will be `resolveSpecifier("./utils", "mypackage/models.py")` = `"mypackage/utils"`. Then `"mypackage/utils.py"` probes directly into `allFiles`.
+The suffix match covers src-layout absolute imports: `fromSpecifier = "mypackage/utils"` matches `edge.to = "src/mypackage/utils.py"` because `"src/mypackage/utils.py".endsWith("/mypackage/utils.py")`.
+
+In `resolveCallSites`, wherever the existing code calls `resolveSpecifier(binding.fromSpecifier, raw.callerFile)` + `findTargetFile(...)`, Python callers call `resolvePythonTargetFile(binding.fromSpecifier, raw.callerFile, allFileNodes, includesByFile)` instead. This applies to both the named/namespace binding resolution path (lines 131–150) and the namespace dotIndex branch (lines 113–121).
 
 **3. Fix dotIndex same-file qualified lookup in `resolveCallSites`:**
 
@@ -271,8 +294,11 @@ Unit tests for the adapter in isolation — no filesystem, no WASM (parser mocke
 
 ### `tests/unit/lib/call-graph.test.ts` (extend existing)
 
-- `findTargetFile` Python: candidate `"mypackage/utils"` → resolves to `"mypackage/utils.py"` when in allFiles
-- `findTargetFile` Python: candidate `"mypackage/pkg"` → resolves to `"mypackage/pkg/__init__.py"` when in allFiles
+- `resolvePythonTargetFile`: flat-layout hit — `fromSpecifier = "mypackage/utils"`, edge `to = "mypackage/utils.py"` → returns `"mypackage/utils.py"` (exact match)
+- `resolvePythonTargetFile`: src-layout hit — `fromSpecifier = "mypackage/utils"`, edge `to = "src/mypackage/utils.py"` → returns `"src/mypackage/utils.py"` (endsWith match)
+- `resolvePythonTargetFile`: `__init__.py` package — `fromSpecifier = "mypackage/pkg"`, edge `to = "mypackage/pkg/__init__.py"` → resolves
+- `resolvePythonTargetFile`: no import edge + file in allFileNodes → fallback probe returns `"mypackage/utils.py"`
+- `resolvePythonTargetFile`: no match → returns `null`
 - dotIndex same-file qualified lookup: `rawCallee = "Bar.method"` with no binding + `"Bar.method"` in same file → emits same-file edge, not `::method`
 
 ### `tests/integration/python.test.ts` (new)
@@ -283,17 +309,20 @@ Full indexer round-trip on a small fixture at `tests/fixtures/python-basic/`:
 tests/fixtures/python-basic/
   mypackage/__init__.py           (empty)
   mypackage/utils.py              # def helper(): pass
-  mypackage/models.py             # from .utils import helper
+  mypackage/models.py             # from .utils import helper          (relative import)
                                   # class Model:
                                   #   def save(self): self.finalize()
                                   #   def finalize(self): helper()
+  main.py                         # from mypackage.utils import helper  (absolute import)
+                                  # def run(): helper()
 ```
 
 Assertions:
-- Function extraction: `helper`, `Model.save`, `Model.finalize` all present with correct qualified names
-- `self.method()` same-file edge: `Model.save → Model.finalize` (via same-file dotIndex lookup)
-- Cross-file import call: `Model.finalize → mypackage/utils.py::helper` (via importBinding + Python `findTargetFile`)
-- Incremental reindex after touching `utils.py` → `models.py` included in reparse batch (verified via affected-caller logic)
+- Function extraction: `helper`, `Model.save`, `Model.finalize`, `run` all present with correct qualified names
+- `self.method()` same-file edge: `Model.save → Model.finalize` (dotIndex same-file qualified lookup)
+- Relative import call: `Model.finalize → mypackage/utils.py::helper` (via `resolvePythonTargetFile` + relative importBinding)
+- **Absolute import call: `run → mypackage/utils.py::helper`** (via `resolvePythonTargetFile` + absolute importBinding — validates the suffix-match path)
+- Incremental reindex after touching `utils.py` → both `models.py` and `main.py` included in reparse batch
 
 Note: `m.save()` style calls (attribute calls on non-self/cls typed variables) are intentionally excluded from integration assertions — they require type inference and are documented as a known limitation.
 
@@ -304,4 +333,4 @@ Note: `m.save()` style calls (attribute calls on non-self/cls typed variables) a
 - **No type inference.** `obj.method()` where `obj` is not `self`/`cls` emits `rawCallee = "obj.method"`. Without knowing `obj`'s type, the edge resolves at best to `::method` (unqualified fallback). Same limitation as C/C++ cross-struct calls.
 - **No `__all__` awareness.** `exported: true` for all top-level names — the adapter does not consult `__all__`.
 - **Dynamic imports.** `importlib.import_module(...)` and `__import__(...)` are not tracked.
-- **Absolute imports from above the package root.** A top-level `main.py` importing from `src/mypackage/` via absolute path may not resolve in non-standard project layouts where the caller lives above the detected package roots.
+- **Ambiguous suffix matches.** `resolvePythonTargetFile` uses a `endsWith` suffix check to correlate `fromSpecifier` with import edges. In projects with two packages where one path is a strict suffix of the other (e.g., `pkg/utils` and `another/pkg/utils`), the wrong edge could be selected. This is an uncommon project structure.
