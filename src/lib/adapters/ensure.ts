@@ -1,4 +1,3 @@
-// src/lib/adapters/ensure.ts
 import { registerAdapter, clearAdapters } from "./index.js";
 
 let ensurePromise: Promise<void> | null = null;
@@ -8,14 +7,17 @@ export async function ensureAdapters(): Promise<void> {
   ensurePromise = (async () => {
     const { createTypescriptAdapter } = await import("./typescript.js");
     const { createCAdapter, createCppAdapter } = await import("./cfamily.js");
-    const [ts, c, cpp] = await Promise.all([
+    const { createPythonAdapter } = await import("./python.js");
+    const [ts, c, cpp, py] = await Promise.all([
       createTypescriptAdapter(),
       createCAdapter(),
       createCppAdapter(),
+      createPythonAdapter(),
     ]);
     registerAdapter(ts);
     registerAdapter(c);
     registerAdapter(cpp);
+    registerAdapter(py);
   })();
   return ensurePromise;
 }

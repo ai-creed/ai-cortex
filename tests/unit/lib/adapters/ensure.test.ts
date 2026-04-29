@@ -24,4 +24,9 @@ describe("ensureAdapters", () => {
     await ensureAdapters();
     expect(adapterForFile("src/main.cpp")).toBeDefined();
   });
+
+  it("registers an adapter for .py files", async () => {
+    await ensureAdapters();
+    expect(adapterForFile("src/main.py")).toBeDefined();
+  });
 });
