@@ -178,8 +178,11 @@ See [MANUAL.md](./MANUAL.md) for advanced configuration and integration details.
 
 ## Known limitations
 
-- **TypeScript, JavaScript, C, and C++.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`, `.c`, `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`, `.hh`, `.hxx`, `.h++`. Python/Go/Rust repos will index but yield no call graph.
+- **TypeScript, JavaScript, Python, C, and C++.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.c`, `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`, `.hh`, `.hxx`, `.h++`. Go/Rust repos will index but yield no call graph.
 - **Semantic ranker embeds file paths, not file bodies.** Good for "which file is about X"; not a replacement for grep on file content.
 - **First semantic call downloads ~23 MB** (`Xenova/all-MiniLM-L6-v2`) into `~/.cache/ai-cortex/models/`.
 - **Cache is local** — not shared across machines or users. Worktree-keyed.
 - **MCP tool discovery:** in Claude Code, ai-cortex tools are deferred. Agents may default to Grep/Glob unless nudged. If adoption stays low, add a rule to your `CLAUDE.md` preferring `suggest_files` for file discovery.
+- **Python: no type inference for attribute calls.** `obj.method()` where `obj` is not `self`/`cls` emits an unresolved `::method` edge. Self/cls calls resolve correctly.
+- **Python: no `__all__` awareness.** All top-level names are treated as exported.
+- **Python: dynamic imports not tracked.** `importlib.import_module(...)` and `__import__(...)` produce no edges.
