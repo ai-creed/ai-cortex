@@ -135,14 +135,16 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
         |       |      |
     adapters/  path  trigram+
     typescript fn+cg  content scan
-        |              |
-    (tree-sitter    tokenize.ts
-     WASM parse)   trigram-index.ts
-        |          content-scanner.ts
+    cfamily        |
+        |       tokenize.ts
+    (tree-sitter   trigram-index.ts
+     WASM parse)   content-scanner.ts
+        |
    Cache: ~/.cache/ai-cortex/v1/<repoKey>/
    (JSON, schema v3, per-repo keyed by path;
     history/ subdir holds captured sessions)
 ```
+
 
 ## Installation
 
@@ -176,7 +178,7 @@ See [MANUAL.md](./MANUAL.md) for advanced configuration and integration details.
 
 ## Known limitations
 
-- **TypeScript / JavaScript only.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`. Python/Go/Rust repos will index but yield no call graph.
+- **TypeScript, JavaScript, C, and C++.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`, `.c`, `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`, `.hh`, `.hxx`, `.h++`. Python/Go/Rust repos will index but yield no call graph.
 - **Semantic ranker embeds file paths, not file bodies.** Good for "which file is about X"; not a replacement for grep on file content.
 - **First semantic call downloads ~23 MB** (`Xenova/all-MiniLM-L6-v2`) into `~/.cache/ai-cortex/models/`.
 - **Cache is local** — not shared across machines or users. Worktree-keyed.
