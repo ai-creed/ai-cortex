@@ -118,6 +118,17 @@ describe("discoverPythonPackageRoots", () => {
     const roots = discoverPythonPackageRoots(tmpDir);
     expect(roots).toContain("src");
   });
+
+  it("returns all roots when pyproject.toml where lists multiple entries", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pyproject.toml"),
+      "[tool.setuptools.packages.find]\nwhere = [\"src\", \"lib\"]\n",
+    );
+    const roots = discoverPythonPackageRoots(tmpDir);
+    expect(roots).toContain("src");
+    expect(roots).toContain("lib");
+    expect(roots.size).toBe(2);
+  });
 });
 
 describe("import-graph — Python resolveSite", () => {

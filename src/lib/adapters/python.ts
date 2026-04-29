@@ -86,18 +86,20 @@ function findEnclosingFunction(
     if (cur.type === "function_definition") {
       const nameNode = cur.childForFieldName("name");
       if (!nameNode) return null;
-      // Walk up to find enclosing class (skip decorated_definition wrapper)
+      // Walk up to find enclosing class. If we hit another function_definition
+      // first, this def is nested — extractFunctions does not index it, so
+      // emitting a call edge from it would produce a phantom caller node.
       let p: SyntaxNode | null = cur.parent;
+      let className: string | null = null;
       while (p && p.type !== "module") {
+        if (p.type === "function_definition") return null; // nested — not indexed
         if (p.type === "class_definition") {
-          return {
-            name: nameNode.text,
-            className: p.childForFieldName("name")?.text ?? null,
-          };
+          className = p.childForFieldName("name")?.text ?? null;
+          break;
         }
         p = p.parent;
       }
-      return { name: nameNode.text, className: null };
+      return { name: nameNode.text, className };
     }
     cur = cur.parent;
   }

@@ -163,6 +163,43 @@ describe("python adapter — import bindings", () => {
   });
 });
 
+describe("python adapter — nested def call suppression", () => {
+  it("produces no call edge attributed to an inner (nested) function", () => {
+    const r = adapter.extractFile(
+      "def outer():\n  def inner():\n    helper()\n",
+      "pkg/foo.py",
+    );
+    const phantomEdge = r.rawCalls.find((c) => c.callerQualifiedName === "inner");
+    expect(phantomEdge).toBeUndefined();
+  });
+
+  it("still emits edges for the outer function's own direct calls", () => {
+    const r = adapter.extractFile(
+      "def outer():\n  helper()\n  def inner():\n    other()\n",
+      "pkg/foo.py",
+    );
+    expect(r.rawCalls).toContainEqual(
+      expect.objectContaining({ callerQualifiedName: "outer", rawCallee: "helper" }),
+    );
+    const phantom = r.rawCalls.find((c) => c.callerQualifiedName === "inner");
+    expect(phantom).toBeUndefined();
+  });
+
+  it("produces no edge for a nested def inside a class method", () => {
+    const r = adapter.extractFile(
+      "class Model:\n  def save(self):\n    def _inner():\n      helper()\n",
+      "pkg/models.py",
+    );
+    // Phantom edge could be attributed as "_inner" or "Model._inner" depending on
+    // how far up the walk goes before finding a class; both are wrong since _inner
+    // has no FunctionNode.
+    const phantom = r.rawCalls.find(
+      (c) => c.callerQualifiedName === "_inner" || c.callerQualifiedName === "Model._inner",
+    );
+    expect(phantom).toBeUndefined();
+  });
+});
+
 describe("python adapter — import site extraction", () => {
   it("extracts relative import site as repo-root-relative candidate", () => {
     const sites = adapter.extractImportSites(

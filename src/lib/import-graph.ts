@@ -26,8 +26,11 @@ export function discoverPythonPackageRoots(worktreePath: string): Set<string> {
       path.join(worktreePath, "pyproject.toml"),
       "utf8",
     );
-    const m = content.match(/\bwhere\s*=\s*\[\s*["']([^"']+)["']/u);
-    if (m) return new Set([m[1]]);
+    const m = content.match(/\bwhere\s*=\s*\[([^\]]+)\]/u);
+    if (m) {
+      const roots = [...m[1].matchAll(/["']([^"']+)["']/gu)].map((r) => r[1]);
+      if (roots.length > 0) return new Set(roots);
+    }
   } catch { /* not found */ }
 
   // setup.cfg — look for package_dir = = src  (or similar)
