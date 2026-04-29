@@ -136,9 +136,10 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
     adapters/  path  trigram+
     typescript fn+cg  content scan
     cfamily        |
-        |       tokenize.ts
-    (tree-sitter   trigram-index.ts
-     WASM parse)   content-scanner.ts
+    python      tokenize.ts
+        |       trigram-index.ts
+    (tree-sitter   content-scanner.ts
+     WASM parse)
         |
    Cache: ~/.cache/ai-cortex/v1/<repoKey>/
    (JSON, schema v3, per-repo keyed by path;
