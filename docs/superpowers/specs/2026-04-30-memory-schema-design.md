@@ -33,6 +33,7 @@ What's new:
 - Lifecycle state machine
 - Auto-extractor that derives candidate memories from session evidence
 - Retrieval and injection MCP tools
+- One small extension to `src/lib/history/types.ts`: `CorrectionEvidence` and `UserPromptEvidence` gain an optional `nextAssistantSnippet?: string` field (≤500 chars), populated by the existing compactor. Required by the auto-extractor's multi-turn heuristics; details under "Auto-extractor".
 
 ---
 
@@ -129,9 +130,9 @@ One vector per memory, embedded from `title + body` concatenated. Stored in the 
 
 ```yaml
 ---
-id: mem-2026-04-30-cache-atomic-writes      # mem-YYYY-MM-DD-<slug>; slug from title, kebab-case, ≤40 chars
+id: mem-2026-04-30-cache-atomic-writes-a3f9c1   # mem-YYYY-MM-DD-<slug>-<6-hex>; slug from title, kebab-case, ≤40 chars; hex suffix prevents collisions on same date + slug
 type: decision                                # decision | gotcha | pattern | how-to | <user-registered>
-status: active                                # active | candidate | deprecated | merged_into | trashed | stale_reference
+status: active                                # active | candidate | deprecated | merged_into | trashed | stale_reference | purged_redacted
 title: Repo cache writes use atomic temp-file rename   # ≤120 chars
 version: 3                                    # integer; bumped on each body/scope mutation
 createdAt: 2026-04-21T14:02:11Z              # ISO-8601 UTC
@@ -265,17 +266,19 @@ CREATE TABLE memory_audit (
   PRIMARY KEY (memory_id, version)
 );
 
--- FTS5 virtual table for keyword fallback
+-- FTS5 virtual table for keyword search
+-- Indexes the FULL body (not body_excerpt) so search_memories catches literals
+-- buried deeper than ~280 chars in long bodies. External-content table; population
+-- is managed explicitly during write-protocol step 3 (see Concurrency section).
 CREATE VIRTUAL TABLE memory_fts USING fts5(
   memory_id UNINDEXED,
   title,
-  body_excerpt,
-  content='memories',
-  content_rowid='rowid'
+  body,
+  tokenize='porter unicode61'
 );
 ```
 
-`memory_audit` is **never deleted from**. When a memory is purged from disk, the audit row stays — providing a permanent "memory X existed and was removed" trail.
+`memory_audit` rows are **never deleted from** under default purge. The row stays — providing a permanent "memory X existed and was removed" trail. Under privacy-grade purge (`purge_memory(id, reason, { redact: true })`), the row stays *but its `prev_body` and `reason` columns are nulled / redacted* — see "API surface — write tools" and "Aging and dump policy".
 
 `memory_links` rows are deleted via foreign-key cascade when either endpoint is purged (not when deprecated or trashed — those preserve edges for audit).
 
@@ -435,16 +438,29 @@ Periodic batch (cron-style) **deferred** — per-session covers steady state.
 
 The session's `EvidenceLayer` (`toolCalls`, `filePaths`, `userPrompts`, `corrections`) plus `summary`. Never reads raw transcripts directly — extractor decoupled from harness format.
 
+**Required EvidenceLayer extension.** Three of the v1 heuristics need limited assistant-side context (acknowledgment, workaround, closing list). Rather than reach into raw transcripts, the compactor (`src/lib/history/compact.ts`) populates a small windowed snippet on each correction and userPrompt:
+
+```ts
+export type CorrectionEvidence = {
+  turn: number;
+  text: string;
+  nextAssistantSnippet?: string;   // ≤500 chars, compacted, of the next assistant turn
+};
+// same field added to UserPromptEvidence
+```
+
+`HISTORY_SCHEMA_VERSION` bumps to `2`. Existing v1 sessions stay readable (the field is optional); new sessions populate it during compact. Heuristics that depend on the field gracefully no-op when it's absent — older sessions surface fewer candidates rather than crashing extraction.
+
 ### Heuristics per type (v1)
 
 Rule-based and regex-heavy. Confidence reflects signal strength; nothing extracted ranks against active memories until promotion.
 
 | Target type | Trigger pattern | Body source | Scope source | Initial confidence |
 |---|---|---|---|---|
-| `decision` | A `correction` containing imperative cues (`must`, `always`, `never`, `should`, `don't`, `prefer`) followed by user/agent acknowledgment within 2 turns | Correction text + 1-line context | Files referenced ±3 turns; tags from keyword extraction | 0.55 (with ack) / 0.45 (without) |
-| `gotcha` | A `correction` containing symptom cues (`breaks`, `fails`, `race`, `hangs`, `wrong`, `bug`, `flaky`) AND a subsequent turn with workaround language (`fix`, `instead`, `workaround`) | Correction + workaround turn | File mentioned nearest the correction | 0.55 |
+| `decision` | A `correction` containing imperative cues (`must`, `always`, `never`, `should`, `don't`, `prefer`); optional acknowledgment cue in `correction.nextAssistantSnippet` (`got it`, `understood`, `will do`, paraphrase of rule) | Correction text + 1-line context | Files referenced ±3 turns in `filePaths`; tags from keyword extraction | 0.55 (with ack) / 0.45 (without) |
+| `gotcha` | A `correction` containing symptom cues (`breaks`, `fails`, `race`, `hangs`, `wrong`, `bug`, `flaky`) AND `correction.nextAssistantSnippet` containing workaround language (`fix`, `instead`, `workaround`, `use … instead`) | Correction + workaround snippet | File mentioned nearest the correction in `filePaths` | 0.55 (with workaround signal) / 0.45 (without) |
 | `pattern` | Cross-session co-occurrence: same file set in `filePaths` across ≥3 sessions with similar query language (cosine on userPrompts ≥ 0.7) | Generated from co-occurring files + session summaries | The co-occurring files | 0.35 |
-| `how-to` | `userPrompt` matching `^(how (do|to|can) i)|^(steps|process|procedure)` followed by ≥3 sequential tool calls AND closing assistant turn with numbered list | Numbered list from closing turn | Files touched in the tool calls | 0.50 |
+| `how-to` | `userPrompt` matching `^(how (do|to|can) i)|^(steps|process|procedure)` followed by ≥3 sequential tool calls; optional numbered-list cue in `userPrompt.nextAssistantSnippet` (regex matches numbered-list opening) | Numbered list from snippet, or generated from tool-call sequence | Files touched in the tool calls (`filePaths` within the tool-call window) | 0.50 (with closing list) / 0.40 (without) |
 
 These heuristics are explicitly fragile starting points. The whole pipeline is gated by the `candidate` lifecycle state; the dedup + aging story is the safety net.
 
@@ -568,10 +584,10 @@ Briefing fragment example:
 ## Pinned memories (5)
 
 - **decision** — Cache writes use atomic temp-file rename
-  > All writes under `~/.cache/ai-cortex/<repoKey>/` write to `.tmp` then `rename()`. (mem-2026-04-30-cache-atomic-writes)
+  > All writes under `~/.cache/ai-cortex/<repoKey>/` write to `.tmp` then `rename()`. (mem-2026-04-30-cache-atomic-writes-a3f9c1)
 
 - **gotcha** [critical] — Parser must init before parallel adapter factories on Linux
-  > Call `await Parser.init()` once at module load... (mem-2026-04-29-parser-init-race-linux)
+  > Call `await Parser.init()` once at module load... (mem-2026-04-29-parser-init-race-linux-7c2e04)
 ```
 
 ---
@@ -594,8 +610,35 @@ Aging runs as a single sweep on session start (or via `sweep_aging`). All thresh
 ### Two-stage delete (trash → purge)
 
 1. `trash_memory(id, reason)` moves the `.md` from `memories/` to `trash/`. Index marks `status = trashed`. Removed from retrieval. **Recoverable via `untrash_memory(id)` for 90d.**
-2. After 90d, sweep hard-deletes the file. `memory_audit` row remains forever.
-3. `purge_memory(id, reason)` skips trash and hard-deletes immediately. Reserved for privacy/sensitive content.
+2. After 90d, sweep hard-deletes the file. `memory_audit` row remains; `memory_links` rows for this memory are FK-cascaded out.
+
+### Purge modes
+
+Purge has two modes, distinguished by their treatment of body remnants. Both delete the `.md` file immediately (or, for #1, when trash retention expires); they differ in what *content* survives in audit, provenance, and FTS.
+
+**Default purge** — `purge_memory(id, reason)` *or* the trash-retention sweep:
+
+- `.md` file deleted.
+- `memory_audit` rows stay verbatim. May contain `prev_body` (per the per-type `auditPreserveBody` opt-in).
+- `provenance.excerpt` cached in *other* memories that reference this one stays.
+- FTS5 row deleted (the live searchable surface goes; the audit log is not search-indexed).
+- `memories` row stays with `status = trashed` (sweep path) or removed entirely (explicit purge path) — see "Concurrency / reconcile" for the canonicalization.
+
+This is appropriate when you simply want the file gone but the audit story preserved.
+
+**Privacy-grade purge** — `purge_memory(id, reason, { redact: true })`:
+
+Use when the body content itself is sensitive (captured a credential, leaked private info, etc.) and must not survive anywhere.
+
+- `.md` file deleted.
+- All `memory_audit` rows for this `memory_id`: `UPDATE memory_audit SET prev_body = NULL, reason = '<redacted>' WHERE memory_id = ?`. The rows themselves stay so the existence trail is preserved (you can still tell "memory X was redact-purged on Y by agent Z"), but no body content remains.
+- All `provenance.excerpt` fields in any other memory's frontmatter that reference this `memory_id` as `sessionId` *or* via lifecycle pointer: replaced with `<redacted>`. Walking the references is a single-table query (`memory_audit` and a frontmatter scan; both bounded).
+- FTS5 row deleted.
+- `memories` row stays for join integrity, with `status = purged_redacted`, `title = '<redacted>'`, `body_excerpt = '<redacted>'`. Retrieval excludes this status by default.
+
+`purged_redacted` is a terminal state — there is no `restore` from it (the body is gone).
+
+3. `purge_memory(id, reason)` (default mode) skips trash and hard-deletes immediately. `purge_memory(id, reason, { redact: true })` does the privacy-grade scrub described above.
 
 ---
 
@@ -699,7 +742,7 @@ restore_memory(id)
 merge_memories(srcId, dstId, mergedBody)
 trash_memory(id, reason)
 untrash_memory(id)
-purge_memory(id, reason)                   // privacy-grade hard delete
+purge_memory(id, reason, options?)         // options: { redact?: boolean }
 
 // graph
 link_memories(srcId, dstId, type)          // type ∈ supports|contradicts|refines|depends_on
@@ -731,7 +774,7 @@ ai-cortex memory restore <id>
 ai-cortex memory merge <srcId> <dstId> --body-file F
 ai-cortex memory trash <id> --reason "..."
 ai-cortex memory untrash <id>
-ai-cortex memory purge <id> --reason "..." --yes
+ai-cortex memory purge <id> --reason "..." --yes [--redact]
 ai-cortex memory promote <id>                      # → global
 ai-cortex memory pin <id> | unpin <id>
 ai-cortex memory link <src> <dst> --type supports
@@ -794,10 +837,55 @@ All under `memory.*` namespace, layered: defaults in code → `~/.config/ai-cort
 
 ## Concurrency and atomicity
 
-- **`.md` writes**: temp-file + rename (matches `cache-store.ts`).
-- **Sqlite**: WAL mode. Concurrent readers under one writer. Memory writes are infrequent — no contention concerns at v1 scale.
-- **Index drift**: detected by `body_hash` mismatch on read; triggers single-record re-index, never blocks the reader.
-- **Lock files**: not introduced. Reuse the existing per-session lock pattern from `history/store.ts` only if multi-process write contention surfaces (unlikely; MCP server is single-process per session).
+A memory write touches three persisted representations: the `.md` file, the sqlite index, and the vector sidecar. Atomic rename and sqlite WAL each handle their own store but provide nothing across them. To avoid split-brain after a crash or interruption, this section defines (a) a strict write order, (b) a reconciliation pass that runs at startup, and (c) what counts as canonical.
+
+### Canonical: the markdown file
+
+`.md` files in `memories/` (or `trash/`) are the single source of truth. Sqlite and the vector sidecar are derived. A successful `.md` write means the write happened, regardless of whether the downstream stores caught up.
+
+### Write protocol (required order)
+
+Every memory create / update / merge / scope change follows these steps in order. Each step is atomic; no step starts before the previous returns success.
+
+1. **Compute `body_hash`** from the new body (sha-256 of `title + body`).
+2. **Write the `.md` file**: open `<path>.tmp`, write content, `fsync()`, then `rename()` to final path. This is the commit point — after step 2 succeeds, the write is durable even if the process dies.
+3. **Update sqlite in a single transaction**:
+   - `UPSERT memories` with new `body_hash`, `body_excerpt`, `version`, `updated_at`
+   - `DELETE` + re-insert `memory_scope` rows
+   - `INSERT memory_audit` row (`change_type`, `prev_body_hash`, optional `prev_body`, `agent_id`, `reason`)
+   - `DELETE` then `INSERT INTO memory_fts` for this `memory_id` (full body)
+   - Commit.
+4. **Update vector sidecar**: re-embed `title + body`, write `.vectors.bin.tmp` + `.vectors.meta.json.tmp`, `fsync`, `rename`. Same atomic-rename pattern as `src/lib/vector-sidecar.ts`.
+
+For trash / untrash / purge, step 2 is a directory move (`memories/X.md` ↔ `trash/X.md`) or `unlink()`; the same step ordering applies.
+
+### Reconciliation pass
+
+`reconcile_store()` runs on the first MCP call of a session and on `rebuild_index`. It is also the recovery path — anything in inconsistent state after a crash is fixed here, not at write time.
+
+For each `.md` file under `memories/` and `trash/`:
+
+- Read body, hash it.
+- If no row in `memories` with this `id`: insert one (crashed before step 3). Re-index FTS, re-embed vector.
+- If `memories.body_hash` differs from file hash: re-index this single record (FTS + vector). Append an audit row tagged `change_type: "reconcile"`.
+
+For each row in `memories`:
+
+- If the corresponding `.md` file is missing AND `status != purged_redacted`: this is a phantom row from a crash before step 2 succeeded *and* before any later write replaced it. Delete the `memories` row (FK cascade clears `memory_scope`, `memory_links`, `memory_fts`); audit row stays.
+- If `status = trashed` but file is in `memories/` (or vice versa): trust the file location, update `status`. Append an audit row tagged `change_type: "reconcile"`.
+
+For the vector sidecar:
+
+- Hashes are stored in `.vectors.meta.json` per the existing sidecar. Entries whose `body_hash` doesn't match `memories.body_hash` are dropped on read (the existing `readChunkVectors` pattern in `history/store.ts` already does this for chunks). Missing or stale vectors trigger lazy re-embed on first retrieval that needs the memory.
+
+### Locking
+
+No lock files introduced for v1. The MCP server is single-process per session; the CLI is short-lived; bulk writes (bootstrap) hold an in-process serialization point. If multi-writer contention surfaces in practice, the per-session lock pattern from `history/store.ts` is the expansion path.
+
+### Sqlite-internal concurrency
+
+- **WAL mode** for the index database: concurrent readers under one writer.
+- All memory writes go through a single in-process queue inside `src/lib/memory/index.ts` so one MCP server never overlaps its own writes.
 
 ---
 
@@ -838,13 +926,14 @@ All under `memory.*` namespace, layered: defaults in code → `~/.config/ai-cort
 
 Unit:
 - `store.ts` — atomic write, drift detection, dir layout, repo isolation.
-- `index.ts` — sqlite schema, audit append, scope filter queries, FK cascade on purge.
-- `lifecycle.ts` — every transition in the state machine; promotion signals; merge mechanics.
+- `index.ts` — sqlite schema, audit append, scope filter queries, FK cascade on purge, FTS5 indexes full body (literal-match test for terms past 280 chars in a long how-to body).
+- `lifecycle.ts` — every transition in the state machine; promotion signals; merge mechanics; ID generation produces unique IDs across 10k same-date same-title creations.
 - `aging.ts` — sweep policy at boundaries (89d/90d/91d), dry-run, stale_reference exclusion.
 - `registry.ts` — built-in types preserved, user types validated, frontmatter validation per-type.
 - `embed.ts` — vector update on body change, sidecar consistency.
-- `retrieve.ts` — stage-1 filter correctness; stage-2 ranker math; tie-breaking (project > global on equal score).
-- `extract.ts` — heuristic per type on synthetic sessions; dedup logic at threshold boundaries; provenance append on dedup hit.
+- `retrieve.ts` — stage-1 filter correctness; `has_scope_filter` parameter handling (no-filter case, files-only, tags-only, both); stage-2 ranker math; tie-breaking (project > global on equal score).
+- `extract.ts` — heuristic per type on synthetic sessions; `nextAssistantSnippet` populated and absent cases (graceful no-op on absent); dedup logic at threshold boundaries; provenance append on dedup hit.
+- `compact.ts` — `nextAssistantSnippet` populated for corrections and userPrompts; ≤500-char cap enforced; `HISTORY_SCHEMA_VERSION` migration leaves v1 sessions readable.
 
 Integration:
 - End-to-end: explicit write → recall → confirm cycle.
@@ -852,11 +941,19 @@ Integration:
 - Bootstrap over a synthetic history of 50 sessions; verify candidate counts and dedup behavior.
 - Two-tier query: project + global merge with ranker boost validation.
 - Sweep aging with multi-state fixture (candidate, deprecated, merged_into, trashed, stale_reference).
+- **Crash-recovery / reconciliation**:
+  - Inject .md write succeeds, sqlite update fails before commit. `reconcile_store()` re-indexes the orphan `.md`, FTS and vector are rebuilt.
+  - Inject sqlite row exists but `.md` is missing (status != purged_redacted). Reconcile deletes the phantom row.
+  - Inject `.md` body changed out-of-band (manual edit). `body_hash` mismatch detected on read; single-record re-index applied; audit row tagged `change_type: "reconcile"`.
+- **Purge modes**:
+  - Default purge: `.md` gone, `memory_audit.prev_body` preserved per opt-in, other memories' provenance excerpts referencing this id intact, FTS row deleted.
+  - Redact purge: `.md` gone, all `memory_audit.prev_body` for this id NULL, all `provenance.excerpt` referencing this id replaced with `<redacted>`, FTS row deleted, `memories` row in `purged_redacted` state with redacted title and excerpt, retrieval excludes it.
 
 E2E (existing eval harness):
 - Memory injection into rehydration briefing visible in MCP output.
 - `recall_memory` ranks correctly against fixed query/scope/expected-id ground truth.
-- Audit log preserves full history across simulated update/deprecate/restore/merge/trash/purge sequence.
+- `search_memories` returns hits whose match is literal text past character 280 of a long body (proves full-body FTS).
+- Audit log preserves full history across simulated update/deprecate/restore/merge/trash/purge sequence (default mode); redact-purge run on the same fixture proves no body remnants survive.
 
 ---
 
@@ -864,7 +961,7 @@ E2E (existing eval harness):
 
 Listed for explicit visibility in implementation planning. Defaults proposed; speak up during implementation if any need adjusting.
 
-1. **Memory ID format.** `mem-YYYY-MM-DD-<slug>`; slug is kebab-case from title, ≤40 chars, UTC creation date.
+1. **Memory ID format.** `mem-YYYY-MM-DD-<slug>-<6-hex>`; slug is kebab-case from title, ≤40 chars, UTC creation date; 6-hex suffix is a random nonce generated at create time. The suffix prevents primary-key and filename collisions when two memories share a date and slug (likely during bootstrap and repeated extracted gotchas). 6 hex chars ≈ 16M space; collision probability negligible at any realistic scale.
 2. **`agent_id` in audit log.** Free-form string set by caller (`claude-code`, `cursor`, `cli-user`, etc.). No registry.
 3. **Vector regeneration on body update.** Inline on `update_memory`; ~50ms with Xenova. Acceptable write-time cost.
 4. **Type registry mutation.** Adding a built-in type requires code change. Adding a user type is purely declarative (`types.json` edit).
@@ -879,7 +976,7 @@ Listed for explicit visibility in implementation planning. Defaults proposed; sp
 
 ```markdown
 ---
-id: mem-2026-04-30-cache-atomic-writes
+id: mem-2026-04-30-cache-atomic-writes-a3f9c1
 type: decision
 status: active
 title: Cache writes use atomic temp-file rename
@@ -917,7 +1014,7 @@ Crash mid-write must leave the prior version intact. Partial JSON or SQLite file
 
 ```markdown
 ---
-id: mem-2026-04-29-parser-init-race-linux
+id: mem-2026-04-29-parser-init-race-linux-7c2e04
 type: gotcha
 status: active
 title: Parser must init before parallel adapter factories on Linux
@@ -958,7 +1055,7 @@ Indexer fails on Linux CI with `Parser is not initialized`, passes on macOS. Sta
 
 ```markdown
 ---
-id: mem-2026-04-15-suggest-ranker-layout
+id: mem-2026-04-15-suggest-ranker-layout-5ae701
 type: pattern
 status: active
 title: Suggest rankers — fast / deep / semantic split
@@ -1007,7 +1104,7 @@ Three ranker modules, one strategy each:
 
 ```markdown
 ---
-id: mem-2026-04-28-add-language-adapter
+id: mem-2026-04-28-add-language-adapter-2c8103
 type: how-to
 status: active
 title: Add a new language adapter
@@ -1035,7 +1132,7 @@ Add support for a new language to the indexer (e.g., Rust, Go).
 
 ## Steps
 1. Create `src/lib/adapters/<lang>.ts` implementing the `LangAdapter` interface from `src/lib/lang-adapter.ts`.
-2. Use a tree-sitter grammar. Do **not** call `new Parser()` from inside the factory — rely on the module-level init in `src/lib/adapters/index.ts` (see `mem-2026-04-29-parser-init-race-linux`).
+2. Use a tree-sitter grammar. Do **not** call `new Parser()` from inside the factory — rely on the module-level init in `src/lib/adapters/index.ts` (see `mem-2026-04-29-parser-init-race-linux-7c2e04`).
 3. Register the factory in `src/lib/adapters/index.ts` keyed by file extension.
 4. Add a fixture under `tests/fixtures/adapters/<lang>/`.
 5. Add unit tests in `tests/lib/adapters/<lang>.test.ts`.
