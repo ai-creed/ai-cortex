@@ -10,7 +10,8 @@ import type { RepoCache } from "./models.js";
 const execAsync = promisify(exec);
 
 export function getCacheDir(repoKey: string): string {
-	return path.join(os.homedir(), ".cache", "ai-cortex", "v1", repoKey);
+	const home = process.env.AI_CORTEX_CACHE_HOME ?? path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	return path.join(home, repoKey);
 }
 
 export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
