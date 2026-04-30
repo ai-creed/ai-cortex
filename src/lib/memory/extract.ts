@@ -147,6 +147,9 @@ const STOPWORDS = new Set([
 	"the","a","an","and","or","but","is","are","was","were","be","been","being",
 	"in","on","at","to","of","for","with","by","from","as","this","that","these","those",
 	"i","you","we","they","it","he","she","do","does","did","not","no","yes","so",
+	"always","never","must","should","before","after","when","then","also","just",
+	"use","used","using","make","have","will","would","could","please","want",
+	"need","like","your","mine","here","there","than","into","onto","over",
 ]);
 
 export function extractTags(text: string, max = 5): string[] {
@@ -184,5 +187,42 @@ export function nearestFile(evidence: EvidenceLayer, turn: number): string | nul
 		}
 	}
 	return best;
+}
+
+// ---------------------------------------------------------------------------
+// Decision heuristic
+// ---------------------------------------------------------------------------
+
+const IMPERATIVE_RE = /\b(must|always|never|should|don't|dont|prefer|avoid)\b/i;
+const ACK_RE = /\b(got it|understood|will do|noted|sure thing|okay,? i('| wi)ll)\b/i;
+
+export function produceDecisionCandidates(
+	sessionId: string,
+	evidence: EvidenceLayer,
+): ProducedCandidate[] {
+	const out: ProducedCandidate[] = [];
+	for (const c of evidence.corrections) {
+		if (!IMPERATIVE_RE.test(c.text)) continue;
+		const ack = c.nextAssistantSnippet !== undefined && ACK_RE.test(c.nextAssistantSnippet);
+		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
+		const body = c.nextAssistantSnippet
+			? `${c.text}\n\n_Acknowledged:_ ${c.nextAssistantSnippet}`
+			: c.text;
+		out.push({
+			type: "decision",
+			title,
+			body,
+			scopeFiles: filesNearTurn(evidence, c.turn, 3),
+			tags: extractTags(c.text),
+			confidence: ack ? 0.55 : 0.45,
+			provenance: [{
+				sessionId,
+				turn: c.turn,
+				kind: "user_correction",
+				excerpt: c.text.slice(0, 280),
+			}],
+		});
+	}
+	return out;
 }
 
