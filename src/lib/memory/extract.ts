@@ -332,3 +332,54 @@ export async function producePatternCandidates(
 	}];
 }
 
+// ---------------------------------------------------------------------------
+// How-to heuristic
+// ---------------------------------------------------------------------------
+
+const HOW_TO_RE = /^\s*(how (do|to|can) i|steps|process|procedure|what are the steps)\b/i;
+const NUMBERED_LIST_RE = /(^|\n)\s*1[.)]\s/;
+
+const HOW_TO_MIN_TOOLS = 3;
+
+export function produceHowToCandidates(
+	sessionId: string,
+	evidence: EvidenceLayer,
+): ProducedCandidate[] {
+	const out: ProducedCandidate[] = [];
+	for (const p of evidence.userPrompts) {
+		if (!HOW_TO_RE.test(p.text)) continue;
+		const sequential = evidence.toolCalls.filter((tc) => tc.turn > p.turn);
+		if (sequential.length < HOW_TO_MIN_TOOLS) continue;
+		const closingList =
+			p.nextAssistantSnippet !== undefined && NUMBERED_LIST_RE.test(p.nextAssistantSnippet);
+		const minTurn = sequential[0].turn;
+		const maxTurn = sequential[sequential.length - 1].turn;
+		const files = [...new Set(
+			evidence.filePaths
+				.filter((f) => f.turn >= minTurn && f.turn <= maxTurn)
+				.map((f) => f.path),
+		)];
+		const stepsBody = closingList
+			? p.nextAssistantSnippet!
+			: sequential
+					.map((tc, i) => `${i + 1}. ${tc.name}${tc.args ? ` — ${tc.args}` : ""}`)
+					.join("\n");
+		const title = p.text.length <= 80 ? p.text : p.text.slice(0, 77) + "…";
+		out.push({
+			type: "how-to",
+			title,
+			body: `**Goal:** ${p.text}\n\n**Steps:**\n${stepsBody}`,
+			scopeFiles: files,
+			tags: extractTags(p.text),
+			confidence: closingList ? 0.50 : 0.40,
+			provenance: [{
+				sessionId,
+				turn: p.turn,
+				kind: "user_prompt",
+				excerpt: p.text.slice(0, 280),
+			}],
+		});
+	}
+	return out;
+}
+
