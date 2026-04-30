@@ -9,6 +9,7 @@ vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/indexer.js");
 vi.mock("../../../src/lib/briefing.js");
 vi.mock("../../../src/lib/diff-files.js");
+vi.mock("../../../src/lib/memory/briefing-pinned.js");
 
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import {
@@ -21,6 +22,7 @@ import {
 import { diffChangedFiles } from "../../../src/lib/diff-files.js";
 import { indexRepo, buildIncrementalIndex } from "../../../src/lib/indexer.js";
 import { renderBriefing } from "../../../src/lib/briefing.js";
+import { renderPinnedSection } from "../../../src/lib/memory/briefing-pinned.js";
 import {
 	SCHEMA_VERSION,
 	IndexError,
@@ -61,6 +63,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
 	vi.mocked(renderBriefing).mockReturnValue("# test-app\n");
+	vi.mocked(renderPinnedSection).mockResolvedValue(null);
 	vi.mocked(getCacheDir).mockReturnValue(
 		path.join(tmpDir, ".cache", "ai-cortex", "v1", mockIdentity.repoKey),
 	);
@@ -385,5 +388,35 @@ describe("rehydrateRepo — incremental path", () => {
 			expect.anything(),
 			true, // dirtyAtIndex — worktree is dirty even though fingerprint also changed
 		);
+	});
+});
+
+describe("rehydrateRepo — pinned memories section", () => {
+	it("includes a Pinned memories section when at least one is pinned", async () => {
+		const cache = makeFreshCache();
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(isWorktreeDirty).mockResolvedValue(false);
+		vi.mocked(renderPinnedSection).mockResolvedValue(
+			"## Pinned memories (1)\n\n- **decision** — Always use pnpm\n  > use pnpm (mem-id)\n",
+		);
+
+		const result = await rehydrateRepo("/repo");
+
+		const content = fs.readFileSync(result.briefingPath, "utf8");
+		expect(content).toMatch(/## Pinned memories/);
+	});
+
+	it("omits the Pinned memories section when no memories are pinned", async () => {
+		const cache = makeFreshCache();
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(isWorktreeDirty).mockResolvedValue(false);
+		vi.mocked(renderPinnedSection).mockResolvedValue(null);
+
+		const result = await rehydrateRepo("/repo");
+
+		const content = fs.readFileSync(result.briefingPath, "utf8");
+		expect(content).not.toMatch(/## Pinned memories/);
 	});
 });
