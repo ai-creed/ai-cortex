@@ -49,7 +49,7 @@ describe("validateRegistration", () => {
 		const reg = await readRegistry(tmp);
 		const result = validateRegistration(reg, { type: "gotcha", typeFields: {} });
 		expect(result.ok).toBe(false);
-		expect(result.errors[0]).toMatch(/severity/);
+		expect((result as { ok: false; errors: string[] }).errors[0]).toMatch(/severity/);
 	});
 
 	it("rejects a gotcha with severity outside the enum", async () => {
@@ -60,7 +60,7 @@ describe("validateRegistration", () => {
 			typeFields: { severity: "catastrophic" },
 		});
 		expect(result.ok).toBe(false);
-		expect(result.errors[0]).toMatch(/severity/);
+		expect((result as { ok: false; errors: string[] }).errors[0]).toMatch(/severity/);
 	});
 
 	it("rejects an unregistered type", async () => {
@@ -68,6 +68,6 @@ describe("validateRegistration", () => {
 		const reg = await readRegistry(tmp);
 		const result = validateRegistration(reg, { type: "rumor", typeFields: {} });
 		expect(result.ok).toBe(false);
-		expect(result.errors[0]).toMatch(/unregistered type/);
+		expect((result as { ok: false; errors: string[] }).errors[0]).toMatch(/unregistered type/);
 	});
 });
