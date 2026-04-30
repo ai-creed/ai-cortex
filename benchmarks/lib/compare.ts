@@ -21,7 +21,8 @@ export function checkRegression(
 ): RegressionCheck {
 	if (baselineP50 === null) return { status: "skip", pct: null };
 
-	const pct = Math.round(((currentP50 - baselineP50) / baselineP50) * 10000) / 100;
+	const pct =
+		Math.round(((currentP50 - baselineP50) / baselineP50) * 10000) / 100;
 
 	if (pct > thresholds.failPct) return { status: "fail", pct };
 	if (pct > thresholds.warnPct) return { status: "warn", pct };

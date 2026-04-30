@@ -32,7 +32,10 @@ describe("detectCurrentSession", () => {
 	it("returns AI_CORTEX_SESSION_ID when set", () => {
 		process.env.AI_CORTEX_SESSION_ID = "canon-id";
 		const result = detectCurrentSession({ cwd: "/some/dir" });
-		expect(result).toEqual({ sessionId: "canon-id", source: "env:AI_CORTEX_SESSION_ID" });
+		expect(result).toEqual({
+			sessionId: "canon-id",
+			source: "env:AI_CORTEX_SESSION_ID",
+		});
 	});
 
 	it("AI_CORTEX_SESSION_ID takes precedence over CLAUDE_SESSION_ID", () => {
@@ -45,7 +48,10 @@ describe("detectCurrentSession", () => {
 	it("falls through to CLAUDE_SESSION_ID when canonical unset", () => {
 		process.env.CLAUDE_SESSION_ID = "claude-id";
 		const result = detectCurrentSession({ cwd: "/some/dir" });
-		expect(result).toEqual({ sessionId: "claude-id", source: "env:CLAUDE_SESSION_ID" });
+		expect(result).toEqual({
+			sessionId: "claude-id",
+			source: "env:CLAUDE_SESSION_ID",
+		});
 	});
 
 	it("ignores CODEX_SESSION_ID and CURSOR_SESSION_ID (those tools use stdin JSON)", () => {
@@ -60,7 +66,10 @@ describe("detectCurrentSession", () => {
 		const dir = path.join(tmp, ".codex", "sessions", "2026", "04", "25");
 		fs.mkdirSync(dir, { recursive: true });
 		fs.writeFileSync(
-			path.join(dir, "rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl"),
+			path.join(
+				dir,
+				"rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl",
+			),
 			"",
 		);
 
@@ -76,18 +85,34 @@ describe("detectCurrentSession", () => {
 		const sessionsDir = path.join(codexRoot, "sessions", "2026", "04", "25");
 		fs.mkdirSync(sessionsDir, { recursive: true });
 		fs.writeFileSync(
-			path.join(sessionsDir, "rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl"),
-			JSON.stringify({ type: "session_meta", payload: { id: "019dc553-efaa-70f0-a753-e9bb4f75c038", cwd: "/Users/v/Dev/foo" } }) + "\n",
+			path.join(
+				sessionsDir,
+				"rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl",
+			),
+			JSON.stringify({
+				type: "session_meta",
+				payload: {
+					id: "019dc553-efaa-70f0-a753-e9bb4f75c038",
+					cwd: "/Users/v/Dev/foo",
+				},
+			}) + "\n",
 		);
 		fs.writeFileSync(
 			path.join(sessionsDir, "rollout-2026-04-25T22-48-25-other-session.jsonl"),
-			JSON.stringify({ type: "session_meta", payload: { id: "other-session", cwd: "/Users/v/Dev/other" } }) + "\n",
+			JSON.stringify({
+				type: "session_meta",
+				payload: { id: "other-session", cwd: "/Users/v/Dev/other" },
+			}) + "\n",
 		);
 		fs.writeFileSync(
 			path.join(codexRoot, "history.jsonl"),
 			[
 				JSON.stringify({ session_id: "other-session", ts: 100, text: "old" }),
-				JSON.stringify({ session_id: "019dc553-efaa-70f0-a753-e9bb4f75c038", ts: 200, text: "new" }),
+				JSON.stringify({
+					session_id: "019dc553-efaa-70f0-a753-e9bb4f75c038",
+					ts: 200,
+					text: "new",
+				}),
 			].join("\n") + "\n",
 		);
 
@@ -104,7 +129,12 @@ describe("detectCurrentSession", () => {
 	});
 
 	it("falls back to most-recent-mtime in Claude Code project dir", () => {
-		const projectDir = path.join(tmp, ".claude", "projects", "-Users-v-Dev-foo");
+		const projectDir = path.join(
+			tmp,
+			".claude",
+			"projects",
+			"-Users-v-Dev-foo",
+		);
 		const older = makeJsonl(projectDir, "old.jsonl", Date.now() - 60_000);
 		const newer = makeJsonl(projectDir, "new.jsonl", Date.now());
 
@@ -118,29 +148,46 @@ describe("detectCurrentSession", () => {
 	});
 
 	it("tolerates non-jsonl siblings", () => {
-		const projectDir = path.join(tmp, ".claude", "projects", "-Users-v-Dev-foo");
+		const projectDir = path.join(
+			tmp,
+			".claude",
+			"projects",
+			"-Users-v-Dev-foo",
+		);
 		fs.mkdirSync(projectDir, { recursive: true });
 		fs.writeFileSync(path.join(projectDir, "readme.txt"), "");
 		makeJsonl(projectDir, "real.jsonl", Date.now());
-		expect(detectCurrentSession({ cwd: "/Users/v/Dev/foo" })?.sessionId).toBe("real");
+		expect(detectCurrentSession({ cwd: "/Users/v/Dev/foo" })?.sessionId).toBe(
+			"real",
+		);
 	});
 });
 
 describe("resolveTranscriptPath", () => {
 	it("returns path under encoded cwd", async () => {
-		const { resolveTranscriptPath } = await import("../../../../src/lib/history/session-detect.js");
+		const { resolveTranscriptPath } =
+			await import("../../../../src/lib/history/session-detect.js");
 		const result = resolveTranscriptPath("/Users/v/Dev/foo", "abc123");
-		expect(result).toBe(path.join(tmp, ".claude", "projects", "-Users-v-Dev-foo", "abc123.jsonl"));
+		expect(result).toBe(
+			path.join(tmp, ".claude", "projects", "-Users-v-Dev-foo", "abc123.jsonl"),
+		);
 	});
 
 	it("returns Codex rollout path when sessionId matches a Codex transcript", async () => {
-		const { resolveTranscriptPath } = await import("../../../../src/lib/history/session-detect.js");
+		const { resolveTranscriptPath } =
+			await import("../../../../src/lib/history/session-detect.js");
 		const dir = path.join(tmp, ".codex", "sessions", "2026", "04", "25");
-		const file = path.join(dir, "rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl");
+		const file = path.join(
+			dir,
+			"rollout-2026-04-25T22-48-25-019dc553-efaa-70f0-a753-e9bb4f75c038.jsonl",
+		);
 		fs.mkdirSync(dir, { recursive: true });
 		fs.writeFileSync(file, "");
 
-		const result = resolveTranscriptPath("/Users/v/Dev/foo", "019dc553-efaa-70f0-a753-e9bb4f75c038");
+		const result = resolveTranscriptPath(
+			"/Users/v/Dev/foo",
+			"019dc553-efaa-70f0-a753-e9bb4f75c038",
+		);
 		expect(result).toBe(file);
 	});
 });

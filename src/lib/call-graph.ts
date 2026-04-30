@@ -8,18 +8,26 @@ import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
 
 const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const C_FAMILY_EXTS = new Set([
-  ".c", ".cpp", ".cc", ".cxx", ".c++",
-  ".h", ".hpp", ".hh", ".hxx", ".h++",
+	".c",
+	".cpp",
+	".cc",
+	".cxx",
+	".c++",
+	".h",
+	".hpp",
+	".hh",
+	".hxx",
+	".h++",
 ]);
 const H_EXTS = new Set([".h", ".hh", ".hpp", ".hxx", ".h++"]);
 const SRC_EXTS = [".cpp", ".cc", ".cxx", ".c++", ".c"];
 
 function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
-  const ext = path.extname(filePath);
-  if (TS_EXTS.has(ext)) return "ts";
-  if (C_FAMILY_EXTS.has(ext)) return "cfamily";
-  if (ext === ".py") return "python";
-  return "other";
+	const ext = path.extname(filePath);
+	if (TS_EXTS.has(ext)) return "ts";
+	if (C_FAMILY_EXTS.has(ext)) return "cfamily";
+	if (ext === ".py") return "python";
+	return "other";
 }
 
 export function stripTsExt(value: string): string {
@@ -53,7 +61,9 @@ export function resolvePythonTargetFile(
 }
 
 function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
-	return path.normalize(path.join(path.dirname(callerFile), fromSpecifier)).replace(/\\/g, "/");
+	return path
+		.normalize(path.join(path.dirname(callerFile), fromSpecifier))
+		.replace(/\\/g, "/");
 }
 
 function findTargetFile(
@@ -89,12 +99,17 @@ function pickUnique(
 	requireExported = false,
 ): FunctionNode | null {
 	if (!fns) return null;
-	const live = fns.filter((f) => !f.isDeclarationOnly && (!requireExported || f.exported));
+	const live = fns.filter(
+		(f) => !f.isDeclarationOnly && (!requireExported || f.exported),
+	);
 	if (live.length === 1) return live[0];
 	return null;
 }
 
-function companionSourceFiles(headerPath: string, known: Map<string, unknown>): string[] {
+function companionSourceFiles(
+	headerPath: string,
+	known: Map<string, unknown>,
+): string[] {
 	const ext = path.extname(headerPath);
 	if (!H_EXTS.has(ext)) return [];
 	const base = headerPath.slice(0, -ext.length);
@@ -110,7 +125,10 @@ export function resolveCallSites(
 	const funcsByFile = new Map<string, Map<string, FunctionNode[]>>();
 	for (const fn of allFunctions) {
 		let fileMap = funcsByFile.get(fn.file);
-		if (!fileMap) { fileMap = new Map(); funcsByFile.set(fn.file, fileMap); }
+		if (!fileMap) {
+			fileMap = new Map();
+			funcsByFile.set(fn.file, fileMap);
+		}
 		const list = fileMap.get(fn.qualifiedName) ?? [];
 		list.push(fn);
 		fileMap.set(fn.qualifiedName, list);
@@ -139,16 +157,32 @@ export function resolveCallSites(
 				let targetFile: string | null;
 				if (langOf(raw.callerFile) === "python") {
 					targetFile = resolvePythonTargetFile(
-						binding.fromSpecifier, raw.callerFile, allFileNodes, includesByFile,
+						binding.fromSpecifier,
+						raw.callerFile,
+						allFileNodes,
+						includesByFile,
 					);
 				} else {
-					const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-					targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+					const specifier = resolveSpecifier(
+						binding.fromSpecifier,
+						raw.callerFile,
+					);
+					targetFile = findTargetFile(
+						specifier,
+						allFileNodes,
+						langOf(raw.callerFile),
+					);
 				}
 				if (targetFile && binding.bindingKind === "namespace") {
-					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(member));
+					const targetFunc = pickUnique(
+						funcsByFile.get(targetFile)?.get(member),
+					);
 					if (targetFunc) {
-						edges.push({ from: fromKey, to: `${targetFile}::${targetFunc.qualifiedName}`, kind: raw.kind });
+						edges.push({
+							from: fromKey,
+							to: `${targetFile}::${targetFunc.qualifiedName}`,
+							kind: raw.kind,
+						});
 						resolved = true;
 					}
 				}
@@ -181,23 +215,45 @@ export function resolveCallSites(
 			let targetFile: string | null;
 			if (langOf(raw.callerFile) === "python") {
 				targetFile = resolvePythonTargetFile(
-					binding.fromSpecifier, raw.callerFile, allFileNodes, includesByFile,
+					binding.fromSpecifier,
+					raw.callerFile,
+					allFileNodes,
+					includesByFile,
 				);
 			} else {
-				const specifier = resolveSpecifier(binding.fromSpecifier, raw.callerFile);
-				targetFile = findTargetFile(specifier, allFileNodes, langOf(raw.callerFile));
+				const specifier = resolveSpecifier(
+					binding.fromSpecifier,
+					raw.callerFile,
+				);
+				targetFile = findTargetFile(
+					specifier,
+					allFileNodes,
+					langOf(raw.callerFile),
+				);
 			}
 			if (targetFile) {
 				if (binding.bindingKind === "default") {
-					const defaultFunc = allFunctions.find((f) => f.file === targetFile && f.isDefaultExport);
+					const defaultFunc = allFunctions.find(
+						(f) => f.file === targetFile && f.isDefaultExport,
+					);
 					if (defaultFunc) {
-						edges.push({ from: fromKey, to: `${targetFile}::${defaultFunc.qualifiedName}`, kind: raw.kind });
+						edges.push({
+							from: fromKey,
+							to: `${targetFile}::${defaultFunc.qualifiedName}`,
+							kind: raw.kind,
+						});
 						resolved = true;
 					}
 				} else {
-					const targetFunc = pickUnique(funcsByFile.get(targetFile)?.get(binding.importedName));
+					const targetFunc = pickUnique(
+						funcsByFile.get(targetFile)?.get(binding.importedName),
+					);
 					if (targetFunc) {
-						edges.push({ from: fromKey, to: `${targetFile}::${targetFunc.qualifiedName}`, kind: raw.kind });
+						edges.push({
+							from: fromKey,
+							to: `${targetFile}::${targetFunc.qualifiedName}`,
+							kind: raw.kind,
+						});
 						resolved = true;
 					}
 				}
@@ -210,7 +266,11 @@ export function resolveCallSites(
 		if (sameFile) {
 			const match = pickUnique(sameFile.get(raw.rawCallee));
 			if (match) {
-				edges.push({ from: fromKey, to: `${raw.callerFile}::${match.qualifiedName}`, kind: raw.kind });
+				edges.push({
+					from: fromKey,
+					to: `${raw.callerFile}::${match.qualifiedName}`,
+					kind: raw.kind,
+				});
 				continue;
 			}
 		}
@@ -221,16 +281,30 @@ export function resolveCallSites(
 			if (includes) {
 				outer: for (const inc of includes) {
 					const incFile = inc.to;
-					const match = pickUnique(funcsByFile.get(incFile)?.get(raw.rawCallee), true);
+					const match = pickUnique(
+						funcsByFile.get(incFile)?.get(raw.rawCallee),
+						true,
+					);
 					if (match) {
-						edges.push({ from: fromKey, to: `${incFile}::${match.qualifiedName}`, kind: raw.kind });
+						edges.push({
+							from: fromKey,
+							to: `${incFile}::${match.qualifiedName}`,
+							kind: raw.kind,
+						});
 						resolved = true;
 						break;
 					}
 					for (const companion of companionSourceFiles(incFile, funcsByFile)) {
-						const compMatch = pickUnique(funcsByFile.get(companion)?.get(raw.rawCallee), true);
+						const compMatch = pickUnique(
+							funcsByFile.get(companion)?.get(raw.rawCallee),
+							true,
+						);
 						if (compMatch) {
-							edges.push({ from: fromKey, to: `${companion}::${compMatch.qualifiedName}`, kind: raw.kind });
+							edges.push({
+								from: fromKey,
+								to: `${companion}::${compMatch.qualifiedName}`,
+								kind: raw.kind,
+							});
 							resolved = true;
 							break outer;
 						}
@@ -250,7 +324,11 @@ export function resolveCallSites(
 					langOf(f.file) === "cfamily",
 			);
 			if (liveDefs.length === 1) {
-				edges.push({ from: fromKey, to: `${liveDefs[0].file}::${liveDefs[0].qualifiedName}`, kind: raw.kind });
+				edges.push({
+					from: fromKey,
+					to: `${liveDefs[0].file}::${liveDefs[0].qualifiedName}`,
+					kind: raw.kind,
+				});
 				resolved = true;
 			}
 		}
@@ -287,7 +365,11 @@ export async function extractCallGraphRaw(
 		if (contentMap && content === undefined) continue;
 
 		try {
-			const result = await adapter.extractCallGraph(worktreePath, filePath, content);
+			const result = await adapter.extractCallGraph(
+				worktreePath,
+				filePath,
+				content,
+			);
 			allFunctions.push(...result.functions);
 			allRawCalls.push(...result.rawCalls);
 			if (result.importBindings.length > 0) {
@@ -311,13 +393,23 @@ export async function extractCallGraph(
 		filePaths,
 		contentMap,
 	);
-	const importEdges = await extractImports(worktreePath, filePaths, filePaths, contentMap);
+	const importEdges = await extractImports(
+		worktreePath,
+		filePaths,
+		filePaths,
+		contentMap,
+	);
 	const includesByFile = new Map<string, ImportEdge[]>();
 	for (const edge of importEdges) {
 		const list = includesByFile.get(edge.from) ?? [];
 		list.push(edge);
 		includesByFile.set(edge.from, list);
 	}
-	const calls = resolveCallSites(rawCalls, functions, bindingsByFile, includesByFile);
+	const calls = resolveCallSites(
+		rawCalls,
+		functions,
+		bindingsByFile,
+		includesByFile,
+	);
 	return { calls, functions };
 }

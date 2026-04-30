@@ -5,7 +5,11 @@ const DELIM = "---";
 const EXCERPT_CAP = 280;
 
 export function serializeMemoryMarkdown(record: MemoryRecord): string {
-	const fm = yaml.dump(record.frontmatter, { lineWidth: 120, noRefs: true, quotingType: '"' });
+	const fm = yaml.dump(record.frontmatter, {
+		lineWidth: 120,
+		noRefs: true,
+		quotingType: '"',
+	});
 	return `${DELIM}\n${fm}${DELIM}\n${record.body}`;
 }
 
@@ -29,5 +33,10 @@ export function parseMemoryMarkdown(text: string): MemoryRecord {
 export function bodyExcerpt(body: string): string {
 	const trimmed = body.trim();
 	if (trimmed.length <= EXCERPT_CAP) return trimmed;
-	return trimmed.slice(0, EXCERPT_CAP - 1).replace(/\s+\S*$/, "").trimEnd() + "…";
+	return (
+		trimmed
+			.slice(0, EXCERPT_CAP - 1)
+			.replace(/\s+\S*$/, "")
+			.trimEnd() + "…"
+	);
 }

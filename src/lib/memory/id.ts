@@ -29,9 +29,15 @@ function utcDateString(d: Date): string {
 	return `${y}-${m}-${day}`;
 }
 
-export function generateMemoryId(title: string, now: Date = new Date()): string {
+export function generateMemoryId(
+	title: string,
+	now: Date = new Date(),
+): string {
 	const slug = deriveSlug(title);
 	const date = utcDateString(now);
-	const hex = crypto.randomBytes(Math.ceil(HEX_LEN / 2)).toString("hex").slice(0, HEX_LEN);
+	const hex = crypto
+		.randomBytes(Math.ceil(HEX_LEN / 2))
+		.toString("hex")
+		.slice(0, HEX_LEN);
 	return `mem-${date}-${slug}-${hex}`;
 }

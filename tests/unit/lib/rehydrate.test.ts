@@ -227,9 +227,7 @@ describe("rehydrateRepo", () => {
 describe("rehydrateRepo — incremental path", () => {
 	it("uses incremental index when cache exists and fingerprint is stale", async () => {
 		const cache = makeFreshCache();
-		cache.files = [
-			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
-		];
+		cache.files = [{ path: "src/main.ts", kind: "file", contentHash: "hash1" }];
 		const updated = { ...cache, fingerprint: "newfingerprint" };
 
 		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
@@ -252,9 +250,7 @@ describe("rehydrateRepo — incremental path", () => {
 
 	it("uses incremental index when worktree is dirty", async () => {
 		const cache = makeFreshCache();
-		cache.files = [
-			{ path: "src/main.ts", kind: "file", contentHash: "hash1" },
-		];
+		cache.files = [{ path: "src/main.ts", kind: "file", contentHash: "hash1" }];
 		const updated = { ...cache };
 
 		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
@@ -367,7 +363,11 @@ describe("rehydrateRepo — incremental path", () => {
 
 	it("passes dirtyAtIndex=true when fingerprint is stale AND worktree is dirty", async () => {
 		const cache = makeFreshCache();
-		const updated = { ...cache, fingerprint: "newfingerprint", dirtyAtIndex: true };
+		const updated = {
+			...cache,
+			fingerprint: "newfingerprint",
+			dirtyAtIndex: true,
+		};
 
 		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");

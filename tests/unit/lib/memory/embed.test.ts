@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { upsertMemoryVector, readMemoryVector } from "../../../../src/lib/memory/embed.js";
+import {
+	upsertMemoryVector,
+	readMemoryVector,
+} from "../../../../src/lib/memory/embed.js";
 
 let tmp: string;
 const repoKey = "vec-test";
@@ -11,7 +14,9 @@ beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-vec-"));
 	process.env.AI_CORTEX_CACHE_HOME = tmp;
 });
-afterEach(() => { delete process.env.AI_CORTEX_CACHE_HOME; });
+afterEach(() => {
+	delete process.env.AI_CORTEX_CACHE_HOME;
+});
 
 describe("upsertMemoryVector / readMemoryVector", () => {
 	it("writes a vector for a memory and reads it back", async () => {

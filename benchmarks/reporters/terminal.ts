@@ -1,5 +1,9 @@
 // benchmarks/reporters/terminal.ts
-import type { SuiteReport, ScenarioResult, QualityResult } from "../lib/types.js";
+import type {
+	SuiteReport,
+	ScenarioResult,
+	QualityResult,
+} from "../lib/types.js";
 
 function pad(str: string, len: number): string {
 	return str.padEnd(len);
@@ -16,7 +20,10 @@ function fmtStatus(result: ScenarioResult): string {
 		case "warn":
 			return `warn +${result.regressionPct}%`;
 		case "fail": {
-			const pctStr = result.regressionPct !== null ? ` ${result.regressionPct > 0 ? "+" : ""}${result.regressionPct}%` : "";
+			const pctStr =
+				result.regressionPct !== null
+					? ` ${result.regressionPct > 0 ? "+" : ""}${result.regressionPct}%`
+					: "";
 			return `FAIL${pctStr}`;
 		}
 		case "skip":
@@ -52,14 +59,10 @@ function fmtQuality(result: QualityResult): string {
 
 function printQualityTable(results: QualityResult[]): void {
 	console.log("\n── Quality ─────────────────────────────────────────────────");
-	console.log(
-		`  ${pad("suite", 14)}${pad("test", 40)}status`,
-	);
+	console.log(`  ${pad("suite", 14)}${pad("test", 40)}status`);
 
 	for (const r of results) {
-		console.log(
-			`  ${pad(r.suite, 14)}${pad(r.name, 40)}${fmtQuality(r)}`,
-		);
+		console.log(`  ${pad(r.suite, 14)}${pad(r.name, 40)}${fmtQuality(r)}`);
 	}
 }
 
@@ -67,7 +70,9 @@ export function printReport(report: SuiteReport): void {
 	if (report.perf.length > 0) printPerfTable(report.perf);
 	if (report.quality.length > 0) printQualityTable(report.quality);
 
-	const perfPass = report.perf.filter((r) => r.status === "pass" || r.status === "skip").length;
+	const perfPass = report.perf.filter(
+		(r) => r.status === "pass" || r.status === "skip",
+	).length;
 	const perfWarn = report.perf.filter((r) => r.status === "warn").length;
 	const perfFail = report.perf.filter((r) => r.status === "fail").length;
 	const perfSkip = report.perf.filter((r) => r.status === "skip").length;

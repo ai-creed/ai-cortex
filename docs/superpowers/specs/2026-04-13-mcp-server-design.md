@@ -68,10 +68,10 @@ but must be listed explicitly in `package.json` for direct imports in `server.ts
 
 ```ts
 if (command === "mcp") {
-  const { startMcpServer } = await import("./mcp/server.js");
-  await startMcpServer();
-  // startMcpServer resolves only when the stdio transport closes.
-  // No process.exit() here — normal stream-end cleanup is sufficient.
+	const { startMcpServer } = await import("./mcp/server.js");
+	await startMcpServer();
+	// startMcpServer resolves only when the stdio transport closes.
+	// No process.exit() here — normal stream-end cleanup is sufficient.
 }
 ```
 
@@ -87,14 +87,15 @@ The process stays alive for the lifetime of the MCP session.
 ### `rehydrate_project`
 
 **Description** (shown to agent):
+
 > Load project context for the current session. Call this once at the start of
 > any session when working in a git repository. Returns a markdown briefing
 > covering project structure, key files, entry points, and recent changes.
 
 **Input schema:**
 
-| Field  | Type   | Required | Default      | Description       |
-|--------|--------|----------|--------------|-------------------|
+| Field  | Type   | Required | Default         | Description       |
+| ------ | ------ | -------- | --------------- | ----------------- |
 | `path` | string | no       | `process.cwd()` | Path to repo root |
 
 **Output:** briefing markdown as a single MCP text content block.
@@ -108,19 +109,20 @@ The process stays alive for the lifetime of the MCP session.
 ### `suggest_files`
 
 **Description** (shown to agent):
+
 > Get a ranked list of files relevant to a specific task. Call this when you
 > have a clear task before reading the codebase — it surfaces the most relevant
 > files so you know where to start.
 
 **Input schema:**
 
-| Field   | Type    | Required | Default | Description                          |
-|---------|---------|----------|---------|--------------------------------------|
-| `task`  | string  | yes      | —       | Description of the task              |
-| `path`  | string  | no       | cwd     | Path to repo root                    |
+| Field   | Type    | Required | Default | Description                           |
+| ------- | ------- | -------- | ------- | ------------------------------------- |
+| `task`  | string  | yes      | —       | Description of the task               |
+| `path`  | string  | no       | cwd     | Path to repo root                     |
 | `from`  | string  | no       | —       | Anchor file path for structural boost |
-| `limit` | number  | no       | 5       | Maximum results to return            |
-| `stale` | boolean | no       | false   | Use cached data even if stale        |
+| `limit` | number  | no       | 5       | Maximum results to return             |
+| `stale` | boolean | no       | false   | Use cached data even if stale         |
 
 **Output:** same formatted text as CLI human output:
 
@@ -139,6 +141,7 @@ suggested files for: <task>
 ### `index_project`
 
 **Description** (shown to agent):
+
 > Build or force-refresh the project index. Usually not needed —
 > rehydrate_project handles freshness automatically. Use this to explicitly
 > rebuild after large structural changes.
@@ -146,7 +149,7 @@ suggested files for: <task>
 **Input schema:**
 
 | Field  | Type   | Required | Default | Description       |
-|--------|--------|----------|---------|-------------------|
+| ------ | ------ | -------- | ------- | ----------------- |
 | `path` | string | no       | cwd     | Path to repo root |
 
 **Output:** confirmation string, e.g.:
@@ -170,11 +173,11 @@ This ensures `InvalidParams` is always server-generated, never ambiguous.
 
 **Layer 2 — library errors:**
 
-| Library error        | MCP error code   | Notes                            |
-|----------------------|------------------|----------------------------------|
-| `RepoIdentityError`  | `InvalidParams`  | Not a git repo or git not found  |
-| `IndexError`         | `InternalError`  | Pipeline / ranking / I/O failure |
-| Other `Error`        | `InternalError`  | Message passed through           |
+| Library error       | MCP error code  | Notes                            |
+| ------------------- | --------------- | -------------------------------- |
+| `RepoIdentityError` | `InvalidParams` | Not a git repo or git not found  |
+| `IndexError`        | `InternalError` | Pipeline / ranking / I/O failure |
+| Other `Error`       | `InternalError` | Message passed through           |
 
 All errors return a structured MCP error response. The server does not crash on
 tool errors.
@@ -216,13 +219,13 @@ Or manual entry in `~/.claude/settings.json`:
 
 ```json
 {
-  "mcpServers": {
-    "ai-cortex": {
-      "command": "node",
-      "args": ["/absolute/path/to/ai-cortex/dist/cli.js", "mcp"],
-      "type": "stdio"
-    }
-  }
+	"mcpServers": {
+		"ai-cortex": {
+			"command": "node",
+			"args": ["/absolute/path/to/ai-cortex/dist/cli.js", "mcp"],
+			"type": "stdio"
+		}
+	}
 }
 ```
 

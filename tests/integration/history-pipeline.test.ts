@@ -31,7 +31,12 @@ afterEach(() => {
 
 describe("history pipeline end-to-end", () => {
 	it("captures fixture, then search finds the user correction by lexical query", async () => {
-		await captureSession({ repoKey: "REPO", sessionId: "int-sess", transcriptPath: FIXTURE, embed: false });
+		await captureSession({
+			repoKey: "REPO",
+			sessionId: "int-sess",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/anything",
@@ -43,8 +48,18 @@ describe("history pipeline end-to-end", () => {
 	});
 
 	it("running capture twice on same transcript is a no-op", async () => {
-		const first = await captureSession({ repoKey: "REPO", sessionId: "int-sess", transcriptPath: FIXTURE, embed: false });
-		const second = await captureSession({ repoKey: "REPO", sessionId: "int-sess", transcriptPath: FIXTURE, embed: false });
+		const first = await captureSession({
+			repoKey: "REPO",
+			sessionId: "int-sess",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
+		const second = await captureSession({
+			repoKey: "REPO",
+			sessionId: "int-sess",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		expect(first.status).toBe("captured");
 		expect(second.status).toBe("up-to-date");
 	});

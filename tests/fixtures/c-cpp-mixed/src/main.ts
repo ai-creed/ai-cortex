@@ -1,1 +1,3 @@
-export function tsEntry(): number { return 42; }
+export function tsEntry(): number {
+	return 42;
+}

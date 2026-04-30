@@ -10,7 +10,11 @@ export function handleGetPosts(token: string): unknown[] {
 	return findPostsByUser(auth.userId);
 }
 
-export function handleCreatePost(token: string, title: string, body: string): unknown {
+export function handleCreatePost(
+	token: string,
+	title: string,
+	body: string,
+): unknown {
 	const auth = requireAuth(token);
 	validate(title.length > 0, "Title required");
 	log.info(`Creating post by ${auth.userId}`);

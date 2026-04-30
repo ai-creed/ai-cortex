@@ -4,9 +4,7 @@ import path from "node:path";
 import { validateSessionId } from "./store.js";
 
 // Claude Code sets CLAUDE_SESSION_ID in MCP server and subagent spawn environments.
-const KNOWN_HARNESS_ENV_VARS = [
-	"CLAUDE_SESSION_ID",
-] as const;
+const KNOWN_HARNESS_ENV_VARS = ["CLAUDE_SESSION_ID"] as const;
 
 export type DetectionSource = `env:${string}` | "mtime-heuristic";
 
@@ -14,13 +12,17 @@ export type DetectionResult = { sessionId: string; source: DetectionSource };
 
 function safeSessionId(raw: string, source: string): DetectionResult | null {
 	if (!/^[\w-]+$/.test(raw)) {
-		process.stderr.write(`[ai-cortex] history: ignoring invalid session ID from ${source}: ${JSON.stringify(raw)}\n`);
+		process.stderr.write(
+			`[ai-cortex] history: ignoring invalid session ID from ${source}: ${JSON.stringify(raw)}\n`,
+		);
 		return null;
 	}
 	return { sessionId: raw, source: source as DetectionSource };
 }
 
-export function detectCurrentSession(opts: { cwd: string }): DetectionResult | null {
+export function detectCurrentSession(opts: {
+	cwd: string;
+}): DetectionResult | null {
 	const canon = process.env.AI_CORTEX_SESSION_ID;
 	if (canon && canon.length > 0) {
 		const r = safeSessionId(canon, "env:AI_CORTEX_SESSION_ID");
@@ -39,7 +41,8 @@ export function detectCurrentSession(opts: { cwd: string }): DetectionResult | n
 		if (r && findCodexTranscript(r.sessionId)) return r;
 	}
 	const codexHeuristic = mostRecentCodexHistorySession(opts.cwd);
-	if (codexHeuristic) return { sessionId: codexHeuristic, source: "mtime-heuristic" };
+	if (codexHeuristic)
+		return { sessionId: codexHeuristic, source: "mtime-heuristic" };
 	const heuristic = mostRecentClaudeJsonl(opts.cwd);
 	if (heuristic) {
 		const r = safeSessionId(heuristic, "mtime-heuristic");
@@ -93,7 +96,10 @@ function findCodexTranscript(sessionId: string): string | null {
 function mostRecentCodexHistorySession(cwd: string): string | null {
 	const historyPath = path.join(os.homedir(), ".codex", "history.jsonl");
 	if (!fs.existsSync(historyPath)) return null;
-	const lines = fs.readFileSync(historyPath, "utf8").split("\n").filter((line) => line.length > 0);
+	const lines = fs
+		.readFileSync(historyPath, "utf8")
+		.split("\n")
+		.filter((line) => line.length > 0);
 	for (let i = lines.length - 1; i >= 0; i -= 1) {
 		let parsed: { session_id?: unknown };
 		try {
@@ -105,25 +111,34 @@ function mostRecentCodexHistorySession(cwd: string): string | null {
 		const r = safeSessionId(parsed.session_id, "codex-history");
 		if (!r) continue;
 		const transcript = findCodexTranscript(r.sessionId);
-		if (transcript && codexTranscriptMatchesCwd(transcript, cwd)) return r.sessionId;
+		if (transcript && codexTranscriptMatchesCwd(transcript, cwd))
+			return r.sessionId;
 	}
 	return null;
 }
 
-function codexTranscriptMatchesCwd(transcriptPath: string, cwd: string): boolean {
+function codexTranscriptMatchesCwd(
+	transcriptPath: string,
+	cwd: string,
+): boolean {
 	const realCwd = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
 	for (const line of fs.readFileSync(transcriptPath, "utf8").split("\n")) {
 		if (line.length === 0) continue;
 		let parsed: { type?: string; payload?: { cwd?: unknown } };
 		try {
-			parsed = JSON.parse(line) as { type?: string; payload?: { cwd?: unknown } };
+			parsed = JSON.parse(line) as {
+				type?: string;
+				payload?: { cwd?: unknown };
+			};
 		} catch {
 			continue;
 		}
 		if (parsed.type !== "session_meta") continue;
 		const sessionCwd = parsed.payload?.cwd;
 		if (typeof sessionCwd !== "string") return false;
-		const realSessionCwd = fs.existsSync(sessionCwd) ? fs.realpathSync(sessionCwd) : sessionCwd;
+		const realSessionCwd = fs.existsSync(sessionCwd)
+			? fs.realpathSync(sessionCwd)
+			: sessionCwd;
 		return realSessionCwd === realCwd;
 	}
 	return false;

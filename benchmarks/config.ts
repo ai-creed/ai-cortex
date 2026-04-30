@@ -16,12 +16,18 @@ function countIndexableFiles(repoPath: string): number {
 	try {
 		const output = execFileSync(
 			"git",
-			["-C", repoPath, "ls-files", "--cached", "--others", "--exclude-standard"],
+			[
+				"-C",
+				repoPath,
+				"ls-files",
+				"--cached",
+				"--others",
+				"--exclude-standard",
+			],
 			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
 		);
-		return output
-			.split("\n")
-			.filter((f) => /\.(ts|tsx|js|jsx)$/u.test(f)).length;
+		return output.split("\n").filter((f) => /\.(ts|tsx|js|jsx)$/u.test(f))
+			.length;
 	} catch {
 		return 0;
 	}
@@ -70,10 +76,15 @@ export function discoverRepos(options: DiscoverOptions = {}): RepoConfig[] {
 		"ai-whisper": path.join(os.homedir(), "Dev", "ai-whisper"),
 	};
 
-	for (const [name, repoPath] of Object.entries({ ...defaultOptional, ...extraPaths })) {
+	for (const [name, repoPath] of Object.entries({
+		...defaultOptional,
+		...extraPaths,
+	})) {
 		if (name === "ai-cortex") continue; // already added
 		if (!fs.existsSync(repoPath)) {
-			process.stderr.write(`bench: skipping ${name} (not found at ${repoPath})\n`);
+			process.stderr.write(
+				`bench: skipping ${name} (not found at ${repoPath})\n`,
+			);
 			continue;
 		}
 		const count = countIndexableFiles(repoPath);

@@ -67,6 +67,7 @@ CLI (src/cli.ts)                 MCP (src/mcp/server.ts)
 ```
 
 Cache layout:
+
 - `RepoCache` schema is **unchanged**. `SCHEMA_VERSION` stays at `"3"`. No new fields. Fast/deep/rehydrate/index paths are untouched, cannot trigger model download, cannot invalidate each other's caches.
 - Vectors live in two sidecar files next to the main cache, fully self-describing:
   - `~/.cache/ai-cortex/v1/<repoKey>/<worktreeKey>.vectors.bin` — f32 contiguous, `count × dim × 4` bytes, L2-normalized.
@@ -74,6 +75,7 @@ Cache layout:
 - Sidecar is **lazily materialized**: built on first `semantic` call if missing or stale vs the main cache fingerprint. Non-semantic commands never read, write, or invalidate it.
 
 Model file:
+
 - Downloaded on **first `semantic` call** (not at install, not at `index`) to `~/.cache/ai-cortex/models/` by `@xenova/transformers` (its built-in cache). No npm-tarball inclusion. One-time ~23 MB download behind a single stderr progress message.
 - Subsequent `semantic` calls: fully offline.
 - `index`, `rehydrate`, `suggest` (fast), `suggest-deep` never load the model or touch the cache dir.
@@ -142,23 +144,23 @@ No header — header info lives in the meta file next to it. File size is self-c
 
 ```ts
 type SidecarEntry = {
-  path: string;   // indexable path, same as RepoCache.files[*].path
-  hash: string;   // RepoCache.files[*].contentHash at sidecar build time (sha256)
+	path: string; // indexable path, same as RepoCache.files[*].path
+	hash: string; // RepoCache.files[*].contentHash at sidecar build time (sha256)
 };
 
 type SidecarMeta = {
-  sidecarVersion: 1;          // bump independently of RepoCache SCHEMA_VERSION
-  model: string;              // "Xenova/all-MiniLM-L6-v2"
-  provider: "local" | "openai" | "voyage";
-  dim: number;                // 384
-  count: number;              // must equal entries.length; must match .bin size
-  entries: SidecarEntry[];    // row i of .bin corresponds to entries[i]
-  fingerprint: string;        // RepoCache.fingerprint at sidecar build time (informational)
-  builtAt: string;            // ISO timestamp
+	sidecarVersion: 1; // bump independently of RepoCache SCHEMA_VERSION
+	model: string; // "Xenova/all-MiniLM-L6-v2"
+	provider: "local" | "openai" | "voyage";
+	dim: number; // 384
+	count: number; // must equal entries.length; must match .bin size
+	entries: SidecarEntry[]; // row i of .bin corresponds to entries[i]
+	fingerprint: string; // RepoCache.fingerprint at sidecar build time (informational)
+	builtAt: string; // ISO timestamp
 };
 ```
 
-**Why per-entry hashes, not just paths:** delta refresh (§7.3) needs to detect modified-in-place files. `RepoCache.files[*].contentHash` only reflects *current* content. Without a hash-per-row stored in the sidecar, we cannot tell which rows in `.bin` are stale. Storing hashes lets the delta path diff sidecar's snapshot against current cache hashes — the same mechanism `diff-files.ts` uses.
+**Why per-entry hashes, not just paths:** delta refresh (§7.3) needs to detect modified-in-place files. `RepoCache.files[*].contentHash` only reflects _current_ content. Without a hash-per-row stored in the sidecar, we cannot tell which rows in `.bin` are stale. Storing hashes lets the delta path diff sidecar's snapshot against current cache hashes — the same mechanism `diff-files.ts` uses.
 
 **Location:** `~/.cache/ai-cortex/v1/<repoKey>/<worktreeKey>.vectors.{bin,meta.json}` — same dir as main cache JSON.
 
@@ -268,9 +270,9 @@ Provider adapter interface:
 
 ```ts
 type EmbedProvider = {
-  name: string;
-  dim: number;
-  embed(texts: string[]): Promise<Float32Array[]>;
+	name: string;
+	dim: number;
+	embed(texts: string[]): Promise<Float32Array[]>;
 };
 ```
 
@@ -281,15 +283,18 @@ Adapter swap is transparent to ranker; sidecar stores `model` string for mismatc
 Extends the existing discriminated union in `src/lib/suggest.ts`:
 
 ```ts
-export type SemanticSuggestItem = SuggestItem;  // { path, kind, score, reason }
+export type SemanticSuggestItem = SuggestItem; // { path, kind, score, reason }
 
 export type SemanticSuggestResult = SuggestResultCommon & {
-  mode: "semantic";
-  results: SemanticSuggestItem[];
-  model: string;                // echoes sidecar model name
+	mode: "semantic";
+	results: SemanticSuggestItem[];
+	model: string; // echoes sidecar model name
 };
 
-export type SuggestResult = FastSuggestResult | DeepSuggestResult | SemanticSuggestResult;
+export type SuggestResult =
+	| FastSuggestResult
+	| DeepSuggestResult
+	| SemanticSuggestResult;
 ```
 
 - `reason` on each item is `"semantic:<cosine>"`, e.g. `"semantic:0.72"`. No silent-fallback marker — failures throw instead (§9).
@@ -299,45 +304,45 @@ export type SuggestResult = FastSuggestResult | DeepSuggestResult | SemanticSugg
 
 ## 9. Error handling
 
-| Scenario | Behavior | Error class |
-|---|---|---|
-| Model download fails (no network, first `semantic` call) | Hard error with actionable message "network required on first semantic call; subsequent calls are offline" | `ModelLoadError` |
-| Model cache corrupt | Delete cached model dir + retry once; if retry fails, hard error | `ModelLoadError` |
-| Sidecar missing at `semantic` call | Lazy full build (§7.3); stderr progress message | — |
-| Sidecar stale (fingerprint mismatch) | Lazy delta build (§7.3); stderr progress message | — |
-| Sidecar `.bin` size does not match `.meta.json` count·dim | Delete both files + rebuild; if second build fails same check, hard error | `VectorIndexCorruptError` |
-| Sidecar `.meta.json` invalid JSON or missing required fields | Delete both files + rebuild; if second build fails, hard error | `VectorIndexCorruptError` |
-| Model name or dim mismatch between sidecar and current provider | Rebuild sidecar from scratch | — |
-| Query embedding throws (model loaded but inference error) | **Hard error — no silent fallback.** Agent is expected to retry with `suggest_files_deep` explicitly (same escalation model as fast → deep). | `EmbeddingInferenceError` |
-| Empty query string | Throws `IndexError("suggest task must not be empty")` — identical to fast/deep (`suggest.ts:73`). MCP boundary zod `.min(1)` rejects earlier. | `IndexError` |
-| Empty repo (no indexable files) | Return `SemanticSuggestResult` with `results: []`, `cacheStatus` reflects state | — |
-| API provider: network error | `ModelLoadError`, retry once | `ModelLoadError` |
-| API provider: auth error (401/403) | Hard error, no retry | `ModelLoadError` |
-| `options.stale = true` with no sidecar present | Hard error (cannot serve semantic without vectors) | `VectorIndexCorruptError` |
-| Any above at CLI boundary | `cli.ts:255` catch extended: `ModelLoadError` → exit 3; `VectorIndexCorruptError` → exit 4; `EmbeddingInferenceError` → exit 5. Each prefixed `ai-cortex: <name>: <message>`. Existing `IndexError` (exit 2) and `RepoIdentityError` (exit 1) behavior unchanged. | (as shown) |
+| Scenario                                                        | Behavior                                                                                                                                                                                                                                                          | Error class               |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Model download fails (no network, first `semantic` call)        | Hard error with actionable message "network required on first semantic call; subsequent calls are offline"                                                                                                                                                        | `ModelLoadError`          |
+| Model cache corrupt                                             | Delete cached model dir + retry once; if retry fails, hard error                                                                                                                                                                                                  | `ModelLoadError`          |
+| Sidecar missing at `semantic` call                              | Lazy full build (§7.3); stderr progress message                                                                                                                                                                                                                   | —                         |
+| Sidecar stale (fingerprint mismatch)                            | Lazy delta build (§7.3); stderr progress message                                                                                                                                                                                                                  | —                         |
+| Sidecar `.bin` size does not match `.meta.json` count·dim       | Delete both files + rebuild; if second build fails same check, hard error                                                                                                                                                                                         | `VectorIndexCorruptError` |
+| Sidecar `.meta.json` invalid JSON or missing required fields    | Delete both files + rebuild; if second build fails, hard error                                                                                                                                                                                                    | `VectorIndexCorruptError` |
+| Model name or dim mismatch between sidecar and current provider | Rebuild sidecar from scratch                                                                                                                                                                                                                                      | —                         |
+| Query embedding throws (model loaded but inference error)       | **Hard error — no silent fallback.** Agent is expected to retry with `suggest_files_deep` explicitly (same escalation model as fast → deep).                                                                                                                      | `EmbeddingInferenceError` |
+| Empty query string                                              | Throws `IndexError("suggest task must not be empty")` — identical to fast/deep (`suggest.ts:73`). MCP boundary zod `.min(1)` rejects earlier.                                                                                                                     | `IndexError`              |
+| Empty repo (no indexable files)                                 | Return `SemanticSuggestResult` with `results: []`, `cacheStatus` reflects state                                                                                                                                                                                   | —                         |
+| API provider: network error                                     | `ModelLoadError`, retry once                                                                                                                                                                                                                                      | `ModelLoadError`          |
+| API provider: auth error (401/403)                              | Hard error, no retry                                                                                                                                                                                                                                              | `ModelLoadError`          |
+| `options.stale = true` with no sidecar present                  | Hard error (cannot serve semantic without vectors)                                                                                                                                                                                                                | `VectorIndexCorruptError` |
+| Any above at CLI boundary                                       | `cli.ts:255` catch extended: `ModelLoadError` → exit 3; `VectorIndexCorruptError` → exit 4; `EmbeddingInferenceError` → exit 5. Each prefixed `ai-cortex: <name>: <message>`. Existing `IndexError` (exit 2) and `RepoIdentityError` (exit 1) behavior unchanged. | (as shown)                |
 
 **New error classes in `src/lib/models.ts`:**
 
 ```ts
 export class ModelLoadError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ModelLoadError";
-  }
+	constructor(message: string) {
+		super(message);
+		this.name = "ModelLoadError";
+	}
 }
 
 export class VectorIndexCorruptError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "VectorIndexCorruptError";
-  }
+	constructor(message: string) {
+		super(message);
+		this.name = "VectorIndexCorruptError";
+	}
 }
 
 export class EmbeddingInferenceError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "EmbeddingInferenceError";
-  }
+	constructor(message: string) {
+		super(message);
+		this.name = "EmbeddingInferenceError";
+	}
 }
 ```
 

@@ -8,6 +8,7 @@
 The eval harness runs agents via `claude --print --output-format stream-json --verbose --dangerously-skip-permissions -p <prompt>` but agents consistently complete with 0 mutation tool calls. Root cause: the user's global `~/.claude/CLAUDE.md` fires a `SessionStart` hook that loads the caveman skill and enforces rule #6 ("before writing any code, describe your approach and wait for approval"). In `--print` non-interactive mode there is no user to approve, so the agent explores, plans, then exits without making changes.
 
 Three secondary issues also need fixing:
+
 - `generateBriefing` silently swallows all failures with no diagnostic output.
 - `getTouchedFiles` misses untracked new files created by the agent.
 - No way to preview what a run will do without actually spawning agents.
@@ -52,13 +53,13 @@ The original design (2026-04-14-eval-harness-design.md lines 68, 108) requires b
 **2b — Surface all failure metadata.**
 `generateBriefing` currently returns `""` silently. Log to stderr at every failure point (prefix `  [briefing]`):
 
-| Case | Message |
-|------|---------|
-| `result.stderr` non-empty (always, unconditional) | `[briefing] rehydrate stderr: <trimmed stderr>` |
+| Case                                                               | Message                                                          |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `result.stderr` non-empty (always, unconditional)                  | `[briefing] rehydrate stderr: <trimmed stderr>`                  |
 | `result.status !== 0` or `result.signal` set or `result.error` set | `[briefing] rehydrate failed: status=<n> signal=<s> error=<msg>` |
-| stdout is empty after a clean exit | `[briefing] empty stdout from rehydrate` |
-| JSON parse fails or `briefingPath` field missing | `[briefing] unexpected rehydrate output` |
-| `fs.readFileSync` throws | `[briefing] failed to read briefing file: <err.message>` |
+| stdout is empty after a clean exit                                 | `[briefing] empty stdout from rehydrate`                         |
+| JSON parse fails or `briefingPath` field missing                   | `[briefing] unexpected rehydrate output`                         |
+| `fs.readFileSync` throws                                           | `[briefing] failed to read briefing file: <err.message>`         |
 
 The first two rows cover timeout and spawn-error cases where stdout and stderr may both be empty; they fire before the stdout checks. All rows may fire together when multiple conditions are true.
 
@@ -77,13 +78,20 @@ No changes to `RunResult`, report output, or any other file.
 `getTouchedFiles` gains an optional `exclude` parameter (a `Set<string>` of repo-relative paths written by the harness):
 
 ```ts
-export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): string[] {
+export function getTouchedFiles(
+	worktreePath: string,
+	exclude?: Set<string>,
+): string[] {
 	const run = (args: string[]) => {
 		try {
 			return execFileSync("git", args, {
-				cwd: worktreePath, encoding: "utf8",
+				cwd: worktreePath,
+				encoding: "utf8",
 				stdio: ["ignore", "pipe", "ignore"],
-			}).trimEnd().split("\n").filter((l) => l.length > 0);
+			})
+				.trimEnd()
+				.split("\n")
+				.filter((l) => l.length > 0);
 		} catch {
 			return [];
 		}
@@ -97,16 +105,22 @@ export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): st
 ```
 
 **Exclusion set built in `harness.ts`** at the `runVerification` call site. The harness knows exactly which paths it wrote:
+
 - `CLAUDE.md` (Fix 1, always present)
 - The fixture file path returned by `copyFixtures` (if any)
 
 To avoid duplicating the fixture map, **`copyFixtures` changes its return type from `void` to `string | null`** — returning the repo-relative destination path it wrote, or `null` if no fixture applies. The caller collects it:
 
 ```ts
-const fixturePath = copyFixtures(task, worktreePath);  // string | null
+const fixturePath = copyFixtures(task, worktreePath); // string | null
 const harnessFiles = new Set<string>(["CLAUDE.md"]);
 if (fixturePath) harnessFiles.add(fixturePath);
-const verification = runVerification(task, worktreePath, task.timeoutMs, harnessFiles);
+const verification = runVerification(
+	task,
+	worktreePath,
+	task.timeoutMs,
+	harnessFiles,
+);
 ```
 
 `runVerification` signature gains an optional `exclude?: Set<string>` parameter, forwarded to `getTouchedFiles`. Adding a new fixture-backed task only requires updating `copyFixtures` — the exclusion logic follows automatically.
@@ -126,7 +140,9 @@ Add `--dry-run` flag to `parseArgs`. When set, skip all `executeRun` calls and p
 ```ts
 let dryRun = false;
 // in loop:
-if (arg === "--dry-run") { dryRun = true; }
+if (arg === "--dry-run") {
+	dryRun = true;
+}
 ```
 
 **Control flow in `main`:** In dry-run mode, the existing repo-existence filter (`tasks.filter(fs.existsSync)`) must be bypassed. Instead, load all tasks (applying only the `--tasks` name filter if present), then print the full table — with ✓/✗ per row — using the unfiltered list. This ensures ✗ rows are visible. The `Total runs` line is computed from the unfiltered set so the user sees what a real run would attempt.
@@ -152,11 +168,11 @@ Exits with code 0 if all repos exist, code 1 if any repo is missing (so it can b
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
+| File                         | Change                                                                                                                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `benchmarks/eval/harness.ts` | Add `writeEvalClaudeMd`; switch briefing to `worktreePath`; add full failure logging; change `copyFixtures` return to `string \| null`; build exclusion set from returned path; pass to `runVerification` |
-| `benchmarks/eval/verify.ts` | Update `getTouchedFiles` (union modified + untracked, optional `exclude`), update `runVerification` signature |
-| `benchmarks/eval/runner.ts` | Add `--dry-run` flag to `parseArgs` and main; bypass repo-existence filter in dry-run mode |
+| `benchmarks/eval/verify.ts`  | Update `getTouchedFiles` (union modified + untracked, optional `exclude`), update `runVerification` signature                                                                                             |
+| `benchmarks/eval/runner.ts`  | Add `--dry-run` flag to `parseArgs` and main; bypass repo-existence filter in dry-run mode                                                                                                                |
 
 No new files. No schema changes. No dependency additions.
 

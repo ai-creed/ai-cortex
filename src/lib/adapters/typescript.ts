@@ -32,16 +32,13 @@ async function initParsers(): Promise<void> {
 		await TreeSitter.init();
 
 		// tree-sitter-typescript ships TS and TSX grammars
-		const tsGrammarPath = require.resolve(
-			"tree-sitter-typescript/tree-sitter-typescript.wasm",
-		);
-		const tsxGrammarPath = require.resolve(
-			"tree-sitter-typescript/tree-sitter-tsx.wasm",
-		);
+		const tsGrammarPath =
+			require.resolve("tree-sitter-typescript/tree-sitter-typescript.wasm");
+		const tsxGrammarPath =
+			require.resolve("tree-sitter-typescript/tree-sitter-tsx.wasm");
 		// tree-sitter-javascript ships JS grammar (handles JSX too)
-		const jsGrammarPath = require.resolve(
-			"tree-sitter-javascript/tree-sitter-javascript.wasm",
-		);
+		const jsGrammarPath =
+			require.resolve("tree-sitter-javascript/tree-sitter-javascript.wasm");
 
 		const tsLang = await Language.load(tsGrammarPath);
 		const tsxLang = await Language.load(tsxGrammarPath);
@@ -55,7 +52,6 @@ async function initParsers(): Promise<void> {
 
 		jsParser = new TreeSitter();
 		jsParser.setLanguage(jsLang);
-
 	})();
 	return initPromise;
 }
@@ -70,15 +66,19 @@ function parserForExt(ext: string): import("web-tree-sitter").Parser | null {
 function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 	const functions: FunctionNode[] = [];
 
-	function walk(node: SyntaxNode, className: string | null, classExported: boolean): void {
+	function walk(
+		node: SyntaxNode,
+		className: string | null,
+		classExported: boolean,
+	): void {
 		switch (node.type) {
 			case "function_declaration": {
 				const nameNode = node.childForFieldName("name");
 				if (!nameNode) break;
 				const isExport = node.parent?.type === "export_statement";
-				const isDefault = isExport && node.parent?.children.some(
-					(c: SyntaxNode) => c.type === "default",
-				);
+				const isDefault =
+					isExport &&
+					node.parent?.children.some((c: SyntaxNode) => c.type === "default");
 				functions.push({
 					qualifiedName: nameNode.text,
 					file: filePath,
@@ -115,9 +115,9 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 				const nameNode = node.childForFieldName("name");
 				const name = nameNode?.text ?? null;
 				const isExport = node.parent?.type === "export_statement";
-				const isDefault = isExport && node.parent?.children.some(
-					(c: SyntaxNode) => c.type === "default",
-				);
+				const isDefault =
+					isExport &&
+					node.parent?.children.some((c: SyntaxNode) => c.type === "default");
 				if (name) {
 					functions.push({
 						qualifiedName: name,
@@ -150,12 +150,13 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 			case "export_statement": {
 				// Handle: export default () => {} and export default class Foo {}
 				// Named exports are handled by the child node's own case
-				const defaultToken = node.children.find((c: SyntaxNode) => c.type === "default");
+				const defaultToken = node.children.find(
+					(c: SyntaxNode) => c.type === "default",
+				);
 				if (!defaultToken) break;
 				const valueChild = node.children.find(
 					(c: SyntaxNode) =>
-						c.type === "arrow_function" ||
-						c.type === "function_expression",
+						c.type === "arrow_function" || c.type === "function_expression",
 				);
 				if (valueChild) {
 					functions.push({
@@ -180,9 +181,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 	return functions;
 }
 
-function findEnclosingFunction(
-	node: SyntaxNode,
-): string | null {
+function findEnclosingFunction(node: SyntaxNode): string | null {
 	let current = node.parent;
 	while (current) {
 		if (current.type === "method_definition") {
@@ -215,16 +214,16 @@ function findEnclosingFunction(
 	return null;
 }
 
-function extractRawCalls(
-	root: SyntaxNode,
-	filePath: string,
-): RawCallSite[] {
+function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 	const calls: RawCallSite[] = [];
 
 	function walk(node: SyntaxNode): void {
 		if (node.type === "call_expression") {
 			const funcNode = node.childForFieldName("function");
-			if (!funcNode) { walkChildren(node); return; }
+			if (!funcNode) {
+				walkChildren(node);
+				return;
+			}
 
 			let rawCallee: string;
 			let kind: RawCallSite["kind"];
@@ -368,13 +367,29 @@ export async function createTypescriptAdapter(): Promise<LanguageAdapter> {
 
 	return {
 		extensions: [".ts", ".tsx", ".js", ".jsx"],
-		capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
-		async extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]> {
-			const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
+		capabilities: {
+			importExtraction: true,
+			callGraph: true,
+			symbolIndex: false,
+		},
+		async extractImports(
+			worktreePath: string,
+			filePath: string,
+			content?: string,
+		): Promise<RawImportSite[]> {
+			const source =
+				content ??
+				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
 			return extractImportSitesFromSource(source, filePath);
 		},
-		async extractCallGraph(worktreePath: string, filePath: string, content?: string): Promise<RawCallData> {
-			const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
+		async extractCallGraph(
+			worktreePath: string,
+			filePath: string,
+			content?: string,
+		): Promise<RawCallData> {
+			const source =
+				content ??
+				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
 			const ext = path.extname(filePath);
 			const parser = parserForExt(ext);
 			if (!parser) return { functions: [], rawCalls: [], importBindings: [] };

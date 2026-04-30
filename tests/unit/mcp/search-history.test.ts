@@ -28,8 +28,11 @@ describe("MCP search_history tool", () => {
 	it("first call prepends the notice; second call does not", async () => {
 		// Use a non-git cwd so the handler returns the friendly "not in a git repo" branch.
 		// That branch still goes through maybeNotice(), which is what we're testing.
-		const { resetFirstCallNoticeForTest, hasNoticeBeenSent, handleSearchHistory } =
-			await import("../../../src/mcp/server.js");
+		const {
+			resetFirstCallNoticeForTest,
+			hasNoticeBeenSent,
+			handleSearchHistory,
+		} = await import("../../../src/mcp/server.js");
 		resetFirstCallNoticeForTest();
 		expect(hasNoticeBeenSent()).toBe(false);
 

@@ -30,7 +30,9 @@ function stripKnownExt(value: string): string {
 }
 
 function sameDirectory(a: string, b: string): boolean {
-	return a.split("/").slice(0, -1).join("/") === b.split("/").slice(0, -1).join("/");
+	return (
+		a.split("/").slice(0, -1).join("/") === b.split("/").slice(0, -1).join("/")
+	);
 }
 
 function fileFromCallKey(key: string): string {
@@ -63,7 +65,9 @@ function buildCallConnectedFiles(
 	return connected;
 }
 
-function buildFanInCounts(calls: { from: string; to: string }[]): Map<string, number> {
+function buildFanInCounts(
+	calls: { from: string; to: string }[],
+): Map<string, number> {
 	const callersByTarget = new Map<string, Set<string>>();
 	for (const edge of calls) {
 		if (edge.to.startsWith("::")) continue;
@@ -106,7 +110,11 @@ export function rankSuggestions(
 	const filePaths = cache.files.map((file) => file.path);
 	const docPathSet = new Set(cache.docs.map((doc) => doc.path));
 	const directTargets = normalizedFrom
-		? [...cache.imports.filter((edge) => edge.from === normalizedFrom).map((edge) => edge.to)]
+		? [
+				...cache.imports
+					.filter((edge) => edge.from === normalizedFrom)
+					.map((edge) => edge.to),
+			]
 		: [];
 	const directImporters = normalizedFrom
 		? [
@@ -120,7 +128,8 @@ export function rankSuggestions(
 		: [];
 
 	const calls = cache.calls ?? [];
-	const callConnected = calls.length > 0 ? buildCallConnectedFiles(calls) : new Map();
+	const callConnected =
+		calls.length > 0 ? buildCallConnectedFiles(calls) : new Map();
 	const fanInCounts = calls.length > 0 ? buildFanInCounts(calls) : new Map();
 
 	const candidates: RankedSuggestion[] = [];
@@ -130,7 +139,9 @@ export function rankSuggestions(
 
 		const normalizedPath = normalizePath(file.path);
 		const pathTokens = tokenizePath(normalizedPath);
-		const matchedPathTokens = tokens.filter((token) => pathTokens.includes(token));
+		const matchedPathTokens = tokens.filter((token) =>
+			pathTokens.includes(token),
+		);
 		let score = matchedPathTokens.length * 5;
 
 		// Basename bonus: when the filename (minus any single extension) is
@@ -142,7 +153,12 @@ export function rankSuggestions(
 
 		if (cache.entryFiles.includes(file.path)) score += 2;
 		if (normalizedFrom && normalizedPath === normalizedFrom) score += 6;
-		if (normalizedFrom && normalizedPath !== normalizedFrom && sameDirectory(normalizedPath, normalizedFrom)) score += 2;
+		if (
+			normalizedFrom &&
+			normalizedPath !== normalizedFrom &&
+			sameDirectory(normalizedPath, normalizedFrom)
+		)
+			score += 2;
 
 		for (const target of directTargets) {
 			const matches = resolveImportTarget(target, filePaths);
@@ -189,7 +205,9 @@ export function rankSuggestions(
 			if (fnScore > 0) {
 				const matchedFnNames = (cache.functions ?? [])
 					.filter((fn) => fn.file === file.path)
-					.filter((fn) => tokens.some((t) => tokenizePath(fn.qualifiedName).includes(t)))
+					.filter((fn) =>
+						tokens.some((t) => tokenizePath(fn.qualifiedName).includes(t)),
+					)
 					.map((fn) => fn.qualifiedName)
 					.slice(0, 3);
 				reasonParts.push(`fn:${matchedFnNames.join(",")}`);

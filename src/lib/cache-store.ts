@@ -10,7 +10,9 @@ import type { RepoCache } from "./models.js";
 const execAsync = promisify(exec);
 
 export function getCacheDir(repoKey: string): string {
-	const home = process.env.AI_CORTEX_CACHE_HOME ?? path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	const home =
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
 	return path.join(home, repoKey);
 }
 
@@ -18,7 +20,9 @@ export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 	return path.join(getCacheDir(repoKey), `${worktreeKey}.json`);
 }
 
-export async function buildRepoFingerprint(worktreePath: string): Promise<string> {
+export async function buildRepoFingerprint(
+	worktreePath: string,
+): Promise<string> {
 	const { stdout } = await execAsync(
 		`git -C ${JSON.stringify(worktreePath)} rev-parse HEAD`,
 	);
@@ -51,7 +55,9 @@ export async function readCacheForWorktree(
 	} catch {
 		return null;
 	}
-	const raw = JSON.parse(await fs.promises.readFile(filePath, "utf8")) as RepoCache;
+	const raw = JSON.parse(
+		await fs.promises.readFile(filePath, "utf8"),
+	) as RepoCache;
 	if (raw.schemaVersion !== SCHEMA_VERSION) {
 		await fs.promises.rm(filePath, { force: true });
 		process.stderr.write(

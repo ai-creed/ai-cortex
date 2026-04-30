@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import type { EvidenceLayer, RawTurn } from "./types.js";
 
-type ContentBlock = { type?: string; text?: string; name?: string; input?: unknown };
+type ContentBlock = {
+	type?: string;
+	text?: string;
+	name?: string;
+	input?: unknown;
+};
 
 type RawLine = {
 	type?: string;
@@ -28,7 +33,9 @@ export function parseTranscript(transcriptPath: string): RawTurn[] {
 		try {
 			parsed = JSON.parse(line) as RawLine;
 		} catch {
-			process.stderr.write(`[ai-cortex] history: skipping malformed transcript line\n`);
+			process.stderr.write(
+				`[ai-cortex] history: skipping malformed transcript line\n`,
+			);
 			continue;
 		}
 		const turn = toTurn(parsed, lineIndex);
@@ -41,14 +48,20 @@ export function parseTranscript(transcriptPath: string): RawTurn[] {
 function toTurn(p: RawLine, lineIndex: number): RawTurn | null {
 	if (p.type === "response_item") return codexToTurn(p, lineIndex);
 	// Only process conversation and summary entries; skip metadata (file-history-snapshot, attachment, etc.)
-	if (p.type !== "user" && p.type !== "assistant" && p.type !== "summary") return null;
+	if (p.type !== "user" && p.type !== "assistant" && p.type !== "summary")
+		return null;
 	// Skip sidechain entries (tool result re-injections) — they duplicate main-flow content
 	if (p.isSidechain === true) return null;
 
 	const turn = typeof p.turn === "number" ? p.turn : lineIndex;
 
 	if (p.type === "summary") {
-		return { turn, role: "system", text: p.summary ?? "", isCompactSummary: true };
+		return {
+			turn,
+			role: "system",
+			text: p.summary ?? "",
+			isCompactSummary: true,
+		};
 	}
 	const role: RawTurn["role"] = p.type === "user" ? "user" : "assistant";
 	const content = p.message?.content;
@@ -58,8 +71,10 @@ function toTurn(p: RawLine, lineIndex: number): RawTurn | null {
 		textParts.push(content);
 	} else {
 		for (const b of content ?? []) {
-			if (b.type === "text" && typeof b.text === "string") textParts.push(b.text);
-			if (b.type === "tool_use" && typeof b.name === "string") toolUses.push({ name: b.name, input: b.input });
+			if (b.type === "text" && typeof b.text === "string")
+				textParts.push(b.text);
+			if (b.type === "tool_use" && typeof b.name === "string")
+				toolUses.push({ name: b.name, input: b.input });
 		}
 	}
 	return {
@@ -75,7 +90,11 @@ function codexToTurn(p: RawLine, lineIndex: number): RawTurn | null {
 	if (!payload) return null;
 	if (payload.type === "message") {
 		const role: RawTurn["role"] =
-			payload.role === "user" ? "user" : payload.role === "assistant" ? "assistant" : "system";
+			payload.role === "user"
+				? "user"
+				: payload.role === "assistant"
+					? "assistant"
+					: "system";
 		return {
 			turn: lineIndex,
 			role,
@@ -87,7 +106,9 @@ function codexToTurn(p: RawLine, lineIndex: number): RawTurn | null {
 			turn: lineIndex,
 			role: "assistant",
 			text: "",
-			toolUses: [{ name: payload.name, input: parseCodexArguments(payload.arguments) }],
+			toolUses: [
+				{ name: payload.name, input: parseCodexArguments(payload.arguments) },
+			],
 		};
 	}
 	return null;
@@ -98,7 +119,9 @@ function textFromContent(content: string | ContentBlock[] | undefined): string {
 	const textParts: string[] = [];
 	for (const b of content ?? []) {
 		if (
-			(b.type === "text" || b.type === "input_text" || b.type === "output_text") &&
+			(b.type === "text" ||
+				b.type === "input_text" ||
+				b.type === "output_text") &&
 			typeof b.text === "string"
 		) {
 			textParts.push(b.text);
@@ -118,7 +141,15 @@ function parseCodexArguments(args: unknown): unknown {
 
 const CORRECTION_RE = /^\s*(no|stop|don't|dont|wait|actually|instead|but)\b/i;
 const PATH_TOOL_KEYS = ["file_path", "path", "pattern"] as const;
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "Glob", "Grep", "MultiEdit", "NotebookEdit"]);
+const FILE_TOOLS = new Set([
+	"Read",
+	"Write",
+	"Edit",
+	"Glob",
+	"Grep",
+	"MultiEdit",
+	"NotebookEdit",
+]);
 
 export function extractEvidence(turns: RawTurn[]): EvidenceLayer {
 	const userPrompts: EvidenceLayer["userPrompts"] = [];
@@ -135,7 +166,11 @@ export function extractEvidence(turns: RawTurn[]): EvidenceLayer {
 		}
 		if (!t.toolUses) continue;
 		for (const u of t.toolUses) {
-			toolCalls.push({ turn: t.turn, name: u.name, args: summarizeToolArgs(u.name, u.input) });
+			toolCalls.push({
+				turn: t.turn,
+				name: u.name,
+				args: summarizeToolArgs(u.name, u.input),
+			});
 			const p = pathFromToolInput(u.input);
 			if (p && FILE_TOOLS.has(u.name)) {
 				filePaths.push({ turn: t.turn, path: p });
@@ -174,7 +209,13 @@ export function liftHarnessSummary(turns: RawTurn[]): string {
 		.join("\n\n");
 }
 
-export type ChunkOut = { id: number; tokenStart: number; tokenEnd: number; preview: string; text: string };
+export type ChunkOut = {
+	id: number;
+	tokenStart: number;
+	tokenEnd: number;
+	preview: string;
+	text: string;
+};
 
 export function chunkTurns(
 	turns: RawTurn[],
@@ -186,9 +227,16 @@ export function chunkTurns(
 		if (t.text.length === 0) continue;
 		flat.push(`[${t.role} #${t.turn}] ${t.text}`);
 	}
-	const allTokens = flat.join("\n").split(/\s+/).filter((w) => w.length > 0);
+	const allTokens = flat
+		.join("\n")
+		.split(/\s+/)
+		.filter((w) => w.length > 0);
 	const out: ChunkOut[] = [];
-	for (let start = 0, id = 0; start < allTokens.length; start += target, id += 1) {
+	for (
+		let start = 0, id = 0;
+		start < allTokens.length;
+		start += target, id += 1
+	) {
 		const end = Math.min(start + target, allTokens.length);
 		const text = allTokens.slice(start, end).join(" ");
 		out.push({

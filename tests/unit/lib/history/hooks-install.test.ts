@@ -25,8 +25,12 @@ describe("installHooks", () => {
 	it("creates settings.json with hooks if absent (yes:true)", async () => {
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
-		expect(s.hooks.PreCompact[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
-		expect(s.hooks.SessionEnd[0].hooks[0].command).toContain(HOOK_COMMAND_MARKER);
+		expect(s.hooks.PreCompact[0].hooks[0].command).toContain(
+			HOOK_COMMAND_MARKER,
+		);
+		expect(s.hooks.SessionEnd[0].hooks[0].command).toContain(
+			HOOK_COMMAND_MARKER,
+		);
 	});
 
 	it("creates Codex config.toml hooks for UserPromptSubmit and Stop", async () => {
@@ -41,7 +45,13 @@ describe("installHooks", () => {
 		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
 		fs.writeFileSync(
 			getSettingsPath(),
-			JSON.stringify({ hooks: { PreCompact: [{ matcher: "", hooks: [{ type: "command", command: "other" }] }] } }),
+			JSON.stringify({
+				hooks: {
+					PreCompact: [
+						{ matcher: "", hooks: [{ type: "command", command: "other" }] },
+					],
+				},
+			}),
 		);
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
@@ -52,8 +62,11 @@ describe("installHooks", () => {
 		await installHooks({ yes: true });
 		await installHooks({ yes: true });
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
-		const ours = s.hooks.PreCompact.filter((entry: { hooks: { command: string }[] }) =>
-			(entry.hooks ?? []).some((h) => h.command.includes(HOOK_COMMAND_MARKER)),
+		const ours = s.hooks.PreCompact.filter(
+			(entry: { hooks: { command: string }[] }) =>
+				(entry.hooks ?? []).some((h) =>
+					h.command.includes(HOOK_COMMAND_MARKER),
+				),
 		);
 		expect(ours).toHaveLength(1);
 		const codex = fs.readFileSync(getCodexConfigPath(), "utf8");
@@ -82,7 +95,9 @@ describe("installHooks", () => {
 		fs.writeFileSync(getSettingsPath(), "{}");
 		await installHooks({ yes: true });
 		const dir = path.dirname(getSettingsPath());
-		const backups = fs.readdirSync(dir).filter((n) => n.startsWith("settings.json.bak."));
+		const backups = fs
+			.readdirSync(dir)
+			.filter((n) => n.startsWith("settings.json.bak."));
 		expect(backups.length).toBeGreaterThan(0);
 	});
 
@@ -98,7 +113,10 @@ describe("installHooks", () => {
 		await installHooks({ yes: true });
 		const writes: string[] = [];
 		const orig = process.stdout.write.bind(process.stdout);
-		process.stdout.write = ((chunk: string) => { writes.push(String(chunk)); return true; }) as typeof process.stdout.write;
+		process.stdout.write = ((chunk: string) => {
+			writes.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
 		try {
 			await installHooks({ yes: true }); // already installed → no-op, no output
 		} finally {
@@ -110,7 +128,10 @@ describe("installHooks", () => {
 	it("interactive run prints diff and aborts on 'n' answer", async () => {
 		const writes: string[] = [];
 		const origWrite = process.stdout.write.bind(process.stdout);
-		process.stdout.write = ((chunk: string) => { writes.push(String(chunk)); return true; }) as typeof process.stdout.write;
+		process.stdout.write = ((chunk: string) => {
+			writes.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
 		try {
 			await installHooks({ yes: false, answerForTest: "n" });
 		} finally {
@@ -124,7 +145,10 @@ describe("installHooks", () => {
 describe("uninstallHooks", () => {
 	it("removes only entries with our marker", async () => {
 		await installHooks({ yes: true });
-		const beforeOther = { matcher: "", hooks: [{ type: "command", command: "untouchable" }] };
+		const beforeOther = {
+			matcher: "",
+			hooks: [{ type: "command", command: "untouchable" }],
+		};
 		const s = JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
 		s.hooks.PreCompact.push(beforeOther);
 		fs.writeFileSync(getSettingsPath(), JSON.stringify(s));
@@ -133,7 +157,9 @@ describe("uninstallHooks", () => {
 		expect(after.hooks.PreCompact).toContainEqual(beforeOther);
 		expect(
 			after.hooks.PreCompact.every((entry: { hooks: { command: string }[] }) =>
-				(entry.hooks ?? []).every((h) => !h.command.includes(HOOK_COMMAND_MARKER)),
+				(entry.hooks ?? []).every(
+					(h) => !h.command.includes(HOOK_COMMAND_MARKER),
+				),
 			),
 		).toBe(true);
 	});
@@ -145,10 +171,10 @@ describe("uninstallHooks", () => {
 			[
 				"",
 				"[[hooks.Stop]]",
-				"matcher = \"\"",
+				'matcher = ""',
 				"[[hooks.Stop.hooks]]",
-				"type = \"command\"",
-				"command = \"other-tool\"",
+				'type = "command"',
+				'command = "other-tool"',
 				"",
 			].join("\n"),
 		);
@@ -156,7 +182,7 @@ describe("uninstallHooks", () => {
 		await uninstallHooks({ yes: true });
 		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
 		expect(text).not.toContain(HOOK_COMMAND_MARKER);
-		expect(text).toContain("command = \"other-tool\"");
+		expect(text).toContain('command = "other-tool"');
 	});
 
 	it("uninstalls Codex hooks without creating Claude settings when only Codex config exists", async () => {
@@ -165,9 +191,9 @@ describe("uninstallHooks", () => {
 			getCodexConfigPath(),
 			[
 				"[[hooks.Stop]]",
-				"matcher = \"\"",
+				'matcher = ""',
 				"[[hooks.Stop.hooks]]",
-				"type = \"command\"",
+				'type = "command"',
 				`command = "${HOOK_COMMAND_MARKER}"`,
 				"",
 			].join("\n"),
@@ -176,7 +202,9 @@ describe("uninstallHooks", () => {
 		await uninstallHooks({ yes: true });
 
 		expect(fs.existsSync(getSettingsPath())).toBe(false);
-		expect(fs.readFileSync(getCodexConfigPath(), "utf8")).not.toContain(HOOK_COMMAND_MARKER);
+		expect(fs.readFileSync(getCodexConfigPath(), "utf8")).not.toContain(
+			HOOK_COMMAND_MARKER,
+		);
 	});
 
 	it("refuses on parse failure", async () => {

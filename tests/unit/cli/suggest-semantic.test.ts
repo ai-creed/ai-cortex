@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { renderSemanticText } from "../../../src/cli.js";
 import type { SemanticSuggestResult } from "../../../src/lib/suggest.js";
 
-function makeResult(overrides: Partial<SemanticSuggestResult> = {}): SemanticSuggestResult {
+function makeResult(
+	overrides: Partial<SemanticSuggestResult> = {},
+): SemanticSuggestResult {
 	return {
 		mode: "semantic",
 		cacheStatus: "fresh",
@@ -12,8 +14,18 @@ function makeResult(overrides: Partial<SemanticSuggestResult> = {}): SemanticSug
 		durationMs: 42,
 		poolSize: 10,
 		results: [
-			{ path: "src/auth.ts", kind: "file", score: 0.92, reason: "semantic similarity: 0.920" },
-			{ path: "docs/auth.md", kind: "doc", score: 0.75, reason: "semantic similarity: 0.750" },
+			{
+				path: "src/auth.ts",
+				kind: "file",
+				score: 0.92,
+				reason: "semantic similarity: 0.920",
+			},
+			{
+				path: "docs/auth.md",
+				kind: "doc",
+				score: 0.75,
+				reason: "semantic similarity: 0.750",
+			},
 		],
 		...overrides,
 	};
@@ -22,8 +34,12 @@ function makeResult(overrides: Partial<SemanticSuggestResult> = {}): SemanticSug
 describe("renderSemanticText", () => {
 	it("renders header and meta line", () => {
 		const output = renderSemanticText(makeResult());
-		expect(output).toContain("suggested files (semantic) for: find auth middleware");
-		expect(output).toContain("mode: semantic · cacheStatus: fresh · durationMs: 42 · pool: 10");
+		expect(output).toContain(
+			"suggested files (semantic) for: find auth middleware",
+		);
+		expect(output).toContain(
+			"mode: semantic · cacheStatus: fresh · durationMs: 42 · pool: 10",
+		);
 	});
 
 	it("renders results with score to 3 decimal places", () => {

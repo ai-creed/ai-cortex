@@ -1,5 +1,8 @@
 export function slugify(input: string): string {
-	return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+	return input
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "");
 }
 
 export function truncate(input: string, maxLen: number): string {

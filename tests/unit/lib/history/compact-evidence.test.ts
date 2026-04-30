@@ -38,18 +38,28 @@ describe("extractEvidence", () => {
 	});
 
 	it("does not flag prompts where keyword appears later in sentence", () => {
-		const t: RawTurn[] = [{ turn: 0, role: "user", text: "we should not stop here" }];
+		const t: RawTurn[] = [
+			{ turn: 0, role: "user", text: "we should not stop here" },
+		];
 		expect(extractEvidence(t).corrections).toEqual([]);
 	});
 
 	it("captures Read/Write/Edit/Glob/Grep tool calls with path summary", () => {
 		const e = extractEvidence(turns);
-		expect(e.toolCalls).toContainEqual({ turn: 1, name: "Read", args: "src/foo.ts" });
+		expect(e.toolCalls).toContainEqual({
+			turn: 1,
+			name: "Read",
+			args: "src/foo.ts",
+		});
 	});
 
 	it("captures Bash tool calls with first 120 chars of command", () => {
 		const e = extractEvidence(turns);
-		expect(e.toolCalls).toContainEqual({ turn: 2, name: "Bash", args: "pnpm vitest run" });
+		expect(e.toolCalls).toContainEqual({
+			turn: 2,
+			name: "Bash",
+			args: "pnpm vitest run",
+		});
 	});
 
 	it("extracts file paths from tool inputs", () => {

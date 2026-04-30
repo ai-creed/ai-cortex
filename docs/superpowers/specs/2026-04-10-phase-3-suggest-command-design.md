@@ -91,11 +91,7 @@ do not duplicate the same `git status --porcelain -unormal` logic.
 
 ```ts
 export { suggestRepo } from "./suggest.js";
-export type {
-  SuggestOptions,
-  SuggestItem,
-  SuggestResult,
-} from "./suggest.js";
+export type { SuggestOptions, SuggestItem, SuggestResult } from "./suggest.js";
 ```
 
 All existing exports remain unchanged.
@@ -110,23 +106,23 @@ Suggest-specific types live in `suggest.ts`:
 
 ```ts
 export type SuggestOptions = {
-  from?: string;
-  limit?: number;
-  stale?: boolean;
+	from?: string;
+	limit?: number;
+	stale?: boolean;
 };
 
 export type SuggestItem = {
-  path: string;
-  kind: "file" | "doc";
-  score: number;
-  reason: string;
+	path: string;
+	kind: "file" | "doc";
+	score: number;
+	reason: string;
 };
 
 export type SuggestResult = {
-  cacheStatus: "fresh" | "reindexed" | "stale";
-  task: string;
-  from: string | null;
-  results: SuggestItem[];
+	cacheStatus: "fresh" | "reindexed" | "stale";
+	task: string;
+	from: string | null;
+	results: SuggestItem[];
 };
 ```
 
@@ -292,10 +288,10 @@ not reintroduce unconditional full reindex on every stale/dirty condition.
 
 ```ts
 export function suggestRepo(
-  repoPath: string,
-  task: string,
-  options?: SuggestOptions,
-): SuggestResult
+	repoPath: string,
+	task: string,
+	options?: SuggestOptions,
+): SuggestResult;
 ```
 
 ### Flow
@@ -411,17 +407,17 @@ Rules:
 
 ```json
 {
-  "task": "inspect persistence logic",
-  "from": "src/app/App.tsx",
-  "cacheStatus": "fresh",
-  "results": [
-    {
-      "path": "src/persistence/store.ts",
-      "kind": "file",
-      "score": 14,
-      "reason": "matched task terms in path: persistence"
-    }
-  ]
+	"task": "inspect persistence logic",
+	"from": "src/app/App.tsx",
+	"cacheStatus": "fresh",
+	"results": [
+		{
+			"path": "src/persistence/store.ts",
+			"kind": "file",
+			"score": 14,
+			"reason": "matched task terms in path: persistence"
+		}
+	]
 }
 ```
 

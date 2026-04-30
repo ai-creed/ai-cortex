@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../../src/lib/history/store.js");
 
-import { listSessions, writeSession } from "../../../../src/lib/history/store.js";
+import {
+	listSessions,
+	writeSession,
+} from "../../../../src/lib/history/store.js";
 import {
 	appendManifestEntry,
 	readManifest,
@@ -54,8 +57,15 @@ describe("appendManifestEntry", () => {
 	});
 
 	it("appends a second entry on a new line", async () => {
-		const e1: ManifestEntry = { id: "sess-1", startedAt: "2026-04-29T10:00:00.000Z" };
-		const e2: ManifestEntry = { id: "sess-2", startedAt: "2026-04-29T11:00:00.000Z", endedAt: "2026-04-29T11:30:00.000Z" };
+		const e1: ManifestEntry = {
+			id: "sess-1",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		};
+		const e2: ManifestEntry = {
+			id: "sess-2",
+			startedAt: "2026-04-29T11:00:00.000Z",
+			endedAt: "2026-04-29T11:30:00.000Z",
+		};
 		await appendManifestEntry("REPO1", e1);
 		await appendManifestEntry("REPO1", e2);
 
@@ -81,8 +91,14 @@ describe("readManifest", () => {
 	});
 
 	it("parses all lines and returns array of entries", async () => {
-		const e1: ManifestEntry = { id: "s1", startedAt: "2026-04-29T10:00:00.000Z" };
-		const e2: ManifestEntry = { id: "s2", startedAt: "2026-04-29T11:00:00.000Z" };
+		const e1: ManifestEntry = {
+			id: "s1",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		};
+		const e2: ManifestEntry = {
+			id: "s2",
+			startedAt: "2026-04-29T11:00:00.000Z",
+		};
 		await appendManifestEntry("REPO2", e1);
 		await appendManifestEntry("REPO2", e2);
 
@@ -93,7 +109,10 @@ describe("readManifest", () => {
 	});
 
 	it("deduplicates by id, last-write-wins", async () => {
-		const e1: ManifestEntry = { id: "s1", startedAt: "2026-04-29T10:00:00.000Z" };
+		const e1: ManifestEntry = {
+			id: "s1",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		};
 		const e1Updated: ManifestEntry = {
 			id: "s1",
 			startedAt: "2026-04-29T10:00:00.000Z",
@@ -110,8 +129,14 @@ describe("readManifest", () => {
 
 describe("pruneManifest", () => {
 	it("removes entries whose IDs are not in activeSessions", async () => {
-		await appendManifestEntry("REPO4", { id: "keep-me", startedAt: "2026-04-29T10:00:00.000Z" });
-		await appendManifestEntry("REPO4", { id: "drop-me", startedAt: "2026-04-29T11:00:00.000Z" });
+		await appendManifestEntry("REPO4", {
+			id: "keep-me",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		});
+		await appendManifestEntry("REPO4", {
+			id: "drop-me",
+			startedAt: "2026-04-29T11:00:00.000Z",
+		});
 
 		await pruneManifest("REPO4", new Set(["keep-me"]));
 
@@ -121,7 +146,10 @@ describe("pruneManifest", () => {
 	});
 
 	it("leaves manifest empty when activeSessions is empty", async () => {
-		await appendManifestEntry("REPO5", { id: "s1", startedAt: "2026-04-29T10:00:00.000Z" });
+		await appendManifestEntry("REPO5", {
+			id: "s1",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		});
 		await pruneManifest("REPO5", new Set());
 
 		const entries = await readManifest("REPO5");
@@ -130,7 +158,9 @@ describe("pruneManifest", () => {
 
 	it("is a no-op when manifest does not exist", async () => {
 		// Should not throw
-		await expect(pruneManifest("REPO_NONE", new Set(["s1"]))).resolves.toBeUndefined();
+		await expect(
+			pruneManifest("REPO_NONE", new Set(["s1"])),
+		).resolves.toBeUndefined();
 	});
 });
 
@@ -162,7 +192,10 @@ describe("searchHistory — session enumeration via manifest", () => {
 		vi.mocked(writeSession).mockResolvedValue(undefined);
 
 		// Populate manifest with one session
-		await appendManifestEntry("REPOSRCH", { id: "sess-manifest", startedAt: "2026-04-29T10:00:00.000Z" });
+		await appendManifestEntry("REPOSRCH", {
+			id: "sess-manifest",
+			startedAt: "2026-04-29T10:00:00.000Z",
+		});
 
 		// search.ts should call readManifest and use those IDs
 		// readSession will return null for non-existent sessions — that's fine, 0 hits

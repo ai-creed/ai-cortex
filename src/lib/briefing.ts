@@ -68,9 +68,7 @@ function renderImportHotSpots(cache: RepoCache): string | null {
 		counts.set(edge.to, (counts.get(edge.to) ?? 0) + 1);
 	}
 
-	const sorted = [...counts.entries()]
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 5);
+	const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
 	const lines = sorted.map(
 		([target, count]) => `- \`${target}\` (${count} importers)`,

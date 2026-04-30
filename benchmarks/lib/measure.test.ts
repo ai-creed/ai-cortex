@@ -36,14 +36,26 @@ describe("measureN", () => {
 	it("calls beforeEach before each measured run", async () => {
 		let beforeCount = 0;
 		const runOrder: string[] = [];
-		const fn = async () => { runOrder.push("run"); };
-		const beforeEach = async () => { beforeCount++; runOrder.push("before"); };
+		const fn = async () => {
+			runOrder.push("run");
+		};
+		const beforeEach = async () => {
+			beforeCount++;
+			runOrder.push("before");
+		};
 
 		await measureN(fn, { warmup: 1, runs: 3, beforeEach });
 
 		expect(beforeCount).toBe(3); // only measured runs, not warmup
 		// Verify interleaving: before-run-before-run-before-run
 		const measuredOrder = runOrder.slice(-6); // skip warmup
-		expect(measuredOrder).toEqual(["before", "run", "before", "run", "before", "run"]);
+		expect(measuredOrder).toEqual([
+			"before",
+			"run",
+			"before",
+			"run",
+			"before",
+			"run",
+		]);
 	});
 });

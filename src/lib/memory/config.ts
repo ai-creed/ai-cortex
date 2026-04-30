@@ -48,8 +48,8 @@ export const DEFAULT_CONFIG: MemoryConfig = {
 	},
 	promotion: {
 		decision: { reExtractionPromoteCount: 5 },
-		gotcha:   { reExtractionPromoteCount: 3 },
-		pattern:  { reExtractionPromoteCount: 2 },
+		gotcha: { reExtractionPromoteCount: 3 },
+		pattern: { reExtractionPromoteCount: 2 },
 		"how-to": { reExtractionPromoteCount: 3 },
 	},
 	extractor: {
@@ -58,9 +58,14 @@ export const DEFAULT_CONFIG: MemoryConfig = {
 	},
 	ranking: {
 		weights: {
-			semantic: 0.50, scope: 0.30, status: 0.10,
-			confidence: 0.05, recency: 0.05, source: 0.10,
-			link: 0.05, typeMismatchPenalty: 0.20,
+			semantic: 0.5,
+			scope: 0.3,
+			status: 0.1,
+			confidence: 0.05,
+			recency: 0.05,
+			source: 0.1,
+			link: 0.05,
+			typeMismatchPenalty: 0.2,
 		},
 		recencyHalfLifeDays: 60,
 		candidatePoolSize: 200,
@@ -80,7 +85,14 @@ function deepMerge<T>(base: T, overlay: Partial<T> | undefined): T {
 	for (const k of Object.keys(ov)) {
 		const a = (base as Record<string, unknown>)[k];
 		const b = ov[k];
-		if (a && typeof a === "object" && !Array.isArray(a) && b && typeof b === "object" && !Array.isArray(b)) {
+		if (
+			a &&
+			typeof a === "object" &&
+			!Array.isArray(a) &&
+			b &&
+			typeof b === "object" &&
+			!Array.isArray(b)
+		) {
 			out[k] = deepMerge(a, b as Partial<typeof a>);
 		} else {
 			out[k] = b;
@@ -89,7 +101,9 @@ function deepMerge<T>(base: T, overlay: Partial<T> | undefined): T {
 	return out as T;
 }
 
-async function readJsonIfExists(p: string): Promise<Partial<{ memory: Partial<MemoryConfig> }>> {
+async function readJsonIfExists(
+	p: string,
+): Promise<Partial<{ memory: Partial<MemoryConfig> }>> {
 	try {
 		const text = await fs.readFile(p, "utf8");
 		return JSON.parse(text);
@@ -100,7 +114,12 @@ async function readJsonIfExists(p: string): Promise<Partial<{ memory: Partial<Me
 }
 
 export async function loadMemoryConfig(repoKey: string): Promise<MemoryConfig> {
-	const userPath = path.join(os.homedir(), ".config", "ai-cortex", "config.json");
+	const userPath = path.join(
+		os.homedir(),
+		".config",
+		"ai-cortex",
+		"config.json",
+	);
 	const repoPath = path.join(memoryRootDir(repoKey), "config.json");
 
 	const [userJson, repoJson] = await Promise.all([

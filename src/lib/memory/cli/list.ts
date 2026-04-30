@@ -17,19 +17,37 @@ function parseListArgs(args: string[]): ListArgs {
 	let json = false;
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
-		if (a === "--json") { json = true; continue; }
-		if (a === "--type" && args[i + 1]) { types.push(args[++i]); continue; }
-		if (a === "--status" && args[i + 1]) { statuses.push(args[++i]); continue; }
-		if (a === "--scope-file" && args[i + 1]) { scopeFile = args[++i]; continue; }
-		if (a === "--limit" && args[i + 1]) { limit = Number(args[++i]); continue; }
+		if (a === "--json") {
+			json = true;
+			continue;
+		}
+		if (a === "--type" && args[i + 1]) {
+			types.push(args[++i]);
+			continue;
+		}
+		if (a === "--status" && args[i + 1]) {
+			statuses.push(args[++i]);
+			continue;
+		}
+		if (a === "--scope-file" && args[i + 1]) {
+			scopeFile = args[++i];
+			continue;
+		}
+		if (a === "--limit" && args[i + 1]) {
+			limit = Number(args[++i]);
+			continue;
+		}
 	}
 	return { types, statuses, scopeFile, limit, json };
 }
 
-export async function runMemoryList(args: string[], opts: {
-	repoKey: string;
-	stdout?: NodeJS.WriteStream;
-} = { repoKey: "" }): Promise<number> {
+export async function runMemoryList(
+	args: string[],
+	opts: {
+		repoKey: string;
+		stdout?: NodeJS.WriteStream;
+	} = { repoKey: "" },
+): Promise<number> {
 	try {
 		const parsed = parseListArgs(args);
 		const rh = openRetrieve(opts.repoKey);
@@ -45,7 +63,9 @@ export async function runMemoryList(args: string[], opts: {
 				out.write(JSON.stringify(items, null, 2) + "\n");
 			} else {
 				for (const item of items) {
-					out.write(`${item.id}  [${item.type}/${item.status}] ${item.title}\n`);
+					out.write(
+						`${item.id}  [${item.type}/${item.status}] ${item.title}\n`,
+					);
 				}
 			}
 			return 0;
@@ -53,7 +73,9 @@ export async function runMemoryList(args: string[], opts: {
 			rh.close();
 		}
 	} catch (err) {
-		process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
+		process.stderr.write(
+			(err instanceof Error ? err.message : String(err)) + "\n",
+		);
 		return 1;
 	}
 }

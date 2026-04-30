@@ -33,12 +33,16 @@ for (let i = 2; i < process.argv.length; i++) {
 	}
 }
 if (!repoPath) {
-	process.stderr.write("Usage: node run.mjs --repo /path/to/target-repo [--corpus path] [--query-source title|card|both]\n  or set BENCH_RANKER_REPO env var\n");
+	process.stderr.write(
+		"Usage: node run.mjs --repo /path/to/target-repo [--corpus path] [--query-source title|card|both]\n  or set BENCH_RANKER_REPO env var\n",
+	);
 	process.exit(1);
 }
 const corpus = JSON.parse(fs.readFileSync(corpusPath, "utf8"));
 if (!["title", "card", "both"].includes(querySource)) {
-	process.stderr.write(`Invalid --query-source: ${querySource} (expected title|card|both)\n`);
+	process.stderr.write(
+		`Invalid --query-source: ${querySource} (expected title|card|both)\n`,
+	);
 	process.exit(1);
 }
 const sources = querySource === "both" ? ["title", "card"] : [querySource];
@@ -52,16 +56,40 @@ process.stderr.write("[bench] build done.\n");
 process.stderr.write("[bench] warming up index...\n");
 spawnSync("node", [CLI, "index", repoPath], { encoding: "utf8" });
 // Build semantic sidecar before bench loop (first call downloads model ~23 MB).
-process.stderr.write("[bench] warming semantic sidecar (first call may download ~23 MB)...\n");
-spawnSync("node", [CLI, "suggest-semantic", "warmup", "--path", repoPath, "--limit", "1"], { encoding: "utf8" });
+process.stderr.write(
+	"[bench] warming semantic sidecar (first call may download ~23 MB)...\n",
+);
+spawnSync(
+	"node",
+	[CLI, "suggest-semantic", "warmup", "--path", repoPath, "--limit", "1"],
+	{ encoding: "utf8" },
+);
 process.stderr.write("[bench] warmup complete.\n");
 
 // --- Run one mode ---
 function runMode(title, repoPath, mode) {
 	// semantic errors if --stale is passed with no sidecar; warm it up before bench loop instead
-	const args = mode === "semantic"
-		? [CLI, "suggest-semantic", title, "--path", repoPath, "--json", "--limit", "60"]
-		: [CLI, mode === "deep" ? "suggest-deep" : "suggest", title, repoPath, "--json", "--limit", "60"];
+	const args =
+		mode === "semantic"
+			? [
+					CLI,
+					"suggest-semantic",
+					title,
+					"--path",
+					repoPath,
+					"--json",
+					"--limit",
+					"60",
+				]
+			: [
+					CLI,
+					mode === "deep" ? "suggest-deep" : "suggest",
+					title,
+					repoPath,
+					"--json",
+					"--limit",
+					"60",
+				];
 	if (mode !== "semantic") args.push("--stale");
 	if (mode === "deep") args.push("--pool", "60");
 	const r = spawnSync("node", args, { encoding: "utf8", timeout: 30_000 });
@@ -84,7 +112,10 @@ function rrf(listA, listB, k = 60) {
 		const p = item.path;
 		scores.set(p, (scores.get(p) ?? 0) + 1 / (k + rank + 1));
 	}
-	return [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p]) => p);
+	return [...scores.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 5)
+		.map(([p]) => p);
 }
 
 // --- Metrics ---
@@ -108,7 +139,12 @@ function queryFor(pr, source) {
 
 for (const pr of corpus.prs) {
 	process.stderr.write(`[bench] PR #${pr.pr}...\n`);
-	const row = { pr: pr.pr, title: pr.title, query: pr.query ?? null, truth: pr.truth };
+	const row = {
+		pr: pr.pr,
+		title: pr.title,
+		query: pr.query ?? null,
+		truth: pr.truth,
+	};
 
 	for (const source of sources) {
 		const queryText = queryFor(pr, source);
@@ -116,7 +152,12 @@ for (const pr of corpus.prs) {
 			const res = runMode(queryText, repoPath, mode);
 			const allPaths = res?.results?.map((r) => r.path) ?? [];
 			const top5 = allPaths.slice(0, 5);
-			row[`${source}_${mode}`] = { top5, allPaths, ...metrics(top5, pr.truth), durationMs: res?.durationMs ?? 0 };
+			row[`${source}_${mode}`] = {
+				top5,
+				allPaths,
+				...metrics(top5, pr.truth),
+				durationMs: res?.durationMs ?? 0,
+			};
 		}
 
 		// RRF fusion: fuse full top-60 lists from deep + semantic, output top-5
@@ -134,7 +175,8 @@ for (const pr of corpus.prs) {
 function agg(key) {
 	const hit = results.reduce((s, r) => s + (r[key]?.hit5 ?? 0), 0);
 	const p = results.reduce((s, r) => s + (r[key]?.p5 ?? 0), 0) / results.length;
-	const rec = results.reduce((s, r) => s + (r[key]?.r5 ?? 0), 0) / results.length;
+	const rec =
+		results.reduce((s, r) => s + (r[key]?.r5 ?? 0), 0) / results.length;
 	return { hit, p: (p * 100).toFixed(1), r: (rec * 100).toFixed(1) };
 }
 

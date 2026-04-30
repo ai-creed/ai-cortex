@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeSession, readSession, sessionJsonPath } from "../../../../src/lib/history/store.js";
+import {
+	writeSession,
+	readSession,
+	sessionJsonPath,
+} from "../../../../src/lib/history/store.js";
 import { HISTORY_SCHEMA_VERSION } from "../../../../src/lib/history/types.js";
 import type { SessionRecord } from "../../../../src/lib/history/types.js";
 
@@ -30,7 +34,12 @@ function makeRecord(overrides: Partial<SessionRecord> = {}): SessionRecord {
 		rawDroppedAt: null,
 		transcriptPath: "/tmp/abc.jsonl",
 		summary: "",
-		evidence: { toolCalls: [], filePaths: [], userPrompts: [], corrections: [] },
+		evidence: {
+			toolCalls: [],
+			filePaths: [],
+			userPrompts: [],
+			corrections: [],
+		},
 		chunks: [],
 		...overrides,
 	};
@@ -45,7 +54,9 @@ describe("writeSession + readSession", () => {
 
 	it("creates the session directory if absent", async () => {
 		await writeSession("REPO", makeRecord());
-		expect(fs.existsSync(path.dirname(sessionJsonPath("REPO", "abc")))).toBe(true);
+		expect(fs.existsSync(path.dirname(sessionJsonPath("REPO", "abc")))).toBe(
+			true,
+		);
 	});
 
 	it("uses write-temp + rename (no partial files visible)", async () => {

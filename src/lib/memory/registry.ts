@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-export const BUILT_IN_TYPES = ["decision", "gotcha", "pattern", "how-to"] as const;
+export const BUILT_IN_TYPES = [
+	"decision",
+	"gotcha",
+	"pattern",
+	"how-to",
+] as const;
 export type BuiltInType = (typeof BUILT_IN_TYPES)[number];
 
 export type ExtraFieldSpec = string | string[];
@@ -69,11 +74,12 @@ export type ValidationInput = {
 	typeFields?: Record<string, unknown>;
 };
 
-export type ValidationResult =
-	| { ok: true }
-	| { ok: false; errors: string[] };
+export type ValidationResult = { ok: true } | { ok: false; errors: string[] };
 
-export function validateRegistration(reg: TypeRegistry, input: ValidationInput): ValidationResult {
+export function validateRegistration(
+	reg: TypeRegistry,
+	input: ValidationInput,
+): ValidationResult {
 	const spec = reg.types[input.type];
 	if (!spec) return { ok: false, errors: [`unregistered type: ${input.type}`] };
 
@@ -89,7 +95,9 @@ export function validateRegistration(reg: TypeRegistry, input: ValidationInput):
 		}
 		if (Array.isArray(fieldSpec)) {
 			if (!fieldSpec.includes(got[field] as string)) {
-				errors.push(`field ${field} must be one of [${fieldSpec.join(", ")}], got ${JSON.stringify(got[field])}`);
+				errors.push(
+					`field ${field} must be one of [${fieldSpec.join(", ")}], got ${JSON.stringify(got[field])}`,
+				);
 			}
 		}
 	}

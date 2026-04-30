@@ -35,7 +35,10 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 		],
 		imports: [
 			{ from: "src/app.ts", to: "src/persistence/store" },
-			{ from: "src/persistence/restore-session.ts", to: "src/persistence/store" },
+			{
+				from: "src/persistence/restore-session.ts",
+				to: "src/persistence/store",
+			},
 		],
 		calls: [],
 		functions: [],
@@ -86,7 +89,10 @@ describe("rankSuggestions", () => {
 	});
 
 	it("allows a doc to outrank code when title/body evidence is materially stronger", () => {
-		const result = rankSuggestions("architecture decisions restore flow", makeCache());
+		const result = rankSuggestions(
+			"architecture decisions restore flow",
+			makeCache(),
+		);
 		expect(result[0]?.path).toBe("docs/shared/architecture_decisions.md");
 		expect(result[0]?.kind).toBe("doc");
 	});
@@ -151,7 +157,10 @@ describe("rankSuggestions", () => {
 		// tiebreak must override and pick the shorter "z..." path.
 		const cache = makeCache({
 			files: [
-				{ path: "a/very/long/path/deep/nested/github-helpers.ts", kind: "file" },
+				{
+					path: "a/very/long/path/deep/nested/github-helpers.ts",
+					kind: "file",
+				},
 				{ path: "z-github-helpers.ts", kind: "file" },
 			],
 			docs: [],
@@ -198,11 +207,27 @@ describe("call graph enrichment", () => {
 				{ path: "src/ranker.ts", kind: "file" },
 			],
 			calls: [
-				{ from: "src/server.ts::handle", to: "src/ranker.ts::rank", kind: "call" },
+				{
+					from: "src/server.ts::handle",
+					to: "src/ranker.ts::rank",
+					kind: "call",
+				},
 			],
 			functions: [
-				{ qualifiedName: "handle", file: "src/server.ts", exported: true, isDefaultExport: false, line: 1 },
-				{ qualifiedName: "rank", file: "src/ranker.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "handle",
+					file: "src/server.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+				{
+					qualifiedName: "rank",
+					file: "src/ranker.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 		});
 		const result = rankSuggestions("ranking", cache, { from: "src/server.ts" });
@@ -218,11 +243,27 @@ describe("call graph enrichment", () => {
 				{ path: "src/scorer.ts", kind: "file" },
 			],
 			calls: [
-				{ from: "src/ranker.ts::rank", to: "src/scorer.ts::score", kind: "call" },
+				{
+					from: "src/ranker.ts::rank",
+					to: "src/scorer.ts::score",
+					kind: "call",
+				},
 			],
 			functions: [
-				{ qualifiedName: "rank", file: "src/ranker.ts", exported: true, isDefaultExport: false, line: 1 },
-				{ qualifiedName: "score", file: "src/scorer.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "rank",
+					file: "src/ranker.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+				{
+					qualifiedName: "score",
+					file: "src/scorer.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 		});
 		const result = rankSuggestions("ranker", cache);
@@ -244,7 +285,13 @@ describe("call graph enrichment", () => {
 			],
 			calls,
 			functions: [
-				{ qualifiedName: "process", file: "src/hub.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "process",
+					file: "src/hub.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 		});
 		const resultHub = rankSuggestions("hub", cache);

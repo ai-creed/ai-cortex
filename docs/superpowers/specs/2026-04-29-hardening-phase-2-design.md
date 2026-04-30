@@ -39,15 +39,15 @@ values may change and no test cases may be removed.
 Synchronous file operations block the Node.js event loop throughout the core path.
 Affected modules and their sync surface:
 
-| Module | Sync calls |
-|--------|-----------|
-| `src/lib/cache-store.ts` | `readFileSync`, `writeFileSync`, `mkdirSync`, `existsSync` |
-| `src/lib/history/store.ts` | `readFileSync`, `writeFileSync`, `mkdirSync`, `openSync`, `readdirSync` |
-| `src/lib/vector-sidecar.ts` | `readFileSync` × 2, `writeFileSync` × 2, `renameSync` × 2, `existsSync` × 2 (history search hot path) |
-| `src/lib/entry-files.ts` | `readFileSync`, `existsSync` |
-| `src/lib/import-graph.ts` | `readFileSync` (3 sites) |
-| `src/lib/vector-builder.ts` | `mkdirSync` |
-| `src/lib/indexable-files.ts` | `readdirSync`, `existsSync`, `statSync` (full-index and diff hot path) |
+| Module                       | Sync calls                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/lib/cache-store.ts`     | `readFileSync`, `writeFileSync`, `mkdirSync`, `existsSync`                                            |
+| `src/lib/history/store.ts`   | `readFileSync`, `writeFileSync`, `mkdirSync`, `openSync`, `readdirSync`                               |
+| `src/lib/vector-sidecar.ts`  | `readFileSync` × 2, `writeFileSync` × 2, `renameSync` × 2, `existsSync` × 2 (history search hot path) |
+| `src/lib/entry-files.ts`     | `readFileSync`, `existsSync`                                                                          |
+| `src/lib/import-graph.ts`    | `readFileSync` (3 sites)                                                                              |
+| `src/lib/vector-builder.ts`  | `mkdirSync`                                                                                           |
+| `src/lib/indexable-files.ts` | `readdirSync`, `existsSync`, `statSync` (full-index and diff hot path)                                |
 
 For a local beta tool on modest repos this is acceptable today. It becomes a visible
 bottleneck as file count, session count, and embedding volume grow. MCP server context
@@ -58,6 +58,7 @@ makes this more acute: blocking I/O in one tool call delays all concurrent reque
 Migrate module by module, bottom-up, so each change is independently reviewable:
 
 **Order:**
+
 1. `entry-files.ts` — smallest, no dependents other than `indexer.ts`
 2. `cache-store.ts` — core dependency; `rehydrate.ts`, `suggest.ts`, `indexer.ts`
 3. `import-graph.ts` — already called from async `extractImports`
@@ -75,7 +76,9 @@ Migrate module by module, bottom-up, so each change is independently reviewable:
 export function readPackageMeta(worktreePath: string): PackageMeta;
 
 // After
-export async function readPackageMeta(worktreePath: string): Promise<PackageMeta>;
+export async function readPackageMeta(
+	worktreePath: string,
+): Promise<PackageMeta>;
 ```
 
 `existsSync` → `fs.promises.access`. `readFileSync` → `fs.promises.readFile`.
@@ -115,11 +118,20 @@ Internal `readFileSync` calls → `fs.promises.readFile`. `extractImports` is al
 ```ts
 // Before
 export function writeVectorIndex(dir: string, index: VectorIndex): void;
-export function readVectorIndex(dir: string, modelName: string): VectorIndex | null;
+export function readVectorIndex(
+	dir: string,
+	modelName: string,
+): VectorIndex | null;
 
 // After
-export async function writeVectorIndex(dir: string, index: VectorIndex): Promise<void>;
-export async function readVectorIndex(dir: string, modelName: string): Promise<VectorIndex | null>;
+export async function writeVectorIndex(
+	dir: string,
+	index: VectorIndex,
+): Promise<void>;
+export async function readVectorIndex(
+	dir: string,
+	modelName: string,
+): Promise<VectorIndex | null>;
 ```
 
 `existsSync` → `fs.promises.access`. All `readFileSync` / `writeFileSync` →
@@ -135,7 +147,9 @@ semantics preserved). Callers `readChunkVectors` and `writeChunkVectors` in
 export function listIndexableFiles(worktreePath: string): string[];
 
 // After
-export async function listIndexableFiles(worktreePath: string): Promise<string[]>;
+export async function listIndexableFiles(
+	worktreePath: string,
+): Promise<string[]>;
 ```
 
 `readdirSync` → `fs.promises.readdir`. `existsSync` → `fs.promises.access`.
@@ -186,7 +200,9 @@ must also become async:
 export function getCachedIndex(repoPath: string): RepoCache | null;
 
 // After
-export async function getCachedIndex(repoPath: string): Promise<RepoCache | null>;
+export async function getCachedIndex(
+	repoPath: string,
+): Promise<RepoCache | null>;
 ```
 
 Its single call site (`src/cli.ts:207`) adds `await`; behavior is identical. The
@@ -229,7 +245,11 @@ Add a lightweight manifest file alongside the sessions directory:
 **Manifest format** — append-only JSONL, one entry per line:
 
 ```json
-{ "id": "abc123", "startedAt": "2026-04-29T10:00:00Z", "endedAt": "2026-04-29T10:30:00Z" }
+{
+	"id": "abc123",
+	"startedAt": "2026-04-29T10:00:00Z",
+	"endedAt": "2026-04-29T10:30:00Z"
+}
 ```
 
 No text summary field. `history/search.ts` matches against `summary`, `userPrompts`,
@@ -246,14 +266,20 @@ session data.
 
 ```ts
 export type ManifestEntry = {
-  id: string;
-  startedAt: string;
-  endedAt?: string;
+	id: string;
+	startedAt: string;
+	endedAt?: string;
 };
 
-export async function appendManifestEntry(repoKey: string, entry: ManifestEntry): Promise<void>;
+export async function appendManifestEntry(
+	repoKey: string,
+	entry: ManifestEntry,
+): Promise<void>;
 export async function readManifest(repoKey: string): Promise<ManifestEntry[]>;
-export async function pruneManifest(repoKey: string, activeSessions: Set<string>): Promise<void>;
+export async function pruneManifest(
+	repoKey: string,
+	activeSessions: Set<string>,
+): Promise<void>;
 ```
 
 **Integration points:**
@@ -312,9 +338,9 @@ Formalize a `LanguageAdapter` interface with explicit capability flags:
 // src/lib/lang-adapter.ts (extend existing)
 
 export type AdapterCapabilities = {
-  importExtraction: boolean;   // can extract import edges
-  callGraph: boolean;          // can extract call graph
-  symbolIndex: boolean;        // future: symbol-level indexing
+	importExtraction: boolean; // can extract import edges
+	callGraph: boolean; // can extract call graph
+	symbolIndex: boolean; // future: symbol-level indexing
 };
 
 // RawCallData already exists implicitly in call-graph.ts; surface it here.
@@ -322,16 +348,24 @@ export type AdapterCapabilities = {
 // uses bindingsByFile — populated from importBindings — to resolve cross-file
 // call targets. Dropping it would break the existing resolution pipeline.
 export type RawCallData = {
-  functions: FunctionNode[];
-  rawCalls: RawCallSite[];
-  importBindings: ImportBinding[];
+	functions: FunctionNode[];
+	rawCalls: RawCallSite[];
+	importBindings: ImportBinding[];
 };
 
 export type LanguageAdapter = {
-  extensions: string[];
-  capabilities: AdapterCapabilities;
-  extractImports(worktreePath: string, filePath: string, content?: string): ImportEdge[];
-  extractCallGraph?(worktreePath: string, filePath: string, content?: string): RawCallData;
+	extensions: string[];
+	capabilities: AdapterCapabilities;
+	extractImports(
+		worktreePath: string,
+		filePath: string,
+		content?: string,
+	): ImportEdge[];
+	extractCallGraph?(
+		worktreePath: string,
+		filePath: string,
+		content?: string,
+	): RawCallData;
 };
 ```
 
@@ -343,11 +377,11 @@ pipeline depends on: `call-graph.ts:272–297` populates `bindingsByFile` from
 
 Current adapter capabilities (verified against source):
 
-| Adapter | `importExtraction` | `callGraph` |
-|---------|-------------------|-------------|
-| TypeScript/JS | true | true |
-| C/C++ | true | true |
-| Python | true | true |
+| Adapter       | `importExtraction` | `callGraph` |
+| ------------- | ------------------ | ----------- |
+| TypeScript/JS | true               | true        |
+| C/C++         | true               | true        |
+| Python        | true               | true        |
 
 Python already emits `functions`, `rawCalls`, and `importBindings` in `python.ts:315`.
 `callGraph: false` must NOT be set for Python — that would regress existing behavior.
@@ -359,7 +393,10 @@ Python already emits `functions`, `rawCalls`, and `importBindings` in `python.ts
 // src/lib/adapters/index.ts (extend)
 
 export function getAdapterForFile(filePath: string): LanguageAdapter | null;
-export function adapterSupports(filePath: string, cap: keyof AdapterCapabilities): boolean;
+export function adapterSupports(
+	filePath: string,
+	cap: keyof AdapterCapabilities,
+): boolean;
 ```
 
 `extractImports` in `import-graph.ts` calls `getAdapterForFile` and routes to the
@@ -414,23 +451,23 @@ run unchanged. Add:
 
 ## File Change Summary
 
-| File | Change |
-|------|--------|
-| `src/lib/cache-store.ts` | async migration |
-| `src/lib/entry-files.ts` | async migration |
-| `src/lib/import-graph.ts` | async migration (internal reads) |
-| `src/lib/vector-builder.ts` | async migration (`mkdirSync`) |
-| `src/lib/vector-sidecar.ts` | async migration (`readFileSync`, `writeFileSync`, `renameSync`, `existsSync`) |
-| `src/lib/indexable-files.ts` | async migration (`readdirSync`, `existsSync`, `statSync`) |
-| `src/lib/history/store.ts` | async migration |
-| `src/lib/history/manifest.ts` | **new** — manifest append/read/prune |
-| `src/lib/history/search.ts` | use manifest for session enumeration; fallback to scan |
-| `src/lib/lang-adapter.ts` | `AdapterCapabilities`, updated `LanguageAdapter` interface |
-| `src/lib/adapters/index.ts` | `getAdapterForFile`, `adapterSupports` |
-| `src/lib/import-graph.ts` | route via registry instead of inline extension check |
-| `src/lib/call-graph.ts` | route via registry, check `callGraph` capability |
-| `tests/unit/lib/history/manifest.test.ts` | **new** |
-| `tests/unit/lib/adapters/*.test.ts` | registry routing assertions |
-| Various existing test files | `await` added at call sites; no assertion changes |
+| File                                      | Change                                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `src/lib/cache-store.ts`                  | async migration                                                               |
+| `src/lib/entry-files.ts`                  | async migration                                                               |
+| `src/lib/import-graph.ts`                 | async migration (internal reads)                                              |
+| `src/lib/vector-builder.ts`               | async migration (`mkdirSync`)                                                 |
+| `src/lib/vector-sidecar.ts`               | async migration (`readFileSync`, `writeFileSync`, `renameSync`, `existsSync`) |
+| `src/lib/indexable-files.ts`              | async migration (`readdirSync`, `existsSync`, `statSync`)                     |
+| `src/lib/history/store.ts`                | async migration                                                               |
+| `src/lib/history/manifest.ts`             | **new** — manifest append/read/prune                                          |
+| `src/lib/history/search.ts`               | use manifest for session enumeration; fallback to scan                        |
+| `src/lib/lang-adapter.ts`                 | `AdapterCapabilities`, updated `LanguageAdapter` interface                    |
+| `src/lib/adapters/index.ts`               | `getAdapterForFile`, `adapterSupports`                                        |
+| `src/lib/import-graph.ts`                 | route via registry instead of inline extension check                          |
+| `src/lib/call-graph.ts`                   | route via registry, check `callGraph` capability                              |
+| `tests/unit/lib/history/manifest.test.ts` | **new**                                                                       |
+| `tests/unit/lib/adapters/*.test.ts`       | registry routing assertions                                                   |
+| Various existing test files               | `await` added at call sites; no assertion changes                             |
 
 13 modified files, 2 new files. No new dependencies (Node built-ins only for async I/O).

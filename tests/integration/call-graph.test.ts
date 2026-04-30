@@ -50,10 +50,7 @@ beforeAll(async () => {
 
 	fs.writeFileSync(
 		path.join(tmpDir, "src/cli.ts"),
-		[
-			'import { main } from "./main";',
-			"function run() { main(); }",
-		].join("\n"),
+		['import { main } from "./main";', "function run() { main(); }"].join("\n"),
 	);
 
 	git("add", ".");

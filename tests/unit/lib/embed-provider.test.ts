@@ -66,22 +66,30 @@ describe("embed-provider", () => {
 
 	it("wraps pipeline load failure in ModelLoadError", async () => {
 		const { pipeline } = await import("@xenova/transformers");
-		(pipeline as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("model not found"));
+		(pipeline as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("model not found"),
+		);
 
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
-		const { ModelLoadError: FreshModelLoadError } = await import("../../../src/lib/models.js");
+		const { ModelLoadError: FreshModelLoadError } =
+			await import("../../../src/lib/models.js");
 		await expect(getProvider()).rejects.toThrow(FreshModelLoadError);
 	});
 
 	it("wraps inference failure in EmbeddingInferenceError", async () => {
 		const { pipeline } = await import("@xenova/transformers");
-		const mockEmbed = vi.fn().mockRejectedValue(new Error("ONNX runtime failed"));
+		const mockEmbed = vi
+			.fn()
+			.mockRejectedValue(new Error("ONNX runtime failed"));
 		(pipeline as ReturnType<typeof vi.fn>).mockResolvedValue(mockEmbed);
 
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
-		const { EmbeddingInferenceError: FreshEmbeddingInferenceError } = await import("../../../src/lib/models.js");
+		const { EmbeddingInferenceError: FreshEmbeddingInferenceError } =
+			await import("../../../src/lib/models.js");
 		const provider = await getProvider();
-		await expect(provider.embed(["test"])).rejects.toThrow(FreshEmbeddingInferenceError);
+		await expect(provider.embed(["test"])).rejects.toThrow(
+			FreshEmbeddingInferenceError,
+		);
 	});
 
 	it("l2Normalize passes through zero vector unchanged", async () => {

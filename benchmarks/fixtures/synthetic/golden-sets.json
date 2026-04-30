@@ -7,7 +7,11 @@
 		},
 		{
 			"task": "fix password hashing",
-			"expected": ["auth/crypto.ts", "auth/register.ts", "auth/reset-password.ts"],
+			"expected": [
+				"auth/crypto.ts",
+				"auth/register.ts",
+				"auth/reset-password.ts"
+			],
 			"limit": 5
 		},
 		{
@@ -33,10 +37,26 @@
 			"minConfidence": "full",
 			"expectedHits": [
 				{ "qualifiedName": "register", "file": "auth/register.ts", "hop": 1 },
-				{ "qualifiedName": "resetPassword", "file": "auth/reset-password.ts", "hop": 1 },
-				{ "qualifiedName": "handleOAuthCallback", "file": "auth/oauth.ts", "hop": 1 },
-				{ "qualifiedName": "handleUserCreate", "file": "api/user-routes.ts", "hop": 2 },
-				{ "qualifiedName": "handlePasswordReset", "file": "api/user-routes.ts", "hop": 2 }
+				{
+					"qualifiedName": "resetPassword",
+					"file": "auth/reset-password.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "handleOAuthCallback",
+					"file": "auth/oauth.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "handleUserCreate",
+					"file": "api/user-routes.ts",
+					"hop": 2
+				},
+				{
+					"qualifiedName": "handlePasswordReset",
+					"file": "api/user-routes.ts",
+					"hop": 2
+				}
 			]
 		},
 		{
@@ -44,11 +64,31 @@
 			"file": "db/connection.ts",
 			"minConfidence": "full",
 			"expectedHits": [
-				{ "qualifiedName": "findUserByEmail", "file": "db/user-queries.ts", "hop": 1 },
-				{ "qualifiedName": "findUserById", "file": "db/user-queries.ts", "hop": 1 },
-				{ "qualifiedName": "createUser", "file": "db/user-queries.ts", "hop": 1 },
-				{ "qualifiedName": "findPostsByUser", "file": "db/post-queries.ts", "hop": 1 },
-				{ "qualifiedName": "createPost", "file": "db/post-queries.ts", "hop": 1 }
+				{
+					"qualifiedName": "findUserByEmail",
+					"file": "db/user-queries.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "findUserById",
+					"file": "db/user-queries.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "createUser",
+					"file": "db/user-queries.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "findPostsByUser",
+					"file": "db/post-queries.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "createPost",
+					"file": "db/post-queries.ts",
+					"hop": 1
+				}
 			]
 		}
 	]

@@ -52,12 +52,12 @@ benchmarks/
 
 ### Real Repos (perf + relative ranking)
 
-| Repo | Path | Size | Required |
-|------|------|------|----------|
-| ai-cortex | (derived from repo root) | ~86 files | yes (self, always available) |
-| ai-samantha | `~/Dev/ai-samantha` | ~56 files | no (discovered) |
-| ai-14all | `~/Dev/ai-14all` | ~142 files | no (discovered) |
-| ai-whisper | `~/Dev/ai-whisper` | ~218 files | no (discovered) |
+| Repo        | Path                     | Size       | Required                     |
+| ----------- | ------------------------ | ---------- | ---------------------------- |
+| ai-cortex   | (derived from repo root) | ~86 files  | yes (self, always available) |
+| ai-samantha | `~/Dev/ai-samantha`      | ~56 files  | no (discovered)              |
+| ai-14all    | `~/Dev/ai-14all`         | ~142 files | no (discovered)              |
+| ai-whisper  | `~/Dev/ai-whisper`       | ~218 files | no (discovered)              |
 
 Only ai-cortex (the repo itself) is required by default. Its path is derived from the benchmark runner's repo root (e.g. `git rev-parse --show-toplevel` or relative to `import.meta.url`), not hardcoded. Other repos are discovered from `BENCH_REPOS` env var or `benchmarks/config.ts`. If absent, skipped with a warning — `pnpm bench` never fails due to missing external repos.
 
@@ -81,13 +81,13 @@ Only ai-cortex (the repo itself) is required by default. Its path is derived fro
 
 Each scenario has explicit cache preconditions to ensure stable, reproducible measurements. The suite manages cache state (`~/.cache/ai-cortex/`) before each scenario.
 
-| Scenario | Operation | Precondition |
-|----------|-----------|-------------|
-| `index:cold` | `indexRepo()` | Delete cache before each run |
-| `rehydrate:warm` | `rehydrateRepo()` | Ensure fresh cache exists (index once before measurement) |
-| `rehydrate:stale` | `rehydrateRepo()` | Index, then add an untracked file to force staleness check |
-| `suggest:warm` | `suggestRepo()` | Ensure fresh cache exists, fixed task string |
-| `blastRadius:warm` | `queryBlastRadius()` | Ensure fresh cache with call graph, fixed target function |
+| Scenario           | Operation            | Precondition                                               |
+| ------------------ | -------------------- | ---------------------------------------------------------- |
+| `index:cold`       | `indexRepo()`        | Delete cache before each run                               |
+| `rehydrate:warm`   | `rehydrateRepo()`    | Ensure fresh cache exists (index once before measurement)  |
+| `rehydrate:stale`  | `rehydrateRepo()`    | Index, then add an untracked file to force staleness check |
+| `suggest:warm`     | `suggestRepo()`      | Ensure fresh cache exists, fixed task string               |
+| `blastRadius:warm` | `queryBlastRadius()` | Ensure fresh cache with call graph, fixed target function  |
 
 ### Measurement Protocol
 
@@ -120,6 +120,7 @@ SLO values are initial estimates — calibrate after first real run across all r
 Scenarios with `null` SLO use regression checks only. `rehydrate:stale` triggers cache diffing and rebuild, making its cost highly variable by repo state — an absolute ceiling would be either too loose for warm or too strict for stale.
 
 Repo size buckets:
+
 - small: <100 indexable files
 - medium: 100-500 indexable files
 - large: >500 indexable files
@@ -140,29 +141,38 @@ Stored in `benchmarks/fixtures/synthetic/golden-sets.json`:
 
 ```json
 {
-  "suggest": [
-    {
-      "task": "fix the login token validation",
-      "expected": ["auth/validate-token.ts", "auth/login.ts"],
-      "limit": 5
-    }
-  ],
-  "blastRadius": [
-    {
-      "function": "hashPassword",
-      "file": "auth/crypto.ts",
-      "minConfidence": "full",
-      "expectedHits": [
-        { "qualifiedName": "register", "file": "auth/register.ts", "hop": 1 },
-        { "qualifiedName": "resetPassword", "file": "auth/reset-password.ts", "hop": 1 },
-        { "qualifiedName": "handleUserCreate", "file": "api/user-routes.ts", "hop": 2 }
-      ]
-    }
-  ]
+	"suggest": [
+		{
+			"task": "fix the login token validation",
+			"expected": ["auth/validate-token.ts", "auth/login.ts"],
+			"limit": 5
+		}
+	],
+	"blastRadius": [
+		{
+			"function": "hashPassword",
+			"file": "auth/crypto.ts",
+			"minConfidence": "full",
+			"expectedHits": [
+				{ "qualifiedName": "register", "file": "auth/register.ts", "hop": 1 },
+				{
+					"qualifiedName": "resetPassword",
+					"file": "auth/reset-password.ts",
+					"hop": 1
+				},
+				{
+					"qualifiedName": "handleUserCreate",
+					"file": "api/user-routes.ts",
+					"hop": 2
+				}
+			]
+		}
+	]
 }
 ```
 
 **Metrics:**
+
 - **Precision@k:** of top-k returned, how many are in expected set
 - **Recall@k:** of expected set, how many appear in top-k
 - Hard fail if precision@5 < 0.6 or recall@5 < 0.6 (tunable)
@@ -242,6 +252,7 @@ Runner parses `process.argv`, dispatches to suites, collects results, passes to 
 ## Future: CI Integration
 
 Not in scope now. When ready:
+
 - GitHub Actions workflow runs `pnpm bench --json` on PRs
 - Post results as PR comment (CI reporter)
 - Fail PR if regression detected

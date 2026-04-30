@@ -2,14 +2,27 @@ import { openMemoryIndex, MemoryIndex } from "./index.js";
 import { readMemoryFile } from "./store.js";
 import type { MemoryRecord, AuditRow } from "./types.js";
 
-export type RetrieveHandle = { repoKey: string; index: MemoryIndex; close: () => void };
+export type RetrieveHandle = {
+	repoKey: string;
+	index: MemoryIndex;
+	close: () => void;
+};
 
 export function openRetrieve(repoKey: string): RetrieveHandle {
 	const index = openMemoryIndex(repoKey);
-	return { repoKey, index, close() { index.close(); } };
+	return {
+		repoKey,
+		index,
+		close() {
+			index.close();
+		},
+	};
 }
 
-export async function getMemory(rh: RetrieveHandle, id: string): Promise<MemoryRecord> {
+export async function getMemory(
+	rh: RetrieveHandle,
+	id: string,
+): Promise<MemoryRecord> {
 	const row = rh.index.getMemory(id);
 	if (!row) throw new Error(`memory not found: ${id}`);
 	const location = row.status === "trashed" ? "trash" : "memories";
@@ -24,11 +37,18 @@ export type ListFilter = {
 };
 
 export type ListItem = {
-	id: string; type: string; status: string; title: string;
-	updatedAt: string; bodyExcerpt: string;
+	id: string;
+	type: string;
+	status: string;
+	title: string;
+	updatedAt: string;
+	bodyExcerpt: string;
 };
 
-export function listMemories(rh: RetrieveHandle, filter: ListFilter = {}): ListItem[] {
+export function listMemories(
+	rh: RetrieveHandle,
+	filter: ListFilter = {},
+): ListItem[] {
 	const where: string[] = [];
 	const params: unknown[] = [];
 	if (filter.type?.length) {
@@ -40,7 +60,9 @@ export function listMemories(rh: RetrieveHandle, filter: ListFilter = {}): ListI
 		params.push(...filter.status);
 	}
 	if (filter.scopeFile) {
-		where.push(`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value=?)`);
+		where.push(
+			`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value=?)`,
+		);
 		params.push(filter.scopeFile);
 	}
 	const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -50,16 +72,30 @@ export function listMemories(rh: RetrieveHandle, filter: ListFilter = {}): ListI
 		SELECT id, type, status, title, updated_at AS updatedAt, body_excerpt AS bodyExcerpt
 		FROM memories ${whereSql} ORDER BY updated_at DESC LIMIT ?
 	`;
-	return rh.index.rawDb().prepare(sql).all(...params) as ListItem[];
+	return rh.index
+		.rawDb()
+		.prepare(sql)
+		.all(...params) as ListItem[];
 }
 
 export function auditMemory(rh: RetrieveHandle, id: string): AuditRow[] {
 	return rh.index.auditRows(id);
 }
 
-export type SearchHit = { id: string; title: string; status: string; type: string; bodyExcerpt: string; rank: number };
+export type SearchHit = {
+	id: string;
+	title: string;
+	status: string;
+	type: string;
+	bodyExcerpt: string;
+	rank: number;
+};
 
-export function searchMemories(rh: RetrieveHandle, query: string, limit = 10): SearchHit[] {
+export function searchMemories(
+	rh: RetrieveHandle,
+	query: string,
+	limit = 10,
+): SearchHit[] {
 	const fts = rh.index.searchFts(query, limit);
 	if (fts.length === 0) return [];
 	const placeholders = fts.map(() => "?").join(",");
@@ -67,9 +103,14 @@ export function searchMemories(rh: RetrieveHandle, query: string, limit = 10): S
 		SELECT id, title, status, type, body_excerpt AS bodyExcerpt
 		FROM memories WHERE id IN (${placeholders})
 	`;
-	const ranks = new Map(fts.map(h => [h.memoryId, h.rank]));
-	const rows = rh.index.rawDb().prepare(sql).all(...fts.map(h => h.memoryId)) as Omit<SearchHit, "rank">[];
-	return rows.map(r => ({ ...r, rank: ranks.get(r.id) ?? 0 })).sort((a, b) => a.rank - b.rank);
+	const ranks = new Map(fts.map((h) => [h.memoryId, h.rank]));
+	const rows = rh.index
+		.rawDb()
+		.prepare(sql)
+		.all(...fts.map((h) => h.memoryId)) as Omit<SearchHit, "rank">[];
+	return rows
+		.map((r) => ({ ...r, rank: ranks.get(r.id) ?? 0 }))
+		.sort((a, b) => a.rank - b.rank);
 }
 
 // ─── Task 6.2: Stage-1 scope filter ────────────────────────────────────────
@@ -77,16 +118,25 @@ export function searchMemories(rh: RetrieveHandle, query: string, limit = 10): S
 export type RecallScope = { files?: string[]; tags?: string[] };
 
 export type CandidateRow = {
-	id: string; type: string; status: string; title: string; updatedAt: string;
-	confidence: number; bodyHash: string; bodyExcerpt: string;
+	id: string;
+	type: string;
+	status: string;
+	title: string;
+	updatedAt: string;
+	confidence: number;
+	bodyHash: string;
+	bodyExcerpt: string;
 };
 
-export function filterCandidates(rh: RetrieveHandle, opts: {
-	scope?: RecallScope;
-	type?: string[];
-	includeStatus?: string[];
-	candidatePoolSize: number;
-}): CandidateRow[] {
+export function filterCandidates(
+	rh: RetrieveHandle,
+	opts: {
+		scope?: RecallScope;
+		type?: string[];
+		includeStatus?: string[];
+		candidatePoolSize: number;
+	},
+): CandidateRow[] {
 	const files = opts.scope?.files ?? [];
 	const tags = opts.scope?.tags ?? [];
 	const hasScopeFilter = files.length > 0 || tags.length > 0;
@@ -104,14 +154,20 @@ export function filterCandidates(rh: RetrieveHandle, opts: {
 	if (hasScopeFilter) {
 		const scopeClauses: string[] = [];
 		if (files.length) {
-			scopeClauses.push(`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value IN (${files.map(() => "?").join(",")}))`);
+			scopeClauses.push(
+				`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value IN (${files.map(() => "?").join(",")}))`,
+			);
 			params.push(...files);
 		}
 		if (tags.length) {
-			scopeClauses.push(`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='tag' AND s.value IN (${tags.map(() => "?").join(",")}))`);
+			scopeClauses.push(
+				`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='tag' AND s.value IN (${tags.map(() => "?").join(",")}))`,
+			);
 			params.push(...tags);
 		}
-		scopeClauses.push(`NOT EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id)`);
+		scopeClauses.push(
+			`NOT EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id)`,
+		);
 		where.push(`(${scopeClauses.join(" OR ")})`);
 	}
 
@@ -120,7 +176,10 @@ export function filterCandidates(rh: RetrieveHandle, opts: {
 		SELECT id, type, status, title, updated_at AS updatedAt, confidence, body_hash AS bodyHash, body_excerpt AS bodyExcerpt
 		FROM memories WHERE ${where.join(" AND ")} LIMIT ?
 	`;
-	return rh.index.rawDb().prepare(sql).all(...params) as CandidateRow[];
+	return rh.index
+		.rawDb()
+		.prepare(sql)
+		.all(...params) as CandidateRow[];
 }
 
 // ─── Task 6.3: Stage-2 ranker ──────────────────────────────────────────────
@@ -130,8 +189,14 @@ import { readMemoryVector } from "./embed.js";
 import { loadMemoryConfig } from "./config.js";
 
 function cosine(a: Float32Array, b: Float32Array): number {
-	let dot = 0, na = 0, nb = 0;
-	for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+	let dot = 0,
+		na = 0,
+		nb = 0;
+	for (let i = 0; i < a.length; i++) {
+		dot += a[i] * b[i];
+		na += a[i] * a[i];
+		nb += b[i] * b[i];
+	}
 	return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-9);
 }
 
@@ -148,7 +213,12 @@ function recencyDecay(updatedAt: string, halfLifeDays: number): number {
 }
 
 export type RecallResult = {
-	id: string; title: string; type: string; status: string; bodyExcerpt: string; score: number;
+	id: string;
+	title: string;
+	type: string;
+	status: string;
+	bodyExcerpt: string;
+	score: number;
 	scope: { files: string[]; tags: string[] };
 	links: { type: string; dstId: string }[];
 };
@@ -160,11 +230,16 @@ export type RecallOptions = {
 	limit?: number;
 };
 
-export async function recallMemory(rh: RetrieveHandle, query: string, options: RecallOptions = {}): Promise<RecallResult[]> {
+export async function recallMemory(
+	rh: RetrieveHandle,
+	query: string,
+	options: RecallOptions = {},
+): Promise<RecallResult[]> {
 	const cfg = await loadMemoryConfig(rh.repoKey);
 	const W = cfg.ranking.weights;
 	const candidates = filterCandidates(rh, {
-		scope: options.scope, type: options.type,
+		scope: options.scope,
+		type: options.type,
 		includeStatus: options.includeStatus,
 		candidatePoolSize: cfg.ranking.candidatePoolSize,
 	});
@@ -182,8 +257,12 @@ export async function recallMemory(rh: RetrieveHandle, query: string, options: R
 		const scopeRows = rh.index.scopeRows(c.id);
 		let scopeMatch = 0.2;
 		if (scopeRows.length > 0) {
-			const fileHit = scopeRows.some(s => s.kind === "file" && options.scope?.files?.includes(s.value));
-			const tagHit = scopeRows.some(s => s.kind === "tag" && options.scope?.tags?.includes(s.value));
+			const fileHit = scopeRows.some(
+				(s) => s.kind === "file" && options.scope?.files?.includes(s.value),
+			);
+			const tagHit = scopeRows.some(
+				(s) => s.kind === "tag" && options.scope?.tags?.includes(s.value),
+			);
 			if (fileHit) scopeMatch = 1.0;
 			else if (tagHit) scopeMatch = 0.5;
 			else scopeMatch = 0;
@@ -196,13 +275,20 @@ export async function recallMemory(rh: RetrieveHandle, query: string, options: R
 			W.confidence * c.confidence +
 			W.recency * recencyDecay(c.updatedAt, cfg.ranking.recencyHalfLifeDays);
 
-		const links = rh.index.linksFrom(c.id).map(l => ({ type: l.relType, dstId: l.dstId }));
+		const links = rh.index
+			.linksFrom(c.id)
+			.map((l) => ({ type: l.relType, dstId: l.dstId }));
 		ranked.push({
-			id: c.id, title: c.title, type: c.type, status: c.status,
-			bodyExcerpt: c.bodyExcerpt, score, links,
+			id: c.id,
+			title: c.title,
+			type: c.type,
+			status: c.status,
+			bodyExcerpt: c.bodyExcerpt,
+			score,
+			links,
 			scope: {
-				files: scopeRows.filter(s => s.kind === "file").map(s => s.value),
-				tags: scopeRows.filter(s => s.kind === "tag").map(s => s.value),
+				files: scopeRows.filter((s) => s.kind === "file").map((s) => s.value),
+				tags: scopeRows.filter((s) => s.kind === "tag").map((s) => s.value),
 			},
 		});
 	}

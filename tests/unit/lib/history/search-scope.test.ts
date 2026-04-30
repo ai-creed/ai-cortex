@@ -10,7 +10,9 @@ import type { SessionRecord } from "../../../../src/lib/history/types.js";
 let tmp: string;
 
 beforeEach(() => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-search-scope-"));
+	tmp = fs.mkdtempSync(
+		path.join(os.tmpdir(), "ai-cortex-history-search-scope-"),
+	);
 	vi.spyOn(os, "homedir").mockReturnValue(tmp);
 	delete process.env.AI_CORTEX_SESSION_ID;
 });

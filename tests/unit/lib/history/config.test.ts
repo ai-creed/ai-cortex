@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isHistoryEnabled, getRawRetentionDays, getHistoryDisabledFlagPath } from "../../../../src/lib/history/config.js";
+import {
+	isHistoryEnabled,
+	getRawRetentionDays,
+	getHistoryDisabledFlagPath,
+} from "../../../../src/lib/history/config.js";
 
 let tmp: string;
 
@@ -33,13 +37,17 @@ describe("isHistoryEnabled", () => {
 	});
 
 	it("returns false when flag file present and env unset", () => {
-		fs.mkdirSync(path.dirname(getHistoryDisabledFlagPath()), { recursive: true });
+		fs.mkdirSync(path.dirname(getHistoryDisabledFlagPath()), {
+			recursive: true,
+		});
 		fs.writeFileSync(getHistoryDisabledFlagPath(), "");
 		expect(isHistoryEnabled()).toBe(false);
 	});
 
 	it("env var overrides flag file", () => {
-		fs.mkdirSync(path.dirname(getHistoryDisabledFlagPath()), { recursive: true });
+		fs.mkdirSync(path.dirname(getHistoryDisabledFlagPath()), {
+			recursive: true,
+		});
 		fs.writeFileSync(getHistoryDisabledFlagPath(), "");
 		process.env.AI_CORTEX_HISTORY = "1";
 		expect(isHistoryEnabled()).toBe(true);

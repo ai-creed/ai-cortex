@@ -51,17 +51,17 @@ Extract a single shared coordinator function:
 // src/lib/cache-coordinator.ts
 
 export type CacheResolutionOptions = {
-  stale?: boolean;
+	stale?: boolean;
 };
 
 export type CacheResolutionResult = {
-  cache: RepoCache;
-  cacheStatus: "fresh" | "reindexed" | "stale";
+	cache: RepoCache;
+	cacheStatus: "fresh" | "reindexed" | "stale";
 };
 
 export async function resolveCacheWithFreshness(
-  identity: RepoIdentity,
-  options: CacheResolutionOptions,
+	identity: RepoIdentity,
+	options: CacheResolutionOptions,
 ): Promise<CacheResolutionResult>;
 ```
 
@@ -73,11 +73,11 @@ Logic inside `resolveCacheWithFreshness` is the exact logic currently duplicated
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `src/lib/cache-coordinator.ts` | **new** — shared cache freshness logic |
-| `src/lib/suggest.ts` | remove inline cache block, call coordinator |
-| `src/lib/rehydrate.ts` | remove inline cache block, call coordinator |
+| File                           | Change                                      |
+| ------------------------------ | ------------------------------------------- |
+| `src/lib/cache-coordinator.ts` | **new** — shared cache freshness logic      |
+| `src/lib/suggest.ts`           | remove inline cache block, call coordinator |
+| `src/lib/rehydrate.ts`         | remove inline cache block, call coordinator |
 
 ### Testing
 
@@ -152,18 +152,20 @@ any drift a CI failure:
 ```ts
 // tests/unit/mcp/server.test.ts (new case)
 it("SERVER_VERSION matches package.json", () => {
-  const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")) as { version: string };
-  expect(capturedServerVersion).toBe(pkg.version);
+	const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
+		version: string;
+	};
+	expect(capturedServerVersion).toBe(pkg.version);
 });
 ```
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `src/version.ts` | **new** — exports `VERSION` literal |
-| `src/mcp/server.ts` | replace hardcoded `SERVER_VERSION` with import from `../version.js` |
-| `tests/unit/mcp/server.test.ts` | add version-sync assertion |
+| File                            | Change                                                              |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `src/version.ts`                | **new** — exports `VERSION` literal                                 |
+| `src/mcp/server.ts`             | replace hardcoded `SERVER_VERSION` with import from `../version.js` |
+| `tests/unit/mcp/server.test.ts` | add version-sync assertion                                          |
 
 ---
 
@@ -191,8 +193,8 @@ consumers:
 type FileContentMap = Map<string, string>; // relative path → utf-8 content
 
 function readFileContents(
-  worktreePath: string,
-  filePaths: string[],
+	worktreePath: string,
+	filePaths: string[],
 ): FileContentMap;
 ```
 
@@ -203,12 +205,13 @@ and `extractCallGraph`.
 Each consumer function gains an optional overload that accepts pre-read content:
 
 **`import-graph.ts`:**
+
 ```ts
 export async function extractImports(
-  worktreePath: string,
-  filePaths: string[],
-  allFilePaths: string[],
-  contentMap?: FileContentMap,  // new optional param
+	worktreePath: string,
+	filePaths: string[],
+	allFilePaths: string[],
+	contentMap?: FileContentMap, // new optional param
 ): Promise<ImportEdge[]>;
 ```
 
@@ -218,6 +221,7 @@ backward compatibility for any external callers and for `buildIncrementalIndex`,
 only re-parses changed files and benefits less from pre-reading.
 
 **`call-graph.ts`:**
+
 ```ts
 export async function extractCallGraph(
   worktreePath: string,
@@ -229,11 +233,12 @@ export async function extractCallGraph(
 Same pattern.
 
 **`diff-files.ts` (`hashFileContent`):**
+
 ```ts
 export function hashFileContent(
-  worktreePath: string,
-  filePath: string,
-  content?: string,  // new optional param
+	worktreePath: string,
+	filePath: string,
+	content?: string, // new optional param
 ): string;
 ```
 
@@ -243,25 +248,30 @@ When `content` is provided, hashing skips the file read.
 
 ```ts
 export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
-  const filePaths = listIndexableFiles(identity.worktreePath);
-  const contentMap = readFileContents(identity.worktreePath, filePaths);
+	const filePaths = listIndexableFiles(identity.worktreePath);
+	const contentMap = readFileContents(identity.worktreePath, filePaths);
 
-  const packageMeta = readPackageMeta(identity.worktreePath);
-  const entryFiles = pickEntryFiles(filePaths, packageMeta);
-  const docs = loadDocs(identity.worktreePath, filePaths);
-  const imports = await extractImports(identity.worktreePath, filePaths, filePaths, contentMap);
-  const fingerprint = buildRepoFingerprint(identity.worktreePath);
-  const files = filePaths.map((p) => ({
-    path: p,
-    kind: "file" as const,
-    contentHash: hashFileContent(identity.worktreePath, p, contentMap.get(p)),
-  }));
-  const { calls, functions: functionNodes } = await extractCallGraph(
-    identity.worktreePath,
-    filePaths,
-    contentMap,
-  );
-  // ... rest unchanged
+	const packageMeta = readPackageMeta(identity.worktreePath);
+	const entryFiles = pickEntryFiles(filePaths, packageMeta);
+	const docs = loadDocs(identity.worktreePath, filePaths);
+	const imports = await extractImports(
+		identity.worktreePath,
+		filePaths,
+		filePaths,
+		contentMap,
+	);
+	const fingerprint = buildRepoFingerprint(identity.worktreePath);
+	const files = filePaths.map((p) => ({
+		path: p,
+		kind: "file" as const,
+		contentHash: hashFileContent(identity.worktreePath, p, contentMap.get(p)),
+	}));
+	const { calls, functions: functionNodes } = await extractCallGraph(
+		identity.worktreePath,
+		filePaths,
+		contentMap,
+	);
+	// ... rest unchanged
 }
 ```
 
@@ -271,12 +281,12 @@ minimal gain.
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `src/lib/indexer.ts` | `readFileContents`, pass `contentMap` to consumers |
+| File                      | Change                                                |
+| ------------------------- | ----------------------------------------------------- |
+| `src/lib/indexer.ts`      | `readFileContents`, pass `contentMap` to consumers    |
 | `src/lib/import-graph.ts` | optional `contentMap` param; skip reads when provided |
-| `src/lib/call-graph.ts` | optional `contentMap` param; skip reads when provided |
-| `src/lib/diff-files.ts` | optional `content` param on `hashFileContent` |
+| `src/lib/call-graph.ts`   | optional `contentMap` param; skip reads when provided |
+| `src/lib/diff-files.ts`   | optional `content` param on `hashFileContent`         |
 
 ### Testing
 
@@ -312,18 +322,18 @@ exercises the same code paths. Add one new unit test per module confirming that 
 
 ## File Change Summary
 
-| File | Change |
-|------|--------|
-| `src/lib/cache-coordinator.ts` | **new** |
-| `src/version.ts` | **new** — exports `VERSION` literal |
-| `src/lib/suggest.ts` | remove inline cache block, call coordinator |
-| `src/lib/rehydrate.ts` | remove inline cache block, call coordinator |
-| `src/mcp/server.ts` | import `SERVER_VERSION` from `../version.js` |
-| `src/lib/indexer.ts` | `readFileContents`, pass `contentMap` |
-| `src/lib/import-graph.ts` | optional `contentMap` param |
-| `src/lib/call-graph.ts` | optional `contentMap` param |
-| `src/lib/diff-files.ts` | optional `content` param on `hashFileContent` |
-| `tests/unit/lib/cache-coordinator.test.ts` | **new** |
-| `tests/unit/mcp/server.test.ts` | version-sync assertion |
+| File                                       | Change                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| `src/lib/cache-coordinator.ts`             | **new**                                       |
+| `src/version.ts`                           | **new** — exports `VERSION` literal           |
+| `src/lib/suggest.ts`                       | remove inline cache block, call coordinator   |
+| `src/lib/rehydrate.ts`                     | remove inline cache block, call coordinator   |
+| `src/mcp/server.ts`                        | import `SERVER_VERSION` from `../version.js`  |
+| `src/lib/indexer.ts`                       | `readFileContents`, pass `contentMap`         |
+| `src/lib/import-graph.ts`                  | optional `contentMap` param                   |
+| `src/lib/call-graph.ts`                    | optional `contentMap` param                   |
+| `src/lib/diff-files.ts`                    | optional `content` param on `hashFileContent` |
+| `tests/unit/lib/cache-coordinator.test.ts` | **new**                                       |
+| `tests/unit/mcp/server.test.ts`            | version-sync assertion                        |
 
 8 modified files, 3 new files. No new dependencies.

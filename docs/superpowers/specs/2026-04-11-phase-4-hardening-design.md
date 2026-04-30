@@ -92,9 +92,9 @@ section for details.
 
 ```ts
 export type FileNode = {
-  path: string;
-  kind: "file" | "dir";
-  contentHash?: string;  // SHA-256 hex of file content
+	path: string;
+	kind: "file" | "dir";
+	contentHash?: string; // SHA-256 hex of file content
 };
 ```
 
@@ -111,8 +111,8 @@ on read (current `readCacheForWorktree` behavior handles this).
 
 ```ts
 export type RepoCache = {
-  // ... existing fields unchanged ...
-  dirtyAtIndex?: boolean;  // true when cache was built from a dirty worktree
+	// ... existing fields unchanged ...
+	dirtyAtIndex?: boolean; // true when cache was built from a dirty worktree
 };
 ```
 
@@ -140,20 +140,17 @@ Exports:
 
 ```ts
 export type FilesDiff = {
-  changed: string[];   // modified or added paths (relative to repo root)
-  removed: string[];   // paths in cache but gone from disk
-  method: "git-diff" | "hash-compare";
+	changed: string[]; // modified or added paths (relative to repo root)
+	removed: string[]; // paths in cache but gone from disk
+	method: "git-diff" | "hash-compare";
 };
 
 export function diffChangedFiles(
-  identity: RepoIdentity,
-  cached: RepoCache,
+	identity: RepoIdentity,
+	cached: RepoCache,
 ): FilesDiff;
 
-export function hashFileContent(
-  worktreePath: string,
-  filePath: string,
-): string;
+export function hashFileContent(worktreePath: string, filePath: string): string;
 ```
 
 ### Tier 1 — Git Diff + Hash Validation
@@ -215,10 +212,10 @@ Added to `indexer.ts`:
 
 ```ts
 export function buildIncrementalIndex(
-  identity: RepoIdentity,
-  existingCache: RepoCache,
-  diff: FilesDiff,
-  dirtyAtIndex: boolean,
+	identity: RepoIdentity,
+	existingCache: RepoCache,
+	diff: FilesDiff,
+	dirtyAtIndex: boolean,
 ): RepoCache;
 ```
 
@@ -396,6 +393,7 @@ Phase 5 should add tree-sitter-based function call graph (`CallEdge[]`) to
 cannot bridge task vocabulary to files whose paths don't share those terms.
 
 Phase 5 benefits from:
+
 - Phase 3 `suggest` command as consumer for call graph signals
 - Phase 4 incremental infrastructure for re-parsing only changed files
 
@@ -411,13 +409,13 @@ Reserve `calls?: CallEdge[]` on `RepoCache` when Phase 5 work begins.
 
 ## File Change Summary
 
-| File | Change |
-|------|--------|
-| `src/lib/models.ts` | `FileNode.contentHash`, `RepoCache.dirtyAtIndex`, `SCHEMA_VERSION` to `"2"` |
-| `src/lib/diff-files.ts` | **new** — changed-file detection |
-| `src/lib/indexer.ts` | `buildIncrementalIndex`, hash population in full index |
-| `src/lib/rehydrate.ts` | incremental path in staleness branch |
-| `tests/unit/lib/diff-files.test.ts` | **new** — diff-files unit tests |
-| `tests/unit/lib/indexer.test.ts` | additional incremental merge tests |
+| File                                | Change                                                                      |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `src/lib/models.ts`                 | `FileNode.contentHash`, `RepoCache.dirtyAtIndex`, `SCHEMA_VERSION` to `"2"` |
+| `src/lib/diff-files.ts`             | **new** — changed-file detection                                            |
+| `src/lib/indexer.ts`                | `buildIncrementalIndex`, hash population in full index                      |
+| `src/lib/rehydrate.ts`              | incremental path in staleness branch                                        |
+| `tests/unit/lib/diff-files.test.ts` | **new** — diff-files unit tests                                             |
+| `tests/unit/lib/indexer.test.ts`    | additional incremental merge tests                                          |
 
 4 modified files, 2 new files. No new dependencies.

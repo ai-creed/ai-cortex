@@ -4,7 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureSession } from "../../../../src/lib/history/capture.js";
-import { readSession, listSessions, readAllChunks, acquireLock, readChunkVectors } from "../../../../src/lib/history/store.js";
+import {
+	readSession,
+	listSessions,
+	readAllChunks,
+	acquireLock,
+	readChunkVectors,
+} from "../../../../src/lib/history/store.js";
 import { MODEL_NAME } from "../../../../src/lib/embed-provider.js";
 
 const FIXTURE = path.join(
@@ -30,7 +36,12 @@ afterEach(() => {
 
 describe("captureSession", () => {
 	it("creates a session record from the fixture transcript", async () => {
-		const result = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		const result = await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		expect(result).toEqual({ status: "captured", turnsProcessed: 8 });
 		const rec = await readSession("REPO", "s1");
 		expect(rec).not.toBeNull();
@@ -41,23 +52,43 @@ describe("captureSession", () => {
 	});
 
 	it("running twice on the same transcript is a no-op (idempotent)", async () => {
-		await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		const before = JSON.stringify(await readSession("REPO", "s1"));
-		const second = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		const second = await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		expect(second.status).toBe("up-to-date");
 		const after = JSON.stringify(await readSession("REPO", "s1"));
 		expect(after).toBe(before);
 	});
 
 	it("writes chunk text to chunks.jsonl", async () => {
-		await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		const chunks = await readAllChunks("REPO", "s1");
 		expect(chunks.length).toBeGreaterThan(0);
 	});
 
 	it("skips when lock is held by a live process", async () => {
 		await acquireLock("REPO", "s1");
-		const result = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		const result = await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		expect(result.status).toBe("skipped-locked");
 		expect(await listSessions("REPO")).toEqual([]);
 	});
@@ -65,7 +96,12 @@ describe("captureSession", () => {
 	it("returns 'disabled' status and writes nothing when history is disabled", async () => {
 		process.env.AI_CORTEX_HISTORY = "0";
 		try {
-			const result = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+			const result = await captureSession({
+				repoKey: "REPO",
+				sessionId: "s1",
+				transcriptPath: FIXTURE,
+				embed: false,
+			});
 			expect(result.status).toBe("disabled");
 			expect(await listSessions("REPO")).toEqual([]);
 		} finally {
@@ -74,10 +110,32 @@ describe("captureSession", () => {
 	});
 
 	it("re-runs when chunks.jsonl is missing despite lastProcessedTurn match (crash-resume)", async () => {
-		await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		// Simulate crash that left session.json but lost chunks.jsonl
-		fs.unlinkSync(path.join(tmp, ".cache", "ai-cortex", "v1", "REPO", "history", "sessions", "s1", "chunks.jsonl"));
-		const second = await captureSession({ repoKey: "REPO", sessionId: "s1", transcriptPath: FIXTURE, embed: false });
+		fs.unlinkSync(
+			path.join(
+				tmp,
+				".cache",
+				"ai-cortex",
+				"v1",
+				"REPO",
+				"history",
+				"sessions",
+				"s1",
+				"chunks.jsonl",
+			),
+		);
+		const second = await captureSession({
+			repoKey: "REPO",
+			sessionId: "s1",
+			transcriptPath: FIXTURE,
+			embed: false,
+		});
 		expect(second.status).toBe("captured"); // not "up-to-date" — completeness check forces re-run
 		expect((await readAllChunks("REPO", "s1")).length).toBeGreaterThan(0);
 	});
@@ -86,7 +144,12 @@ describe("captureSession", () => {
 describe("captureSession with embed:true", () => {
 	// First call downloads ~23 MB model — give it room.
 	it("writes vector index for chunks", { timeout: 120_000 }, async () => {
-		const result = await captureSession({ repoKey: "REPO", sessionId: "se", transcriptPath: FIXTURE, embed: true });
+		const result = await captureSession({
+			repoKey: "REPO",
+			sessionId: "se",
+			transcriptPath: FIXTURE,
+			embed: true,
+		});
 		expect(result.status).toBe("captured");
 		const vecs = await readChunkVectors("REPO", "se", MODEL_NAME);
 		expect(vecs).not.toBeNull();

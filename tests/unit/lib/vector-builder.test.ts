@@ -62,9 +62,12 @@ describe("buildVectorIndex", () => {
 	it("embeds all file-kind entries and returns a VectorIndex", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { buildVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { buildVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 		const cache = makeCache([
 			{ path: "src/a.ts", hash: "h1" },
 			{ path: "src/b.ts", hash: "h2" },
@@ -87,9 +90,12 @@ describe("buildVectorIndex", () => {
 	it("skips dir-kind entries", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { buildVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { buildVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 		const cache: RepoCache = {
 			...makeCache([{ path: "src/a.ts", hash: "h1" }]),
 			files: [
@@ -105,9 +111,12 @@ describe("buildVectorIndex", () => {
 	it("uses contentHash as entry hash, empty string when undefined", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { buildVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { buildVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 		const cache = makeCache([{ path: "src/a.ts" }]); // no hash
 
 		const index = await buildVectorIndex("/tmp/test-repo", cache);
@@ -123,9 +132,12 @@ describe("refreshVectorIndex", () => {
 	it("reuses existing vectors for unchanged files (same hash)", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { refreshVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { refreshVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 
 		const existingMatrix = new Float32Array(2 * EMBEDDING_DIM).fill(0.5);
 		const existing: VectorIndex = {
@@ -156,9 +168,12 @@ describe("refreshVectorIndex", () => {
 	it("re-embeds modified files (hash changed)", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { refreshVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { refreshVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 
 		const existingMatrix = new Float32Array(EMBEDDING_DIM).fill(0.5);
 		const existing: VectorIndex = {
@@ -183,9 +198,12 @@ describe("refreshVectorIndex", () => {
 	it("embeds new files not in existing index", async () => {
 		const { getProvider } = await import("../../../src/lib/embed-provider.js");
 		const embedFn = makeEmbedder();
-		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ embed: embedFn });
+		(getProvider as ReturnType<typeof vi.fn>).mockResolvedValue({
+			embed: embedFn,
+		});
 
-		const { refreshVectorIndex } = await import("../../../src/lib/vector-builder.js");
+		const { refreshVectorIndex } =
+			await import("../../../src/lib/vector-builder.js");
 
 		const existing: VectorIndex = {
 			meta: {

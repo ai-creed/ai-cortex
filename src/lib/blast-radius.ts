@@ -84,9 +84,13 @@ export function queryBlastRadius(
 
 	// Build tiers
 	const tiers: BlastTier[] = [];
-	for (const [h, hits] of [...hitsByHop.entries()].sort((a, b) => a[0] - b[0])) {
+	for (const [h, hits] of [...hitsByHop.entries()].sort(
+		(a, b) => a[0] - b[0],
+	)) {
 		const sorted = hits.sort(
-			(a, b) => a.file.localeCompare(b.file) || a.qualifiedName.localeCompare(b.qualifiedName),
+			(a, b) =>
+				a.file.localeCompare(b.file) ||
+				a.qualifiedName.localeCompare(b.qualifiedName),
 		);
 		tiers.push({
 			hop: h,

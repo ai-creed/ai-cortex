@@ -107,7 +107,10 @@ describe("rankSuggestionsDeep", () => {
 			truncated: false,
 			durationMs: 5,
 		});
-		const r = await rankSuggestionsDeep("right panel", cache, "/w", { limit: 5, poolSize: 5 });
+		const r = await rankSuggestionsDeep("right panel", cache, "/w", {
+			limit: 5,
+			poolSize: 5,
+		});
 		const hit = r.results.find((x) => x.path === "src/a.ts");
 		expect(hit?.contentHits?.[0].line).toBe(42);
 		spy.mockRestore();
@@ -124,7 +127,10 @@ describe("rankSuggestionsDeep", () => {
 			truncated: false,
 			durationMs: 1,
 		});
-		const r = await rankSuggestionsDeep("f", cache, "/w", { limit: 3, poolSize: 50 });
+		const r = await rankSuggestionsDeep("f", cache, "/w", {
+			limit: 3,
+			poolSize: 50,
+		});
 		expect(r.results.length).toBeLessThanOrEqual(3);
 		spy.mockRestore();
 	});
@@ -215,7 +221,10 @@ describe("rankSuggestionsDeep", () => {
 			truncated: true,
 			durationMs: 400,
 		});
-		const r = await rankSuggestionsDeep("a", cache, "/w", { limit: 5, poolSize: 5 });
+		const r = await rankSuggestionsDeep("a", cache, "/w", {
+			limit: 5,
+			poolSize: 5,
+		});
 		expect(r.contentScanTruncated).toBe(true);
 		spy.mockRestore();
 	});

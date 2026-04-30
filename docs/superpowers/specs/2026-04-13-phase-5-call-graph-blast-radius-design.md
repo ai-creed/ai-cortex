@@ -63,26 +63,26 @@ Why layered:
 ```typescript
 /** Function-level call edge extracted by tree-sitter */
 export type CallEdge = {
-  from: string;       // "src/lib/suggest.ts::rankFiles" (file::qualifiedName)
-  to: string;         // "src/lib/suggest-ranker.ts::Ranker.score" or "::unknownFn"
-  kind: "call" | "new" | "method";
+	from: string; // "src/lib/suggest.ts::rankFiles" (file::qualifiedName)
+	to: string; // "src/lib/suggest-ranker.ts::Ranker.score" or "::unknownFn"
+	kind: "call" | "new" | "method";
 };
 
 /** Function definition metadata */
 export type FunctionNode = {
-  qualifiedName: string;    // "rankFiles" or "Ranker.score" (Class.method for methods)
-  file: string;             // "src/lib/suggest.ts"
-  exported: boolean;        // visible outside module (named export or default)
-  isDefaultExport: boolean; // true if this is the file's default export
-  line: number;             // declaration line
+	qualifiedName: string; // "rankFiles" or "Ranker.score" (Class.method for methods)
+	file: string; // "src/lib/suggest.ts"
+	exported: boolean; // visible outside module (named export or default)
+	isDefaultExport: boolean; // true if this is the file's default export
+	line: number; // declaration line
 };
 
 /** Blast radius result for a single affected function */
 export type BlastHit = {
-  qualifiedName: string;  // "rankFiles" or "Ranker.score"
-  file: string;
-  hop: number;            // 1 = direct caller, 2+ = transitive
-  exported: boolean;
+	qualifiedName: string; // "rankFiles" or "Ranker.score"
+	file: string;
+	hop: number; // 1 = direct caller, 2+ = transitive
+	exported: boolean;
 };
 ```
 
@@ -96,9 +96,9 @@ The full edge key is `file::qualifiedName` (e.g.,
 
 ```typescript
 export type RepoCache = {
-  // ... existing fields unchanged ...
-  calls: CallEdge[];           // new — function-level call edges
-  functions: FunctionNode[];   // new — function definitions index
+	// ... existing fields unchanged ...
+	calls: CallEdge[]; // new — function-level call edges
+	functions: FunctionNode[]; // new — function definitions index
 };
 ```
 
@@ -114,35 +114,35 @@ reindex on next access.
 ```typescript
 /** Per-file extraction result from a language adapter */
 export type FileExtractionResult = {
-  functions: FunctionNode[];
-  /** Raw unresolved call edges — to field is raw callee token, not yet resolved */
-  rawCalls: RawCallSite[];
-  /** Import bindings needed for cross-file call resolution */
-  importBindings: ImportBinding[];
+	functions: FunctionNode[];
+	/** Raw unresolved call edges — to field is raw callee token, not yet resolved */
+	rawCalls: RawCallSite[];
+	/** Import bindings needed for cross-file call resolution */
+	importBindings: ImportBinding[];
 };
 
 /** Raw call site before resolution */
 export type RawCallSite = {
-  callerQualifiedName: string;  // "rankFiles" or "Ranker.score"
-  callerFile: string;
-  rawCallee: string;            // raw token as written: "foo", "bar.baz", "new Qux"
-  kind: "call" | "new" | "method";
+	callerQualifiedName: string; // "rankFiles" or "Ranker.score"
+	callerFile: string;
+	rawCallee: string; // raw token as written: "foo", "bar.baz", "new Qux"
+	kind: "call" | "new" | "method";
 };
 
 /** Binding from an import statement */
 export type ImportBinding = {
-  localName: string;      // name used in this file: "foo", "baz", "Bar", "utils"
-  importedName: string;   // original exported name: "foo", "foo", "default", "*"
-  fromSpecifier: string;  // relative specifier: "./bar"
-  bindingKind: "named" | "default" | "namespace";
+	localName: string; // name used in this file: "foo", "baz", "Bar", "utils"
+	importedName: string; // original exported name: "foo", "foo", "default", "*"
+	fromSpecifier: string; // relative specifier: "./bar"
+	bindingKind: "named" | "default" | "namespace";
 };
 
 export interface LangAdapter {
-  /** File extensions this adapter handles */
-  extensions: string[];
+	/** File extensions this adapter handles */
+	extensions: string[];
 
-  /** Extract functions, raw call sites, and import bindings from source */
-  extractFile(source: string, filePath: string): FileExtractionResult;
+	/** Extract functions, raw call sites, and import bindings from source */
+	extractFile(source: string, filePath: string): FileExtractionResult;
 }
 ```
 
@@ -180,14 +180,14 @@ Single adapter shipped. Handles `.ts`, `.tsx`, `.js`, `.jsx`. Uses
 
 **Function definitions extracted:**
 
-| Pattern | Example | `qualifiedName` | `exported` |
-|---------|---------|-----------------|-----------|
-| Function declaration | `function foo()` | `foo` | checks `export` keyword |
-| Arrow/function expression | `const foo = () =>` | `foo` | checks `export` keyword |
-| Class method | `class Foo { bar() {} }` | `Foo.bar` | true if class is exported |
-| Named default export | `export default function foo()` | `foo` | true |
-| Anonymous default export | `export default () => {}` | `default` | true |
-| Default-exported class | `export default class Foo {}` | `Foo` (methods: `Foo.bar`) | true |
+| Pattern                   | Example                         | `qualifiedName`            | `exported`                |
+| ------------------------- | ------------------------------- | -------------------------- | ------------------------- |
+| Function declaration      | `function foo()`                | `foo`                      | checks `export` keyword   |
+| Arrow/function expression | `const foo = () =>`             | `foo`                      | checks `export` keyword   |
+| Class method              | `class Foo { bar() {} }`        | `Foo.bar`                  | true if class is exported |
+| Named default export      | `export default function foo()` | `foo`                      | true                      |
+| Anonymous default export  | `export default () => {}`       | `default`                  | true                      |
+| Default-exported class    | `export default class Foo {}`   | `Foo` (methods: `Foo.bar`) | true                      |
 
 **Default export rules:** If the default export has a name (`function foo`,
 `class Foo`), `qualifiedName` uses that name — it's more useful for blast
@@ -202,13 +202,13 @@ follow normal `ClassName.method` format. This ensures resolution of
 The adapter extracts raw callee tokens exactly as written in source. No
 resolution happens in the adapter — that is `call-graph.ts`'s job.
 
-| Source pattern | `rawCallee` | `kind` |
-|---------------|-------------|--------|
-| `foo()` | `"foo"` | `"call"` |
-| `new Foo()` | `"Foo"` | `"new"` |
-| `obj.method()` | `"obj.method"` | `"method"` |
+| Source pattern    | `rawCallee`       | `kind`     |
+| ----------------- | ----------------- | ---------- |
+| `foo()`           | `"foo"`           | `"call"`   |
+| `new Foo()`       | `"Foo"`           | `"new"`    |
+| `obj.method()`    | `"obj.method"`    | `"method"` |
 | `utils.doThing()` | `"utils.doThing"` | `"method"` |
-| `this.bar()` | `"this.bar"` | `"method"` |
+| `this.bar()`      | `"this.bar"`      | `"method"` |
 
 The `rawCallee` preserves the full member expression. Resolution uses
 `ImportBinding[]` to determine if `obj` / `utils` is an import binding
@@ -217,12 +217,12 @@ resolved within the same class if the caller is a class method.
 
 **Import bindings extracted (via `ImportBinding`):**
 
-| Source pattern | `localName` | `importedName` | `bindingKind` |
-|---------------|------------|----------------|---------------|
-| `import { foo } from "./bar"` | `"foo"` | `"foo"` | `"named"` |
-| `import { foo as baz } from "./bar"` | `"baz"` | `"foo"` | `"named"` |
-| `import Bar from "./bar"` | `"Bar"` | `"default"` | `"default"` |
-| `import * as utils from "./bar"` | `"utils"` | `"*"` | `"namespace"` |
+| Source pattern                       | `localName` | `importedName` | `bindingKind` |
+| ------------------------------------ | ----------- | -------------- | ------------- |
+| `import { foo } from "./bar"`        | `"foo"`     | `"foo"`        | `"named"`     |
+| `import { foo as baz } from "./bar"` | `"baz"`     | `"foo"`        | `"named"`     |
+| `import Bar from "./bar"`            | `"Bar"`     | `"default"`    | `"default"`   |
+| `import * as utils from "./bar"`     | `"utils"`   | `"*"`          | `"namespace"` |
 
 **Known limitation and unresolved method format:** Method calls on variables
 (`obj.foo()`) where `obj` is not an import binding cannot be resolved to a
@@ -256,9 +256,9 @@ adapters. Produces `CallEdge[]` and `FunctionNode[]`.
 
 ```typescript
 export function extractCallGraph(
-  worktreePath: string,
-  filePaths: string[],
-  imports: ImportEdge[],
+	worktreePath: string,
+	filePaths: string[],
+	imports: ImportEdge[],
 ): { calls: CallEdge[]; functions: FunctionNode[] };
 ```
 
@@ -278,10 +278,10 @@ This is handled by `call-graph.ts`, not the adapter.
 
 ```typescript
 function resolveCallSites(
-  rawCalls: RawCallSite[],
-  allFunctions: FunctionNode[],
-  bindingsByFile: Map<string, ImportBinding[]>,
-  imports: ImportEdge[],
+	rawCalls: RawCallSite[],
+	allFunctions: FunctionNode[],
+	bindingsByFile: Map<string, ImportBinding[]>,
+	imports: ImportEdge[],
 ): CallEdge[];
 ```
 
@@ -299,7 +299,7 @@ function resolveCallSites(
      `targetFile::doThing`. If `qualifiedName` is the synthetic `"default"`
      (anonymous export), resolve to `targetFile::default`. This ensures
      `import Bar from "./baz"` where `baz` has `export default function
-     doThing()` resolves to `baz::doThing`, not `baz::default`.
+doThing()` resolves to `baz::doThing`, not `baz::default`.
    - **Namespace:** if `rawCallee` is `utils.foo` and `utils` is a namespace
      binding → target file from binding, target name is `foo` → resolve to
      `targetFile::foo`.
@@ -340,24 +340,24 @@ all callers organized by hop distance.
 
 ```typescript
 export function queryBlastRadius(
-  target: { qualifiedName: string; file: string },
-  calls: CallEdge[],
-  functions: FunctionNode[],
-  options?: { maxHops?: number },
+	target: { qualifiedName: string; file: string },
+	calls: CallEdge[],
+	functions: FunctionNode[],
+	options?: { maxHops?: number },
 ): BlastRadiusResult;
 
 export type BlastRadiusResult = {
-  target: { qualifiedName: string; file: string; exported: boolean };
-  totalAffected: number;
-  unresolvedEdges: number;
-  confidence: "full" | "partial";
-  tiers: BlastTier[];
+	target: { qualifiedName: string; file: string; exported: boolean };
+	totalAffected: number;
+	unresolvedEdges: number;
+	confidence: "full" | "partial";
+	tiers: BlastTier[];
 };
 
 export type BlastTier = {
-  hop: number;
-  label: string;               // "direct callers", "transitive callers (2 hops)", etc.
-  hits: BlastHit[];
+	hop: number;
+	label: string; // "direct callers", "transitive callers (2 hops)", etc.
+	hits: BlastHit[];
 };
 ```
 
@@ -428,31 +428,46 @@ server.tool(
 
 ```json
 {
-  "target": {
-    "qualifiedName": "rankFiles",
-    "file": "src/lib/suggest.ts",
-    "exported": true
-  },
-  "totalAffected": 8,
-  "unresolvedEdges": 2,
-  "confidence": "partial",
-  "tiers": [
-    {
-      "hop": 1,
-      "label": "direct callers",
-      "hits": [
-        { "qualifiedName": "suggestRepo", "file": "src/lib/suggest.ts", "exported": true, "hop": 1 },
-        { "qualifiedName": "handleSuggest", "file": "src/mcp/server.ts", "exported": false, "hop": 1 }
-      ]
-    },
-    {
-      "hop": 2,
-      "label": "transitive callers (2 hops)",
-      "hits": [
-        { "qualifiedName": "runCli", "file": "src/cli.ts", "exported": true, "hop": 2 }
-      ]
-    }
-  ]
+	"target": {
+		"qualifiedName": "rankFiles",
+		"file": "src/lib/suggest.ts",
+		"exported": true
+	},
+	"totalAffected": 8,
+	"unresolvedEdges": 2,
+	"confidence": "partial",
+	"tiers": [
+		{
+			"hop": 1,
+			"label": "direct callers",
+			"hits": [
+				{
+					"qualifiedName": "suggestRepo",
+					"file": "src/lib/suggest.ts",
+					"exported": true,
+					"hop": 1
+				},
+				{
+					"qualifiedName": "handleSuggest",
+					"file": "src/mcp/server.ts",
+					"exported": false,
+					"hop": 1
+				}
+			]
+		},
+		{
+			"hop": 2,
+			"label": "transitive callers (2 hops)",
+			"hits": [
+				{
+					"qualifiedName": "runCli",
+					"file": "src/cli.ts",
+					"exported": true,
+					"hop": 2
+				}
+			]
+		}
+	]
 }
 ```
 
@@ -470,22 +485,22 @@ Silent call graph integration into existing `suggest-ranker.ts` scoring.
 
 ### Existing Scoring (Unchanged)
 
-| Signal | Weight | Source |
-|--------|--------|--------|
-| Path token match | +5 per token | Phase 3 |
-| Entry file | +2 | Phase 3 |
-| Anchor file (exact match) | +6 | Phase 3 |
-| Same directory as anchor | +2 | Phase 3 |
-| Direct import target of anchor | +4 | Phase 3 |
-| Direct importer of anchor | +4 | Phase 3 |
+| Signal                         | Weight       | Source  |
+| ------------------------------ | ------------ | ------- |
+| Path token match               | +5 per token | Phase 3 |
+| Entry file                     | +2           | Phase 3 |
+| Anchor file (exact match)      | +6           | Phase 3 |
+| Same directory as anchor       | +2           | Phase 3 |
+| Direct import target of anchor | +4           | Phase 3 |
+| Direct importer of anchor      | +4           | Phase 3 |
 
 ### New Call Graph Signals
 
-| Signal | Weight | Rationale |
-|--------|--------|-----------|
-| Call-connected to anchor file | +3 | File has call edges to/from `--from` anchor. One logical step away — strong but weaker than direct name match |
-| Call-connected to top-scoring file | +2 | After initial scoring pass, files with call edges to/from current top-ranked file. Inferred relevance — two hops of inference |
-| High fan-in file | +1 | File contains functions with >5 direct callers. Small tiebreaker favoring hub code over leaf code |
+| Signal                             | Weight | Rationale                                                                                                                     |
+| ---------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Call-connected to anchor file      | +3     | File has call edges to/from `--from` anchor. One logical step away — strong but weaker than direct name match                 |
+| Call-connected to top-scoring file | +2     | After initial scoring pass, files with call edges to/from current top-ranked file. Inferred relevance — two hops of inference |
+| High fan-in file                   | +1     | File contains functions with >5 direct callers. Small tiebreaker favoring hub code over leaf code                             |
 
 ### Design Principles
 

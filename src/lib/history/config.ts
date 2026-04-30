@@ -7,7 +7,13 @@ const MAX_RAW_DAYS = 90;
 const MIN_RAW_DAYS = 0;
 
 export function getHistoryDisabledFlagPath(): string {
-	return path.join(os.homedir(), ".cache", "ai-cortex", "v1", "history-disabled");
+	return path.join(
+		os.homedir(),
+		".cache",
+		"ai-cortex",
+		"v1",
+		"history-disabled",
+	);
 }
 
 export function isHistoryEnabled(): boolean {

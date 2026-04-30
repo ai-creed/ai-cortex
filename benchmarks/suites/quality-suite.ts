@@ -55,8 +55,10 @@ async function runSuggestGoldenSets(
 		const returnedPaths = result.results.map((r) => r.path);
 
 		const hits = gs.expected.filter((e) => returnedPaths.includes(e));
-		const precision = returnedPaths.length > 0 ? hits.length / returnedPaths.length : 0;
-		const recall = gs.expected.length > 0 ? hits.length / gs.expected.length : 0;
+		const precision =
+			returnedPaths.length > 0 ? hits.length / returnedPaths.length : 0;
+		const recall =
+			gs.expected.length > 0 ? hits.length / gs.expected.length : 0;
 
 		results.push({
 			suite: "golden-set",
@@ -85,7 +87,11 @@ async function runBlastRadiusGoldenSets(
 		);
 
 		const allHits = result.tiers.flatMap((t) =>
-			t.hits.map((h) => ({ qualifiedName: h.qualifiedName, file: h.file, hop: t.hop })),
+			t.hits.map((h) => ({
+				qualifiedName: h.qualifiedName,
+				file: h.file,
+				hop: t.hop,
+			})),
 		);
 
 		let found = 0;
@@ -109,7 +115,8 @@ async function runBlastRadiusGoldenSets(
 			hitsExpected: gs.expectedHits.length,
 			confidence: result.confidence,
 			minConfidence: gs.minConfidence,
-			status: found === gs.expectedHits.length && confidenceOk ? "pass" : "fail",
+			status:
+				found === gs.expectedHits.length && confidenceOk ? "pass" : "fail",
 		});
 	}
 
@@ -160,7 +167,9 @@ export type QualitySuiteOptions = {
 	goldenSetsDir: string;
 };
 
-export async function runQualitySuite(options: QualitySuiteOptions): Promise<QualityResult[]> {
+export async function runQualitySuite(
+	options: QualitySuiteOptions,
+): Promise<QualityResult[]> {
 	const goldenSets = loadGoldenSets(options.goldenSetsDir);
 	const results: QualityResult[] = [];
 
@@ -168,8 +177,14 @@ export async function runQualitySuite(options: QualitySuiteOptions): Promise<Qua
 	const gitDir = path.join(options.syntheticRepoPath, ".git");
 	if (!fs.existsSync(gitDir)) {
 		process.stderr.write("  initializing synthetic repo git...\n");
-		execFileSync("git", ["init"], { cwd: options.syntheticRepoPath, stdio: "ignore" });
-		execFileSync("git", ["add", "."], { cwd: options.syntheticRepoPath, stdio: "ignore" });
+		execFileSync("git", ["init"], {
+			cwd: options.syntheticRepoPath,
+			stdio: "ignore",
+		});
+		execFileSync("git", ["add", "."], {
+			cwd: options.syntheticRepoPath,
+			stdio: "ignore",
+		});
 		execFileSync("git", ["commit", "-m", "initial"], {
 			cwd: options.syntheticRepoPath,
 			stdio: "ignore",

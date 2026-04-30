@@ -45,17 +45,17 @@ review-time benefit.
 
 ```ts
 export type RawImportSite = {
-  from: string;          // source file (repo-relative)
-  rawSpecifier: string;  // verbatim string from the source (for diagnostics)
-  candidate: string;     // includer-relative, normalized — not yet matched
-                         // against the repo file list (resolution happens
-                         // in import-graph.ts, not in the adapter)
+	from: string; // source file (repo-relative)
+	rawSpecifier: string; // verbatim string from the source (for diagnostics)
+	candidate: string; // includer-relative, normalized — not yet matched
+	// against the repo file list (resolution happens
+	// in import-graph.ts, not in the adapter)
 };
 
 export interface LangAdapter {
-  extensions: string[];
-  extractFile(source: string, filePath: string): FileExtractionResult;
-  extractImportSites(source: string, filePath: string): RawImportSite[]; // NEW
+	extensions: string[];
+	extractFile(source: string, filePath: string): FileExtractionResult;
+	extractImportSites(source: string, filePath: string): RawImportSite[]; // NEW
 }
 ```
 
@@ -101,11 +101,11 @@ fallback. No language knowledge in any other consumer.
 
 **1.4 `indexer.ts` filter generalization.**
 
-| Location | Before | After |
-|----------|--------|-------|
-| line 113 | `\.(ts\|tsx\|js\|jsx)$/.test(p)` | `isAdapterExt(p)` |
-| line 163 | `\.(ts\|tsx\|js\|jsx)$/.test(p)` | `isAdapterExt(p)` |
-| line 19 (`stripKnownExt`) | hardcoded TS regex | derived from registry, language-aware (see 1.5) |
+| Location                  | Before                           | After                                           |
+| ------------------------- | -------------------------------- | ----------------------------------------------- |
+| line 113                  | `\.(ts\|tsx\|js\|jsx)$/.test(p)` | `isAdapterExt(p)`                               |
+| line 163                  | `\.(ts\|tsx\|js\|jsx)$/.test(p)` | `isAdapterExt(p)`                               |
+| line 19 (`stripKnownExt`) | hardcoded TS regex               | derived from registry, language-aware (see 1.5) |
 
 Local variable `changedTsFiles` renamed to `changedAdapterFiles`.
 
@@ -131,12 +131,12 @@ Today `call-graph.ts:findTargetFile` strips known extensions and tries
 
 ```ts
 export type FunctionNode = {
-  qualifiedName: string;
-  file: string;
-  exported: boolean;
-  isDefaultExport: boolean;
-  line: number;
-  isDeclarationOnly?: boolean; // NEW — true for header-only C/C++ prototypes
+	qualifiedName: string;
+	file: string;
+	exported: boolean;
+	isDefaultExport: boolean;
+	line: number;
+	isDeclarationOnly?: boolean; // NEW — true for header-only C/C++ prototypes
 };
 ```
 
@@ -207,14 +207,14 @@ caching pattern used by `src/lib/adapters/typescript.ts`.
 
 **2.3 Function extraction.**
 
-| Tree-sitter node | Extracted as |
-|------------------|--------------|
-| `function_definition` (top-level) | `qualifiedName = name`, `exported = true` (default), `isDeclarationOnly = false` |
-| `function_definition` with `static` storage | `exported = false`, `isDeclarationOnly = false` |
-| `declaration` containing `function_declarator` (header decl, no body) | `qualifiedName = name`, `exported = true`, **`isDeclarationOnly = true`** — emitted so `suggest_files` can locate header-declared APIs, but excluded from call-resolution targets (2.6) |
-| C++ `function_definition` with `qualified_identifier` (e.g. `Foo::bar`) | `qualifiedName = "Foo::bar"` |
-| C++ `class_specifier` body method | `qualifiedName = "ClassName::methodName"` |
-| C++ `namespace_definition` enclosing | namespace prefix prepended: `Ns::Class::method`, including nested `a::b::c` |
+| Tree-sitter node                                                        | Extracted as                                                                                                                                                                            |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `function_definition` (top-level)                                       | `qualifiedName = name`, `exported = true` (default), `isDeclarationOnly = false`                                                                                                        |
+| `function_definition` with `static` storage                             | `exported = false`, `isDeclarationOnly = false`                                                                                                                                         |
+| `declaration` containing `function_declarator` (header decl, no body)   | `qualifiedName = name`, `exported = true`, **`isDeclarationOnly = true`** — emitted so `suggest_files` can locate header-declared APIs, but excluded from call-resolution targets (2.6) |
+| C++ `function_definition` with `qualified_identifier` (e.g. `Foo::bar`) | `qualifiedName = "Foo::bar"`                                                                                                                                                            |
+| C++ `class_specifier` body method                                       | `qualifiedName = "ClassName::methodName"`                                                                                                                                               |
+| C++ `namespace_definition` enclosing                                    | namespace prefix prepended: `Ns::Class::method`, including nested `a::b::c`                                                                                                             |
 
 `isDefaultExport` is always `false` for C/C++.
 
@@ -224,12 +224,12 @@ function nodes — they live in different files.
 
 **2.4 Raw call extraction.**
 
-| Node | Callee form | Kind |
-|------|-------------|------|
-| `call_expression` w/ `identifier` | bare name | `call` |
+| Node                                                                  | Callee form                                   | Kind     |
+| --------------------------------------------------------------------- | --------------------------------------------- | -------- |
+| `call_expression` w/ `identifier`                                     | bare name                                     | `call`   |
 | `call_expression` w/ `field_expression` (`obj.method`, `ptr->method`) | `obj.method` (treat `.` and `->` identically) | `method` |
-| `call_expression` w/ `qualified_identifier` (`Foo::bar()`) | `Foo::bar` | `call` |
-| `new_expression` (C++) | type name | `new` |
+| `call_expression` w/ `qualified_identifier` (`Foo::bar()`)            | `Foo::bar`                                    | `call`   |
+| `new_expression` (C++)                                                | type name                                     | `new`    |
 
 `findEnclosingFunction` walks up to the nearest `function_definition` and
 returns the qualified name (including class/namespace prefix) computed from
@@ -279,10 +279,10 @@ data source:
 
 ```ts
 export function resolveCallSites(
-  rawCalls: RawCallSite[],
-  allFunctions: FunctionNode[],
-  bindingsByFile: Map<string, ImportBinding[]>,
-  includesByFile: Map<string, ImportEdge[]>, // NEW — canonical edges from imports[]
+	rawCalls: RawCallSite[],
+	allFunctions: FunctionNode[],
+	bindingsByFile: Map<string, ImportBinding[]>,
+	includesByFile: Map<string, ImportEdge[]>, // NEW — canonical edges from imports[]
 ): CallEdge[];
 ```
 
@@ -463,6 +463,7 @@ once symbols and includes are indexed.
 **`tests/unit/lib/adapters/cfamily.test.ts`** — both grammars covered.
 
 C cases:
+
 1. Plain function `int foo(void) { return 0; }` → 1 fn `foo`, exported.
 2. `static int foo(void) { ... }` → exported = false.
 3. Header decl `int bar(void);` in `foo.h` + same-name def in `foo.c` →
@@ -474,15 +475,7 @@ C cases:
 6. Includes: `#include "foo.h"` → import edge; `#include <stdio.h>` → no
    edge.
 
-C++ cases:
-7. `namespace foo { void bar(){} }` → `qualifiedName = "foo::bar"`.
-8. Nested namespace `namespace a::b { void c(){} }` → `"a::b::c"`.
-9. Out-of-line method `void Foo::bar() {}` → `"Foo::bar"`.
-10. Inline method inside class body → `"Foo::bar"`.
-11. Template `template <typename T> T id(T x)` → `id`, no instantiation.
-12. `new Foo()` → raw call `kind: "new"`, callee `Foo`.
-13. Qualified call `Foo::bar()` → `kind: "call"`, callee `Foo::bar`.
-14. Operator overload `operator+` → recorded as literal `operator+`.
+C++ cases: 7. `namespace foo { void bar(){} }` → `qualifiedName = "foo::bar"`. 8. Nested namespace `namespace a::b { void c(){} }` → `"a::b::c"`. 9. Out-of-line method `void Foo::bar() {}` → `"Foo::bar"`. 10. Inline method inside class body → `"Foo::bar"`. 11. Template `template <typename T> T id(T x)` → `id`, no instantiation. 12. `new Foo()` → raw call `kind: "new"`, callee `Foo`. 13. Qualified call `Foo::bar()` → `kind: "call"`, callee `Foo::bar`. 14. Operator overload `operator+` → recorded as literal `operator+`.
 
 ### Integration Tests
 
@@ -523,7 +516,7 @@ using a `Class::method` to validate qualified-name flow through the resolver.
   C++ file → call to `foo` resolves to a `::foo` placeholder, not to
   either overload arbitrarily.
 - New test for blast_radius overload aggregation: query `(qualifiedName:
-  "Foo::bar", file: "x.cpp")` against a fixture with two `Foo::bar`
+"Foo::bar", file: "x.cpp")` against a fixture with two `Foo::bar`
   overloads called from distinct callers → result aggregates both
   callers and returns `overloadCount: 2`.
 

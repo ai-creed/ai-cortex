@@ -3,7 +3,10 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("api:error");
 
-export function handleError(err: unknown): { statusCode: number; message: string } {
+export function handleError(err: unknown): {
+	statusCode: number;
+	message: string;
+} {
 	if (err instanceof AppError) {
 		return { statusCode: err.statusCode, message: err.message };
 	}

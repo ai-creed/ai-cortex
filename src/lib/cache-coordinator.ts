@@ -22,7 +22,10 @@ export async function resolveCacheWithFreshness(
 	identity: RepoIdentity,
 	options: CacheResolutionOptions,
 ): Promise<CacheResolutionResult> {
-	const cached = await readCacheForWorktree(identity.repoKey, identity.worktreeKey);
+	const cached = await readCacheForWorktree(
+		identity.repoKey,
+		identity.worktreeKey,
+	);
 
 	if (!cached) {
 		const cache = await indexRepo(identity.worktreePath);
@@ -52,7 +55,12 @@ export async function resolveCacheWithFreshness(
 		forceHashCompare: dirtyReverted,
 	});
 	const isDirtyRefresh = dirty;
-	const cache = await buildIncrementalIndex(identity, cached, diff, isDirtyRefresh);
+	const cache = await buildIncrementalIndex(
+		identity,
+		cached,
+		diff,
+		isDirtyRefresh,
+	);
 	await writeCache(cache);
 	return { cache, cacheStatus: "reindexed" };
 }

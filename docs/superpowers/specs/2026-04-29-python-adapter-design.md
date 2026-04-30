@@ -15,14 +15,14 @@ Add Python (`.py`) support to ai-cortex's call-graph and import-graph pipelines,
 
 ### Files changed
 
-| File | Change |
-|------|--------|
-| `src/lib/adapters/python.ts` | New adapter, ~300 lines |
-| `src/lib/adapters/ensure.ts` | Register Python adapter alongside TS + cfamily |
-| `src/lib/import-graph.ts` | Add `"python"` lang branch, `discoverPythonPackageRoots`, Python `resolveSite` |
-| `src/lib/call-graph.ts` | Add `"python"` to `langOf`; add Python branch to `findTargetFile`; fix dotIndex same-file qualified lookup |
-| `package.json` | Add `tree-sitter-python` dep + `onlyBuiltDependencies` entry |
-| `README.md` | Update Known Limitations to list `.py` |
+| File                         | Change                                                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/lib/adapters/python.ts` | New adapter, ~300 lines                                                                                    |
+| `src/lib/adapters/ensure.ts` | Register Python adapter alongside TS + cfamily                                                             |
+| `src/lib/import-graph.ts`    | Add `"python"` lang branch, `discoverPythonPackageRoots`, Python `resolveSite`                             |
+| `src/lib/call-graph.ts`      | Add `"python"` to `langOf`; add Python branch to `findTargetFile`; fix dotIndex same-file qualified lookup |
+| `package.json`               | Add `tree-sitter-python` dep + `onlyBuiltDependencies` entry                                               |
+| `README.md`                  | Update Known Limitations to list `.py`                                                                     |
 
 No changes to `lang-adapter.ts`, `models.ts`, or `indexer.ts` (see note under Data Flow).
 
@@ -35,15 +35,16 @@ let pyParser: Parser | null = null;
 let initPromise: Promise<void> | null = null;
 
 async function initParser(): Promise<void> {
-  if (initPromise) return initPromise;
-  initPromise = (async () => {
-    const { Parser, Language } = await import("web-tree-sitter");
-    await Parser.init();
-    const grammarPath = require.resolve("tree-sitter-python/tree-sitter-python.wasm");
-    pyParser = new Parser();
-    pyParser.setLanguage(await Language.load(grammarPath));
-  })();
-  return initPromise;
+	if (initPromise) return initPromise;
+	initPromise = (async () => {
+		const { Parser, Language } = await import("web-tree-sitter");
+		await Parser.init();
+		const grammarPath =
+			require.resolve("tree-sitter-python/tree-sitter-python.wasm");
+		pyParser = new Parser();
+		pyParser.setLanguage(await Language.load(grammarPath));
+	})();
+	return initPromise;
 }
 ```
 
@@ -55,12 +56,12 @@ async function initParser(): Promise<void> {
 
 Walks `function_definition` and `decorated_definition` nodes. Tracks `className: string | null` when inside a `class_definition` body.
 
-| Source | `qualifiedName` | `exported` |
-|--------|----------------|------------|
-| Module-level `def foo` | `"foo"` | `true` |
-| `async def foo` | `"foo"` | `true` |
-| Class-level `def foo` in `class Bar` | `"Bar.foo"` | `true` |
-| `@decorator\ndef foo` (decorated_definition) | `"foo"` | `true` |
+| Source                                       | `qualifiedName` | `exported` |
+| -------------------------------------------- | --------------- | ---------- |
+| Module-level `def foo`                       | `"foo"`         | `true`     |
+| `async def foo`                              | `"foo"`         | `true`     |
+| Class-level `def foo` in `class Bar`         | `"Bar.foo"`     | `true`     |
+| `@decorator\ndef foo` (decorated_definition) | `"foo"`         | `true`     |
 
 `exported` is always `true` — Python has no explicit export keyword; all top-level names are importable. `isDeclarationOnly` is never set.
 
@@ -77,12 +78,12 @@ Walks `call` nodes. Two sub-cases:
 
 `importBindings` is the `FileExtractionResult.importBindings` field that `call-graph.ts` uses to resolve cross-file calls. The Python adapter populates it from every import statement:
 
-| Source | `importBindings` entry |
-|--------|----------------------|
-| `from .utils import helper` | `{ localName: "helper", importedName: "helper", fromSpecifier: "./utils", bindingKind: "named" }` |
-| `from .utils import helper as h` | `{ localName: "h", importedName: "helper", fromSpecifier: "./utils", bindingKind: "named" }` |
-| `from mypackage.utils import helper` | `{ localName: "helper", importedName: "helper", fromSpecifier: "mypackage/utils", bindingKind: "named" }` |
-| `import mypackage.utils as utils` | `{ localName: "utils", importedName: "utils", fromSpecifier: "mypackage/utils", bindingKind: "namespace" }` |
+| Source                               | `importBindings` entry                                                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `from .utils import helper`          | `{ localName: "helper", importedName: "helper", fromSpecifier: "./utils", bindingKind: "named" }`           |
+| `from .utils import helper as h`     | `{ localName: "h", importedName: "helper", fromSpecifier: "./utils", bindingKind: "named" }`                |
+| `from mypackage.utils import helper` | `{ localName: "helper", importedName: "helper", fromSpecifier: "mypackage/utils", bindingKind: "named" }`   |
+| `import mypackage.utils as utils`    | `{ localName: "utils", importedName: "utils", fromSpecifier: "mypackage/utils", bindingKind: "namespace" }` |
 
 `fromSpecifier` uses `/` notation (dots converted to slashes for absolute imports; `./` prefix kept for relative imports). `resolveSpecifier` in `call-graph.ts` then joins it with `path.dirname(callerFile)` to produce a repo-root-relative path for `findTargetFile` lookup.
 
@@ -92,12 +93,12 @@ Python has no default exports, so `bindingKind: "default"` is never emitted.
 
 Used by `import-graph.ts` to build the `ImportEdge[]` graph. Handles all three Python import forms:
 
-| Form | `rawSpecifier` | `candidate` |
-|------|---------------|-------------|
-| `import os.path` | `"os.path"` | `"os/path"` |
-| `from foo.bar import x` | `"foo.bar"` | `"foo/bar"` |
-| `from .utils import x` in `pkg/models.py` | `"./utils"` | `"pkg/utils"` (repo-root-relative via path.join) |
-| `from ..base import x` in `pkg/sub/models.py` | `"../base"` | `"pkg/base"` (repo-root-relative) |
+| Form                                          | `rawSpecifier` | `candidate`                                      |
+| --------------------------------------------- | -------------- | ------------------------------------------------ |
+| `import os.path`                              | `"os.path"`    | `"os/path"`                                      |
+| `from foo.bar import x`                       | `"foo.bar"`    | `"foo/bar"`                                      |
+| `from .utils import x` in `pkg/models.py`     | `"./utils"`    | `"pkg/utils"` (repo-root-relative via path.join) |
+| `from ..base import x` in `pkg/sub/models.py` | `"../base"`    | `"pkg/base"` (repo-root-relative)                |
 
 Relative candidates are resolved to repo-root-relative paths immediately in the adapter. Absolute candidates emit the dot-to-slash-converted path; `resolveSite` in `import-graph.ts` handles package-root prefixing.
 
@@ -122,20 +123,20 @@ The existing `resolveSite(candidate, allFilePaths, lang)` receives a 4th optiona
 
 ```ts
 function resolveSite(
-  candidate: string,
-  allFilePaths: Set<string>,
-  lang: "ts" | "cfamily" | "python" | "other",
-  packageRoots?: Set<string>,   // only used when lang === "python"
-): string | null
+	candidate: string,
+	allFilePaths: Set<string>,
+	lang: "ts" | "cfamily" | "python" | "other",
+	packageRoots?: Set<string>, // only used when lang === "python"
+): string | null;
 ```
 
 In `extractImports`, `packageRoots` is computed once before the per-file loop:
 
 ```ts
-const hasPy = filePaths.some(f => f.endsWith(".py"));
+const hasPy = filePaths.some((f) => f.endsWith(".py"));
 const packageRoots = hasPy
-  ? await discoverPythonPackageRoots(worktreePath, filePaths)
-  : undefined;
+	? await discoverPythonPackageRoots(worktreePath, filePaths)
+	: undefined;
 ```
 
 ### `resolveSite` Python branch
@@ -173,6 +174,7 @@ function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
 Three targeted changes — no structural modifications:
 
 **1. Add `"python"` to `langOf`** (same shape as in `import-graph.ts`):
+
 ```ts
 function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
   ...
@@ -189,26 +191,26 @@ Instead, leverage `includesByFile`, which already carries fully-resolved `.py` p
 
 ```ts
 function resolvePythonTargetFile(
-  fromSpecifier: string,
-  callerFile: string,
-  allFileNodes: Map<string, FunctionNode[]>,
-  includesByFile: Map<string, ImportEdge[]>,
+	fromSpecifier: string,
+	callerFile: string,
+	allFileNodes: Map<string, FunctionNode[]>,
+	includesByFile: Map<string, ImportEdge[]>,
 ): string | null {
-  const edges = includesByFile.get(callerFile) ?? [];
-  const specPy   = fromSpecifier + ".py";
-  const specInit = fromSpecifier + "/__init__.py";
-  const edge = edges.find(
-    (e) =>
-      e.to === specPy ||
-      e.to === specInit ||
-      e.to.endsWith("/" + specPy) ||
-      e.to.endsWith("/" + specInit),
-  );
-  if (edge) return edge.to;
-  // Fallback: direct probe for flat-layout cases where no import edge exists
-  if (allFileNodes.has(specPy))   return specPy;
-  if (allFileNodes.has(specInit)) return specInit;
-  return null;
+	const edges = includesByFile.get(callerFile) ?? [];
+	const specPy = fromSpecifier + ".py";
+	const specInit = fromSpecifier + "/__init__.py";
+	const edge = edges.find(
+		(e) =>
+			e.to === specPy ||
+			e.to === specInit ||
+			e.to.endsWith("/" + specPy) ||
+			e.to.endsWith("/" + specInit),
+	);
+	if (edge) return edge.to;
+	// Fallback: direct probe for flat-layout cases where no import edge exists
+	if (allFileNodes.has(specPy)) return specPy;
+	if (allFileNodes.has(specInit)) return specInit;
+	return null;
 }
 ```
 
@@ -223,15 +225,21 @@ In `resolveCallSites`, wherever the existing code calls `resolveSpecifier(bindin
 ```ts
 // Inside the dotIndex branch, before the current fallback:
 if (!resolved) {
-  const sameFileQual = pickUnique(funcsByFile.get(raw.callerFile)?.get(raw.rawCallee));
-  if (sameFileQual) {
-    edges.push({ from: fromKey, to: `${raw.callerFile}::${sameFileQual.qualifiedName}`, kind: raw.kind });
-    resolved = true;
-  }
+	const sameFileQual = pickUnique(
+		funcsByFile.get(raw.callerFile)?.get(raw.rawCallee),
+	);
+	if (sameFileQual) {
+		edges.push({
+			from: fromKey,
+			to: `${raw.callerFile}::${sameFileQual.qualifiedName}`,
+			kind: raw.kind,
+		});
+		resolved = true;
+	}
 }
 if (!resolved) {
-  edges.push({ from: fromKey, to: `::${member}`, kind: raw.kind });
-  resolved = true;
+	edges.push({ from: fromKey, to: `::${member}`, kind: raw.kind });
+	resolved = true;
 }
 ```
 
@@ -240,6 +248,7 @@ This benefits all languages (not Python-specific), and is placed immediately bef
 ### Why `indexer.ts` needs no changes
 
 The affected-caller invalidation at `indexer.ts:151` computes:
+
 ```ts
 const changedStripped = stripTsExt(changed);
 if (edge.to === changedStripped || ...)
@@ -251,13 +260,13 @@ if (edge.to === changedStripped || ...)
 
 ## Error Handling
 
-| Scenario | Behavior |
-|----------|----------|
-| Parse error in `.py` file | `extractFile` returns `{ functions: [], rawCalls: [], importBindings: [] }` — no throw |
-| WASM grammar load failure | `initParser()` rejects; `ensureAdapters()` propagates the rejection; the entire indexing call fails (not a graceful per-language skip — same behavior as TS/cfamily WASM failure) |
-| `pyproject.toml` read/parse error | `discoverPythonPackageRoots` catches, returns `new Set([""])` |
-| Malformed AST node | Skip that node, continue walk |
-| Absolute import that matches nothing | `resolveSite` returns `null`; edge dropped |
+| Scenario                             | Behavior                                                                                                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parse error in `.py` file            | `extractFile` returns `{ functions: [], rawCalls: [], importBindings: [] }` — no throw                                                                                            |
+| WASM grammar load failure            | `initParser()` rejects; `ensureAdapters()` propagates the rejection; the entire indexing call fails (not a graceful per-language skip — same behavior as TS/cfamily WASM failure) |
+| `pyproject.toml` read/parse error    | `discoverPythonPackageRoots` catches, returns `new Set([""])`                                                                                                                     |
+| Malformed AST node                   | Skip that node, continue walk                                                                                                                                                     |
+| Absolute import that matches nothing | `resolveSite` returns `null`; edge dropped                                                                                                                                        |
 
 ---
 
@@ -318,6 +327,7 @@ tests/fixtures/python-basic/
 ```
 
 Assertions:
+
 - Function extraction: `helper`, `Model.save`, `Model.finalize`, `run` all present with correct qualified names
 - `self.method()` same-file edge: `Model.save → Model.finalize` (dotIndex same-file qualified lookup)
 - Relative import call: `Model.finalize → mypackage/utils.py::helper` (via `resolvePythonTargetFile` + relative importBinding)

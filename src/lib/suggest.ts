@@ -57,12 +57,20 @@ export type SemanticSuggestResult = SuggestResultCommon & {
 	poolSize: number;
 };
 
-export type SuggestResult = FastSuggestResult | DeepSuggestResult | SemanticSuggestResult;
+export type SuggestResult =
+	| FastSuggestResult
+	| DeepSuggestResult
+	| SemanticSuggestResult;
 
-function normalizeFrom(value: string | undefined, cache: RepoCache): string | null {
+function normalizeFrom(
+	value: string | undefined,
+	cache: RepoCache,
+): string | null {
 	if (!value) return null;
 	const normalized = value.replace(/\\/g, "/").replace(/^\.?\//, "");
-	return cache.files.some((file) => file.path === normalized) ? normalized : null;
+	return cache.files.some((file) => file.path === normalized)
+		? normalized
+		: null;
 }
 
 export async function suggestRepo(
@@ -97,10 +105,15 @@ export async function suggestRepo(
 			options.mode !== "deep" &&
 			options.mode !== "semantic"
 		) {
-			throw new IndexError(`suggest mode must be 'fast', 'deep', or 'semantic' (got '${options.mode}')`);
+			throw new IndexError(
+				`suggest mode must be 'fast', 'deep', or 'semantic' (got '${options.mode}')`,
+			);
 		}
 
-		const { cache, cacheStatus } = await resolveCacheWithFreshness(identity, options);
+		const { cache, cacheStatus } = await resolveCacheWithFreshness(
+			identity,
+			options,
+		);
 
 		const from = normalizeFrom(options.from, cache);
 		const mode = options.mode ?? "fast";
@@ -124,15 +137,22 @@ export async function suggestRepo(
 		if (mode === "deep") {
 			// mode === "deep" — delegated to Task 9
 			const { rankSuggestionsDeep } = await import("./suggest-ranker-deep.js");
-			const deepResult = await rankSuggestionsDeep(task, cache, identity.worktreePath, {
-				from,
-				limit: options.limit,
-				poolSize: options.poolSize,
-				stale: cacheStatus === "stale",
-			});
+			const deepResult = await rankSuggestionsDeep(
+				task,
+				cache,
+				identity.worktreePath,
+				{
+					from,
+					limit: options.limit,
+					poolSize: options.poolSize,
+					stale: cacheStatus === "stale",
+				},
+			);
 			const results = options.verbose
 				? deepResult.results
-				: deepResult.results.map(({ trigramMatches: _trigramMatches, ...rest }) => rest);
+				: deepResult.results.map(
+						({ trigramMatches: _trigramMatches, ...rest }) => rest,
+					);
 			return {
 				mode: "deep",
 				cacheStatus,
@@ -147,11 +167,17 @@ export async function suggestRepo(
 		}
 
 		if (mode === "semantic") {
-			const { rankSuggestionsSemanticCore } = await import("./suggest-ranker-semantic.js");
-			const semanticResult = await rankSuggestionsSemanticCore(task, cache, identity.worktreePath, {
-				limit: options.limit,
-				stale: cacheStatus === "stale",
-			});
+			const { rankSuggestionsSemanticCore } =
+				await import("./suggest-ranker-semantic.js");
+			const semanticResult = await rankSuggestionsSemanticCore(
+				task,
+				cache,
+				identity.worktreePath,
+				{
+					limit: options.limit,
+					stale: cacheStatus === "stale",
+				},
+			);
 			return {
 				mode: "semantic" as const,
 				cacheStatus,

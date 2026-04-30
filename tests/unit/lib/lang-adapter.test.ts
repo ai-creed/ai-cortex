@@ -1,12 +1,22 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { registerAdapter, adapterForFile, clearAdapters, isAdapterExt, adapterExtensions } from "../../../src/lib/adapters/index.js";
+import {
+	registerAdapter,
+	adapterForFile,
+	clearAdapters,
+	isAdapterExt,
+	adapterExtensions,
+} from "../../../src/lib/adapters/index.js";
 import type { LanguageAdapter } from "../../../src/lib/lang-adapter.js";
 
 const stubAdapter: LanguageAdapter = {
 	extensions: [".ts", ".tsx"],
 	capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
 	extractImports: async () => [],
-	extractCallGraph: async () => ({ functions: [], rawCalls: [], importBindings: [] }),
+	extractCallGraph: async () => ({
+		functions: [],
+		rawCalls: [],
+		importBindings: [],
+	}),
 };
 
 describe("adapter registry", () => {
@@ -45,7 +55,11 @@ describe("registry helpers", () => {
 	it("isAdapterExt returns true for any registered extension", () => {
 		registerAdapter({
 			extensions: [".foo", ".bar"],
-			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			capabilities: {
+				importExtraction: true,
+				callGraph: false,
+				symbolIndex: false,
+			},
 			extractImports: async () => [],
 		});
 		expect(isAdapterExt("a.foo")).toBe(true);
@@ -57,12 +71,20 @@ describe("registry helpers", () => {
 	it("adapterExtensions returns the union of registered extensions", () => {
 		registerAdapter({
 			extensions: [".x"],
-			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			capabilities: {
+				importExtraction: true,
+				callGraph: false,
+				symbolIndex: false,
+			},
 			extractImports: async () => [],
 		});
 		registerAdapter({
 			extensions: [".y", ".z"],
-			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			capabilities: {
+				importExtraction: true,
+				callGraph: false,
+				symbolIndex: false,
+			},
 			extractImports: async () => [],
 		});
 		const exts = adapterExtensions();

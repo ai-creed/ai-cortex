@@ -6,6 +6,10 @@ const log = createLogger("seed");
 
 export function seedDatabase(): void {
 	log.info("Seeding database");
-	const user = createUser({ email: "test@test.com", passwordHash: "hash", name: "Test" });
+	const user = createUser({
+		email: "test@test.com",
+		passwordHash: "hash",
+		name: "Test",
+	});
 	createPost(user.id, "Hello World", "First post");
 }

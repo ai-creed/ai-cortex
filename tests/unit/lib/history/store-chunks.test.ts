@@ -2,7 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeAllChunks, getChunkText, readAllChunks, sessionDir } from "../../../../src/lib/history/store.js";
+import {
+	writeAllChunks,
+	getChunkText,
+	readAllChunks,
+	sessionDir,
+} from "../../../../src/lib/history/store.js";
 
 let tmp: string;
 
@@ -31,14 +36,21 @@ describe("writeAllChunks + getChunkText", () => {
 	});
 
 	it("overwrites existing file (full-file replace, not append)", async () => {
-		await writeAllChunks("REPO", "abc", [{ id: 0, text: "old" }, { id: 1, text: "stale" }]);
+		await writeAllChunks("REPO", "abc", [
+			{ id: 0, text: "old" },
+			{ id: 1, text: "stale" },
+		]);
 		await writeAllChunks("REPO", "abc", [{ id: 0, text: "new" }]);
-		expect(await readAllChunks("REPO", "abc")).toEqual([{ id: 0, text: "new" }]);
+		expect(await readAllChunks("REPO", "abc")).toEqual([
+			{ id: 0, text: "new" },
+		]);
 	});
 
 	it("uses temp+rename — no .tmp left behind", async () => {
 		await writeAllChunks("REPO", "abc", [{ id: 0, text: "x" }]);
-		const stragglers = fs.readdirSync(sessionDir("REPO", "abc")).filter((n) => n.endsWith(".tmp"));
+		const stragglers = fs
+			.readdirSync(sessionDir("REPO", "abc"))
+			.filter((n) => n.endsWith(".tmp"));
 		expect(stragglers).toEqual([]);
 	});
 

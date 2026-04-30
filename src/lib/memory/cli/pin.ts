@@ -9,8 +9,14 @@ function parsePinArgs(args: string[]): PinArgs {
 	let force = false;
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
-		if (a === "--force") { force = true; continue; }
-		if (!a.startsWith("--") && !id) { id = a; continue; }
+		if (a === "--force") {
+			force = true;
+			continue;
+		}
+		if (!a.startsWith("--") && !id) {
+			id = a;
+			continue;
+		}
 	}
 	if (!id) throw new Error("required: <id>");
 	return { id, force };
@@ -20,16 +26,22 @@ function parseUnpinArgs(args: string[]): UnpinArgs {
 	let id: string | undefined;
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
-		if (!a.startsWith("--") && !id) { id = a; continue; }
+		if (!a.startsWith("--") && !id) {
+			id = a;
+			continue;
+		}
 	}
 	if (!id) throw new Error("required: <id>");
 	return { id };
 }
 
-export async function runMemoryPin(args: string[], opts: {
-	repoKey: string;
-	stdout?: NodeJS.WriteStream;
-} = { repoKey: "" }): Promise<number> {
+export async function runMemoryPin(
+	args: string[],
+	opts: {
+		repoKey: string;
+		stdout?: NodeJS.WriteStream;
+	} = { repoKey: "" },
+): Promise<number> {
 	try {
 		const parsed = parsePinArgs(args);
 		const lc = await openLifecycle(opts.repoKey, { agentId: "cli-user" });
@@ -41,15 +53,20 @@ export async function runMemoryPin(args: string[], opts: {
 			lc.close();
 		}
 	} catch (err) {
-		process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
+		process.stderr.write(
+			(err instanceof Error ? err.message : String(err)) + "\n",
+		);
 		return 1;
 	}
 }
 
-export async function runMemoryUnpin(args: string[], opts: {
-	repoKey: string;
-	stdout?: NodeJS.WriteStream;
-} = { repoKey: "" }): Promise<number> {
+export async function runMemoryUnpin(
+	args: string[],
+	opts: {
+		repoKey: string;
+		stdout?: NodeJS.WriteStream;
+	} = { repoKey: "" },
+): Promise<number> {
 	try {
 		const parsed = parseUnpinArgs(args);
 		const lc = await openLifecycle(opts.repoKey, { agentId: "cli-user" });
@@ -61,7 +78,9 @@ export async function runMemoryUnpin(args: string[], opts: {
 			lc.close();
 		}
 	} catch (err) {
-		process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
+		process.stderr.write(
+			(err instanceof Error ? err.message : String(err)) + "\n",
+		);
 		return 1;
 	}
 }

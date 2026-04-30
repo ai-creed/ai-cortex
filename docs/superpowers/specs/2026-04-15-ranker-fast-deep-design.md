@@ -146,21 +146,21 @@ score(file) =
 
 ### Weights
 
-| Signal | Formula | Notes |
-|---|---|---|
-| Path tokens | `uniqueMatches × 5` | unchanged |
-| Function names | `sum over file's functions of (matches × (exported ? 3 : 1))`, capped at 12 | NEW |
-| Doc title | `matches × 8` | NEW weight; titles are strong |
-| Doc path | `matches × 5` | same as code path |
-| Doc body | `uniqueMatches × 2` (count once, not TF) | prevents body dominance |
-| Entry bonus | +2 | unchanged |
-| Anchor exact | +6 | unchanged |
-| Same directory as anchor | +2 | unchanged |
-| Direct import target | +4 | unchanged |
-| Direct importer | +4 | unchanged |
-| Call-connected to anchor | +3 | unchanged |
-| Fan-in > 5 | +1 | unchanged |
-| Call-connected to top-ranked (pass 2) | +2 | unchanged |
+| Signal                                | Formula                                                                     | Notes                         |
+| ------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- |
+| Path tokens                           | `uniqueMatches × 5`                                                         | unchanged                     |
+| Function names                        | `sum over file's functions of (matches × (exported ? 3 : 1))`, capped at 12 | NEW                           |
+| Doc title                             | `matches × 8`                                                               | NEW weight; titles are strong |
+| Doc path                              | `matches × 5`                                                               | same as code path             |
+| Doc body                              | `uniqueMatches × 2` (count once, not TF)                                    | prevents body dominance       |
+| Entry bonus                           | +2                                                                          | unchanged                     |
+| Anchor exact                          | +6                                                                          | unchanged                     |
+| Same directory as anchor              | +2                                                                          | unchanged                     |
+| Direct import target                  | +4                                                                          | unchanged                     |
+| Direct importer                       | +4                                                                          | unchanged                     |
+| Call-connected to anchor              | +3                                                                          | unchanged                     |
+| Fan-in > 5                            | +1                                                                          | unchanged                     |
+| Call-connected to top-ranked (pass 2) | +2                                                                          | unchanged                     |
 
 ### Function name scoring — cap rationale
 
@@ -192,13 +192,15 @@ Strict superset. Adds three capabilities on top of the fast result.
 Standard IR technique (Zoekt, `pg_trgm`, GitHub code search). Handles morphology and typos cheaply, pure JS, no deps.
 
 ```ts
-export function trigrams(s: string): Set<string>
-export function buildTrigramIndex(items: { id: string; tokens: string[] }[]): TrigramIndex
+export function trigrams(s: string): Set<string>;
+export function buildTrigramIndex(
+	items: { id: string; tokens: string[] }[],
+): TrigramIndex;
 export function trigramQuery(
-  idx: TrigramIndex,
-  query: string,
-  minOverlap?: number,
-): Map<string, { sim: number; matchedToken: string }>
+	idx: TrigramIndex,
+	query: string,
+	minOverlap?: number,
+): Map<string, { sim: number; matchedToken: string }>;
 ```
 
 - `id` = file path
@@ -220,6 +222,7 @@ Query-time grep over the top ~60 candidates from `fastResults ∪ trigramMatches
 > **Pool sizing (critical — addresses review finding #2).** The fast ranker today slices to the caller's `limit` at the end (`src/lib/suggest-ranker.ts` final `.slice(0, options.limit ?? 5)`). If the deep path simply called `rankSuggestions(task, cache, {limit: 5})`, content scan would only see 5 fast candidates and could not rescue near-miss files.
 >
 > **Fix:**
+>
 > - Add a `poolSize?: number` option to `rankSuggestions`. When set, the final slice honors `poolSize` **instead of** `limit`.
 > - `rankSuggestionsDeep` always calls fast with `poolSize = max(opts.poolSize ?? 60, opts.limit ?? 5)`, **regardless of the user-facing `limit`**.
 > - After trigram + content scan + rescore, deep slices to the caller's `limit` at the very end.
@@ -227,6 +230,7 @@ Query-time grep over the top ~60 candidates from `fastResults ∪ trigramMatches
 > This is the single most important implementation detail — call it out in code comments in both ranker files.
 
 > **Pool union rule (addresses review finding v1.3).** The content-scan candidate list is the **union** of:
+>
 > - (a) fast-ranker top entries (highest-score first) up to the remaining budget, and
 > - (b) trigram-only rescues sorted by their trigram-derived score, capped at `poolSize`.
 >
@@ -234,10 +238,10 @@ Query-time grep over the top ~60 candidates from `fastResults ∪ trigramMatches
 
 ```ts
 export function contentScan(
-  worktreePath: string,
-  filePaths: string[],
-  tokens: string[],
-): Map<string, ContentHit[]>
+	worktreePath: string,
+	filePaths: string[],
+	tokens: string[],
+): Map<string, ContentHit[]>;
 ```
 
 Catches symbols invisible to `functions[]`:
@@ -272,22 +276,22 @@ Reason strings compose across all signals:
 
 ```ts
 type DeepSuggestItem = SuggestItem & {
-  contentHits?: { line: number; snippet: string }[]   // up to 3
-  trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[]
-}
+	contentHits?: { line: number; snippet: string }[]; // up to 3
+	trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[];
+};
 ```
 
 Giving the agent concrete evidence (line numbers, snippets) makes the follow-up file read targeted rather than exploratory.
 
 ### 7.5 Latency budget
 
-| Stage | Target | Hard ceiling |
-|---|---|---|
-| Fast ranker (embedded) | <10ms | — |
-| Trigram index build | ~100ms | 200ms |
-| Trigram query | <20ms | — |
-| Content scan (60 files) | ~200ms | 400ms then abort |
-| **Total** | **~300ms** | **~700ms** |
+| Stage                   | Target     | Hard ceiling     |
+| ----------------------- | ---------- | ---------------- |
+| Fast ranker (embedded)  | <10ms      | —                |
+| Trigram index build     | ~100ms     | 200ms            |
+| Trigram query           | <20ms      | —                |
+| Content scan (60 files) | ~200ms     | 400ms then abort |
+| **Total**               | **~300ms** | **~700ms**       |
 
 Response includes `durationMs` so agents and users can observe actual cost.
 
@@ -306,6 +310,7 @@ Response includes `durationMs` so agents and users can observe actual cost.
 - **(c) Chosen:** Deep permits mixed behaviour — ranking uses cached graph/function data, snippets come from current disk — but surfaces the condition to the caller so the agent can reason about it.
 
 **Rule:**
+
 - When `stale:true` and `mode:"deep"`:
   - Content scan still runs against current disk.
   - Response sets `cacheStatus: "stale"` (as today) and adds `staleMixedEvidence: true` on deep responses.
@@ -358,19 +363,24 @@ The current handler uses the **deprecated** `server.tool(name, description, inpu
 
 ```ts
 server.registerTool(
-  "suggest_files",
-  {
-    description: "…",
-    inputSchema: { task: z.string().min(1), path: z.string().optional(), /* … */ },
-    outputSchema: FastSuggestResultSchema.shape,  // zod shape of FastSuggestResult
-  },
-  async (args) => {
-    const result = await suggestRepo(args.path ?? process.cwd(), args.task, { mode: "fast", /* … */ });
-    return {
-      content: [{ type: "text", text: renderFastTextOutput(result) }],
-      structuredContent: result,  // native structured channel
-    };
-  },
+	"suggest_files",
+	{
+		description: "…",
+		inputSchema: {
+			task: z.string().min(1),
+			path: z.string().optional() /* … */,
+		},
+		outputSchema: FastSuggestResultSchema.shape, // zod shape of FastSuggestResult
+	},
+	async (args) => {
+		const result = await suggestRepo(args.path ?? process.cwd(), args.task, {
+			mode: "fast" /* … */,
+		});
+		return {
+			content: [{ type: "text", text: renderFastTextOutput(result) }],
+			structuredContent: result, // native structured channel
+		};
+	},
 );
 ```
 
@@ -436,36 +446,36 @@ Result type is a **discriminated union on `mode`**. This gives typed callers a s
 ```ts
 // Base item — returned by fast mode.
 export type SuggestItem = {
-  path: string;
-  kind: "file" | "doc";
-  score: number;
-  reason: string;
+	path: string;
+	kind: "file" | "doc";
+	score: number;
+	reason: string;
 };
 
 // Deep item — strict superset of SuggestItem.
 export type DeepSuggestItem = SuggestItem & {
-  contentHits?: { line: number; snippet: string }[];     // up to 3 per file
-  trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[];
+	contentHits?: { line: number; snippet: string }[]; // up to 3 per file
+	trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[];
 };
 
 type SuggestResultCommon = {
-  cacheStatus: "fresh" | "reindexed" | "stale";
-  durationMs: number;
-  task: string;
-  from: string | null;
+	cacheStatus: "fresh" | "reindexed" | "stale";
+	durationMs: number;
+	task: string;
+	from: string | null;
 };
 
 export type FastSuggestResult = SuggestResultCommon & {
-  mode: "fast";
-  results: SuggestItem[];
+	mode: "fast";
+	results: SuggestItem[];
 };
 
 export type DeepSuggestResult = SuggestResultCommon & {
-  mode: "deep";
-  results: DeepSuggestItem[];
-  poolSize: number;                    // actual pool used
-  contentScanTruncated?: boolean;      // set when 400ms content-scan ceiling hit
-  staleMixedEvidence?: boolean;        // set when stale:true produced mixed cache+disk evidence (see §7.7)
+	mode: "deep";
+	results: DeepSuggestItem[];
+	poolSize: number; // actual pool used
+	contentScanTruncated?: boolean; // set when 400ms content-scan ceiling hit
+	staleMixedEvidence?: boolean; // set when stale:true produced mixed cache+disk evidence (see §7.7)
 };
 
 export type SuggestResult = FastSuggestResult | DeepSuggestResult;
@@ -475,7 +485,7 @@ Consumers narrow on `mode`:
 
 ```ts
 if (result.mode === "deep") {
-  // safe to read result.results[n].contentHits etc.
+	// safe to read result.results[n].contentHits etc.
 }
 ```
 
@@ -514,18 +524,18 @@ tests/integration/
 
 **`tokenize.test.ts`:**
 
-| Input | Expected |
-|---|---|
-| `CardView` | `[card, view, cardview]` |
-| `MyWorkPanel` | `[my, work, panel, myworkpanel]` |
-| `XMLParser` | `[xml, parser, xmlparser]` |
-| `my_work_panel` | `[my, work, panel, myworkpanel]` |
-| `src/features/MyWork/Card.tsx` | includes `my, work, card, features` |
-| `v2Api` | `[v2, api, v2api]` |
-| `a.b.c` | `[]` |
-| task=`card in my work panel` | `[card, work, panel]` |
-| path=`src/my/work.ts` | keeps `my, work` (no stopword filter) |
-| `CardCard` | `[card, cardcard]` |
+| Input                          | Expected                              |
+| ------------------------------ | ------------------------------------- |
+| `CardView`                     | `[card, view, cardview]`              |
+| `MyWorkPanel`                  | `[my, work, panel, myworkpanel]`      |
+| `XMLParser`                    | `[xml, parser, xmlparser]`            |
+| `my_work_panel`                | `[my, work, panel, myworkpanel]`      |
+| `src/features/MyWork/Card.tsx` | includes `my, work, card, features`   |
+| `v2Api`                        | `[v2, api, v2api]`                    |
+| `a.b.c`                        | `[]`                                  |
+| task=`card in my work panel`   | `[card, work, panel]`                 |
+| path=`src/my/work.ts`          | keeps `my, work` (no stopword filter) |
+| `CardCard`                     | `[card, cardcard]`                    |
 
 **`suggest-ranker.test.ts`** — extend existing:
 

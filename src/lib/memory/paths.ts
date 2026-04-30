@@ -26,7 +26,12 @@ export function extractorRunsDir(repoKey: string): string {
 	return path.join(memoryRootDir(repoKey), "extractor-runs");
 }
 
-export function memoryFilePath(repoKey: string, memoryId: string, location: "memories" | "trash"): string {
-	const dir = location === "memories" ? memoriesDir(repoKey) : trashDir(repoKey);
+export function memoryFilePath(
+	repoKey: string,
+	memoryId: string,
+	location: "memories" | "trash",
+): string {
+	const dir =
+		location === "memories" ? memoriesDir(repoKey) : trashDir(repoKey);
 	return path.join(dir, `${memoryId}.md`);
 }

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseMemoryMarkdown, serializeMemoryMarkdown, bodyExcerpt } from "../../../../src/lib/memory/markdown.js";
+import {
+	parseMemoryMarkdown,
+	serializeMemoryMarkdown,
+	bodyExcerpt,
+} from "../../../../src/lib/memory/markdown.js";
 import type { MemoryRecord } from "../../../../src/lib/memory/types.js";
 
 const sampleRecord: MemoryRecord = {
@@ -43,7 +47,9 @@ describe("parseMemoryMarkdown", () => {
 	});
 
 	it("rejects content without a frontmatter block", () => {
-		expect(() => parseMemoryMarkdown("no frontmatter here")).toThrow(/frontmatter/);
+		expect(() => parseMemoryMarkdown("no frontmatter here")).toThrow(
+			/frontmatter/,
+		);
 	});
 
 	it("rejects malformed YAML", () => {

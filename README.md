@@ -63,15 +63,15 @@ For Codex CLI setup, see [MANUAL.md](./MANUAL.md#setting-up-with-codex-cli).
 
 **Tools:**
 
-| Tool | When to call | What it returns |
-|------|-------------|-----------------|
-| `rehydrate_project` | Once at session start when working in a git repo | Markdown briefing: structure, key files, entry points, recent changes |
-| `suggest_files` | Before reading the codebase for a specific task | Ranked top-5 files with deep ranking (path + fn + call-graph + trigram + content scan) |
-| `suggest_files_deep` | When you need explicit `poolSize` control for tuning | Same as `suggest_files` plus configurable candidate pool size |
-| `suggest_files_semantic` | When keyword/graph ranking misses the conceptual or fuzzy match | Files ranked by sentence-embedding similarity (Xenova/all-MiniLM-L6-v2) |
-| `search_history` | When prior-session context (decisions, corrections, file paths) was lost to compaction | Hits across captured sessions, weighted by kind (corrections, user prompts, tool calls, file paths, summaries) |
-| `index_project` | After large structural changes to force a rebuild | Confirmation with file and doc counts |
-| `blast_radius` | Before modifying a function, to assess impact | Callers organized by hop distance (direct, transitive) with export visibility |
+| Tool                     | When to call                                                                           | What it returns                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `rehydrate_project`      | Once at session start when working in a git repo                                       | Markdown briefing: structure, key files, entry points, recent changes                                          |
+| `suggest_files`          | Before reading the codebase for a specific task                                        | Ranked top-5 files with deep ranking (path + fn + call-graph + trigram + content scan)                         |
+| `suggest_files_deep`     | When you need explicit `poolSize` control for tuning                                   | Same as `suggest_files` plus configurable candidate pool size                                                  |
+| `suggest_files_semantic` | When keyword/graph ranking misses the conceptual or fuzzy match                        | Files ranked by sentence-embedding similarity (Xenova/all-MiniLM-L6-v2)                                        |
+| `search_history`         | When prior-session context (decisions, corrections, file paths) was lost to compaction | Hits across captured sessions, weighted by kind (corrections, user prompts, tool calls, file paths, summaries) |
+| `index_project`          | After large structural changes to force a rebuild                                      | Confirmation with file and doc counts                                                                          |
+| `blast_radius`           | Before modifying a function, to assess impact                                          | Callers organized by hop distance (direct, transitive) with export visibility                                  |
 
 See [MANUAL.md](./MANUAL.md#mcp-server-integration) for full parameter reference.
 
@@ -118,22 +118,32 @@ See `ai-cortex memory --help` for all subcommands.
 ## Library API
 
 ```ts
-import { indexRepo, rehydrateRepo, suggestRepo, queryBlastRadius } from "ai-cortex";
+import {
+	indexRepo,
+	rehydrateRepo,
+	suggestRepo,
+	queryBlastRadius,
+} from "ai-cortex";
 
 const cache = await indexRepo("/path/to/repo");
 // cache.functions — all extracted functions with file + line
 // cache.calls     — directed call edges between functions
 
-const fast = await suggestRepo("/path/to/repo", "persistence layer", { mode: "fast" });
+const fast = await suggestRepo("/path/to/repo", "persistence layer", {
+	mode: "fast",
+});
 // { mode: "fast", task, from, cacheStatus, durationMs, results: [{ path, kind, score, reason }] }
 
-const deep = await suggestRepo("/path/to/repo", "persistence layer", { mode: "deep", poolSize: 60 });
+const deep = await suggestRepo("/path/to/repo", "persistence layer", {
+	mode: "deep",
+	poolSize: 60,
+});
 // { mode: "deep", ..., poolSize, results: [{ path, kind, score, reason, contentHits? }] }
 
 const blast = queryBlastRadius(
-  { qualifiedName: "myFunction", file: "src/lib/foo.ts" },
-  cache.calls,
-  cache.functions,
+	{ qualifiedName: "myFunction", file: "src/lib/foo.ts" },
+	cache.calls,
+	cache.functions,
 );
 // { target, totalAffected, confidence, tiers: [{ hop, label, hits }] }
 ```
@@ -166,7 +176,6 @@ CLI (src/cli.ts)           MCP Server (src/mcp/server.ts)
    (JSON, schema v3, per-repo keyed by path;
     history/ subdir holds captured sessions)
 ```
-
 
 ## Installation
 

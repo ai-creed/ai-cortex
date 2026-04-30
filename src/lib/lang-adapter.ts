@@ -41,8 +41,16 @@ export type RawCallData = {
 export type LanguageAdapter = {
 	extensions: string[];
 	capabilities: AdapterCapabilities;
-	extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]>;
-	extractCallGraph?(worktreePath: string, filePath: string, content?: string): Promise<RawCallData>;
+	extractImports(
+		worktreePath: string,
+		filePath: string,
+		content?: string,
+	): Promise<RawImportSite[]>;
+	extractCallGraph?(
+		worktreePath: string,
+		filePath: string,
+		content?: string,
+	): Promise<RawCallData>;
 };
 
 // Backward-compatible alias — existing code using LangAdapter continues to work.

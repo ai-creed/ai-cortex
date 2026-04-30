@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("node:child_process");
 
 import { execFileSync } from "node:child_process";
-import { checkStructural, computeFilesCorrect, getTouchedFiles } from "./verify.js";
+import {
+	checkStructural,
+	computeFilesCorrect,
+	getTouchedFiles,
+} from "./verify.js";
 
 const mockExec = vi.mocked(execFileSync);
 
@@ -26,7 +30,9 @@ describe("checkStructural", () => {
 	});
 
 	it("supports regex patterns", () => {
-		expect(checkStructural("slice(0, 3)", "slice\\(0,\\s*3\\)", true)).toBe(true);
+		expect(checkStructural("slice(0, 3)", "slice\\(0,\\s*3\\)", true)).toBe(
+			true,
+		);
 	});
 });
 
@@ -36,7 +42,9 @@ describe("computeFilesCorrect", () => {
 	});
 
 	it("returns 1/3 for partial overlap (Jaccard of {a,b} vs {a,c})", () => {
-		expect(computeFilesCorrect(["a.ts", "b.ts"], ["a.ts", "c.ts"])).toBeCloseTo(1 / 3);
+		expect(computeFilesCorrect(["a.ts", "b.ts"], ["a.ts", "c.ts"])).toBeCloseTo(
+			1 / 3,
+		);
 	});
 
 	it("returns 0 for no overlap", () => {
@@ -64,7 +72,11 @@ describe("getTouchedFiles", () => {
 			if (a[0] === "ls-files") return "src/new.ts";
 			return "";
 		}) as typeof execFileSync);
-		expect(getTouchedFiles("/repo")).toEqual(["src/foo.ts", "src/bar.ts", "src/new.ts"]);
+		expect(getTouchedFiles("/repo")).toEqual([
+			"src/foo.ts",
+			"src/bar.ts",
+			"src/new.ts",
+		]);
 	});
 
 	it("deduplicates files present in both git commands", () => {
@@ -81,10 +93,14 @@ describe("getTouchedFiles", () => {
 		mockExec.mockImplementation(((_cmd: unknown, args: unknown) => {
 			const a = args as string[];
 			if (a[0] === "diff") return "src/foo.ts";
-			if (a[0] === "ls-files") return "CLAUDE.md\ntests/unit/lib/briefing-eval.test.ts";
+			if (a[0] === "ls-files")
+				return "CLAUDE.md\ntests/unit/lib/briefing-eval.test.ts";
 			return "";
 		}) as typeof execFileSync);
-		const exclude = new Set(["CLAUDE.md", "tests/unit/lib/briefing-eval.test.ts"]);
+		const exclude = new Set([
+			"CLAUDE.md",
+			"tests/unit/lib/briefing-eval.test.ts",
+		]);
 		expect(getTouchedFiles("/repo", exclude)).toEqual(["src/foo.ts"]);
 	});
 

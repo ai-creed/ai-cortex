@@ -4,23 +4,33 @@ import { parseStreamJson } from "./metrics.js";
 
 const TOOL_READ = JSON.stringify({
 	type: "assistant",
-	message: { content: [{ type: "tool_use", name: "Read", id: "1", input: {} }] },
+	message: {
+		content: [{ type: "tool_use", name: "Read", id: "1", input: {} }],
+	},
 });
 const TOOL_GREP = JSON.stringify({
 	type: "assistant",
-	message: { content: [{ type: "tool_use", name: "Grep", id: "2", input: {} }] },
+	message: {
+		content: [{ type: "tool_use", name: "Grep", id: "2", input: {} }],
+	},
 });
 const TOOL_EDIT = JSON.stringify({
 	type: "assistant",
-	message: { content: [{ type: "tool_use", name: "Edit", id: "3", input: {} }] },
+	message: {
+		content: [{ type: "tool_use", name: "Edit", id: "3", input: {} }],
+	},
 });
 const TOOL_WRITE = JSON.stringify({
 	type: "assistant",
-	message: { content: [{ type: "tool_use", name: "Write", id: "4", input: {} }] },
+	message: {
+		content: [{ type: "tool_use", name: "Write", id: "4", input: {} }],
+	},
 });
 const TOOL_BASH = JSON.stringify({
 	type: "assistant",
-	message: { content: [{ type: "tool_use", name: "Bash", id: "5", input: {} }] },
+	message: {
+		content: [{ type: "tool_use", name: "Bash", id: "5", input: {} }],
+	},
 });
 const TEXT_BLOCK = JSON.stringify({
 	type: "assistant",
@@ -34,7 +44,9 @@ const RESULT_LINE = JSON.stringify({
 
 describe("parseStreamJson", () => {
 	it("counts exploration calls before first edit", () => {
-		const output = [TOOL_READ, TOOL_GREP, TOOL_BASH, TOOL_EDIT, TOOL_READ].join("\n");
+		const output = [TOOL_READ, TOOL_GREP, TOOL_BASH, TOOL_EDIT, TOOL_READ].join(
+			"\n",
+		);
 		const metrics = parseStreamJson(output);
 		expect(metrics.explorationCalls).toBe(3);
 		expect(metrics.totalToolCalls).toBe(5);

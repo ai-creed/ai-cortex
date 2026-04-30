@@ -4,7 +4,10 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { reconcileStore } from "../../../../src/lib/memory/reconcile.js";
-import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
+import {
+	openLifecycle,
+	createMemory,
+} from "../../../../src/lib/memory/lifecycle.js";
 import { writeMemoryFile } from "../../../../src/lib/memory/store.js";
 import { memoriesDir } from "../../../../src/lib/memory/paths.js";
 import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
@@ -17,17 +20,29 @@ beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-recon-"));
 	process.env.AI_CORTEX_CACHE_HOME = tmp;
 });
-afterEach(() => { delete process.env.AI_CORTEX_CACHE_HOME; });
+afterEach(() => {
+	delete process.env.AI_CORTEX_CACHE_HOME;
+});
 
 function makeRecord(id: string): MemoryRecord {
 	return {
 		frontmatter: {
-			id, type: "decision", status: "active", title: "T", version: 1,
-			createdAt: "2026-04-30T00:00:00.000Z", updatedAt: "2026-04-30T00:00:00.000Z",
-			source: "explicit", confidence: 1, pinned: false,
+			id,
+			type: "decision",
+			status: "active",
+			title: "T",
+			version: 1,
+			createdAt: "2026-04-30T00:00:00.000Z",
+			updatedAt: "2026-04-30T00:00:00.000Z",
+			source: "explicit",
+			confidence: 1,
+			pinned: false,
 			scope: { files: [], tags: [] },
-			provenance: [], supersedes: [], mergedInto: null,
-			deprecationReason: null, promotedFrom: [],
+			provenance: [],
+			supersedes: [],
+			mergedInto: null,
+			deprecationReason: null,
+			promotedFrom: [],
 		},
 		body: "## Rule\ntest body",
 	};
@@ -48,7 +63,11 @@ describe("reconcileStore", () => {
 		const idx = openMemoryIndex(repoKey);
 		expect(idx.getMemory("mem-2026-04-30-orphan-aaa111")).toBeDefined();
 		const audit = idx.auditRows("mem-2026-04-30-orphan-aaa111");
-		expect(audit.some(a => a.changeType === "reconcile" && a.reason === "adopted from disk")).toBe(true);
+		expect(
+			audit.some(
+				(a) => a.changeType === "reconcile" && a.reason === "adopted from disk",
+			),
+		).toBe(true);
 		idx.close();
 	}, 30_000);
 
@@ -56,14 +75,27 @@ describe("reconcileStore", () => {
 		// Insert a sqlite row without a corresponding .md file
 		const idx = openMemoryIndex(repoKey);
 		const phantomId = "mem-2026-04-30-phantom-bbb222";
-		idx.upsertMemory({
-			id: phantomId, type: "decision", status: "active", title: "Phantom", version: 1,
-			createdAt: "2026-04-30T00:00:00.000Z", updatedAt: "2026-04-30T00:00:00.000Z",
-			source: "explicit", confidence: 1, pinned: false,
-			scope: { files: [], tags: [] },
-			provenance: [], supersedes: [], mergedInto: null,
-			deprecationReason: null, promotedFrom: [],
-		}, { bodyHash: "fakehash", bodyExcerpt: "x", body: "x" });
+		idx.upsertMemory(
+			{
+				id: phantomId,
+				type: "decision",
+				status: "active",
+				title: "Phantom",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+			},
+			{ bodyHash: "fakehash", bodyExcerpt: "x", body: "x" },
+		);
 		idx.close();
 
 		const report = await reconcileStore(repoKey);
@@ -80,10 +112,15 @@ describe("reconcileStore", () => {
 		let id: string;
 		try {
 			id = await createMemory(lc, {
-				type: "decision", title: "Drifted", body: "## Rule\noriginal",
-				scope: { files: [], tags: [] }, source: "explicit",
+				type: "decision",
+				title: "Drifted",
+				body: "## Rule\noriginal",
+				scope: { files: [], tags: [] },
+				source: "explicit",
 			});
-		} finally { lc.close(); }
+		} finally {
+			lc.close();
+		}
 
 		// Directly modify the .md file without updating sqlite (simulates drift)
 		const mdPath = path.join(memoriesDir(repoKey), `${id}.md`);
@@ -96,7 +133,12 @@ describe("reconcileStore", () => {
 		// Verify hash was updated
 		const idx = openMemoryIndex(repoKey);
 		const row = idx.getMemory(id);
-		const newHash = crypto.createHash("sha256").update("Drifted").update("\n\n").update("## Rule\nmodified").digest("hex");
+		const newHash = crypto
+			.createHash("sha256")
+			.update("Drifted")
+			.update("\n\n")
+			.update("## Rule\nmodified")
+			.digest("hex");
 		expect(row?.body_hash).toBe(newHash);
 		idx.close();
 	}, 30_000);

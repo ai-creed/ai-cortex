@@ -1,15 +1,33 @@
 import crypto from "node:crypto";
 import fsSync from "node:fs/promises";
 import { generateMemoryId } from "./id.js";
-import { writeMemoryFile, readMemoryFile, purgeMemoryFile, moveToTrash, restoreFromTrash } from "./store.js";
+import {
+	writeMemoryFile,
+	readMemoryFile,
+	purgeMemoryFile,
+	moveToTrash,
+	restoreFromTrash,
+} from "./store.js";
 import { MemoryIndex, openMemoryIndex } from "./index.js";
 import { upsertMemoryVector } from "./embed.js";
-import { ensureRegistry, readRegistry, validateRegistration } from "./registry.js";
+import {
+	ensureRegistry,
+	readRegistry,
+	validateRegistration,
+} from "./registry.js";
 import type { TypeRegistry } from "./registry.js";
 import { bodyExcerpt, serializeMemoryMarkdown } from "./markdown.js";
 import { memoryRootDir, memoryFilePath } from "./paths.js";
 import { loadMemoryConfig } from "./config.js";
-import type { MemoryFrontmatter, MemoryRecord, MemorySource, MemoryStatus, AuditChangeType, MemoryEdgeType, ProvenanceEntry } from "./types.js";
+import type {
+	MemoryFrontmatter,
+	MemoryRecord,
+	MemorySource,
+	MemoryStatus,
+	AuditChangeType,
+	MemoryEdgeType,
+	ProvenanceEntry,
+} from "./types.js";
 
 export type LifecycleHandle = {
 	repoKey: string;
@@ -23,7 +41,10 @@ export type OpenLifecycleOptions = {
 	agentId?: string;
 };
 
-export async function openLifecycle(repoKey: string, options: OpenLifecycleOptions = {}): Promise<LifecycleHandle> {
+export async function openLifecycle(
+	repoKey: string,
+	options: OpenLifecycleOptions = {},
+): Promise<LifecycleHandle> {
 	await ensureRegistry(memoryRootDir(repoKey));
 	const registry = await readRegistry(memoryRootDir(repoKey));
 	const index = openMemoryIndex(repoKey);
@@ -32,22 +53,42 @@ export async function openLifecycle(repoKey: string, options: OpenLifecycleOptio
 		agentId: options.agentId ?? null,
 		index,
 		registry,
-		close() { index.close(); },
+		close() {
+			index.close();
+		},
 	};
 }
 
 function bodyHash(title: string, body: string): string {
-	return crypto.createHash("sha256").update(title).update("\n\n").update(body).digest("hex");
+	return crypto
+		.createHash("sha256")
+		.update(title)
+		.update("\n\n")
+		.update(body)
+		.digest("hex");
 }
 
-async function commit(lc: LifecycleHandle, record: MemoryRecord, audit: { changeType: AuditChangeType; prevBodyHash: string | null; prevBody: string | null; reason: string | null }): Promise<void> {
+async function commit(
+	lc: LifecycleHandle,
+	record: MemoryRecord,
+	audit: {
+		changeType: AuditChangeType;
+		prevBodyHash: string | null;
+		prevBody: string | null;
+		reason: string | null;
+	},
+): Promise<void> {
 	const hash = bodyHash(record.frontmatter.title, record.body);
 	const excerpt = bodyExcerpt(record.body);
 
 	await writeMemoryFile(lc.repoKey, record);
 
 	const tx = lc.index.rawDb().transaction(() => {
-		lc.index.upsertMemory(record.frontmatter, { bodyHash: hash, bodyExcerpt: excerpt, body: record.body });
+		lc.index.upsertMemory(record.frontmatter, {
+			bodyHash: hash,
+			bodyExcerpt: excerpt,
+			body: record.body,
+		});
 		lc.index.appendAudit({
 			memoryId: record.frontmatter.id,
 			version: record.frontmatter.version,
@@ -61,7 +102,13 @@ async function commit(lc: LifecycleHandle, record: MemoryRecord, audit: { change
 	});
 	tx();
 
-	await upsertMemoryVector(lc.repoKey, record.frontmatter.id, record.frontmatter.title, record.body, hash);
+	await upsertMemoryVector(
+		lc.repoKey,
+		record.frontmatter.id,
+		record.frontmatter.title,
+		record.body,
+		hash,
+	);
 }
 
 export type CreateMemoryInput = {
@@ -82,12 +129,23 @@ function generateUniqueMemoryId(lc: LifecycleHandle, title: string): string {
 		const candidate = generateMemoryId(title);
 		if (!lc.index.getMemory(candidate)) return candidate;
 	}
-	throw new Error(`failed to generate a unique memory id for title=${JSON.stringify(title)} after ${ID_COLLISION_MAX_ATTEMPTS} attempts`);
+	throw new Error(
+		`failed to generate a unique memory id for title=${JSON.stringify(title)} after ${ID_COLLISION_MAX_ATTEMPTS} attempts`,
+	);
 }
 
-export async function createMemory(lc: LifecycleHandle, input: CreateMemoryInput): Promise<string> {
-	const validation = validateRegistration(lc.registry, { type: input.type, typeFields: input.typeFields });
-	if (!validation.ok) throw new Error(`validation failed: ${(validation as { ok: false; errors: string[] }).errors.join("; ")}`);
+export async function createMemory(
+	lc: LifecycleHandle,
+	input: CreateMemoryInput,
+): Promise<string> {
+	const validation = validateRegistration(lc.registry, {
+		type: input.type,
+		typeFields: input.typeFields,
+	});
+	if (!validation.ok)
+		throw new Error(
+			`validation failed: ${(validation as { ok: false; errors: string[] }).errors.join("; ")}`,
+		);
 
 	const id = generateUniqueMemoryId(lc, input.title);
 	const now = new Date().toISOString();
@@ -96,19 +154,35 @@ export async function createMemory(lc: LifecycleHandle, input: CreateMemoryInput
 	const confidence = input.confidence ?? (isExtracted ? 0.5 : 1.0);
 
 	const fm: MemoryFrontmatter = {
-		id, type: input.type, status, title: input.title, version: 1,
-		createdAt: now, updatedAt: now,
-		source: input.source, confidence,
+		id,
+		type: input.type,
+		status,
+		title: input.title,
+		version: 1,
+		createdAt: now,
+		updatedAt: now,
+		source: input.source,
+		confidence,
 		pinned: input.pinned ?? false,
 		scope: { files: [...input.scope.files], tags: [...input.scope.tags] },
-		provenance: [], supersedes: [], mergedInto: null,
-		deprecationReason: null, promotedFrom: [],
+		provenance: [],
+		supersedes: [],
+		mergedInto: null,
+		deprecationReason: null,
+		promotedFrom: [],
 		typeFields: input.typeFields,
 	};
 
-	await commit(lc, { frontmatter: fm, body: input.body }, {
-		changeType: "create", prevBodyHash: null, prevBody: null, reason: null,
-	});
+	await commit(
+		lc,
+		{ frontmatter: fm, body: input.body },
+		{
+			changeType: "create",
+			prevBodyHash: null,
+			prevBody: null,
+			reason: null,
+		},
+	);
 
 	return id;
 }
@@ -121,7 +195,10 @@ export type UpdateMemoryInput = {
 	reason?: string;
 };
 
-async function loadCurrent(lc: LifecycleHandle, id: string): Promise<MemoryRecord> {
+async function loadCurrent(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<MemoryRecord> {
 	const row = lc.index.getMemory(id);
 	if (!row) throw new Error(`memory not found: ${id}`);
 	const location = row.status === "trashed" ? "trash" : "memories";
@@ -132,10 +209,16 @@ function shouldPreserveBody(lc: LifecycleHandle, type: string): boolean {
 	return lc.registry.types[type]?.auditPreserveBody === true;
 }
 
-export async function updateMemory(lc: LifecycleHandle, id: string, patch: UpdateMemoryInput): Promise<void> {
+export async function updateMemory(
+	lc: LifecycleHandle,
+	id: string,
+	patch: UpdateMemoryInput,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
-	const prevHash = (lc.index.getMemory(id)!).body_hash;
-	const prevBody = shouldPreserveBody(lc, current.frontmatter.type) ? current.body : null;
+	const prevHash = lc.index.getMemory(id)!.body_hash;
+	const prevBody = shouldPreserveBody(lc, current.frontmatter.type)
+		? current.body
+		: null;
 
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -157,7 +240,11 @@ export async function updateMemory(lc: LifecycleHandle, id: string, patch: Updat
 	});
 }
 
-export async function updateScope(lc: LifecycleHandle, id: string, scope: { files: string[]; tags: string[] }): Promise<void> {
+export async function updateScope(
+	lc: LifecycleHandle,
+	id: string,
+	scope: { files: string[]; tags: string[] },
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -176,10 +263,19 @@ export async function updateScope(lc: LifecycleHandle, id: string, scope: { file
 	});
 }
 
-export async function deprecateMemory(lc: LifecycleHandle, id: string, reason: string): Promise<void> {
+export async function deprecateMemory(
+	lc: LifecycleHandle,
+	id: string,
+	reason: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
-	if (current.frontmatter.status !== "active" && current.frontmatter.status !== "candidate") {
-		throw new Error(`cannot deprecate from status ${current.frontmatter.status}`);
+	if (
+		current.frontmatter.status !== "active" &&
+		current.frontmatter.status !== "candidate"
+	) {
+		throw new Error(
+			`cannot deprecate from status ${current.frontmatter.status}`,
+		);
 	}
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -199,10 +295,15 @@ export async function deprecateMemory(lc: LifecycleHandle, id: string, reason: s
 	});
 }
 
-export async function restoreMemory(lc: LifecycleHandle, id: string): Promise<void> {
+export async function restoreMemory(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	if (current.frontmatter.status !== "deprecated") {
-		throw new Error(`restoreMemory only from deprecated, not ${current.frontmatter.status}`);
+		throw new Error(
+			`restoreMemory only from deprecated, not ${current.frontmatter.status}`,
+		);
 	}
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -222,15 +323,30 @@ export async function restoreMemory(lc: LifecycleHandle, id: string): Promise<vo
 	});
 }
 
-export async function mergeMemories(lc: LifecycleHandle, srcId: string, dstId: string, mergedBody: string): Promise<void> {
+export async function mergeMemories(
+	lc: LifecycleHandle,
+	srcId: string,
+	dstId: string,
+	mergedBody: string,
+): Promise<void> {
 	if (srcId === dstId) throw new Error("cannot merge a memory into itself");
 	const src = await loadCurrent(lc, srcId);
 	const dst = await loadCurrent(lc, dstId);
-	if (src.frontmatter.status !== "active" && src.frontmatter.status !== "candidate") {
-		throw new Error(`merge source must be active/candidate, got ${src.frontmatter.status}`);
+	if (
+		src.frontmatter.status !== "active" &&
+		src.frontmatter.status !== "candidate"
+	) {
+		throw new Error(
+			`merge source must be active/candidate, got ${src.frontmatter.status}`,
+		);
 	}
-	if (dst.frontmatter.status !== "active" && dst.frontmatter.status !== "candidate") {
-		throw new Error(`merge destination must be active/candidate, got ${dst.frontmatter.status}`);
+	if (
+		dst.frontmatter.status !== "active" &&
+		dst.frontmatter.status !== "candidate"
+	) {
+		throw new Error(
+			`merge destination must be active/candidate, got ${dst.frontmatter.status}`,
+		);
 	}
 
 	const nextSrc: MemoryRecord = {
@@ -267,7 +383,11 @@ export async function mergeMemories(lc: LifecycleHandle, srcId: string, dstId: s
 	});
 }
 
-export async function trashMemory(lc: LifecycleHandle, id: string, reason: string): Promise<void> {
+export async function trashMemory(
+	lc: LifecycleHandle,
+	id: string,
+	reason: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	if (current.frontmatter.status === "trashed") {
 		throw new Error("memory is already trashed");
@@ -283,19 +403,33 @@ export async function trashMemory(lc: LifecycleHandle, id: string, reason: strin
 	const now = new Date().toISOString();
 
 	const tx = lc.index.rawDb().transaction(() => {
-		lc.index.rawDb().prepare("UPDATE memories SET status='trashed', version=?, updated_at=? WHERE id=?")
+		lc.index
+			.rawDb()
+			.prepare(
+				"UPDATE memories SET status='trashed', version=?, updated_at=? WHERE id=?",
+			)
 			.run(newVersion, now, id);
 		lc.index.appendAudit({
-			memoryId: id, version: newVersion, ts: now,
-			changeType: "trash", prevBodyHash: prevHash, prevBody: null,
-			reason, agentId: lc.agentId,
+			memoryId: id,
+			version: newVersion,
+			ts: now,
+			changeType: "trash",
+			prevBodyHash: prevHash,
+			prevBody: null,
+			reason,
+			agentId: lc.agentId,
 		});
 	});
 	tx();
 
 	// Rewrite .md in trash/ with updated frontmatter
 	const updated: MemoryRecord = {
-		frontmatter: { ...current.frontmatter, status: "trashed", version: newVersion, updatedAt: now },
+		frontmatter: {
+			...current.frontmatter,
+			status: "trashed",
+			version: newVersion,
+			updatedAt: now,
+		},
 		body: current.body,
 	};
 	const finalPath = memoryFilePath(lc.repoKey, id, "trash");
@@ -310,10 +444,15 @@ export async function trashMemory(lc: LifecycleHandle, id: string, reason: strin
 	await fsSync.rename(tmpPath, finalPath);
 }
 
-export async function untrashMemory(lc: LifecycleHandle, id: string): Promise<void> {
+export async function untrashMemory(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	if (current.frontmatter.status !== "trashed") {
-		throw new Error(`untrashMemory only from trashed, not ${current.frontmatter.status}`);
+		throw new Error(
+			`untrashMemory only from trashed, not ${current.frontmatter.status}`,
+		);
 	}
 
 	await restoreFromTrash(lc.repoKey, id);
@@ -322,18 +461,32 @@ export async function untrashMemory(lc: LifecycleHandle, id: string): Promise<vo
 	const now = new Date().toISOString();
 
 	const tx = lc.index.rawDb().transaction(() => {
-		lc.index.rawDb().prepare("UPDATE memories SET status='active', version=?, updated_at=? WHERE id=?")
+		lc.index
+			.rawDb()
+			.prepare(
+				"UPDATE memories SET status='active', version=?, updated_at=? WHERE id=?",
+			)
 			.run(newVersion, now, id);
 		lc.index.appendAudit({
-			memoryId: id, version: newVersion, ts: now,
-			changeType: "untrash", prevBodyHash: lc.index.getMemory(id)!.body_hash, prevBody: null,
-			reason: null, agentId: lc.agentId,
+			memoryId: id,
+			version: newVersion,
+			ts: now,
+			changeType: "untrash",
+			prevBodyHash: lc.index.getMemory(id)!.body_hash,
+			prevBody: null,
+			reason: null,
+			agentId: lc.agentId,
 		});
 	});
 	tx();
 
 	const next: MemoryRecord = {
-		frontmatter: { ...current.frontmatter, status: "active", version: newVersion, updatedAt: now },
+		frontmatter: {
+			...current.frontmatter,
+			status: "active",
+			version: newVersion,
+			updatedAt: now,
+		},
 		body: current.body,
 	};
 	await writeMemoryFile(lc.repoKey, next);
@@ -341,30 +494,69 @@ export async function untrashMemory(lc: LifecycleHandle, id: string): Promise<vo
 
 export type PurgeOptions = { redact?: boolean };
 
-export async function purgeMemory(lc: LifecycleHandle, id: string, reason: string, options: PurgeOptions = {}): Promise<void> {
+export async function purgeMemory(
+	lc: LifecycleHandle,
+	id: string,
+	reason: string,
+	options: PurgeOptions = {},
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
-	const location = current.frontmatter.status === "trashed" ? "trash" : "memories";
+	const location =
+		current.frontmatter.status === "trashed" ? "trash" : "memories";
 	const prevHash = lc.index.getMemory(id)!.body_hash;
 
 	if (!options.redact) {
 		const tx = lc.index.rawDb().transaction(() => {
 			lc.index.appendAudit({
-				memoryId: id, version: current.frontmatter.version + 1, ts: new Date().toISOString(),
-				changeType: "purge", prevBodyHash: prevHash, prevBody: null, reason, agentId: lc.agentId,
+				memoryId: id,
+				version: current.frontmatter.version + 1,
+				ts: new Date().toISOString(),
+				changeType: "purge",
+				prevBodyHash: prevHash,
+				prevBody: null,
+				reason,
+				agentId: lc.agentId,
 			});
-			lc.index.rawDb().prepare("DELETE FROM memory_fts WHERE memory_id=?").run(id);
-			lc.index.rawDb().prepare("UPDATE memories SET status='trashed', body_excerpt='<purged>' WHERE id=?").run(id);
+			lc.index
+				.rawDb()
+				.prepare("DELETE FROM memory_fts WHERE memory_id=?")
+				.run(id);
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET status='trashed', body_excerpt='<purged>' WHERE id=?",
+				)
+				.run(id);
 		});
 		tx();
 	} else {
 		const tx = lc.index.rawDb().transaction(() => {
-			lc.index.rawDb().prepare("UPDATE memory_audit SET prev_body=NULL, reason='<redacted>' WHERE memory_id=?").run(id);
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memory_audit SET prev_body=NULL, reason='<redacted>' WHERE memory_id=?",
+				)
+				.run(id);
 			lc.index.appendAudit({
-				memoryId: id, version: current.frontmatter.version + 1, ts: new Date().toISOString(),
-				changeType: "purge_redact", prevBodyHash: null, prevBody: null, reason: "<redacted>", agentId: lc.agentId,
+				memoryId: id,
+				version: current.frontmatter.version + 1,
+				ts: new Date().toISOString(),
+				changeType: "purge_redact",
+				prevBodyHash: null,
+				prevBody: null,
+				reason: "<redacted>",
+				agentId: lc.agentId,
 			});
-			lc.index.rawDb().prepare("UPDATE memories SET status='purged_redacted', title='<redacted>', body_excerpt='<redacted>' WHERE id=?").run(id);
-			lc.index.rawDb().prepare("DELETE FROM memory_fts WHERE memory_id=?").run(id);
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET status='purged_redacted', title='<redacted>', body_excerpt='<redacted>' WHERE id=?",
+				)
+				.run(id);
+			lc.index
+				.rawDb()
+				.prepare("DELETE FROM memory_fts WHERE memory_id=?")
+				.run(id);
 		});
 		tx();
 	}
@@ -374,38 +566,76 @@ export async function purgeMemory(lc: LifecycleHandle, id: string, reason: strin
 	await deleteMemoryVector(lc.repoKey, id);
 }
 
-const REL_TYPES: readonly MemoryEdgeType[] = ["supports", "contradicts", "refines", "depends_on"] as const;
+const REL_TYPES: readonly MemoryEdgeType[] = [
+	"supports",
+	"contradicts",
+	"refines",
+	"depends_on",
+] as const;
 
 function nextAuditVersion(lc: LifecycleHandle, id: string): number {
-	const row = lc.index.rawDb().prepare("SELECT MAX(version) AS v FROM memory_audit WHERE memory_id=?").get(id) as { v: number | null };
+	const row = lc.index
+		.rawDb()
+		.prepare("SELECT MAX(version) AS v FROM memory_audit WHERE memory_id=?")
+		.get(id) as { v: number | null };
 	return (row.v ?? 0) + 1;
 }
 
-export async function linkMemories(lc: LifecycleHandle, srcId: string, dstId: string, relType: MemoryEdgeType): Promise<void> {
-	if (srcId === dstId) throw new Error("cannot link a memory to itself (self-link)");
-	if (!REL_TYPES.includes(relType)) throw new Error(`unknown rel type: ${relType}`);
-	if (!lc.index.getMemory(srcId)) throw new Error(`source memory not found: ${srcId}`);
-	if (!lc.index.getMemory(dstId)) throw new Error(`destination memory not found: ${dstId}`);
+export async function linkMemories(
+	lc: LifecycleHandle,
+	srcId: string,
+	dstId: string,
+	relType: MemoryEdgeType,
+): Promise<void> {
+	if (srcId === dstId)
+		throw new Error("cannot link a memory to itself (self-link)");
+	if (!REL_TYPES.includes(relType))
+		throw new Error(`unknown rel type: ${relType}`);
+	if (!lc.index.getMemory(srcId))
+		throw new Error(`source memory not found: ${srcId}`);
+	if (!lc.index.getMemory(dstId))
+		throw new Error(`destination memory not found: ${dstId}`);
 
 	const tx = lc.index.rawDb().transaction(() => {
-		lc.index.addLink({ srcId, dstId, relType, createdAt: new Date().toISOString() });
+		lc.index.addLink({
+			srcId,
+			dstId,
+			relType,
+			createdAt: new Date().toISOString(),
+		});
 		lc.index.appendAudit({
-			memoryId: srcId, version: nextAuditVersion(lc, srcId), ts: new Date().toISOString(),
-			changeType: "link_add", prevBodyHash: null, prevBody: null,
-			reason: `${relType} → ${dstId}`, agentId: lc.agentId,
+			memoryId: srcId,
+			version: nextAuditVersion(lc, srcId),
+			ts: new Date().toISOString(),
+			changeType: "link_add",
+			prevBodyHash: null,
+			prevBody: null,
+			reason: `${relType} → ${dstId}`,
+			agentId: lc.agentId,
 		});
 	});
 	tx();
 }
 
-export async function unlinkMemories(lc: LifecycleHandle, srcId: string, dstId: string, relType: MemoryEdgeType): Promise<void> {
-	if (!REL_TYPES.includes(relType)) throw new Error(`unknown rel type: ${relType}`);
+export async function unlinkMemories(
+	lc: LifecycleHandle,
+	srcId: string,
+	dstId: string,
+	relType: MemoryEdgeType,
+): Promise<void> {
+	if (!REL_TYPES.includes(relType))
+		throw new Error(`unknown rel type: ${relType}`);
 	const tx = lc.index.rawDb().transaction(() => {
 		lc.index.removeLink(srcId, dstId, relType);
 		lc.index.appendAudit({
-			memoryId: srcId, version: nextAuditVersion(lc, srcId), ts: new Date().toISOString(),
-			changeType: "link_remove", prevBodyHash: null, prevBody: null,
-			reason: `${relType} → ${dstId}`, agentId: lc.agentId,
+			memoryId: srcId,
+			version: nextAuditVersion(lc, srcId),
+			ts: new Date().toISOString(),
+			changeType: "link_remove",
+			prevBodyHash: null,
+			prevBody: null,
+			reason: `${relType} → ${dstId}`,
+			agentId: lc.agentId,
 		});
 	});
 	tx();
@@ -413,13 +643,22 @@ export async function unlinkMemories(lc: LifecycleHandle, srcId: string, dstId: 
 
 export type PinOptions = { force?: boolean };
 
-export async function pinMemory(lc: LifecycleHandle, id: string, options: PinOptions = {}): Promise<void> {
+export async function pinMemory(
+	lc: LifecycleHandle,
+	id: string,
+	options: PinOptions = {},
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	if (!options.force) {
 		const cfg = await loadMemoryConfig(lc.repoKey);
-		const count = lc.index.rawDb().prepare("SELECT COUNT(*) AS c FROM memories WHERE pinned=1").get() as { c: number };
+		const count = lc.index
+			.rawDb()
+			.prepare("SELECT COUNT(*) AS c FROM memories WHERE pinned=1")
+			.get() as { c: number };
 		if (count.c >= cfg.injection.pinnedHardCap) {
-			throw new Error(`pinned hard cap reached (${cfg.injection.pinnedHardCap}); pass { force: true } to override`);
+			throw new Error(
+				`pinned hard cap reached (${cfg.injection.pinnedHardCap}); pass { force: true } to override`,
+			);
 		}
 	}
 	const next: MemoryRecord = {
@@ -439,7 +678,10 @@ export async function pinMemory(lc: LifecycleHandle, id: string, options: PinOpt
 	});
 }
 
-export async function unpinMemory(lc: LifecycleHandle, id: string): Promise<void> {
+export async function unpinMemory(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -458,10 +700,15 @@ export async function unpinMemory(lc: LifecycleHandle, id: string): Promise<void
 	});
 }
 
-export async function confirmMemory(lc: LifecycleHandle, id: string): Promise<void> {
+export async function confirmMemory(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	if (current.frontmatter.status !== "candidate") {
-		throw new Error(`confirmMemory only from candidate, not ${current.frontmatter.status}`);
+		throw new Error(
+			`confirmMemory only from candidate, not ${current.frontmatter.status}`,
+		);
 	}
 	const next: MemoryRecord = {
 		frontmatter: {
@@ -481,7 +728,11 @@ export async function confirmMemory(lc: LifecycleHandle, id: string): Promise<vo
 	});
 }
 
-export async function addEvidence(lc: LifecycleHandle, id: string, entry: ProvenanceEntry): Promise<void> {
+export async function addEvidence(
+	lc: LifecycleHandle,
+	id: string,
+	entry: ProvenanceEntry,
+): Promise<void> {
 	const current = await loadCurrent(lc, id);
 	const next: MemoryRecord = {
 		frontmatter: {

@@ -5,9 +5,16 @@ import { hashPassword } from "./crypto.js";
 
 const log = createLogger("oauth");
 
-export function handleOAuthCallback(provider: string, profile: { email: string; name: string }): { token: string } {
+export function handleOAuthCallback(
+	provider: string,
+	profile: { email: string; name: string },
+): { token: string } {
 	log.info(`OAuth callback from ${provider}`);
 	const passwordHash = hashPassword(profile.email + ":oauth");
-	const user = createUser({ email: profile.email, passwordHash, name: profile.name });
+	const user = createUser({
+		email: profile.email,
+		passwordHash,
+		name: profile.name,
+	});
 	return { token: generateToken(user.id) };
 }

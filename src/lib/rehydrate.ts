@@ -25,7 +25,10 @@ export async function rehydrateRepo(
 ): Promise<RehydrateResult> {
 	try {
 		const identity = resolveRepoIdentity(repoPath);
-		const { cache, cacheStatus } = await resolveCacheWithFreshness(identity, options ?? {});
+		const { cache, cacheStatus } = await resolveCacheWithFreshness(
+			identity,
+			options ?? {},
+		);
 
 		const briefing = renderBriefing(cache);
 		const pinned = await renderPinnedSection(identity.repoKey);
