@@ -4,7 +4,11 @@ import type { SessionRecord } from "../../../../src/lib/history/types.js";
 import { writeSession } from "../../../../src/lib/history/store.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 
-function mkSession(id: string, files: string[], prompts: string[]): SessionRecord {
+function mkSession(
+	id: string,
+	files: string[],
+	prompts: string[],
+): SessionRecord {
 	return {
 		version: 2,
 		id,
@@ -29,15 +33,24 @@ function mkSession(id: string, files: string[], prompts: string[]): SessionRecor
 
 describe("producePatternCandidates", () => {
 	let repoKey: string;
-	beforeEach(async () => { repoKey = await mkRepoKey("pattern"); });
-	afterEach(async () => { await cleanupRepo(repoKey); });
+	beforeEach(async () => {
+		repoKey = await mkRepoKey("pattern");
+	});
+	afterEach(async () => {
+		await cleanupRepo(repoKey);
+	});
 
 	it("emits a pattern when ≥3 sessions share a file set with similar prompts", async () => {
 		const files = ["src/cache-store.ts", "src/lib/memory/store.ts"];
 		const prompts = ["how do I add atomic write to the cache layer"];
 		await writeSession(repoKey, mkSession("s-a", files, prompts));
-		await writeSession(repoKey, mkSession("s-b", files, ["atomic writes for cache files"]));
-		const target = mkSession("s-c", files, ["atomic write helper for cache layer"]);
+		await writeSession(
+			repoKey,
+			mkSession("s-b", files, ["atomic writes for cache files"]),
+		);
+		const target = mkSession("s-c", files, [
+			"atomic write helper for cache layer",
+		]);
 		await writeSession(repoKey, target);
 
 		const out = await producePatternCandidates(repoKey, "s-c", target);

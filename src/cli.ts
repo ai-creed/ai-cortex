@@ -697,7 +697,8 @@ async function main(): Promise<void> {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
 						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
-					const { runMemoryExtract } = await import("./lib/memory/cli/extract.js");
+					const { runMemoryExtract } =
+						await import("./lib/memory/cli/extract.js");
 					const code = await runMemoryExtract(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
 						{ repoKey },

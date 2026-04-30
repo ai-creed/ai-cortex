@@ -758,8 +758,12 @@ export async function bumpConfidence(
 	reason: string,
 ): Promise<number> {
 	const current = await loadCurrent(lc, id);
-	const next = Math.min(0.95, Math.max(0, current.frontmatter.confidence + delta));
-	if (next === current.frontmatter.confidence) return current.frontmatter.confidence;
+	const next = Math.min(
+		0.95,
+		Math.max(0, current.frontmatter.confidence + delta),
+	);
+	if (next === current.frontmatter.confidence)
+		return current.frontmatter.confidence;
 	const updated: MemoryRecord = {
 		frontmatter: {
 			...current.frontmatter,

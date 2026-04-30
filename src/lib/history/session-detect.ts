@@ -48,7 +48,7 @@ export function detectCurrentSession(opts: {
 		const r = safeSessionId(heuristic, "mtime-heuristic");
 		if (r) {
 			process.stderr.write(
-				`[ai-cortex] history: using mtime-heuristic for current session — set AI_CORTEX_SESSION_ID for reliable detection\n`,
+				"[ai-cortex] history: using mtime-heuristic for current session — set AI_CORTEX_SESSION_ID for reliable detection\n",
 			);
 			return r;
 		}

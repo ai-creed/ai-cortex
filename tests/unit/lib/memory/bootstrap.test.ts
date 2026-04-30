@@ -11,12 +11,20 @@ function mkSession(
 	startedAt = "2026-04-30T00:00:00Z",
 ): SessionRecord {
 	return {
-		version: 2, id,
-		startedAt, endedAt: "2026-04-30T01:00:00Z",
-		turnCount: 1, lastProcessedTurn: 1, hasSummary: false, hasRaw: true,
-		rawDroppedAt: null, transcriptPath: "/tmp/x", summary: "",
+		version: 2,
+		id,
+		startedAt,
+		endedAt: "2026-04-30T01:00:00Z",
+		turnCount: 1,
+		lastProcessedTurn: 1,
+		hasSummary: false,
+		hasRaw: true,
+		rawDroppedAt: null,
+		transcriptPath: "/tmp/x",
+		summary: "",
 		evidence: {
-			toolCalls: [], filePaths: [{ turn: 4, path: "src/x.ts" }],
+			toolCalls: [],
+			filePaths: [{ turn: 4, path: "src/x.ts" }],
 			userPrompts: [],
 			corrections: [{ turn: 4, text: correction }],
 		},
@@ -26,27 +34,48 @@ function mkSession(
 
 describe("bootstrapFromHistory", () => {
 	let repoKey: string;
-	beforeEach(async () => { repoKey = await mkRepoKey("bootstrap"); });
-	afterEach(async () => { await cleanupRepo(repoKey); });
+	beforeEach(async () => {
+		repoKey = await mkRepoKey("bootstrap");
+	});
+	afterEach(async () => {
+		await cleanupRepo(repoKey);
+	});
 
 	it("processes every session and reports aggregate counts", async () => {
-		await writeSession(repoKey, mkSession("s-1", "always run pnpm typecheck before commit"));
-		await writeSession(repoKey, mkSession("s-2", "never disable hooks during commit"));
+		await writeSession(
+			repoKey,
+			mkSession("s-1", "always run pnpm typecheck before commit"),
+		);
+		await writeSession(
+			repoKey,
+			mkSession("s-2", "never disable hooks during commit"),
+		);
 
 		const r = await bootstrapFromHistory(repoKey);
 		expect(r.sessionsProcessed).toBe(2);
 		expect(r.candidatesCreated).toBeGreaterThanOrEqual(2);
 
 		const idx = openMemoryIndex(repoKey);
-		const count = (idx.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any).c;
+		const count = (
+			idx.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any
+		).c;
 		idx.close();
 		expect(count).toBeGreaterThanOrEqual(2);
 	});
 
 	it("respects --limit-sessions and selects the oldest sessions chronologically", async () => {
-		await writeSession(repoKey, mkSession("s-newest", "always run format", "2026-04-03T00:00:00Z"));
-		await writeSession(repoKey, mkSession("s-oldest", "always run typecheck", "2026-04-01T00:00:00Z"));
-		await writeSession(repoKey, mkSession("s-middle", "always run lint", "2026-04-02T00:00:00Z"));
+		await writeSession(
+			repoKey,
+			mkSession("s-newest", "always run format", "2026-04-03T00:00:00Z"),
+		);
+		await writeSession(
+			repoKey,
+			mkSession("s-oldest", "always run typecheck", "2026-04-01T00:00:00Z"),
+		);
+		await writeSession(
+			repoKey,
+			mkSession("s-middle", "always run lint", "2026-04-02T00:00:00Z"),
+		);
 
 		const r = await bootstrapFromHistory(repoKey, { limitSessions: 2 });
 		expect(r.sessionsProcessed).toBe(2);
@@ -58,12 +87,16 @@ describe("bootstrapFromHistory", () => {
 		await writeSession(repoKey, mkSession("s-1", "always run pnpm typecheck"));
 		await bootstrapFromHistory(repoKey);
 		const idx1 = openMemoryIndex(repoKey);
-		const before = (idx1.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any).c;
+		const before = (
+			idx1.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any
+		).c;
 		idx1.close();
 
 		await bootstrapFromHistory(repoKey, { allowReExtract: true });
 		const idx2 = openMemoryIndex(repoKey);
-		const after = (idx2.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any).c;
+		const after = (
+			idx2.rawDb().prepare("SELECT COUNT(*) AS c FROM memories").get() as any
+		).c;
 		idx2.close();
 
 		expect(after).toBe(before);

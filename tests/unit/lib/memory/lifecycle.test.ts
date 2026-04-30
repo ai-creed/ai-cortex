@@ -677,14 +677,16 @@ describe("bumpConfidence", () => {
 	it("bumpConfidence raises confidence and caps at 0.95", async () => {
 		const lc = await openLifecycle(repoKey);
 		const id = await createMemory(lc, {
-			type: "decision", title: "T", body: "B",
+			type: "decision",
+			title: "T",
+			body: "B",
 			scope: { files: [], tags: [] },
 			source: "extracted",
 			confidence: 0.5,
 		});
-		expect(await bumpConfidence(lc, id, 0.10, "test")).toBeCloseTo(0.60, 2);
-		expect(await bumpConfidence(lc, id, 0.40, "test")).toBeCloseTo(0.95, 2);
-		expect(await bumpConfidence(lc, id, 0.10, "test")).toBeCloseTo(0.95, 2);
+		expect(await bumpConfidence(lc, id, 0.1, "test")).toBeCloseTo(0.6, 2);
+		expect(await bumpConfidence(lc, id, 0.4, "test")).toBeCloseTo(0.95, 2);
+		expect(await bumpConfidence(lc, id, 0.1, "test")).toBeCloseTo(0.95, 2);
 		lc.close();
 	}, 30_000);
 });

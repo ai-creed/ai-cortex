@@ -61,7 +61,7 @@ export function listMemories(
 	}
 	if (filter.scopeFile) {
 		where.push(
-			`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value=?)`,
+			"EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value=?)",
 		);
 		params.push(filter.scopeFile);
 	}
@@ -166,7 +166,7 @@ export function filterCandidates(
 			params.push(...tags);
 		}
 		scopeClauses.push(
-			`NOT EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id)`,
+			"NOT EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id)",
 		);
 		where.push(`(${scopeClauses.join(" OR ")})`);
 	}

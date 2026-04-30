@@ -2,15 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import {
-	openMemoryIndex,
-	MemoryIndex,
-} from "../../../../src/lib/memory/index.js";
-import type {
-	MemoryFrontmatter,
-	MemoryEdge,
-	AuditRow,
-} from "../../../../src/lib/memory/types.js";
+import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
+import type { MemoryFrontmatter } from "../../../../src/lib/memory/types.js";
 
 let tmp: string;
 const repoKey = "testrepo";

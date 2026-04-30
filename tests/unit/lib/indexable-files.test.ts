@@ -24,7 +24,7 @@ function mockGitSuccess(stdout: string): void {
 	});
 }
 
-function mockGitFailure(): void {
+function _mockGitFailure(): void {
 	mockExec.mockImplementation((...args: any[]) => {
 		const cb = args[args.length - 1];
 		cb(new Error("git failed"), { stdout: "", stderr: "error" });

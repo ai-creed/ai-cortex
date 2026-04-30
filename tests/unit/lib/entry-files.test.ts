@@ -9,7 +9,7 @@ import {
 	readPackageMeta,
 } from "../../../src/lib/entry-files.js";
 
-const mockFs = vi.mocked(fs);
+const _mockFs = vi.mocked(fs);
 
 function mockFsExists(exists: boolean): void {
 	if (exists) {

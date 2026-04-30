@@ -195,9 +195,9 @@ function applyCodexInstall(text: string): string {
 	for (const evt of CODEX_HOOK_EVENTS) {
 		if (codexEventHasMarker(next, evt)) continue;
 		next += `${next.length > 0 ? "\n\n" : ""}[[hooks.${evt}]]\n`;
-		next += `matcher = ""\n`;
+		next += 'matcher = ""\n';
 		next += `[[hooks.${evt}.hooks]]\n`;
-		next += `type = "command"\n`;
+		next += 'type = "command"\n';
 		next += `command = "${HOOK_COMMAND}"\n`;
 	}
 	return next + "\n";

@@ -1,7 +1,12 @@
 // src/lib/memory/extract.ts
 import fs from "node:fs/promises";
 import { extractorRunPath, extractorRunsDir } from "./paths.js";
-import { openLifecycle, createMemory, addEvidence, bumpConfidence } from "./lifecycle.js";
+import {
+	openLifecycle,
+	createMemory,
+	addEvidence,
+	bumpConfidence,
+} from "./lifecycle.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
@@ -35,9 +40,9 @@ export type ExtractorManifest = {
 };
 
 export type ExtractOptions = {
-	minConfidence?: number;       // default: 0.4
-	dedupCosine?: number;         // default: 0.85
-	allowReExtract?: boolean;     // default: false (skip if manifest exists)
+	minConfidence?: number; // default: 0.4
+	dedupCosine?: number; // default: 0.85
+	allowReExtract?: boolean; // default: false (skip if manifest exists)
 };
 
 export type ExtractResult = ExtractorManifest;
@@ -122,7 +127,11 @@ export async function extractFromSession(
 		const decisions = produceDecisionCandidates(sessionId, newEvidence);
 		const gotchas = produceGotchaCandidates(sessionId, newEvidence);
 		const howtos = produceHowToCandidates(sessionId, newEvidence);
-		const patterns = await producePatternCandidates(repoKey, sessionId, session);
+		const patterns = await producePatternCandidates(
+			repoKey,
+			sessionId,
+			session,
+		);
 		const all = [...decisions, ...gotchas, ...howtos, ...patterns];
 
 		for (const cand of all) {
@@ -137,14 +146,19 @@ export async function extractFromSession(
 
 			const dedupHit = await findDedupTarget(
 				lc,
-				{ type: cand.type, title: cand.title, body: cand.body, tags: cand.tags },
+				{
+					type: cand.type,
+					title: cand.title,
+					body: cand.body,
+					tags: cand.tags,
+				},
 				{ dedupCosine },
 			);
 			if (dedupHit) {
 				for (const p of cand.provenance) {
 					await addEvidence(lc, dedupHit, p);
 				}
-				await bumpConfidence(lc, dedupHit, 0.10, `re-extract from ${sessionId}`);
+				await bumpConfidence(lc, dedupHit, 0.1, `re-extract from ${sessionId}`);
 				manifest.evidenceAppended += 1;
 				manifest.appendedToMemoryIds.push(dedupHit);
 				continue;
@@ -206,7 +220,9 @@ export type DedupCandidate = {
 };
 
 function cosine(a: Float32Array, b: Float32Array): number {
-	let dot = 0, na = 0, nb = 0;
+	let dot = 0,
+		na = 0,
+		nb = 0;
 	for (let i = 0; i < a.length; i++) {
 		dot += a[i]! * b[i]!;
 		na += a[i]! * a[i]!;
@@ -222,13 +238,15 @@ export async function findDedupTarget(
 ): Promise<string | null> {
 	const threshold = opts.dedupCosine ?? DEFAULT_DEDUP_COSINE;
 	const provider = await getProvider();
-	const [candVec] = await provider.embed([`${candidate.title}\n\n${candidate.body}`]);
+	const [candVec] = await provider.embed([
+		`${candidate.title}\n\n${candidate.body}`,
+	]);
 
 	// Pull all existing memories of the same type that are active|candidate.
 	const rows = lc.index
 		.rawDb()
 		.prepare(
-			`SELECT id FROM memories WHERE type = ? AND status IN ('active','candidate')`,
+			"SELECT id FROM memories WHERE type = ? AND status IN ('active','candidate')",
 		)
 		.all(candidate.type) as { id: string }[];
 
@@ -263,17 +281,87 @@ export type ProducedCandidate = {
 	scopeFiles: string[];
 	tags: string[];
 	confidence: number;
-	provenance: { sessionId: string; turn: number; kind: "user_correction" | "user_prompt" | "tool_call" | "summary"; excerpt?: string }[];
+	provenance: {
+		sessionId: string;
+		turn: number;
+		kind: "user_correction" | "user_prompt" | "tool_call" | "summary";
+		excerpt?: string;
+	}[];
 	typeFields?: Record<string, unknown>;
 };
 
 const STOPWORDS = new Set([
-	"the","a","an","and","or","but","is","are","was","were","be","been","being",
-	"in","on","at","to","of","for","with","by","from","as","this","that","these","those",
-	"i","you","we","they","it","he","she","do","does","did","not","no","yes","so",
-	"always","never","must","should","before","after","when","then","also","just",
-	"use","used","using","make","have","will","would","could","please","want",
-	"need","like","your","mine","here","there","than","into","onto","over",
+	"the",
+	"a",
+	"an",
+	"and",
+	"or",
+	"but",
+	"is",
+	"are",
+	"was",
+	"were",
+	"be",
+	"been",
+	"being",
+	"in",
+	"on",
+	"at",
+	"to",
+	"of",
+	"for",
+	"with",
+	"by",
+	"from",
+	"as",
+	"this",
+	"that",
+	"these",
+	"those",
+	"i",
+	"you",
+	"we",
+	"they",
+	"it",
+	"he",
+	"she",
+	"do",
+	"does",
+	"did",
+	"not",
+	"no",
+	"yes",
+	"so",
+	"always",
+	"never",
+	"must",
+	"should",
+	"before",
+	"after",
+	"when",
+	"then",
+	"also",
+	"just",
+	"use",
+	"used",
+	"using",
+	"make",
+	"have",
+	"will",
+	"would",
+	"could",
+	"please",
+	"want",
+	"need",
+	"like",
+	"your",
+	"mine",
+	"here",
+	"there",
+	"than",
+	"into",
+	"onto",
+	"over",
 ]);
 
 export function extractTags(text: string, max = 5): string[] {
@@ -300,7 +388,10 @@ export function filesNearTurn(
 	return [...out];
 }
 
-export function nearestFile(evidence: EvidenceLayer, turn: number): string | null {
+export function nearestFile(
+	evidence: EvidenceLayer,
+	turn: number,
+): string | null {
 	let best: string | null = null;
 	let bestDist = Infinity;
 	for (const f of evidence.filePaths) {
@@ -317,8 +408,10 @@ export function nearestFile(evidence: EvidenceLayer, turn: number): string | nul
 // Gotcha heuristic
 // ---------------------------------------------------------------------------
 
-const SYMPTOM_RE = /\b(breaks?|broken|fails?|race|hangs?|wrong|bug|flaky|crash(es|ed)?|errors?)\b/i;
-const WORKAROUND_RE = /\b(fix(:|es|ed)?|instead|workaround|use\s+\S+\s+instead|bypass|patch)\b/i;
+const SYMPTOM_RE =
+	/\b(breaks?|broken|fails?|race|hangs?|wrong|bug|flaky|crash(es|ed)?|errors?)\b/i;
+const WORKAROUND_RE =
+	/\b(fix(:|es|ed)?|instead|workaround|use\s+\S+\s+instead|bypass|patch)\b/i;
 
 export function produceGotchaCandidates(
 	sessionId: string,
@@ -329,7 +422,8 @@ export function produceGotchaCandidates(
 		const symptom = SYMPTOM_RE.test(c.text);
 		if (!symptom) continue;
 		const workaround =
-			c.nextAssistantSnippet !== undefined && WORKAROUND_RE.test(c.nextAssistantSnippet);
+			c.nextAssistantSnippet !== undefined &&
+			WORKAROUND_RE.test(c.nextAssistantSnippet);
 		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
 		const body = c.nextAssistantSnippet
 			? `**Symptom:** ${c.text}\n\n**Workaround:** ${c.nextAssistantSnippet}`
@@ -342,12 +436,14 @@ export function produceGotchaCandidates(
 			scopeFiles: file ? [file] : [],
 			tags: extractTags(c.text),
 			confidence: workaround ? 0.55 : 0.45,
-			provenance: [{
-				sessionId,
-				turn: c.turn,
-				kind: "user_correction",
-				excerpt: c.text.slice(0, 280),
-			}],
+			provenance: [
+				{
+					sessionId,
+					turn: c.turn,
+					kind: "user_correction",
+					excerpt: c.text.slice(0, 280),
+				},
+			],
 			typeFields: { severity: "warning" },
 		});
 	}
@@ -359,7 +455,8 @@ export function produceGotchaCandidates(
 // ---------------------------------------------------------------------------
 
 const IMPERATIVE_RE = /\b(must|always|never|should|don't|dont|prefer|avoid)\b/i;
-const ACK_RE = /\b(got it|understood|will do|noted|sure thing|okay,? i('| wi)ll)\b/i;
+const ACK_RE =
+	/\b(got it|understood|will do|noted|sure thing|okay,? i('| wi)ll)\b/i;
 
 export function produceDecisionCandidates(
 	sessionId: string,
@@ -368,7 +465,9 @@ export function produceDecisionCandidates(
 	const out: ProducedCandidate[] = [];
 	for (const c of evidence.corrections) {
 		if (!IMPERATIVE_RE.test(c.text)) continue;
-		const ack = c.nextAssistantSnippet !== undefined && ACK_RE.test(c.nextAssistantSnippet);
+		const ack =
+			c.nextAssistantSnippet !== undefined &&
+			ACK_RE.test(c.nextAssistantSnippet);
 		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
 		const body = c.nextAssistantSnippet
 			? `${c.text}\n\n_Acknowledged:_ ${c.nextAssistantSnippet}`
@@ -380,12 +479,14 @@ export function produceDecisionCandidates(
 			scopeFiles: filesNearTurn(evidence, c.turn, 3),
 			tags: extractTags(c.text),
 			confidence: ack ? 0.55 : 0.45,
-			provenance: [{
-				sessionId,
-				turn: c.turn,
-				kind: "user_correction",
-				excerpt: c.text.slice(0, 280),
-			}],
+			provenance: [
+				{
+					sessionId,
+					turn: c.turn,
+					kind: "user_correction",
+					excerpt: c.text.slice(0, 280),
+				},
+			],
 		});
 	}
 	return out;
@@ -407,7 +508,9 @@ export async function producePatternCandidates(
 	thisSessionId: string,
 	thisSession: SessionRecord,
 ): Promise<ProducedCandidate[]> {
-	const targetFiles = new Set(thisSession.evidence.filePaths.map((f) => f.path));
+	const targetFiles = new Set(
+		thisSession.evidence.filePaths.map((f) => f.path),
+	);
 	if (targetFiles.size === 0) return [];
 	const targetKey = fileSetKey([...targetFiles]);
 
@@ -424,7 +527,9 @@ export async function producePatternCandidates(
 
 	// Cosine on userPrompts: average prompt embedding per session, then mean cosine to target.
 	const provider = await getProvider();
-	const targetPrompts = thisSession.evidence.userPrompts.map((p) => p.text).join(" ");
+	const targetPrompts = thisSession.evidence.userPrompts
+		.map((p) => p.text)
+		.join(" ");
 	if (targetPrompts.length === 0) return [];
 	const [targetVec] = await provider.embed([targetPrompts]);
 
@@ -438,28 +543,34 @@ export async function producePatternCandidates(
 	if (similarCount + 1 < PATTERN_MIN_SESSIONS) return [];
 
 	const files = [...targetFiles];
-	const summary = thisSession.summary.length > 0 ? thisSession.summary : targetPrompts;
-	return [{
-		type: "pattern",
-		title: `Recurring work on ${files[0]}${files.length > 1 ? ` and ${files.length - 1} others` : ""}`,
-		body: `**Where:** ${files.join(", ")}\n\n**Convention:** ${summary.slice(0, 400)}`,
-		scopeFiles: files,
-		tags: extractTags(targetPrompts),
-		confidence: 0.35,
-		provenance: [{
-			sessionId: thisSessionId,
-			turn: 0,
-			kind: "summary",
-			excerpt: summary.slice(0, 280),
-		}],
-	}];
+	const summary =
+		thisSession.summary.length > 0 ? thisSession.summary : targetPrompts;
+	return [
+		{
+			type: "pattern",
+			title: `Recurring work on ${files[0]}${files.length > 1 ? ` and ${files.length - 1} others` : ""}`,
+			body: `**Where:** ${files.join(", ")}\n\n**Convention:** ${summary.slice(0, 400)}`,
+			scopeFiles: files,
+			tags: extractTags(targetPrompts),
+			confidence: 0.35,
+			provenance: [
+				{
+					sessionId: thisSessionId,
+					turn: 0,
+					kind: "summary",
+					excerpt: summary.slice(0, 280),
+				},
+			],
+		},
+	];
 }
 
 // ---------------------------------------------------------------------------
 // How-to heuristic
 // ---------------------------------------------------------------------------
 
-const HOW_TO_RE = /^\s*(how (do|to|can) i|steps|process|procedure|what are the steps)\b/i;
+const HOW_TO_RE =
+	/^\s*(how (do|to|can) i|steps|process|procedure|what are the steps)\b/i;
 const NUMBERED_LIST_RE = /(^|\n)\s*1[.)]\s/;
 
 const HOW_TO_MIN_TOOLS = 3;
@@ -474,18 +585,23 @@ export function produceHowToCandidates(
 		const sequential = evidence.toolCalls.filter((tc) => tc.turn > p.turn);
 		if (sequential.length < HOW_TO_MIN_TOOLS) continue;
 		const closingList =
-			p.nextAssistantSnippet !== undefined && NUMBERED_LIST_RE.test(p.nextAssistantSnippet);
+			p.nextAssistantSnippet !== undefined &&
+			NUMBERED_LIST_RE.test(p.nextAssistantSnippet);
 		const minTurn = sequential[0].turn;
 		const maxTurn = sequential[sequential.length - 1].turn;
-		const files = [...new Set(
-			evidence.filePaths
-				.filter((f) => f.turn >= minTurn && f.turn <= maxTurn)
-				.map((f) => f.path),
-		)];
+		const files = [
+			...new Set(
+				evidence.filePaths
+					.filter((f) => f.turn >= minTurn && f.turn <= maxTurn)
+					.map((f) => f.path),
+			),
+		];
 		const stepsBody = closingList
 			? p.nextAssistantSnippet!
 			: sequential
-					.map((tc, i) => `${i + 1}. ${tc.name}${tc.args ? ` — ${tc.args}` : ""}`)
+					.map(
+						(tc, i) => `${i + 1}. ${tc.name}${tc.args ? ` — ${tc.args}` : ""}`,
+					)
 					.join("\n");
 		const title = p.text.length <= 80 ? p.text : p.text.slice(0, 77) + "…";
 		out.push({
@@ -494,15 +610,16 @@ export function produceHowToCandidates(
 			body: `**Goal:** ${p.text}\n\n**Steps:**\n${stepsBody}`,
 			scopeFiles: files,
 			tags: extractTags(p.text),
-			confidence: closingList ? 0.50 : 0.40,
-			provenance: [{
-				sessionId,
-				turn: p.turn,
-				kind: "user_prompt",
-				excerpt: p.text.slice(0, 280),
-			}],
+			confidence: closingList ? 0.5 : 0.4,
+			provenance: [
+				{
+					sessionId,
+					turn: p.turn,
+					kind: "user_prompt",
+					excerpt: p.text.slice(0, 280),
+				},
+			],
 		});
 	}
 	return out;
 }
-

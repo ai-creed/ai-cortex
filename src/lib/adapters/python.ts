@@ -4,7 +4,6 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type {
 	LanguageAdapter,
-	FileExtractionResult,
 	RawCallData,
 	RawCallSite,
 	RawImportSite,

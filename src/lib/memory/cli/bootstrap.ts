@@ -34,13 +34,14 @@ export async function runMemoryBootstrap(
 
 	process.stdout.write(
 		`sessionsProcessed: ${r.sessionsProcessed}\n` +
-		`candidatesCreated: ${r.candidatesCreated}\n` +
-		`evidenceAppended: ${r.evidenceAppended}\n` +
-		`rejectedCount:     ${r.rejectedCount}\n` +
-		`errors:            ${r.errors.length}\n`,
+			`candidatesCreated: ${r.candidatesCreated}\n` +
+			`evidenceAppended: ${r.evidenceAppended}\n` +
+			`rejectedCount:     ${r.rejectedCount}\n` +
+			`errors:            ${r.errors.length}\n`,
 	);
 	if (r.errors.length > 0) {
-		for (const e of r.errors) process.stderr.write(`  ${e.sessionId}: ${e.message}\n`);
+		for (const e of r.errors)
+			process.stderr.write(`  ${e.sessionId}: ${e.message}\n`);
 	}
 	return 0;
 }

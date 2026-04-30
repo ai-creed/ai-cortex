@@ -12,16 +12,15 @@ export type ReconcileReport = {
 	phantomsRemoved: string[];
 };
 
-function safeAppendAudit(
-	index: MemoryIndex,
-	row: AuditRow,
-): void {
+function safeAppendAudit(index: MemoryIndex, row: AuditRow): void {
 	try {
 		index.appendAudit(row);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (
-			!msg.includes("UNIQUE constraint failed: memory_audit.memory_id, memory_audit.version")
+			!msg.includes(
+				"UNIQUE constraint failed: memory_audit.memory_id, memory_audit.version",
+			)
 		) {
 			throw err;
 		}

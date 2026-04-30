@@ -34,7 +34,7 @@ export function parseTranscript(transcriptPath: string): RawTurn[] {
 			parsed = JSON.parse(line) as RawLine;
 		} catch {
 			process.stderr.write(
-				`[ai-cortex] history: skipping malformed transcript line\n`,
+				"[ai-cortex] history: skipping malformed transcript line\n",
 			);
 			continue;
 		}

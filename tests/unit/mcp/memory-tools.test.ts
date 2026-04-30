@@ -8,7 +8,6 @@ import { createServer, resetReconciledKeys } from "../../../src/mcp/server.js";
 import {
 	openLifecycle,
 	createMemory,
-	pinMemory,
 } from "../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../src/lib/memory/retrieve.js";
 import { writeSession } from "../../../src/lib/history/store.js";
@@ -418,14 +417,24 @@ describe("MCP extract_session", () => {
 		const extractRepoKey = await mkRepoKey("mcp-extract");
 		try {
 			await writeSession(extractRepoKey, {
-				version: 2, id: "s-1",
-				startedAt: "2026-04-30T00:00:00Z", endedAt: "2026-04-30T01:00:00Z",
-				turnCount: 1, lastProcessedTurn: 1, hasSummary: false, hasRaw: true,
-				rawDroppedAt: null, transcriptPath: "/tmp/x", summary: "",
+				version: 2,
+				id: "s-1",
+				startedAt: "2026-04-30T00:00:00Z",
+				endedAt: "2026-04-30T01:00:00Z",
+				turnCount: 1,
+				lastProcessedTurn: 1,
+				hasSummary: false,
+				hasRaw: true,
+				rawDroppedAt: null,
+				transcriptPath: "/tmp/x",
+				summary: "",
 				evidence: {
-					toolCalls: [], filePaths: [], userPrompts: [],
+					toolCalls: [],
+					filePaths: [],
+					userPrompts: [],
 					corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
-				}, chunks: [],
+				},
+				chunks: [],
 			});
 			const client = await makeClient();
 			const result = await client.callTool({

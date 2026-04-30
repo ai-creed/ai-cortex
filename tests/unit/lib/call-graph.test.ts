@@ -5,7 +5,6 @@ vi.mock("../../../src/lib/adapters/index.js");
 vi.mock("../../../src/lib/import-graph.js");
 
 import {
-	adapterForFile,
 	getAdapterForFile,
 	adapterSupports,
 } from "../../../src/lib/adapters/index.js";

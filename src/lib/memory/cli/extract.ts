@@ -14,16 +14,20 @@ export async function runMemoryExtract(
 ): Promise<number> {
 	const sessionId = flagValue(args, "--session");
 	if (!sessionId) {
-		process.stderr.write("usage: ai-cortex memory extract --session <id> [--re-extract]\n");
+		process.stderr.write(
+			"usage: ai-cortex memory extract --session <id> [--re-extract]\n",
+		);
 		return 2;
 	}
 	const allowReExtract = args.includes("--re-extract");
-	const m = await extractFromSession(ctx.repoKey, sessionId, { allowReExtract });
+	const m = await extractFromSession(ctx.repoKey, sessionId, {
+		allowReExtract,
+	});
 	process.stdout.write(
 		`sessionId:         ${m.sessionId}\n` +
-		`candidatesCreated: ${m.candidatesCreated}\n` +
-		`evidenceAppended:  ${m.evidenceAppended}\n` +
-		`rejectedCount:     ${m.rejectedCandidates.length}\n`,
+			`candidatesCreated: ${m.candidatesCreated}\n` +
+			`evidenceAppended:  ${m.evidenceAppended}\n` +
+			`rejectedCount:     ${m.rejectedCandidates.length}\n`,
 	);
 	return 0;
 }

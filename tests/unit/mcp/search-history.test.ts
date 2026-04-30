@@ -4,8 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer } from "../../../src/mcp/server.js";
-import { writeSession } from "../../../src/lib/history/store.js";
-import { HISTORY_SCHEMA_VERSION } from "../../../src/lib/history/types.js";
 
 let tmp: string;
 

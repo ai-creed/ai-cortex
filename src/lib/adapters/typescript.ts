@@ -5,7 +5,6 @@ import path from "node:path";
 import type { FunctionNode } from "../models.js";
 import type {
 	LanguageAdapter,
-	FileExtractionResult,
 	RawCallData,
 	RawCallSite,
 	ImportBinding,

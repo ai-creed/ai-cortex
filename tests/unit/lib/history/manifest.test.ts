@@ -165,7 +165,7 @@ describe("pruneManifest", () => {
 });
 
 describe("searchHistory — session enumeration via manifest", () => {
-	function makeSession(id: string): SessionRecord {
+	function _makeSession(id: string): SessionRecord {
 		return {
 			version: HISTORY_SCHEMA_VERSION,
 			id,

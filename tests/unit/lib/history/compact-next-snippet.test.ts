@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { extractEvidence } from "../../../../src/lib/history/compact.js";
 import type { RawTurn } from "../../../../src/lib/history/types.js";
 
-function turn(t: number, role: RawTurn["role"], text: string, toolUses?: RawTurn["toolUses"]): RawTurn {
+function turn(
+	t: number,
+	role: RawTurn["role"],
+	text: string,
+	toolUses?: RawTurn["toolUses"],
+): RawTurn {
 	return { turn: t, role, text, toolUses };
 }
 
@@ -14,13 +19,19 @@ describe("extractEvidence — nextAssistantSnippet", () => {
 		];
 		const ev = extractEvidence(turns);
 		expect(ev.corrections).toHaveLength(1);
-		expect(ev.corrections[0].nextAssistantSnippet).toBe("Got it — switching to POST.");
+		expect(ev.corrections[0].nextAssistantSnippet).toBe(
+			"Got it — switching to POST.",
+		);
 	});
 
 	it("populates nextAssistantSnippet on userPrompts from the next assistant turn", () => {
 		const turns: RawTurn[] = [
 			turn(1, "user", "How do I deploy this?"),
-			turn(2, "assistant", "1. Build the image\n2. Push to registry\n3. Trigger deploy"),
+			turn(
+				2,
+				"assistant",
+				"1. Build the image\n2. Push to registry\n3. Trigger deploy",
+			),
 		];
 		const ev = extractEvidence(turns);
 		expect(ev.userPrompts[0].nextAssistantSnippet).toBe(
@@ -35,7 +46,9 @@ describe("extractEvidence — nextAssistantSnippet", () => {
 			turn(3, "assistant", "Okay, the path is updated."),
 		];
 		const ev = extractEvidence(turns);
-		expect(ev.corrections[0].nextAssistantSnippet).toBe("Okay, the path is updated.");
+		expect(ev.corrections[0].nextAssistantSnippet).toBe(
+			"Okay, the path is updated.",
+		);
 	});
 
 	it("truncates snippets at 500 chars", () => {
@@ -49,9 +62,7 @@ describe("extractEvidence — nextAssistantSnippet", () => {
 	});
 
 	it("leaves nextAssistantSnippet undefined when there is no next assistant turn", () => {
-		const turns: RawTurn[] = [
-			turn(1, "user", "no, that's wrong"),
-		];
+		const turns: RawTurn[] = [turn(1, "user", "no, that's wrong")];
 		const ev = extractEvidence(turns);
 		expect(ev.corrections[0].nextAssistantSnippet).toBeUndefined();
 	});

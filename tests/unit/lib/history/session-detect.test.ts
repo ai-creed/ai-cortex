@@ -135,8 +135,8 @@ describe("detectCurrentSession", () => {
 			"projects",
 			"-Users-v-Dev-foo",
 		);
-		const older = makeJsonl(projectDir, "old.jsonl", Date.now() - 60_000);
-		const newer = makeJsonl(projectDir, "new.jsonl", Date.now());
+		const _older = makeJsonl(projectDir, "old.jsonl", Date.now() - 60_000);
+		const _newer = makeJsonl(projectDir, "new.jsonl", Date.now());
 
 		const result = detectCurrentSession({ cwd: "/Users/v/Dev/foo" });
 		expect(result?.sessionId).toBe("new");

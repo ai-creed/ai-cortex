@@ -14,7 +14,11 @@ export type BootstrapReport = {
 	candidatesCreated: number;
 	evidenceAppended: number;
 	rejectedCount: number;
-	perSession: { sessionId: string; candidatesCreated: number; evidenceAppended: number }[];
+	perSession: {
+		sessionId: string;
+		candidatesCreated: number;
+		evidenceAppended: number;
+	}[];
 	errors: { sessionId: string; message: string }[];
 };
 

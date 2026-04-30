@@ -3,13 +3,20 @@ import {
 	findDedupTarget,
 	type DedupCandidate,
 } from "../../../../src/lib/memory/extract.js";
-import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
+import {
+	openLifecycle,
+	createMemory,
+} from "../../../../src/lib/memory/lifecycle.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 
 describe("extract — findDedupTarget", () => {
 	let repoKey: string;
-	beforeEach(async () => { repoKey = await mkRepoKey("dedup"); });
-	afterEach(async () => { await cleanupRepo(repoKey); });
+	beforeEach(async () => {
+		repoKey = await mkRepoKey("dedup");
+	});
+	afterEach(async () => {
+		await cleanupRepo(repoKey);
+	});
 
 	it("finds an existing same-type candidate above the cosine threshold with tag overlap", async () => {
 		const lc = await openLifecycle(repoKey);
@@ -43,7 +50,12 @@ describe("extract — findDedupTarget", () => {
 		});
 		const hit = await findDedupTarget(
 			lc,
-			{ type: "decision", title: "Use POST for create", body: "Create endpoints take POST.", tags: ["http"] },
+			{
+				type: "decision",
+				title: "Use POST for create",
+				body: "Create endpoints take POST.",
+				tags: ["http"],
+			},
 			{ dedupCosine: 0.7 },
 		);
 		expect(hit).toBeNull();
@@ -61,7 +73,12 @@ describe("extract — findDedupTarget", () => {
 		});
 		const hit = await findDedupTarget(
 			lc,
-			{ type: "decision", title: "POST for create", body: "Create takes POST.", tags: ["unrelated"] },
+			{
+				type: "decision",
+				title: "POST for create",
+				body: "Create takes POST.",
+				tags: ["unrelated"],
+			},
 			{ dedupCosine: 0.7 },
 		);
 		expect(hit).toBeNull();
@@ -79,7 +96,12 @@ describe("extract — findDedupTarget", () => {
 		});
 		const hit = await findDedupTarget(
 			lc,
-			{ type: "decision", title: "Frobnicate the widget", body: "Widgets must be frobnicated.", tags: ["http"] },
+			{
+				type: "decision",
+				title: "Frobnicate the widget",
+				body: "Widgets must be frobnicated.",
+				tags: ["http"],
+			},
 			{ dedupCosine: 0.95 },
 		);
 		expect(hit).toBeNull();
@@ -97,7 +119,12 @@ describe("extract — findDedupTarget", () => {
 		});
 		const hit = await findDedupTarget(
 			lc,
-			{ type: "decision", title: "Use POST for create", body: "Create endpoints take POST.", tags: [] },
+			{
+				type: "decision",
+				title: "Use POST for create",
+				body: "Create endpoints take POST.",
+				tags: [],
+			},
 			{ dedupCosine: 0.7 },
 		);
 		expect(hit).toBeNull();
