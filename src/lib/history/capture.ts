@@ -113,6 +113,18 @@ export async function captureSession(
 		}
 		await writeSession(input.repoKey, rec);
 
+		// Best-effort extractor — never fails capture.
+		try {
+			const { extractFromSession } = await import("../memory/extract.js");
+			await extractFromSession(input.repoKey, input.sessionId);
+		} catch (err) {
+			process.stderr.write(
+				`[ai-cortex] extractor failed for session=${input.sessionId}: ${
+					err instanceof Error ? err.message : String(err)
+				}\n`,
+			);
+		}
+
 		return {
 			status: "captured",
 			turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length,
