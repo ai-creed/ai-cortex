@@ -643,7 +643,9 @@ Steps applied to M:
 
 `purged_redacted` is a terminal state — there is no `restore` from it (the body is gone).
 
-**Caveat — content that was merged before redact.** If M was merged into another memory N before being redact-purged, N's body absorbed M's content at merge time. That content survives in N's body by design — the user explicitly chose to incorporate it. Redact-purging M does not retroactively redact N. If both memories' content must be scrubbed, the caller redact-purges N as well (or undoes the merge first via `restore_memory(M)`, then redact-purges both).
+**Caveat — content that was merged before redact.** If M was merged into another memory N before being redact-purged, N's body absorbed M's content at merge time. That content survives in N's body by design — the user explicitly chose to incorporate it. Redact-purging M does not retroactively redact N.
+
+**To fully scrub merged content, redact-purge both M and N.** Merge is intentionally irreversible in the lifecycle (no `merged_into → active` transition exists; reverting would require remembering N's pre-merge body, which is out of scope). Calling `restore_memory(M)` on a `merged_into` memory is **not supported** — `restore_memory` is defined only for `deprecated → active`. The redact-both-memories path is the only safe scrub when content has already been incorporated.
 
 3. `purge_memory(id, reason)` (default mode) skips trash and hard-deletes immediately. `purge_memory(id, reason, { redact: true })` does the privacy-grade scrub described above.
 
@@ -962,7 +964,9 @@ E2E (existing eval harness):
 - Memory injection into rehydration briefing visible in MCP output.
 - `recall_memory` ranks correctly against fixed query/scope/expected-id ground truth.
 - `search_memories` returns hits whose match is literal text past character 280 of a long body (proves full-body FTS).
-- Audit log preserves full history across simulated update/deprecate/restore/merge/trash/purge sequence (default mode); redact-purge run on the same fixture proves no body remnants survive.
+- Audit log preserves full history across simulated update/deprecate/restore/merge/trash/purge sequence (default mode).
+- Redact-purge fixture (single memory M, no merges): proves no body remnants of M survive in M's own state — `.md` gone, `memory_audit.prev_body` NULL, FTS row absent, vector entry absent, `memories.title` and `body_excerpt` redacted, `status = purged_redacted`.
+- Redact-purge fixture (M merged into N before redact): asserts (a) M's own state is fully scrubbed as above, AND (b) N's body content (which incorporated M's at merge time) is intact — confirming the documented caveat. Separately asserts that redact-purging both M and N produces full scrub across both.
 
 ---
 
