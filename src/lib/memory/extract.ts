@@ -1,15 +1,7 @@
 // src/lib/memory/extract.ts
 import fs from "node:fs/promises";
 import { extractorRunPath, extractorRunsDir } from "./paths.js";
-import { openLifecycle, createMemory, addEvidence } from "./lifecycle.js";
 import type { LifecycleHandle } from "./lifecycle.js";
-import { readSession } from "../history/store.js";
-import type {
-	SessionRecord,
-	EvidenceLayer,
-	UserPromptEvidence,
-	CorrectionEvidence,
-} from "../history/types.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
 
@@ -74,11 +66,11 @@ export async function readManifest(
 ): Promise<ExtractorManifest | null> {
 	const p = extractorRunPath(repoKey, sessionId);
 	try {
-		await fs.access(p);
-	} catch {
-		return null;
+		return JSON.parse(await fs.readFile(p, "utf8")) as ExtractorManifest;
+	} catch (err: unknown) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+		throw err;
 	}
-	return JSON.parse(await fs.readFile(p, "utf8")) as ExtractorManifest;
 }
 
 export type DedupCandidate = {
@@ -135,12 +127,3 @@ export async function findDedupTarget(
 	return null;
 }
 
-// Suppress unused import warnings — these are imported for Part 5 callers.
-void (openLifecycle as unknown);
-void (createMemory as unknown);
-void (addEvidence as unknown);
-void (readSession as unknown);
-void (0 as unknown as SessionRecord);
-void (0 as unknown as EvidenceLayer);
-void (0 as unknown as UserPromptEvidence);
-void (0 as unknown as CorrectionEvidence);
