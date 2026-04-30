@@ -1,6 +1,7 @@
 // src/lib/memory/extract.ts
 import fs from "node:fs/promises";
 import { extractorRunPath, extractorRunsDir } from "./paths.js";
+import { openLifecycle, createMemory, addEvidence, bumpConfidence } from "./lifecycle.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
@@ -41,13 +42,135 @@ export type ExtractOptions = {
 
 export type ExtractResult = ExtractorManifest;
 
+// ---------------------------------------------------------------------------
+// Internal helpers for extractFromSession
+// ---------------------------------------------------------------------------
+
+function calcMaxTurn(evidence: EvidenceLayer): number {
+	let m = 0;
+	for (const t of evidence.toolCalls) if (t.turn > m) m = t.turn;
+	for (const f of evidence.filePaths) if (f.turn > m) m = f.turn;
+	for (const u of evidence.userPrompts) if (u.turn > m) m = u.turn;
+	for (const c of evidence.corrections) if (c.turn > m) m = c.turn;
+	return m;
+}
+
+function filterEvidenceAfterTurn(
+	evidence: EvidenceLayer,
+	afterTurn: number,
+): EvidenceLayer {
+	return {
+		toolCalls: evidence.toolCalls.filter((t) => t.turn > afterTurn),
+		filePaths: evidence.filePaths.filter((f) => f.turn > afterTurn),
+		userPrompts: evidence.userPrompts.filter((u) => u.turn > afterTurn),
+		corrections: evidence.corrections.filter((c) => c.turn > afterTurn),
+	};
+}
+
 // Public entry — implemented in Part 5
 export async function extractFromSession(
-	_repoKey: string,
-	_sessionId: string,
-	_opts: ExtractOptions = {},
+	repoKey: string,
+	sessionId: string,
+	opts: ExtractOptions = {},
 ): Promise<ExtractResult> {
-	throw new Error("not implemented");
+	const allowReExtract = opts.allowReExtract ?? false;
+	const minConfidence = opts.minConfidence ?? 0.4;
+	const dedupCosine = opts.dedupCosine ?? DEFAULT_DEDUP_COSINE;
+
+	const session = await readSession(repoKey, sessionId);
+	if (!session) {
+		throw new Error(`extractFromSession: no session at id=${sessionId}`);
+	}
+
+	const prior = allowReExtract ? null : await readManifest(repoKey, sessionId);
+	const afterTurn = prior?.lastProcessedTurn ?? 0;
+
+	const newEvidence = filterEvidenceAfterTurn(session.evidence, afterTurn);
+	const newMaxTurn = Math.max(afterTurn, calcMaxTurn(session.evidence));
+	const hasNewWork =
+		newEvidence.toolCalls.length +
+			newEvidence.filePaths.length +
+			newEvidence.userPrompts.length +
+			newEvidence.corrections.length >
+		0;
+	if (!hasNewWork && prior) {
+		return {
+			...prior,
+			runAt: new Date().toISOString(),
+			candidatesCreated: 0,
+			evidenceAppended: 0,
+			rejectedCandidates: [],
+			createdMemoryIds: [],
+			appendedToMemoryIds: [],
+		};
+	}
+
+	const lc = await openLifecycle(repoKey);
+	const manifest: ExtractorManifest = {
+		version: EXTRACTOR_MANIFEST_VERSION,
+		sessionId,
+		runAt: new Date().toISOString(),
+		lastProcessedTurn: newMaxTurn,
+		candidatesCreated: 0,
+		evidenceAppended: 0,
+		rejectedCandidates: [],
+		createdMemoryIds: [],
+		appendedToMemoryIds: [],
+	};
+
+	try {
+		const decisions = produceDecisionCandidates(sessionId, newEvidence);
+		const gotchas = produceGotchaCandidates(sessionId, newEvidence);
+		const howtos = produceHowToCandidates(sessionId, newEvidence);
+		const patterns = await producePatternCandidates(repoKey, sessionId, session);
+		const all = [...decisions, ...gotchas, ...howtos, ...patterns];
+
+		for (const cand of all) {
+			if (cand.confidence < minConfidence) {
+				manifest.rejectedCandidates.push({
+					type: cand.type,
+					reason: `below confidence floor ${minConfidence}`,
+					previewText: cand.title,
+				});
+				continue;
+			}
+
+			const dedupHit = await findDedupTarget(
+				lc,
+				{ type: cand.type, title: cand.title, body: cand.body, tags: cand.tags },
+				{ dedupCosine },
+			);
+			if (dedupHit) {
+				for (const p of cand.provenance) {
+					await addEvidence(lc, dedupHit, p);
+				}
+				await bumpConfidence(lc, dedupHit, 0.10, `re-extract from ${sessionId}`);
+				manifest.evidenceAppended += 1;
+				manifest.appendedToMemoryIds.push(dedupHit);
+				continue;
+			}
+
+			const id = await createMemory(lc, {
+				type: cand.type,
+				title: cand.title,
+				body: cand.body,
+				scope: { files: cand.scopeFiles, tags: cand.tags },
+				source: "extracted",
+				confidence: cand.confidence,
+				typeFields: cand.typeFields,
+			});
+			for (const p of cand.provenance) {
+				await addEvidence(lc, id, p);
+			}
+			manifest.candidatesCreated += 1;
+			manifest.createdMemoryIds.push(id);
+		}
+	} finally {
+		lc.close();
+	}
+
+	await writeManifest(repoKey, sessionId, manifest);
+	return manifest;
 }
 
 export async function writeManifest(
