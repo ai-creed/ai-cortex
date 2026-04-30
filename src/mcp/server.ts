@@ -1109,7 +1109,7 @@ export function createServer(): McpServer {
 		logged(
 			"extract_session",
 			(p) => ({ repoKey: p.repoKey, sessionId: p.sessionId }),
-			async (p) => {
+			withReconcile(async (p) => {
 				const { extractFromSession } = await import("../lib/memory/extract.js");
 				const manifest = await extractFromSession(p.repoKey, p.sessionId, {
 					allowReExtract: p.allowReExtract === true,
@@ -1119,7 +1119,7 @@ export function createServer(): McpServer {
 						{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
 					],
 				};
-			},
+			}),
 		),
 	);
 
