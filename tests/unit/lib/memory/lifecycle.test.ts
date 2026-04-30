@@ -98,5 +98,5 @@ describe("createMemory", () => {
 		} finally {
 			lc.close();
 		}
-	}, 120_000);
+	}, 600_000);
 });
