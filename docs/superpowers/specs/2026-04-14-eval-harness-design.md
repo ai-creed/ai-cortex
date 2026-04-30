@@ -39,20 +39,20 @@ pnpm eval --condition without          # Only the "without briefing" condition
 
 ```ts
 type EvalTask = {
-	name: string;                          // e.g. "cli-help-flag"
-	repo: string;                          // "ai-cortex" or "ai-14all"
-	repoPath: string;                      // resolved at runtime
-	prompt: string;                        // the task description given to the agent
-	groundTruthFiles: string[];            // files the agent should touch
-	structuralChecks: StructuralCheck[];   // grep-based checks run after agent finishes
-	verifyCommand: string;                 // shell command that exits 0 on success
-	timeoutMs: number;                     // kill the agent after this (default 300000 = 5min)
+	name: string; // e.g. "cli-help-flag"
+	repo: string; // "ai-cortex" or "ai-14all"
+	repoPath: string; // resolved at runtime
+	prompt: string; // the task description given to the agent
+	groundTruthFiles: string[]; // files the agent should touch
+	structuralChecks: StructuralCheck[]; // grep-based checks run after agent finishes
+	verifyCommand: string; // shell command that exits 0 on success
+	timeoutMs: number; // kill the agent after this (default 300000 = 5min)
 };
 
 type StructuralCheck = {
-	file: string;                          // relative to repo root
-	pattern: string;                       // regex to grep for
-	shouldMatch: boolean;                  // true = must match, false = must NOT match
+	file: string; // relative to repo root
+	pattern: string; // regex to grep for
+	shouldMatch: boolean; // true = must match, false = must NOT match
 };
 ```
 
@@ -61,14 +61,17 @@ type StructuralCheck = {
 For each task × condition × rep:
 
 1. **Create git worktree** from HEAD
+
    ```
    git worktree add --detach .worktrees/eval-<task>-<condition>-<rep>
    ```
 
 2. **Generate briefing** (if condition === "with")
+
    ```
    ai-cortex rehydrate <worktree-path>
    ```
+
    Capture the briefing markdown output.
 
 3. **Build the prompt**
@@ -76,9 +79,11 @@ For each task × condition × rep:
    - WITH: `"You are working in <worktree-path>. Here is a project briefing:\n<briefing>\n\n<task.prompt>"`
 
 4. **Spawn the agent**
+
    ```
    claude --print --dangerously-skip-permissions -p "<prompt>" --cwd <worktree-path>
    ```
+
    Capture: stdout (full transcript), wall clock time, exit code.
 
 5. **Build the project** (if needed)
@@ -118,7 +123,7 @@ type RunResult = {
 	explorationCalls: number;
 	totalToolCalls: number;
 	wallClockMs: number;
-	filesCorrect: number;        // jaccard: |intersection| / |union|
+	filesCorrect: number; // jaccard: |intersection| / |union|
 	structuralPass: boolean;
 	verifyPass: boolean;
 	agentExitCode: number;
@@ -230,6 +235,7 @@ Written to `benchmarks/eval/results/<timestamp>.json` for historical tracking. C
 ## Pre-placed verification tests
 
 Tasks 3 and 5 require verification tests that exercise the agent's changes. These test files are:
+
 - Written as part of the harness implementation (committed alongside the harness code)
 - Copied into the worktree before the agent runs
 - NOT visible to the "without briefing" agent as hints — they test the expected outcome but don't reveal the implementation approach

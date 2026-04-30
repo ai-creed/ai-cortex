@@ -1,16 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { liftHarnessSummary, chunkTurns } from "../../../../src/lib/history/compact.js";
+import {
+	liftHarnessSummary,
+	chunkTurns,
+} from "../../../../src/lib/history/compact.js";
 import type { RawTurn } from "../../../../src/lib/history/types.js";
 
 describe("liftHarnessSummary", () => {
 	it("returns concatenated summary text from compact-summary turns", () => {
 		const turns: RawTurn[] = [
 			{ turn: 0, role: "user", text: "hi" },
-			{ turn: 1, role: "system", text: "First summary block.", isCompactSummary: true },
+			{
+				turn: 1,
+				role: "system",
+				text: "First summary block.",
+				isCompactSummary: true,
+			},
 			{ turn: 2, role: "user", text: "more" },
-			{ turn: 3, role: "system", text: "Second summary block.", isCompactSummary: true },
+			{
+				turn: 3,
+				role: "system",
+				text: "Second summary block.",
+				isCompactSummary: true,
+			},
 		];
-		expect(liftHarnessSummary(turns)).toBe("First summary block.\n\nSecond summary block.");
+		expect(liftHarnessSummary(turns)).toBe(
+			"First summary block.\n\nSecond summary block.",
+		);
 	});
 
 	it("returns empty string when no summary turns", () => {

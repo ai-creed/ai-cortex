@@ -11,35 +11,31 @@ const distCli = path.resolve(
 );
 
 describe("mcp server subprocess", () => {
-	it(
-		"starts, lists all four tools, and exits cleanly on client disconnect",
-		async () => {
-			const transport = new StdioClientTransport({
-				command: "node",
-				args: [distCli, "mcp"],
-			});
-			const client = new Client(
-				{ name: "smoke-test", version: "0.0.1" },
-				{ capabilities: {} },
-			);
+	it("starts, lists all four tools, and exits cleanly on client disconnect", async () => {
+		const transport = new StdioClientTransport({
+			command: "node",
+			args: [distCli, "mcp"],
+		});
+		const client = new Client(
+			{ name: "smoke-test", version: "0.0.1" },
+			{ capabilities: {} },
+		);
 
-			await client.connect(transport);
+		await client.connect(transport);
 
-			const { tools } = await client.listTools();
-			const names = tools.map((t) => t.name);
+		const { tools } = await client.listTools();
+		const names = tools.map((t) => t.name);
 
-			expect(names).toContain("rehydrate_project");
-			expect(names).toContain("suggest_files");
-			expect(names).toContain("index_project");
-			expect(names).toContain("blast_radius");
+		expect(names).toContain("rehydrate_project");
+		expect(names).toContain("suggest_files");
+		expect(names).toContain("index_project");
+		expect(names).toContain("blast_radius");
 
-			// Closing the client writes EOF to the server's stdin.
-			// The server's startMcpServer() resolves and the process exits.
-			await client.close();
+		// Closing the client writes EOF to the server's stdin.
+		// The server's startMcpServer() resolves and the process exits.
+		await client.close();
 
-			// Brief wait to confirm the subprocess exited without error.
-			await new Promise<void>((resolve) => setTimeout(resolve, 200));
-		},
-		10000,
-	);
+		// Brief wait to confirm the subprocess exited without error.
+		await new Promise<void>((resolve) => setTimeout(resolve, 200));
+	}, 10000);
 });

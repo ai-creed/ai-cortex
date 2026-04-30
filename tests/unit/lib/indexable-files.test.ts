@@ -39,7 +39,9 @@ describe("listIndexableFiles", () => {
 
 	it("returns sorted file paths from git ls-files", async () => {
 		mockGitSuccess("src/b.ts\nsrc/a.ts\nREADME.md\n");
-		vi.spyOn(fs.promises, "stat").mockResolvedValue({ isDirectory: () => false } as any);
+		vi.spyOn(fs.promises, "stat").mockResolvedValue({
+			isDirectory: () => false,
+		} as any);
 		expect(await listIndexableFiles("/repo")).toEqual([
 			"README.md",
 			"src/a.ts",
@@ -49,7 +51,9 @@ describe("listIndexableFiles", () => {
 
 	it("filters empty lines from git output", async () => {
 		mockGitSuccess("\n\nREADME.md\n\n");
-		vi.spyOn(fs.promises, "stat").mockResolvedValue({ isDirectory: () => false } as any);
+		vi.spyOn(fs.promises, "stat").mockResolvedValue({
+			isDirectory: () => false,
+		} as any);
 		expect(await listIndexableFiles("/repo")).toEqual(["README.md"]);
 	});
 
@@ -69,9 +73,15 @@ describe("listIndexableFiles", () => {
 
 	it("filters out directories (submodules, symlinked dirs)", async () => {
 		mockGitSuccess("src/app.ts\nvendor\nlib/utils.ts\n");
-		vi.spyOn(fs.promises, "stat").mockImplementation(async (p) => ({
-			isDirectory: () => String(p).endsWith("vendor"),
-		}) as any);
-		expect(await listIndexableFiles("/repo")).toEqual(["lib/utils.ts", "src/app.ts"]);
+		vi.spyOn(fs.promises, "stat").mockImplementation(
+			async (p) =>
+				({
+					isDirectory: () => String(p).endsWith("vendor"),
+				}) as any,
+		);
+		expect(await listIndexableFiles("/repo")).toEqual([
+			"lib/utils.ts",
+			"src/app.ts",
+		]);
 	});
 });

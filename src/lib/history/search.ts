@@ -1,8 +1,19 @@
-import { readSession, readChunkVectors, getChunkText, listSessions } from "./store.js";
+import {
+	readSession,
+	readChunkVectors,
+	getChunkText,
+	listSessions,
+} from "./store.js";
 import { readManifest } from "./manifest.js";
 import { detectCurrentSession } from "./session-detect.js";
 
-export type HitKind = "summary" | "userPrompt" | "correction" | "toolCall" | "filePath" | "rawChunk";
+export type HitKind =
+	| "summary"
+	| "userPrompt"
+	| "correction"
+	| "toolCall"
+	| "filePath"
+	| "rawChunk";
 
 export type Hit = {
 	sessionId: string;
@@ -19,7 +30,9 @@ export type SearchSessionInput = {
 	limit?: number;
 };
 
-export type EmbedQueryFn = (q: string) => Promise<{ vector: Float32Array; modelName: string }>;
+export type EmbedQueryFn = (
+	q: string,
+) => Promise<{ vector: Float32Array; modelName: string }>;
 
 export type SearchSessionInputExtended = SearchSessionInput & {
 	embedQuery?: EmbedQueryFn;
@@ -34,7 +47,9 @@ const WEIGHTS: Record<HitKind, number> = {
 	rawChunk: 0.5,
 };
 
-export async function searchSession(input: SearchSessionInputExtended): Promise<Hit[]> {
+export async function searchSession(
+	input: SearchSessionInputExtended,
+): Promise<Hit[]> {
 	const rec = await readSession(input.repoKey, input.sessionId);
 	if (!rec) return [];
 
@@ -42,38 +57,73 @@ export async function searchSession(input: SearchSessionInputExtended): Promise<
 	const hits: Hit[] = [];
 
 	if (rec.summary && rec.summary.toLowerCase().includes(q)) {
-		hits.push({ sessionId: rec.id, kind: "summary", turn: null, score: WEIGHTS.summary, text: rec.summary });
+		hits.push({
+			sessionId: rec.id,
+			kind: "summary",
+			turn: null,
+			score: WEIGHTS.summary,
+			text: rec.summary,
+		});
 	}
 	for (const u of rec.evidence.userPrompts) {
 		if (u.text.toLowerCase().includes(q)) {
-			hits.push({ sessionId: rec.id, kind: "userPrompt", turn: u.turn, score: WEIGHTS.userPrompt, text: u.text });
+			hits.push({
+				sessionId: rec.id,
+				kind: "userPrompt",
+				turn: u.turn,
+				score: WEIGHTS.userPrompt,
+				text: u.text,
+			});
 		}
 	}
 	for (const c of rec.evidence.corrections) {
 		if (c.text.toLowerCase().includes(q)) {
-			hits.push({ sessionId: rec.id, kind: "correction", turn: c.turn, score: WEIGHTS.correction, text: c.text });
+			hits.push({
+				sessionId: rec.id,
+				kind: "correction",
+				turn: c.turn,
+				score: WEIGHTS.correction,
+				text: c.text,
+			});
 		}
 	}
 	for (const f of rec.evidence.filePaths) {
 		if (f.path.toLowerCase().includes(q)) {
-			hits.push({ sessionId: rec.id, kind: "filePath", turn: f.turn, score: WEIGHTS.filePath, text: f.path });
+			hits.push({
+				sessionId: rec.id,
+				kind: "filePath",
+				turn: f.turn,
+				score: WEIGHTS.filePath,
+				text: f.path,
+			});
 		}
 	}
 	for (const t of rec.evidence.toolCalls) {
 		const haystack = `${t.name} ${t.args}`.toLowerCase();
 		if (haystack.includes(q)) {
-			hits.push({ sessionId: rec.id, kind: "toolCall", turn: t.turn, score: WEIGHTS.toolCall, text: `${t.name}: ${t.args}` });
+			hits.push({
+				sessionId: rec.id,
+				kind: "toolCall",
+				turn: t.turn,
+				score: WEIGHTS.toolCall,
+				text: `${t.name}: ${t.args}`,
+			});
 		}
 	}
 
 	if (input.embedQuery && rec.hasRaw) {
 		const { vector: qv, modelName } = await input.embedQuery(input.query);
-		const vecs = await readChunkVectors(input.repoKey, input.sessionId, modelName);
+		const vecs = await readChunkVectors(
+			input.repoKey,
+			input.sessionId,
+			modelName,
+		);
 		if (vecs) {
 			for (const [chunkId, cv] of vecs.byChunkId) {
 				const score = cosine(qv, cv);
 				if (score > 0.3) {
-					const text = (await getChunkText(input.repoKey, input.sessionId, chunkId)) ?? "";
+					const text =
+						(await getChunkText(input.repoKey, input.sessionId, chunkId)) ?? "";
 					hits.push({
 						sessionId: rec.id,
 						kind: "rawChunk",
@@ -109,7 +159,9 @@ export type SearchHistoryResult = {
 	resolvedSessionId: string | null;
 };
 
-export async function searchHistory(input: SearchHistoryInput): Promise<SearchHistoryResult> {
+export async function searchHistory(
+	input: SearchHistoryInput,
+): Promise<SearchHistoryResult> {
 	const scope: Scope = input.scope ?? "session";
 
 	if (input.sessionId) {
@@ -120,18 +172,33 @@ export async function searchHistory(input: SearchHistoryInput): Promise<SearchHi
 			limit: input.limit,
 			embedQuery: input.embedQuery,
 		});
-		return { hits, broadened: false, error: null, resolvedSessionId: input.sessionId };
+		return {
+			hits,
+			broadened: false,
+			error: null,
+			resolvedSessionId: input.sessionId,
+		};
 	}
 
 	if (scope === "project") {
 		const all = await searchAllSessions(input);
-		return { hits: all, broadened: false, error: null, resolvedSessionId: null };
+		return {
+			hits: all,
+			broadened: false,
+			error: null,
+			resolvedSessionId: null,
+		};
 	}
 
 	// scope === "session" — needs detection
 	const detected = detectCurrentSession({ cwd: input.cwd });
 	if (!detected) {
-		return { hits: [], broadened: false, error: "session-not-detected", resolvedSessionId: null };
+		return {
+			hits: [],
+			broadened: false,
+			error: "session-not-detected",
+			resolvedSessionId: null,
+		};
 	}
 	const sessionHits = await searchSession({
 		repoKey: input.repoKey,
@@ -141,10 +208,20 @@ export async function searchHistory(input: SearchHistoryInput): Promise<SearchHi
 		embedQuery: input.embedQuery,
 	});
 	if (sessionHits.length > 0) {
-		return { hits: sessionHits, broadened: false, error: null, resolvedSessionId: detected.sessionId };
+		return {
+			hits: sessionHits,
+			broadened: false,
+			error: null,
+			resolvedSessionId: detected.sessionId,
+		};
 	}
 	const broadened = await searchAllSessions(input);
-	return { hits: broadened, broadened: true, error: null, resolvedSessionId: detected.sessionId };
+	return {
+		hits: broadened,
+		broadened: true,
+		error: null,
+		resolvedSessionId: detected.sessionId,
+	};
 }
 
 async function getSessionIds(repoKey: string): Promise<string[]> {
@@ -173,7 +250,9 @@ async function searchAllSessions(input: SearchHistoryInput): Promise<Hit[]> {
 }
 
 function cosine(a: Float32Array, b: Float32Array): number {
-	let dot = 0, na = 0, nb = 0;
+	let dot = 0,
+		na = 0,
+		nb = 0;
 	for (let i = 0; i < a.length; i += 1) {
 		dot += a[i] * b[i];
 		na += a[i] * a[i];

@@ -54,7 +54,9 @@ function summarizeByTaskCondition(results: RunResult[]): TaskSummary[] {
 export function printEvalReport(results: RunResult[]): void {
 	const summaries = summarizeByTaskCondition(results);
 
-	console.log("\n── Evaluation Results ──────────────────────────────────────────────────\n");
+	console.log(
+		"\n── Evaluation Results ──────────────────────────────────────────────────\n",
+	);
 	console.log(
 		`  ${pad("task", 28)}${pad("condition", 12)}${pad("explore", 10)}${pad("total", 10)}${pad("time", 10)}${pad("files", 10)}${pad("struct", 10)}verify`,
 	);
@@ -94,20 +96,39 @@ export function printEvalReport(results: RunResult[]): void {
 			return `${pct > 0 ? "+" : ""}${pct}%`;
 		};
 
-		console.log("\n── Summary ─────────────────────────────────────────────────────────────\n");
-		console.log(`  ${pad("", 24)}${pad("With briefing", 20)}${pad("Without briefing", 20)}Delta (+good)`);
-		console.log(`  ${pad("Exploration calls", 24)}${pad(wExplore.toFixed(1) + " avg", 20)}${pad(woExplore.toFixed(1) + " avg", 20)}${delta(woExplore, wExplore)}`);
-		console.log(`  ${pad("Total tool calls", 24)}${pad(wTotal.toFixed(1) + " avg", 20)}${pad(woTotal.toFixed(1) + " avg", 20)}${delta(woTotal, wTotal)}`);
-		console.log(`  ${pad("Wall clock time", 24)}${pad(fmtTime(wTime) + " avg", 20)}${pad(fmtTime(woTime) + " avg", 20)}${delta(woTime, wTime)}`);
-		console.log(`  ${pad("Files accuracy", 24)}${pad(wFiles.toFixed(2) + " avg", 20)}${pad(woFiles.toFixed(2) + " avg", 20)}${delta(wFiles, woFiles)}`);
-		console.log(`  ${pad("Structural pass", 24)}${pad(Math.round(wStruct * 100) + "%", 20)}${pad(Math.round(woStruct * 100) + "%", 20)}`);
-		console.log(`  ${pad("Verify pass", 24)}${pad(Math.round(wVerify * 100) + "%", 20)}${pad(Math.round(woVerify * 100) + "%", 20)}`);
+		console.log(
+			"\n── Summary ─────────────────────────────────────────────────────────────\n",
+		);
+		console.log(
+			`  ${pad("", 24)}${pad("With briefing", 20)}${pad("Without briefing", 20)}Delta (+good)`,
+		);
+		console.log(
+			`  ${pad("Exploration calls", 24)}${pad(wExplore.toFixed(1) + " avg", 20)}${pad(woExplore.toFixed(1) + " avg", 20)}${delta(woExplore, wExplore)}`,
+		);
+		console.log(
+			`  ${pad("Total tool calls", 24)}${pad(wTotal.toFixed(1) + " avg", 20)}${pad(woTotal.toFixed(1) + " avg", 20)}${delta(woTotal, wTotal)}`,
+		);
+		console.log(
+			`  ${pad("Wall clock time", 24)}${pad(fmtTime(wTime) + " avg", 20)}${pad(fmtTime(woTime) + " avg", 20)}${delta(woTime, wTime)}`,
+		);
+		console.log(
+			`  ${pad("Files accuracy", 24)}${pad(wFiles.toFixed(2) + " avg", 20)}${pad(woFiles.toFixed(2) + " avg", 20)}${delta(wFiles, woFiles)}`,
+		);
+		console.log(
+			`  ${pad("Structural pass", 24)}${pad(Math.round(wStruct * 100) + "%", 20)}${pad(Math.round(woStruct * 100) + "%", 20)}`,
+		);
+		console.log(
+			`  ${pad("Verify pass", 24)}${pad(Math.round(wVerify * 100) + "%", 20)}${pad(Math.round(woVerify * 100) + "%", 20)}`,
+		);
 	}
 
 	console.log();
 }
 
-export function writeEvalReport(results: RunResult[], outputDir: string): string {
+export function writeEvalReport(
+	results: RunResult[],
+	outputDir: string,
+): string {
 	fs.mkdirSync(outputDir, { recursive: true });
 	const report: EvalReport = {
 		timestamp: new Date().toISOString(),

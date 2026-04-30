@@ -9,10 +9,10 @@ of real PRs and measures hit@5 / P@5 / R@5 against known truth files.
 
 ```json
 {
-  "pr": 1001,
-  "title": "Login button misaligned on mobile viewport",
-  "query": "login button mobile viewport alignment",
-  "truth": ["src/auth/login-form.tsx", "src/auth/login.module.css"]
+	"pr": 1001,
+	"title": "Login button misaligned on mobile viewport",
+	"query": "login button mobile viewport alignment",
+	"truth": ["src/auth/login-form.tsx", "src/auth/login.module.css"]
 }
 ```
 

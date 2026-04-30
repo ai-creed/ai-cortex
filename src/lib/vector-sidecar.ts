@@ -32,7 +32,10 @@ async function fileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-export async function writeVectorIndex(dir: string, index: VectorIndex): Promise<void> {
+export async function writeVectorIndex(
+	dir: string,
+	index: VectorIndex,
+): Promise<void> {
 	// Best-effort atomic rename — no low-level fsync; orphaned .tmp files on crash are harmless.
 	const binPath = path.join(dir, BIN_FILE);
 	const metaPath = path.join(dir, META_FILE);
@@ -41,14 +44,21 @@ export async function writeVectorIndex(dir: string, index: VectorIndex): Promise
 
 	await fs.promises.writeFile(
 		binTmp,
-		Buffer.from(index.matrix.buffer, index.matrix.byteOffset, index.matrix.byteLength),
+		Buffer.from(
+			index.matrix.buffer,
+			index.matrix.byteOffset,
+			index.matrix.byteLength,
+		),
 	);
 	await fs.promises.writeFile(metaTmp, JSON.stringify(index.meta), "utf8");
 	await fs.promises.rename(metaTmp, metaPath);
 	await fs.promises.rename(binTmp, binPath);
 }
 
-export async function readVectorIndex(dir: string, modelName: string): Promise<VectorIndex | null> {
+export async function readVectorIndex(
+	dir: string,
+	modelName: string,
+): Promise<VectorIndex | null> {
 	const binPath = path.join(dir, BIN_FILE);
 	const metaPath = path.join(dir, META_FILE);
 
@@ -58,9 +68,13 @@ export async function readVectorIndex(dir: string, modelName: string): Promise<V
 
 	let meta: SidecarMeta;
 	try {
-		meta = JSON.parse(await fs.promises.readFile(metaPath, "utf8")) as SidecarMeta;
+		meta = JSON.parse(
+			await fs.promises.readFile(metaPath, "utf8"),
+		) as SidecarMeta;
 	} catch {
-		throw new VectorIndexCorruptError(`failed to parse sidecar meta: ${metaPath}`);
+		throw new VectorIndexCorruptError(
+			`failed to parse sidecar meta: ${metaPath}`,
+		);
 	}
 
 	if (meta.modelName !== modelName) {
@@ -72,7 +86,9 @@ export async function readVectorIndex(dir: string, modelName: string): Promise<V
 		typeof meta.count !== "number" ||
 		!Array.isArray(meta.entries)
 	) {
-		throw new VectorIndexCorruptError(`sidecar meta missing required fields: ${metaPath}`);
+		throw new VectorIndexCorruptError(
+			`sidecar meta missing required fields: ${metaPath}`,
+		);
 	}
 
 	if (meta.entries.length !== meta.count) {

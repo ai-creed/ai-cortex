@@ -26,7 +26,10 @@ afterEach(() => {
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-function rec(id: string, overrides: Partial<SessionRecord> = {}): SessionRecord {
+function rec(
+	id: string,
+	overrides: Partial<SessionRecord> = {},
+): SessionRecord {
 	return {
 		version: HISTORY_SCHEMA_VERSION,
 		id,
@@ -39,7 +42,12 @@ function rec(id: string, overrides: Partial<SessionRecord> = {}): SessionRecord 
 		rawDroppedAt: null,
 		transcriptPath: "",
 		summary: "",
-		evidence: { toolCalls: [], filePaths: [], userPrompts: [], corrections: [] },
+		evidence: {
+			toolCalls: [],
+			filePaths: [],
+			userPrompts: [],
+			corrections: [],
+		},
 		chunks: [{ id: 0, tokenStart: 0, tokenEnd: 5, preview: "hi" }],
 		...overrides,
 	};
@@ -76,10 +84,19 @@ describe("pruneSessionRaw", () => {
 		await pruneSessionRaw("REPO", "a", "2026-05-25T00:00:00.000Z");
 
 		expect(fs.existsSync(chunksJsonlPath("REPO", "a"))).toBe(false);
-		expect(fs.existsSync(path.join(sessionDir("REPO", "a"), ".vectors.bin"))).toBe(false);
-		expect(fs.existsSync(path.join(sessionDir("REPO", "a"), ".vectors.meta.json"))).toBe(false);
+		expect(
+			fs.existsSync(path.join(sessionDir("REPO", "a"), ".vectors.bin")),
+		).toBe(false);
+		expect(
+			fs.existsSync(path.join(sessionDir("REPO", "a"), ".vectors.meta.json")),
+		).toBe(false);
 
-		const updated = JSON.parse(fs.readFileSync(path.join(sessionDir("REPO", "a"), "session.json"), "utf8")) as SessionRecord;
+		const updated = JSON.parse(
+			fs.readFileSync(
+				path.join(sessionDir("REPO", "a"), "session.json"),
+				"utf8",
+			),
+		) as SessionRecord;
 		expect(updated.hasRaw).toBe(false);
 		expect(updated.rawDroppedAt).toBe("2026-05-25T00:00:00.000Z");
 		expect(updated.chunks).toEqual([]);

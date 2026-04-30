@@ -8,10 +8,10 @@
 
 A benchmark on verbatim PR-title queries against a large real-world codebase (~8K files) showed:
 
-| Mode | hit@5 | avg durationMs | avg output bytes |
-|---|---:|---:|---:|
-| fast | **0 %** | 1 853 | 1 027 |
-| deep | **20 %** | 2 078 | 1 503 |
+| Mode |    hit@5 | avg durationMs | avg output bytes |
+| ---- | -------: | -------------: | ---------------: |
+| fast |  **0 %** |          1 853 |            1 027 |
+| deep | **20 %** |          2 078 |            1 503 |
 
 Deep is strictly better than fast on every measured dimension except ~200ms extra latency. The two-step "try fast, check escalation hint, call deep" workflow wastes one round-trip for zero benefit.
 

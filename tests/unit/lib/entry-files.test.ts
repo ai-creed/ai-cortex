@@ -15,7 +15,9 @@ function mockFsExists(exists: boolean): void {
 	if (exists) {
 		vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
 	} else {
-		vi.spyOn(fs.promises, "access").mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+		vi.spyOn(fs.promises, "access").mockRejectedValue(
+			Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+		);
 	}
 }
 
@@ -30,11 +32,13 @@ describe("readPackageMeta", () => {
 
 	it("reads name, version, and detects electron framework", async () => {
 		mockFsExists(true);
-		mockFsReadFile(JSON.stringify({
-			name: "my-app",
-			version: "1.2.3",
-			devDependencies: { electron: "^30.0.0" },
-		}));
+		mockFsReadFile(
+			JSON.stringify({
+				name: "my-app",
+				version: "1.2.3",
+				devDependencies: { electron: "^30.0.0" },
+			}),
+		);
 		const meta = await readPackageMeta("/repo");
 		expect(meta).toEqual({
 			name: "my-app",
@@ -45,21 +49,25 @@ describe("readPackageMeta", () => {
 
 	it("detects next framework", async () => {
 		mockFsExists(true);
-		mockFsReadFile(JSON.stringify({
-			name: "app",
-			version: "1.0.0",
-			dependencies: { next: "^14.0.0" },
-		}));
+		mockFsReadFile(
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				dependencies: { next: "^14.0.0" },
+			}),
+		);
 		expect((await readPackageMeta("/repo")).framework).toBe("next");
 	});
 
 	it("detects vite framework", async () => {
 		mockFsExists(true);
-		mockFsReadFile(JSON.stringify({
-			name: "app",
-			version: "1.0.0",
-			devDependencies: { vite: "^5.0.0" },
-		}));
+		mockFsReadFile(
+			JSON.stringify({
+				name: "app",
+				version: "1.0.0",
+				devDependencies: { vite: "^5.0.0" },
+			}),
+		);
 		expect((await readPackageMeta("/repo")).framework).toBe("vite");
 	});
 

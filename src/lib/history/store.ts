@@ -43,10 +43,16 @@ export type AcquireResult =
 	| { acquired: true; stoleFrom?: number }
 	| { acquired: false; reason: "locked" };
 
-export async function acquireLock(repoKey: string, sessionId: string): Promise<AcquireResult> {
+export async function acquireLock(
+	repoKey: string,
+	sessionId: string,
+): Promise<AcquireResult> {
 	await fs.promises.mkdir(sessionDir(repoKey, sessionId), { recursive: true });
 	const p = lockPath(repoKey, sessionId);
-	const payload = JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() });
+	const payload = JSON.stringify({
+		pid: process.pid,
+		startedAt: new Date().toISOString(),
+	});
 	let fd: fs.promises.FileHandle | null = null;
 	try {
 		fd = await fs.promises.open(p, "wx");
@@ -54,14 +60,27 @@ export async function acquireLock(repoKey: string, sessionId: string): Promise<A
 		await fd.close();
 		return { acquired: true };
 	} catch (err) {
-		if (fd) { try { await fd.close(); } catch { /* ignore */ } }
-		if (!(err instanceof Error) || (err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		if (fd) {
+			try {
+				await fd.close();
+			} catch {
+				/* ignore */
+			}
+		}
+		if (
+			!(err instanceof Error) ||
+			(err as NodeJS.ErrnoException).code !== "EEXIST"
+		)
+			throw err;
 	}
 
 	// Lock exists — check if stale.
 	let existing: { pid: number; startedAt: string };
 	try {
-		existing = JSON.parse(await fs.promises.readFile(p, "utf8")) as { pid: number; startedAt: string };
+		existing = JSON.parse(await fs.promises.readFile(p, "utf8")) as {
+			pid: number;
+			startedAt: string;
+		};
 	} catch {
 		// Corrupt lock — steal.
 		await fs.promises.writeFile(p, payload);
@@ -76,7 +95,10 @@ export async function acquireLock(repoKey: string, sessionId: string): Promise<A
 	return { acquired: false, reason: "locked" };
 }
 
-export async function releaseLock(repoKey: string, sessionId: string): Promise<void> {
+export async function releaseLock(
+	repoKey: string,
+	sessionId: string,
+): Promise<void> {
 	try {
 		await fs.promises.unlink(lockPath(repoKey, sessionId));
 	} catch (err) {
@@ -93,7 +115,10 @@ function isPidAlive(pid: number): boolean {
 	}
 }
 
-export async function writeSession(repoKey: string, rec: SessionRecord): Promise<void> {
+export async function writeSession(
+	repoKey: string,
+	rec: SessionRecord,
+): Promise<void> {
 	const dir = sessionDir(repoKey, rec.id);
 	await fs.promises.mkdir(dir, { recursive: true });
 	const finalPath = sessionJsonPath(repoKey, rec.id);
@@ -119,7 +144,10 @@ export async function writeSession(repoKey: string, rec: SessionRecord): Promise
 	}
 }
 
-export async function readSession(repoKey: string, sessionId: string): Promise<SessionRecord | null> {
+export async function readSession(
+	repoKey: string,
+	sessionId: string,
+): Promise<SessionRecord | null> {
 	const p = sessionJsonPath(repoKey, sessionId);
 	try {
 		await fs.promises.access(p);
@@ -129,16 +157,25 @@ export async function readSession(repoKey: string, sessionId: string): Promise<S
 	return JSON.parse(await fs.promises.readFile(p, "utf8")) as SessionRecord;
 }
 
-export async function writeAllChunks(repoKey: string, sessionId: string, chunks: ChunkText[]): Promise<void> {
+export async function writeAllChunks(
+	repoKey: string,
+	sessionId: string,
+	chunks: ChunkText[],
+): Promise<void> {
 	await fs.promises.mkdir(sessionDir(repoKey, sessionId), { recursive: true });
 	const finalPath = chunksJsonlPath(repoKey, sessionId);
 	const tmp = finalPath + ".tmp";
-	const body = chunks.map((c) => JSON.stringify(c)).join("\n") + (chunks.length > 0 ? "\n" : "");
+	const body =
+		chunks.map((c) => JSON.stringify(c)).join("\n") +
+		(chunks.length > 0 ? "\n" : "");
 	await fs.promises.writeFile(tmp, body);
 	await fs.promises.rename(tmp, finalPath);
 }
 
-export async function readAllChunks(repoKey: string, sessionId: string): Promise<ChunkText[]> {
+export async function readAllChunks(
+	repoKey: string,
+	sessionId: string,
+): Promise<ChunkText[]> {
 	const p = chunksJsonlPath(repoKey, sessionId);
 	try {
 		await fs.promises.access(p);
@@ -154,14 +191,22 @@ export async function readAllChunks(repoKey: string, sessionId: string): Promise
 	return out;
 }
 
-export async function getChunkText(repoKey: string, sessionId: string, id: number): Promise<string | null> {
+export async function getChunkText(
+	repoKey: string,
+	sessionId: string,
+	id: number,
+): Promise<string | null> {
 	for (const c of await readAllChunks(repoKey, sessionId)) {
 		if (c.id === id) return c.text;
 	}
 	return null;
 }
 
-export type ChunkVectorInput = { id: number; text: string; vector: Float32Array };
+export type ChunkVectorInput = {
+	id: number;
+	text: string;
+	vector: Float32Array;
+};
 
 export type ChunkVectors = {
 	byChunkId: Map<number, Float32Array>;
@@ -205,7 +250,10 @@ export async function readChunkVectors(
 	// Build a text→hash map from current chunks for staleness detection
 	const currentHashes = new Map<number, string>();
 	for (const c of await readAllChunks(repoKey, sessionId)) {
-		currentHashes.set(c.id, crypto.createHash("sha256").update(c.text).digest("hex"));
+		currentHashes.set(
+			c.id,
+			crypto.createHash("sha256").update(c.text).digest("hex"),
+		);
 	}
 	const byChunkId = new Map<number, Float32Array>();
 	for (let i = 0; i < idx.meta.count; i += 1) {
@@ -246,7 +294,11 @@ export async function listSessions(repoKey: string): Promise<string[]> {
 	return out;
 }
 
-export async function pruneSessionRaw(repoKey: string, sessionId: string, droppedAtIso: string): Promise<void> {
+export async function pruneSessionRaw(
+	repoKey: string,
+	sessionId: string,
+	droppedAtIso: string,
+): Promise<void> {
 	const dir = sessionDir(repoKey, sessionId);
 	for (const name of ["chunks.jsonl", ".vectors.bin", ".vectors.meta.json"]) {
 		const p = path.join(dir, name);
@@ -264,9 +316,15 @@ export async function pruneSessionRaw(repoKey: string, sessionId: string, droppe
 	await writeSession(repoKey, rec);
 }
 
-export async function pruneSession(repoKey: string, sessionId: string): Promise<void> {
+export async function pruneSession(
+	repoKey: string,
+	sessionId: string,
+): Promise<void> {
 	try {
-		await fs.promises.rm(sessionDir(repoKey, sessionId), { recursive: true, force: true });
+		await fs.promises.rm(sessionDir(repoKey, sessionId), {
+			recursive: true,
+			force: true,
+		});
 	} catch {
 		// already gone
 	}

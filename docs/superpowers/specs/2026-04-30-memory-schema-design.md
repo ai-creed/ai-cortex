@@ -21,6 +21,7 @@ ai-cortex already captures raw session transcripts under `~/.cache/ai-cortex/<re
 Sessions are evidence. They are not memory. A session ends; the insight inside it stays buried unless someone re-asks. Memory is the layer that distils evidence into durable, structured, evolving knowledge — decisions, gotchas, patterns, how-tos — with explicit lifecycle (creation, refinement, deprecation, merge, removal).
 
 Existing assets we extend:
+
 - `~/.cache/ai-cortex/<repoKey>/` — per-repo cache layout, atomic-write conventions
 - `src/lib/history/` — session capture, compaction, evidence layer, embedding sidecar
 - `src/lib/embed-provider.ts` — Xenova MiniLM L6 v2 sentence embeddings (reused; no new model)
@@ -28,6 +29,7 @@ Existing assets we extend:
 - `src/lib/cache-store.ts` — atomic temp-file rename, repo-key isolation
 
 What's new:
+
 - Memory store, parallel to `history/`, with its own sqlite index and markdown source-of-truth files
 - Two-tier (project + global) layout
 - Lifecycle state machine
@@ -63,6 +65,7 @@ src/
 ```
 
 Boundaries:
+
 - `store.ts` is the only writer of `.md` files. `index.ts` is the only writer of sqlite. Both are called by `lifecycle.ts`, never directly by callers.
 - `retrieve.ts` is read-only; `lifecycle.ts` is write-only.
 - `extract.ts` lives under `history/` (it consumes history) but writes into memory via `record_memory` — same path as explicit writes.
@@ -130,32 +133,33 @@ One vector per memory, embedded from `title + body` concatenated. Stored in the 
 
 ```yaml
 ---
-id: mem-2026-04-30-cache-atomic-writes-a3f9c1   # mem-YYYY-MM-DD-<slug>-<6-hex>; slug from title, kebab-case, ≤40 chars; hex suffix prevents collisions on same date + slug
-type: decision                                # decision | gotcha | pattern | how-to | <user-registered>
-status: active                                # active | candidate | deprecated | merged_into | trashed | stale_reference | purged_redacted
-title: Repo cache writes use atomic temp-file rename   # ≤120 chars
-version: 3                                    # integer; bumped on each body/scope mutation
-createdAt: 2026-04-21T14:02:11Z              # ISO-8601 UTC
+id: mem-2026-04-30-cache-atomic-writes-a3f9c1 # mem-YYYY-MM-DD-<slug>-<6-hex>; slug from title, kebab-case, ≤40 chars; hex suffix prevents collisions on same date + slug
+type: decision # decision | gotcha | pattern | how-to | <user-registered>
+status: active # active | candidate | deprecated | merged_into | trashed | stale_reference | purged_redacted
+title: Repo cache writes use atomic temp-file rename # ≤120 chars
+version: 3 # integer; bumped on each body/scope mutation
+createdAt: 2026-04-21T14:02:11Z # ISO-8601 UTC
 updatedAt: 2026-04-30T09:18:44Z
-source: explicit                              # explicit | extracted
-confidence: 1.0                               # 0.0–1.0; explicit defaults 1.0; extracted varies
-pinned: false                                 # auto-inject in rehydration briefing
+source: explicit # explicit | extracted
+confidence: 1.0 # 0.0–1.0; explicit defaults 1.0; extracted varies
+pinned: false # auto-inject in rehydration briefing
 scope:
-  files: [src/lib/cache-store.ts]            # zero or more; empty = project-wide
-  tags:  [caching, atomicity]                # zero or more
+  files: [src/lib/cache-store.ts] # zero or more; empty = project-wide
+  tags: [caching, atomicity] # zero or more
 provenance:
-  - sessionId: s-2026-04-21-7c3e             # references history session
-    turn: 42                                  # turn within that session
-    kind: user_correction                    # mirrors EvidenceLayer kinds in history/types.ts
-    excerpt: "we got burned last quarter when..."  # optional cached text
-supersedes: []                                # ids replaced by this memory (1:1 lifecycle pointer)
-mergedInto: null                              # destination id if status=merged_into
-deprecationReason: null                       # text if status=deprecated
-promotedFrom: []                              # if global, list of source-project provenance
+  - sessionId: s-2026-04-21-7c3e # references history session
+    turn: 42 # turn within that session
+    kind: user_correction # mirrors EvidenceLayer kinds in history/types.ts
+    excerpt: "we got burned last quarter when..." # optional cached text
+supersedes: [] # ids replaced by this memory (1:1 lifecycle pointer)
+mergedInto: null # destination id if status=merged_into
+deprecationReason: null # text if status=deprecated
+promotedFrom: [] # if global, list of source-project provenance
 ---
 ```
 
 `provenance.kind` values (mirroring `src/lib/history/types.ts` `EvidenceLayer`):
+
 - `user_correction` (from `corrections`)
 - `user_prompt` (from `userPrompts`)
 - `tool_call` (from `toolCalls`)
@@ -191,19 +195,41 @@ User-extensible. Lives at the root of each store (project and global have indepe
 
 ```jsonc
 {
-  "version": 1,
-  "types": {
-    "decision":  { "builtIn": true,  "bodySections": ["Rule", "Why", "Alternatives considered"] },
-    "gotcha":    { "builtIn": true,  "extraFrontmatter": { "severity": ["info","warning","critical"] }, "bodySections": ["Symptom","Cause","Workaround","How to detect"] },
-    "pattern":   { "builtIn": true,  "bodySections": ["Where","Convention","Examples"] },
-    "how-to":    { "builtIn": true,  "bodySections": ["Goal","Steps","Verification"] },
+	"version": 1,
+	"types": {
+		"decision": {
+			"builtIn": true,
+			"bodySections": ["Rule", "Why", "Alternatives considered"],
+		},
+		"gotcha": {
+			"builtIn": true,
+			"extraFrontmatter": { "severity": ["info", "warning", "critical"] },
+			"bodySections": ["Symptom", "Cause", "Workaround", "How to detect"],
+		},
+		"pattern": {
+			"builtIn": true,
+			"bodySections": ["Where", "Convention", "Examples"],
+		},
+		"how-to": {
+			"builtIn": true,
+			"bodySections": ["Goal", "Steps", "Verification"],
+		},
 
-    "incident": {
-      "builtIn": false,
-      "extraFrontmatter": { "severity": ["minor","major","outage"], "rootCauseLink": "string?" },
-      "bodySections": ["Trigger","Impact","Root cause","Resolution","Prevention"]
-    }
-  }
+		"incident": {
+			"builtIn": false,
+			"extraFrontmatter": {
+				"severity": ["minor", "major", "outage"],
+				"rootCauseLink": "string?",
+			},
+			"bodySections": [
+				"Trigger",
+				"Impact",
+				"Root cause",
+				"Resolution",
+				"Prevention",
+			],
+		},
+	},
 }
 ```
 
@@ -278,7 +304,7 @@ CREATE VIRTUAL TABLE memory_fts USING fts5(
 );
 ```
 
-`memory_audit` rows are **never deleted from** under default purge. The row stays — providing a permanent "memory X existed and was removed" trail. Under privacy-grade purge (`purge_memory(id, reason, { redact: true })`), the row stays *but its `prev_body` and `reason` columns are nulled / redacted* — see "API surface — write tools" and "Aging and dump policy".
+`memory_audit` rows are **never deleted from** under default purge. The row stays — providing a permanent "memory X existed and was removed" trail. Under privacy-grade purge (`purge_memory(id, reason, { redact: true })`), the row stays _but its `prev_body` and `reason` columns are nulled / redacted_ — see "API surface — write tools" and "Aging and dump policy".
 
 `memory_links` rows are deleted via foreign-key cascade when either endpoint is purged (not when deprecated or trashed — those preserve edges for audit).
 
@@ -316,22 +342,22 @@ CREATE VIRTUAL TABLE memory_fts USING fts5(
 
 ### Transition table
 
-| From → To | Trigger | Caller |
-|---|---|---|
-| (none) → `candidate` | auto-extractor finds repeated pattern across sessions | session compactor |
-| (none) → `active` | `record_memory({ source: "explicit" })` | agent or user |
-| `candidate` → `active` | promotion signals met | promotion sweep, or `confirm_memory(id)` |
-| `candidate` → `trashed` | not promoted within 90d | aging sweep |
-| `active` → `deprecated` | `deprecate_memory(id, reason)` | agent or user |
-| `active` → `merged_into` | merge of two memories | `merge_memories(srcId, dstId, mergedBody)` |
-| `active` → `stale_reference` | scope file deleted from repo | indexer post-pass |
-| `deprecated` → `active` | `restore_memory(id)` | agent or user |
-| `deprecated` → `trashed` | aged > 180d | aging sweep |
-| `merged_into` → `trashed` | aged > 90d | aging sweep |
-| `stale_reference` → `active` | scope updated to existing path | `update_scope(id, files, tags)` |
-| `stale_reference` → `deprecated` | review confirms gone | `deprecate_memory(id, reason)` |
-| `trashed` → `active` | `untrash_memory(id)` within 90d | agent or user |
-| `trashed` → (purged) | aged > 90d | purge sweep (audit row remains forever) |
+| From → To                        | Trigger                                               | Caller                                     |
+| -------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
+| (none) → `candidate`             | auto-extractor finds repeated pattern across sessions | session compactor                          |
+| (none) → `active`                | `record_memory({ source: "explicit" })`               | agent or user                              |
+| `candidate` → `active`           | promotion signals met                                 | promotion sweep, or `confirm_memory(id)`   |
+| `candidate` → `trashed`          | not promoted within 90d                               | aging sweep                                |
+| `active` → `deprecated`          | `deprecate_memory(id, reason)`                        | agent or user                              |
+| `active` → `merged_into`         | merge of two memories                                 | `merge_memories(srcId, dstId, mergedBody)` |
+| `active` → `stale_reference`     | scope file deleted from repo                          | indexer post-pass                          |
+| `deprecated` → `active`          | `restore_memory(id)`                                  | agent or user                              |
+| `deprecated` → `trashed`         | aged > 180d                                           | aging sweep                                |
+| `merged_into` → `trashed`        | aged > 90d                                            | aging sweep                                |
+| `stale_reference` → `active`     | scope updated to existing path                        | `update_scope(id, files, tags)`            |
+| `stale_reference` → `deprecated` | review confirms gone                                  | `deprecate_memory(id, reason)`             |
+| `trashed` → `active`             | `untrash_memory(id)` within 90d                       | agent or user                              |
+| `trashed` → (purged)             | aged > 90d                                            | purge sweep (audit row remains forever)    |
 
 ### Promotion signals (`candidate` → `active`)
 
@@ -344,12 +370,12 @@ Any **one** of these promotes:
 
 Default thresholds, configurable per type in `memory.promotion.<type>.*`:
 
-| Type | `re_extraction_promote_count` |
-|---|---|
-| `decision` | 5 (high stakes) |
-| `gotcha` | 3 |
-| `pattern` | 2 |
-| `how-to` | 3 |
+| Type       | `re_extraction_promote_count` |
+| ---------- | ----------------------------- |
+| `decision` | 5 (high stakes)               |
+| `gotcha`   | 3                             |
+| `pattern`  | 2                             |
+| `how-to`   | 3                             |
 
 ### Versioning and audit
 
@@ -371,12 +397,12 @@ Default thresholds, configurable per type in `memory.promotion.<type>.*`:
 
 Stored in `memory_links`. Four edge types in v1:
 
-| Edge type | Semantics | Example |
-|---|---|---|
-| `supports` | A reinforces / cites B | A how-to that implements a decision |
-| `contradicts` | A conflicts with B | Two patterns describing the same code path differently |
-| `refines` | A is a more specific version of B | Linux-specific gotcha refining a generic concurrency rule |
-| `depends_on` | A only makes sense if B holds | A workaround whose validity rests on a particular decision |
+| Edge type     | Semantics                         | Example                                                    |
+| ------------- | --------------------------------- | ---------------------------------------------------------- |
+| `supports`    | A reinforces / cites B            | A how-to that implements a decision                        |
+| `contradicts` | A conflicts with B                | Two patterns describing the same code path differently     |
+| `refines`     | A is a more specific version of B | Linux-specific gotcha refining a generic concurrency rule  |
+| `depends_on`  | A only makes sense if B holds     | A workaround whose validity rests on a particular decision |
 
 Edges persist across status transitions. Default retrieval filters edges to endpoints where `status ∈ {active, candidate}`. Inspecting the full graph (including dead edges) is opt-in. Edges are deleted only when either endpoint is **purged** (FK cascade).
 
@@ -394,8 +420,8 @@ Provenance is the bridge between memory and the existing `history/` layer (see S
 provenance:
   - sessionId: s-2026-04-21-7c3e
     turn: 42
-    kind: user_correction              # mirrors EvidenceLayer kind
-    excerpt: "..."                      # optional cached text
+    kind: user_correction # mirrors EvidenceLayer kind
+    excerpt: "..." # optional cached text
 ```
 
 ### Excerpt policy
@@ -414,6 +440,7 @@ Each subsequent session that reproduces a candidate's pattern appends a provenan
 ### When the source session is gone
 
 History has its own retention. If a `provenance.sessionId` no longer resolves:
+
 - The entry stays as a tombstone.
 - Retrieval ignores tombstoned entries for ranking signals.
 - The audit story is preserved via `excerpt` (when present) and the audit log.
@@ -442,9 +469,9 @@ The session's `EvidenceLayer` (`toolCalls`, `filePaths`, `userPrompts`, `correct
 
 ```ts
 export type CorrectionEvidence = {
-  turn: number;
-  text: string;
-  nextAssistantSnippet?: string;   // ≤500 chars, compacted, of the next assistant turn
+	turn: number;
+	text: string;
+	nextAssistantSnippet?: string; // ≤500 chars, compacted, of the next assistant turn
 };
 // same field added to UserPromptEvidence
 ```
@@ -455,12 +482,12 @@ export type CorrectionEvidence = {
 
 Rule-based and regex-heavy. Confidence reflects signal strength; nothing extracted ranks against active memories until promotion.
 
-| Target type | Trigger pattern | Body source | Scope source | Initial confidence |
-|---|---|---|---|---|
-| `decision` | A `correction` containing imperative cues (`must`, `always`, `never`, `should`, `don't`, `prefer`); optional acknowledgment cue in `correction.nextAssistantSnippet` (`got it`, `understood`, `will do`, paraphrase of rule) | Correction text + 1-line context | Files referenced ±3 turns in `filePaths`; tags from keyword extraction | 0.55 (with ack) / 0.45 (without) |
-| `gotcha` | A `correction` containing symptom cues (`breaks`, `fails`, `race`, `hangs`, `wrong`, `bug`, `flaky`) AND `correction.nextAssistantSnippet` containing workaround language (`fix`, `instead`, `workaround`, `use … instead`) | Correction + workaround snippet | File mentioned nearest the correction in `filePaths` | 0.55 (with workaround signal) / 0.45 (without) |
-| `pattern` | Cross-session co-occurrence: same file set in `filePaths` across ≥3 sessions with similar query language (cosine on userPrompts ≥ 0.7) | Generated from co-occurring files + session summaries | The co-occurring files | 0.35 |
-| `how-to` | `userPrompt` matching `^(how (do|to|can) i)|^(steps|process|procedure)` followed by ≥3 sequential tool calls; optional numbered-list cue in `userPrompt.nextAssistantSnippet` (regex matches numbered-list opening) | Numbered list from snippet, or generated from tool-call sequence | Files touched in the tool calls (`filePaths` within the tool-call window) | 0.50 (with closing list) / 0.40 (without) |
+| Target type | Trigger pattern                                                                                                                                                                                                              | Body source                                           | Scope source                                                           | Initial confidence                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------- |
+| `decision`  | A `correction` containing imperative cues (`must`, `always`, `never`, `should`, `don't`, `prefer`); optional acknowledgment cue in `correction.nextAssistantSnippet` (`got it`, `understood`, `will do`, paraphrase of rule) | Correction text + 1-line context                      | Files referenced ±3 turns in `filePaths`; tags from keyword extraction | 0.55 (with ack) / 0.45 (without)               |
+| `gotcha`    | A `correction` containing symptom cues (`breaks`, `fails`, `race`, `hangs`, `wrong`, `bug`, `flaky`) AND `correction.nextAssistantSnippet` containing workaround language (`fix`, `instead`, `workaround`, `use … instead`)  | Correction + workaround snippet                       | File mentioned nearest the correction in `filePaths`                   | 0.55 (with workaround signal) / 0.45 (without) |
+| `pattern`   | Cross-session co-occurrence: same file set in `filePaths` across ≥3 sessions with similar query language (cosine on userPrompts ≥ 0.7)                                                                                       | Generated from co-occurring files + session summaries | The co-occurring files                                                 | 0.35                                           |
+| `how-to`    | `userPrompt` matching `^(how (do                                                                                                                                                                                             | to                                                    | can) i)                                                                | ^(steps                                        | process | procedure)`followed by ≥3 sequential tool calls; optional numbered-list cue in`userPrompt.nextAssistantSnippet` (regex matches numbered-list opening) | Numbered list from snippet, or generated from tool-call sequence | Files touched in the tool calls (`filePaths` within the tool-call window) | 0.50 (with closing list) / 0.40 (without) |
 
 These heuristics are explicitly fragile starting points. The whole pipeline is gated by the `candidate` lifecycle state; the dedup + aging story is the safety net.
 
@@ -493,14 +520,18 @@ Per-session manifest written to `~/.cache/ai-cortex/<repoKey>/memory/extractor-r
 
 ```jsonc
 {
-  "version": 1,
-  "sessionId": "s-2026-04-29-9d11",
-  "runAt": "2026-04-30T10:14:00Z",
-  "candidatesCreated": 2,
-  "evidenceAppended": 3,
-  "rejectedCandidates": [
-    { "type": "decision", "reason": "below confidence floor 0.4", "previewText": "..." }
-  ]
+	"version": 1,
+	"sessionId": "s-2026-04-29-9d11",
+	"runAt": "2026-04-30T10:14:00Z",
+	"candidatesCreated": 2,
+	"evidenceAppended": 3,
+	"rejectedCandidates": [
+		{
+			"type": "decision",
+			"reason": "below confidence floor 0.4",
+			"previewText": "...",
+		},
+	],
 }
 ```
 
@@ -514,7 +545,7 @@ Inspectable via `ai-cortex memory extractor-log <sessionId>`. Critical for tunin
 
 **Stage 1 — Sqlite filter.** Returns up to 200 candidate memories.
 
-The scope filter has two cases. (a) The query carries **no** scope filter (both `:files` and `:tags` are null/empty): every status-eligible memory passes. (b) The query carries **a** scope filter: a memory passes if its scope row matches *any* provided file or tag, or if it has *no* scope rows at all (project-wide memories are always eligible under any scoped query).
+The scope filter has two cases. (a) The query carries **no** scope filter (both `:files` and `:tags` are null/empty): every status-eligible memory passes. (b) The query carries **a** scope filter: a memory passes if its scope row matches _any_ provided file or tag, or if it has _no_ scope rows at all (project-wide memories are always eligible under any scoped query).
 
 ```sql
 -- attach global, then UNION across project + global
@@ -584,6 +615,7 @@ Briefing fragment example:
 ## Pinned memories (5)
 
 - **decision** — Cache writes use atomic temp-file rename
+
   > All writes under `~/.cache/ai-cortex/<repoKey>/` write to `.tmp` then `rename()`. (mem-2026-04-30-cache-atomic-writes-a3f9c1)
 
 - **gotcha** [critical] — Parser must init before parallel adapter factories on Linux
@@ -596,14 +628,14 @@ Briefing fragment example:
 
 Aging runs as a single sweep on session start (or via `sweep_aging`). All thresholds in `memory.aging.*` config; numbers below are defaults.
 
-| State | Trigger | Action | Default |
-|---|---|---|---|
-| `candidate` | not promoted in N days | → `trashed` | 90d |
-| `candidate` (low-conf) | confidence < 0.4 AND never retrieved AND > N days | → `trashed` | 90d |
-| `deprecated` | aged > N days | → `trashed` | 180d |
-| `merged_into` | aged > N days | → `trashed` | 90d |
-| `trashed` | aged > N days | → purged (file deleted; audit row stays) | 90d |
-| `stale_reference` | — | **never auto-aged**; needs human/agent review | — |
+| State                  | Trigger                                           | Action                                        | Default |
+| ---------------------- | ------------------------------------------------- | --------------------------------------------- | ------- |
+| `candidate`            | not promoted in N days                            | → `trashed`                                   | 90d     |
+| `candidate` (low-conf) | confidence < 0.4 AND never retrieved AND > N days | → `trashed`                                   | 90d     |
+| `deprecated`           | aged > N days                                     | → `trashed`                                   | 180d    |
+| `merged_into`          | aged > N days                                     | → `trashed`                                   | 90d     |
+| `trashed`              | aged > N days                                     | → purged (file deleted; audit row stays)      | 90d     |
+| `stale_reference`      | —                                                 | **never auto-aged**; needs human/agent review | —       |
 
 `sweep_aging({ dryRun: true })` previews actions without applying them.
 
@@ -614,13 +646,13 @@ Aging runs as a single sweep on session start (or via `sweep_aging`). All thresh
 
 ### Purge modes
 
-Purge has two modes, distinguished by their treatment of body remnants. Both delete the `.md` file immediately (or, for #1, when trash retention expires); they differ in what *content* survives in audit, provenance, and FTS.
+Purge has two modes, distinguished by their treatment of body remnants. Both delete the `.md` file immediately (or, for #1, when trash retention expires); they differ in what _content_ survives in audit, provenance, and FTS.
 
-**Default purge** — `purge_memory(id, reason)` *or* the trash-retention sweep:
+**Default purge** — `purge_memory(id, reason)` _or_ the trash-retention sweep:
 
 - `.md` file deleted.
 - `memory_audit` rows stay verbatim. May contain `prev_body` (per the per-type `auditPreserveBody` opt-in).
-- `provenance.excerpt` cached in *other* memories that reference this one stays.
+- `provenance.excerpt` cached in _other_ memories that reference this one stays.
 - FTS5 row deleted (the live searchable surface goes; the audit log is not search-indexed).
 - `memories` row stays with `status = trashed` (sweep path) or removed entirely (explicit purge path) — see "Concurrency / reconcile" for the canonicalization.
 
@@ -630,7 +662,7 @@ This is appropriate when you simply want the file gone but the audit story prese
 
 Use when the body content itself is sensitive (captured a credential, leaked private info, etc.) and must not survive anywhere within memory M's own state.
 
-Scope is the purged memory's own state. The body of M never appears in other memories' fields by any path the data model exposes — `provenance.excerpt` references session content (not memory bodies), `memory_links` carries no body, lifecycle pointers (`supersedes`, `mergedInto`, `promotedFrom`) are id pointers only. So redact does *not* walk other memories.
+Scope is the purged memory's own state. The body of M never appears in other memories' fields by any path the data model exposes — `provenance.excerpt` references session content (not memory bodies), `memory_links` carries no body, lifecycle pointers (`supersedes`, `mergedInto`, `promotedFrom`) are id pointers only. So redact does _not_ walk other memories.
 
 Steps applied to M:
 
@@ -671,7 +703,7 @@ Global-only queries: `recall_memory({ source: "global" })` for the user-curated 
 
 In v1: **manual only.**
 
-- `record_memory({ scope: { global: true }, ... })` writes directly to global. **Note:** `scope.global` is an API-level routing parameter, *not* a frontmatter field — it tells `lifecycle.create` which store to write to. The stored memory carries no `global` field; its location (`global/memory/memories/`) is the scope marker.
+- `record_memory({ scope: { global: true }, ... })` writes directly to global. **Note:** `scope.global` is an API-level routing parameter, _not_ a frontmatter field — it tells `lifecycle.create` which store to write to. The stored memory carries no `global` field; its location (`global/memory/memories/`) is the scope marker.
 - `promote_to_global(memoryId)` re-homes a project memory: copies it to global with a `promotedFrom` backref; the original gets `status = merged_into`, `mergedInto = <global-id>`.
 
 **Auto-promotion** (cross-project compactor that detects similar memories across multiple repoKeys and proposes global candidates) is **deferred to v2**. Triggers to revisit: manual promotion stops scaling, or specific cross-project gotchas surface repeatedly.
@@ -681,6 +713,7 @@ In v1: **manual only.**
 ai-cortex global memory is for **agent-derived knowledge** (gotchas, patterns the agent observed, decisions across projects).
 
 Out of scope and untouched by v1:
+
 - `~/.claude/CLAUDE.md` user instructions (harness reads, user-edited)
 - `~/.claude/projects/<encoded-cwd>/memory/` Claude auto-memory (harness writes, user-edited)
 
@@ -697,6 +730,7 @@ ai-cortex memory bootstrap [--repo <path>] [--limit-sessions N] [--min-confidenc
 ```
 
 What it does:
+
 1. Reads existing `~/.cache/ai-cortex/<repoKey>/history/sessions/*/session.json`.
 2. Runs the auto-extractor over each session.
 3. Clusters similar candidates across sessions (cosine ≥ 0.92, type match, tag overlap) into single memories with multi-evidence provenance.
@@ -710,13 +744,13 @@ Conservative by design: it produces a candidate flood, not active memories. Agen
 
 ### MCP tools — read
 
-| Tool | Purpose | Returns |
-|---|---|---|
-| `recall_memory(query, options?)` | Primary retrieval. Hybrid filter + vector rank. | Top-K memories with `id, title, type, status, scope, body_excerpt, score, links` |
-| `get_memory(id)` | Fetch full body by ID. | Full markdown body + frontmatter |
-| `list_memories(filters?)` | Admin/inspection — filter by type/status/scope/date. | Lightweight list (no body) |
-| `search_memories(query)` | Keyword/FTS5 search. | Top-K by FTS5 rank |
-| `audit_memory(id)` | Show full version history of a memory. | Audit log rows |
+| Tool                             | Purpose                                              | Returns                                                                          |
+| -------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `recall_memory(query, options?)` | Primary retrieval. Hybrid filter + vector rank.      | Top-K memories with `id, title, type, status, scope, body_excerpt, score, links` |
+| `get_memory(id)`                 | Fetch full body by ID.                               | Full markdown body + frontmatter                                                 |
+| `list_memories(filters?)`        | Admin/inspection — filter by type/status/scope/date. | Lightweight list (no body)                                                       |
+| `search_memories(query)`         | Keyword/FTS5 search.                                 | Top-K by FTS5 rank                                                               |
+| `audit_memory(id)`               | Show full version history of a memory.               | Audit log rows                                                                   |
 
 `recall_memory` options:
 
@@ -805,40 +839,45 @@ All under `memory.*` namespace, layered: defaults in code → `~/.config/ai-cort
 
 ```jsonc
 {
-  "memory": {
-    "aging": {
-      "candidate_to_trashed_days": 90,
-      "deprecated_to_trashed_days": 180,
-      "merged_into_to_trashed_days": 90,
-      "trashed_to_purged_days": 90,
-      "low_confidence_threshold": 0.4
-    },
-    "promotion": {
-      "decision":  { "re_extraction_promote_count": 5 },
-      "gotcha":    { "re_extraction_promote_count": 3 },
-      "pattern":   { "re_extraction_promote_count": 2 },
-      "how-to":    { "re_extraction_promote_count": 3 }
-    },
-    "extractor": {
-      "dedupCosine": 0.85,
-      "reExtractionMatchCosine": 0.92
-    },
-    "ranking": {
-      "weights": {
-        "semantic": 0.50, "scope": 0.30, "status": 0.10,
-        "confidence": 0.05, "recency": 0.05, "source": 0.10,
-        "link": 0.05, "type_mismatch_penalty": 0.20
-      },
-      "recency_half_life_days": 60,
-      "candidate_pool_size": 200,
-      "top_k": 10
-    },
-    "injection": {
-      "pinned_hard_cap": 20,
-      "pinned_soft_warn": 10,
-      "auto_inject_top_k": 5
-    }
-  }
+	"memory": {
+		"aging": {
+			"candidate_to_trashed_days": 90,
+			"deprecated_to_trashed_days": 180,
+			"merged_into_to_trashed_days": 90,
+			"trashed_to_purged_days": 90,
+			"low_confidence_threshold": 0.4,
+		},
+		"promotion": {
+			"decision": { "re_extraction_promote_count": 5 },
+			"gotcha": { "re_extraction_promote_count": 3 },
+			"pattern": { "re_extraction_promote_count": 2 },
+			"how-to": { "re_extraction_promote_count": 3 },
+		},
+		"extractor": {
+			"dedupCosine": 0.85,
+			"reExtractionMatchCosine": 0.92,
+		},
+		"ranking": {
+			"weights": {
+				"semantic": 0.5,
+				"scope": 0.3,
+				"status": 0.1,
+				"confidence": 0.05,
+				"recency": 0.05,
+				"source": 0.1,
+				"link": 0.05,
+				"type_mismatch_penalty": 0.2,
+			},
+			"recency_half_life_days": 60,
+			"candidate_pool_size": 200,
+			"top_k": 10,
+		},
+		"injection": {
+			"pinned_hard_cap": 20,
+			"pinned_soft_warn": 10,
+			"auto_inject_top_k": 5,
+		},
+	},
 }
 ```
 
@@ -880,7 +919,7 @@ For each `.md` file under `memories/` and `trash/`:
 
 For each row in `memories`:
 
-- If the corresponding `.md` file is missing AND `status != purged_redacted`: this is a phantom row from a crash before step 2 succeeded *and* before any later write replaced it. Delete the `memories` row (FK cascade clears `memory_scope`, `memory_links`, `memory_fts`); audit row stays.
+- If the corresponding `.md` file is missing AND `status != purged_redacted`: this is a phantom row from a crash before step 2 succeeded _and_ before any later write replaced it. Delete the `memories` row (FK cascade clears `memory_scope`, `memory_links`, `memory_fts`); audit row stays.
 - If `status = trashed` but file is in `memories/` (or vice versa): trust the file location, update `status`. Append an audit row tagged `change_type: "reconcile"`.
 
 For the vector sidecar:
@@ -917,23 +956,24 @@ No lock files introduced for v1. The MCP server is single-process per session; t
 
 ### Deferred
 
-| Deferred | Why | Trigger to revisit |
-|---|---|---|
-| Auto cross-project promotion | Needs cross-store crawler, similarity clustering, contradiction handling. | Manual `promote_to_global` stops scaling. |
-| `use_without_contradiction` promotion signal | Heuristic, hard to attribute, easy to misfire. | Re-extraction stability proves insufficient. |
-| Symbol-level and line-range scope | Symbol identity fragile; line ranges rot on edit. | File-level scope ranks too coarsely. |
-| Edge weights and graph-walk ranking | Linear `link_boost` covers most value. | Retrieval clearly under-uses relationships. |
-| Per-section embedding | Single vector simpler; embeddings cheap. | Long memories rank poorly because most body is irrelevant to query. |
-| Memory templates | Conventions are not enforced; not blocking. | Authoring fatigue surfaces. |
-| Web UI | `.md` files inspectable; CLI covers admin. | Users actually want it. |
-| Encryption at rest | Out of scope for local-first. | Compliance need surfaces. |
-| Periodic batch extraction (cron) | Per-session covers steady state. | Per-session triggers prove unreliable. |
+| Deferred                                     | Why                                                                       | Trigger to revisit                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Auto cross-project promotion                 | Needs cross-store crawler, similarity clustering, contradiction handling. | Manual `promote_to_global` stops scaling.                           |
+| `use_without_contradiction` promotion signal | Heuristic, hard to attribute, easy to misfire.                            | Re-extraction stability proves insufficient.                        |
+| Symbol-level and line-range scope            | Symbol identity fragile; line ranges rot on edit.                         | File-level scope ranks too coarsely.                                |
+| Edge weights and graph-walk ranking          | Linear `link_boost` covers most value.                                    | Retrieval clearly under-uses relationships.                         |
+| Per-section embedding                        | Single vector simpler; embeddings cheap.                                  | Long memories rank poorly because most body is irrelevant to query. |
+| Memory templates                             | Conventions are not enforced; not blocking.                               | Authoring fatigue surfaces.                                         |
+| Web UI                                       | `.md` files inspectable; CLI covers admin.                                | Users actually want it.                                             |
+| Encryption at rest                           | Out of scope for local-first.                                             | Compliance need surfaces.                                           |
+| Periodic batch extraction (cron)             | Per-session covers steady state.                                          | Per-session triggers prove unreliable.                              |
 
 ---
 
 ## Test plan
 
 Unit:
+
 - `store.ts` — atomic write, drift detection, dir layout, repo isolation.
 - `index.ts` — sqlite schema, audit append, scope filter queries, FK cascade on purge, FTS5 indexes full body (literal-match test for terms past 280 chars in a long how-to body).
 - `lifecycle.ts` — every transition in the state machine; promotion signals; merge mechanics; ID generation produces unique IDs across 10k same-date same-title creations.
@@ -945,6 +985,7 @@ Unit:
 - `compact.ts` — `nextAssistantSnippet` populated for corrections and userPrompts; ≤500-char cap enforced; `HISTORY_SCHEMA_VERSION` migration leaves v1 sessions readable.
 
 Integration:
+
 - End-to-end: explicit write → recall → confirm cycle.
 - End-to-end: extracted candidate → re-extraction across 3 sessions → auto-promotion to active.
 - Bootstrap over a synthetic history of 50 sessions; verify candidate counts and dedup behavior.
@@ -957,10 +998,11 @@ Integration:
 - **Purge modes**:
   - Default purge: `.md` gone, `memory_audit.prev_body` preserved per opt-in, FTS row deleted, `memory_links` rows for this id removed.
   - Redact purge: `.md` gone (taking M's own provenance excerpts with it), all `memory_audit.prev_body` for this id NULL, FTS row deleted, vector entry deleted, `memories` row in `purged_redacted` state with redacted title and excerpt, retrieval excludes it.
-  - Redact purge does *not* touch other memories. Fixture asserts that an unrelated memory referencing the same `sessionId` in its provenance is unchanged.
+  - Redact purge does _not_ touch other memories. Fixture asserts that an unrelated memory referencing the same `sessionId` in its provenance is unchanged.
   - Merge-then-redact-purge fixture: M merged into N, then redact-purge M. Verify N's body content (which absorbed M's) is unchanged — caveat is preserved by design.
 
 E2E (existing eval harness):
+
 - Memory injection into rehydration briefing visible in MCP output.
 - `recall_memory` ranks correctly against fixed query/scope/expected-id ground truth.
 - `search_memories` returns hits whose match is literal text past character 280 of a long body (proves full-body FTS).
@@ -1001,7 +1043,7 @@ confidence: 1.0
 pinned: false
 scope:
   files: [src/lib/cache-store.ts, src/lib/history/store.ts]
-  tags:  [caching, atomicity, durability]
+  tags: [caching, atomicity, durability]
 provenance:
   - sessionId: s-2026-04-21-7c3e
     turn: 42
@@ -1013,12 +1055,15 @@ promotedFrom: []
 ---
 
 ## Rule
+
 All writes under `~/.cache/ai-cortex/<repoKey>/` write to a `.tmp` file first, then `rename()` atomically.
 
 ## Why
+
 Crash mid-write must leave the prior version intact. Partial JSON or SQLite files are not recoverable from heuristics — agents would either silently use bad data or refuse to start. Hit in 2025-Q4 when a SIGKILL during a refresh left `index.json` half-written; the next session crashed in `JSON.parse`.
 
 ## Alternatives considered
+
 - **Write-then-fsync without rename** — same window where readers see partial bytes.
 - **Lockfile gating reads** — extra complexity for cross-process coordination; rename is a single syscall.
 ```
@@ -1040,7 +1085,7 @@ pinned: true
 severity: critical
 scope:
   files: [src/lib/adapters/index.ts]
-  tags:  [linux, concurrency, tree-sitter, ci]
+  tags: [linux, concurrency, tree-sitter, ci]
 provenance:
   - sessionId: s-2026-04-29-9d11
     turn: 31
@@ -1052,15 +1097,19 @@ promotedFrom: []
 ---
 
 ## Symptom
+
 On Linux CI runners, the indexer fails intermittently with `Parser is not initialized` when adapter factories run in parallel. macOS does not reproduce.
 
 ## Cause
+
 tree-sitter's WASM Parser global state is initialized lazily by the first `new Parser()`. When N factories race the constructor on Linux, only one wins the init; the others race ahead with an uninitialized binding. macOS WASM threading happens to serialize this; Linux does not.
 
 ## Workaround
+
 Call `await Parser.init()` once at module load in `src/lib/adapters/index.ts` before any factory runs. Already in place — do not remove.
 
 ## How to detect
+
 Indexer fails on Linux CI with `Parser is not initialized`, passes on macOS. Stack trace bottoms out in tree-sitter WASM glue.
 ```
 
@@ -1098,17 +1147,21 @@ promotedFrom: []
 ---
 
 ## Where
+
 Three ranker modules, one strategy each:
+
 - `suggest-ranker.ts` — fast: path heuristics + fn names + call-graph hops.
 - `suggest-ranker-deep.ts` — fast + trigram + content scan over a candidate pool.
 - `suggest-ranker-semantic.ts` — sentence embeddings (Xenova MiniLM L6 v2).
 
 ## Convention
+
 - Each ranker exports `rank()` returning `{ files: RankedFile[] }`.
 - CLI/MCP layer chooses which to call; rankers don't know about each other.
 - Adding a strategy = new file `suggest-ranker-<strategy>.ts` + register in `suggest.ts`.
 
 ## Examples
+
 - `suggest_files` MCP tool → `suggest-ranker-deep.ts` (default).
 - `suggest_files_semantic` MCP tool → `suggest-ranker-semantic.ts`.
 ```
@@ -1129,7 +1182,7 @@ confidence: 1.0
 pinned: false
 scope:
   files: [src/lib/lang-adapter.ts, src/lib/adapters/index.ts]
-  tags:  [adapters, extensibility]
+  tags: [adapters, extensibility]
 provenance:
   - sessionId: s-2026-04-28-2c81
     turn: 53
@@ -1141,9 +1194,11 @@ promotedFrom: []
 ---
 
 ## Goal
+
 Add support for a new language to the indexer (e.g., Rust, Go).
 
 ## Steps
+
 1. Create `src/lib/adapters/<lang>.ts` implementing the `LangAdapter` interface from `src/lib/lang-adapter.ts`.
 2. Use a tree-sitter grammar. Do **not** call `new Parser()` from inside the factory — rely on the module-level init in `src/lib/adapters/index.ts` (see `mem-2026-04-29-parser-init-race-linux-7c2e04`).
 3. Register the factory in `src/lib/adapters/index.ts` keyed by file extension.
@@ -1152,6 +1207,7 @@ Add support for a new language to the indexer (e.g., Rust, Go).
 6. Run the indexer against the fixture and confirm symbols populate.
 
 ## Verification
+
 - `pnpm test` passes the new adapter test.
 - `ai-cortex index <fixture-path>` produces non-empty symbol output.
 - `blast_radius` returns expected callers for a known fixture function.

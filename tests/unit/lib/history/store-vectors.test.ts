@@ -3,7 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeChunkVectors, readChunkVectors, writeAllChunks, sessionDir } from "../../../../src/lib/history/store.js";
+import {
+	writeChunkVectors,
+	readChunkVectors,
+	writeAllChunks,
+	sessionDir,
+} from "../../../../src/lib/history/store.js";
 
 let tmp: string;
 
@@ -69,7 +74,12 @@ describe("writeChunkVectors + readChunkVectors", () => {
 			dim: DIM,
 			chunks: [{ id: 7, text: "hello", vector: vec([0, 0, 0, 1]) }],
 		});
-		const meta = JSON.parse(fs.readFileSync(path.join(sessionDir("REPO", "abc"), ".vectors.meta.json"), "utf8"));
+		const meta = JSON.parse(
+			fs.readFileSync(
+				path.join(sessionDir("REPO", "abc"), ".vectors.meta.json"),
+				"utf8",
+			),
+		);
 		expect(meta.entries).toEqual([{ path: "chunk:7", hash: sha("hello") }]);
 		expect(meta.modelName).toBe(MODEL);
 		expect(meta.dim).toBe(DIM);
@@ -84,7 +94,9 @@ describe("writeChunkVectors + readChunkVectors", () => {
 			chunks: [{ id: 0, text: "original text", vector: vec([1, 0, 0, 0]) }],
 		});
 		// Overwrite chunks with different text — vectors are now stale
-		await writeAllChunks("REPO", "abc", [{ id: 0, text: "completely different text" }]);
+		await writeAllChunks("REPO", "abc", [
+			{ id: 0, text: "completely different text" },
+		]);
 		expect(await readChunkVectors("REPO", "abc", MODEL)).toBeNull();
 	});
 });

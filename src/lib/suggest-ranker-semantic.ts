@@ -1,6 +1,10 @@
 // src/lib/suggest-ranker-semantic.ts
 import { getProvider, MODEL_NAME } from "./embed-provider.js";
-import { buildVectorIndex, getSidecarDir, refreshVectorIndex } from "./vector-builder.js";
+import {
+	buildVectorIndex,
+	getSidecarDir,
+	refreshVectorIndex,
+} from "./vector-builder.js";
 import { readVectorIndex } from "./vector-sidecar.js";
 import type { VectorIndex } from "./vector-sidecar.js";
 import type { RepoCache } from "./models.js";
@@ -59,7 +63,10 @@ function cosineTopK(
 		for (let j = 0; j < dim; j++) {
 			dot += query[j]! * matrix[offset + j]!;
 		}
-		const kind = entry.path.endsWith(".md") || entry.path.endsWith(".txt") ? "doc" : "file";
+		const kind =
+			entry.path.endsWith(".md") || entry.path.endsWith(".txt")
+				? "doc"
+				: "file";
 		scored.push({
 			path: entry.path,
 			kind,

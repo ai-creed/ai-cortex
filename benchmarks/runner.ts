@@ -59,7 +59,9 @@ async function main(): Promise<void> {
 		}
 	}
 
-	console.log(`Repos: ${repos.map((r) => `${r.name} (${r.sizeBucket})`).join(", ")}\n`);
+	console.log(
+		`Repos: ${repos.map((r) => `${r.name} (${r.sizeBucket})`).join(", ")}\n`,
+	);
 
 	const report: SuiteReport = { perf: [], quality: [] };
 

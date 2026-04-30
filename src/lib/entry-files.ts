@@ -35,7 +35,9 @@ const COMMON_FALLBACKS = [
 	"src/index.tsx",
 ];
 
-export async function readPackageMeta(worktreePath: string): Promise<PackageMeta> {
+export async function readPackageMeta(
+	worktreePath: string,
+): Promise<PackageMeta> {
 	const pkgPath = path.join(worktreePath, "package.json");
 	const fallback: PackageMeta = {
 		name: path.basename(worktreePath),
@@ -46,10 +48,9 @@ export async function readPackageMeta(worktreePath: string): Promise<PackageMeta
 	if (!(await fileExists(pkgPath))) return fallback;
 
 	try {
-		const raw = JSON.parse(await fs.promises.readFile(pkgPath, "utf8")) as Record<
-			string,
-			unknown
-		>;
+		const raw = JSON.parse(
+			await fs.promises.readFile(pkgPath, "utf8"),
+		) as Record<string, unknown>;
 		const deps: Record<string, string> = {
 			...((raw.dependencies as Record<string, string>) ?? {}),
 			...((raw.devDependencies as Record<string, string>) ?? {}),

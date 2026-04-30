@@ -13,26 +13,25 @@ function createWorktree(repoPath: string, name: string): string {
 	// Clean up any stale worktree from a previous crashed run
 	try {
 		execFileSync("git", ["worktree", "remove", "--force", worktreePath], {
-			cwd: repoPath, stdio: "ignore",
+			cwd: repoPath,
+			stdio: "ignore",
 		});
 	} catch {
 		// Not stale, proceed
 	}
-	execFileSync(
-		"git",
-		["worktree", "add", "--detach", worktreePath],
-		{ cwd: repoPath, stdio: "ignore" },
-	);
+	execFileSync("git", ["worktree", "add", "--detach", worktreePath], {
+		cwd: repoPath,
+		stdio: "ignore",
+	});
 	return worktreePath;
 }
 
 function removeWorktree(repoPath: string, worktreePath: string): void {
 	try {
-		execFileSync(
-			"git",
-			["worktree", "remove", "--force", worktreePath],
-			{ cwd: repoPath, stdio: "ignore" },
-		);
+		execFileSync("git", ["worktree", "remove", "--force", worktreePath], {
+			cwd: repoPath,
+			stdio: "ignore",
+		});
 	} catch {
 		// Best effort cleanup
 	}
@@ -65,7 +64,9 @@ function generateBriefing(worktreePath: string): string {
 
 	// Always log stderr when present — often contains the actionable error reason
 	if (result.stderr?.trim()) {
-		process.stderr.write(`  [briefing] rehydrate stderr: ${result.stderr.trim()}\n`);
+		process.stderr.write(
+			`  [briefing] rehydrate stderr: ${result.stderr.trim()}\n`,
+		);
 	}
 
 	// Log non-clean exits (timeout sets signal="SIGTERM", spawn failure sets error)
@@ -74,7 +75,9 @@ function generateBriefing(worktreePath: string): string {
 			result.status !== null ? `status=${result.status}` : null,
 			result.signal ? `signal=${result.signal}` : null,
 			result.error ? `error=${result.error.message}` : null,
-		].filter(Boolean).join(" ");
+		]
+			.filter(Boolean)
+			.join(" ");
 		process.stderr.write(`  [briefing] rehydrate failed: ${parts}\n`);
 		return "";
 	}
@@ -101,7 +104,9 @@ function generateBriefing(worktreePath: string): string {
 	try {
 		return fs.readFileSync(briefingPath, "utf8");
 	} catch (err) {
-		process.stderr.write(`  [briefing] failed to read briefing file: ${(err as Error).message}\n`);
+		process.stderr.write(
+			`  [briefing] failed to read briefing file: ${(err as Error).message}\n`,
+		);
 		return "";
 	}
 }
@@ -153,10 +158,12 @@ function spawnAgent(
 		"claude",
 		[
 			"--print",
-			"--output-format", "stream-json",
+			"--output-format",
+			"stream-json",
 			"--verbose",
 			"--dangerously-skip-permissions",
-			"-p", prompt,
+			"-p",
+			prompt,
 		],
 		{
 			cwd: worktreePath,
@@ -169,7 +176,8 @@ function spawnAgent(
 	return {
 		stdout: result.stdout || "",
 		exitCode:
-			result.signal === "SIGTERM" || result.error !== null && result.error !== undefined
+			result.signal === "SIGTERM" ||
+			(result.error !== null && result.error !== undefined)
 				? 124
 				: (result.status ?? 1),
 		wallClockMs,
@@ -217,7 +225,12 @@ export function executeRun(options: RunOptions): RunResult {
 		const metrics = parseStreamJson(agentResult.stdout);
 
 		// 8. Run verification (excluding harness-created files from scoring)
-		const verification = runVerification(task, worktreePath, task.timeoutMs, harnessFiles);
+		const verification = runVerification(
+			task,
+			worktreePath,
+			task.timeoutMs,
+			harnessFiles,
+		);
 
 		return {
 			task: task.name,

@@ -140,26 +140,31 @@ Each session = one directory. Listing sessions = `readdir(sessions/)` filtered t
 
 ```json
 {
-  "version": 1,
-  "id": "abc123",
-  "startedAt": "2026-04-24T08:30:00Z",
-  "endedAt": "2026-04-24T09:45:00Z",
-  "turnCount": 42,
-  "lastProcessedTurn": 42,
-  "hasSummary": true,
-  "hasRaw": true,
-  "rawDroppedAt": null,
-  "transcriptPath": "/Users/u/.claude/projects/-foo/abc123.jsonl",
-  "summary": "string from harness compact, or empty",
-  "evidence": {
-    "toolCalls": [{ "turn": 3, "name": "Read", "args": "src/foo.ts" }],
-    "filePaths": [{ "turn": 3, "path": "src/foo.ts" }],
-    "userPrompts": [{ "turn": 0, "text": "..." }],
-    "corrections": [{ "turn": 7, "text": "no, use the other one" }]
-  },
-  "chunks": [
-    { "id": 0, "tokenStart": 0, "tokenEnd": 512, "preview": "first 80 chars..." }
-  ]
+	"version": 1,
+	"id": "abc123",
+	"startedAt": "2026-04-24T08:30:00Z",
+	"endedAt": "2026-04-24T09:45:00Z",
+	"turnCount": 42,
+	"lastProcessedTurn": 42,
+	"hasSummary": true,
+	"hasRaw": true,
+	"rawDroppedAt": null,
+	"transcriptPath": "/Users/u/.claude/projects/-foo/abc123.jsonl",
+	"summary": "string from harness compact, or empty",
+	"evidence": {
+		"toolCalls": [{ "turn": 3, "name": "Read", "args": "src/foo.ts" }],
+		"filePaths": [{ "turn": 3, "path": "src/foo.ts" }],
+		"userPrompts": [{ "turn": 0, "text": "..." }],
+		"corrections": [{ "turn": 7, "text": "no, use the other one" }]
+	},
+	"chunks": [
+		{
+			"id": 0,
+			"tokenStart": 0,
+			"tokenEnd": 512,
+			"preview": "first 80 chars..."
+		}
+	]
 }
 ```
 
@@ -209,23 +214,24 @@ Cross-session writes have no contention regardless of locks: session ids are uni
 ### `search_history`
 
 **Description** (shown to agent):
+
 > Search compacted history of past agent sessions in this project. Defaults to the current session. Use this to recover context lost to harness compaction (decisions, file paths, user corrections, prior discussion). Auto-broadens to whole project if the current-session search returns nothing.
 
 **Input schema:**
 
-| Field       | Type    | Required | Default                 | Description                                   |
-|-------------|---------|----------|-------------------------|-----------------------------------------------|
-| `query`     | string  | yes      | —                       | Search query (semantic + lexical)             |
-| `sessionId` | string  | no       | —                       | Specific past session to search               |
-| `scope`     | string  | no       | `"session"`             | `"session"` or `"project"`                    |
-| `limit`     | number  | no       | 10                      | Max results                                   |
-| `path`      | string  | no       | `process.cwd()`         | Project root                                  |
+| Field       | Type   | Required | Default         | Description                       |
+| ----------- | ------ | -------- | --------------- | --------------------------------- |
+| `query`     | string | yes      | —               | Search query (semantic + lexical) |
+| `sessionId` | string | no       | —               | Specific past session to search   |
+| `scope`     | string | no       | `"session"`     | `"session"` or `"project"`        |
+| `limit`     | number | no       | 10              | Max results                       |
+| `path`      | string | no       | `process.cwd()` | Project root                      |
 
 **Behavior:**
 
 1. Resolve target sessions:
    - `sessionId` set → that one session
-   - else `scope="session"` → current session via the resolution chain (env var → heuristic). If chain returns nothing, return the explicit error response described in *Current Session Detection*.
+   - else `scope="session"` → current session via the resolution chain (env var → heuristic). If chain returns nothing, return the explicit error response described in _Current Session Detection_.
    - else `scope="project"` → all sessions in this project's history
 2. Run hybrid retrieval: lexical match against evidence (file paths, user prompts, corrections) + cosine similarity against chunk embeddings (where raw exists) + lexical match against summary text.
 3. Merge + rank by combined score (rule-based weights, no learned model in v1).
@@ -272,15 +278,15 @@ Retention configurable via:
 
 CLI helpers (one-shot, no daemon):
 
-| Command                               | Effect                                                 |
-|---------------------------------------|--------------------------------------------------------|
-| `ai-cortex history off`               | Touch the cache-root flag file (path above)            |
-| `ai-cortex history on`                | Remove flag file                                       |
-| `ai-cortex history install-hooks`     | Edit `~/.claude/settings.json` to add Claude Code `PreCompact` + `SessionEnd` hooks; print diff; require confirm |
-| `ai-cortex history uninstall-hooks`   | Reverse of install                                     |
-| `ai-cortex history capture --session <id>` | Run pipeline once for a session (called by hook)  |
-| `ai-cortex history prune --before <YYYY-MM-DD>` | Drop sessions older than date              |
-| `ai-cortex history list`              | List sessions by reading `sessions/` (id, dates, hasRaw flag) |
+| Command                                         | Effect                                                                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `ai-cortex history off`                         | Touch the cache-root flag file (path above)                                                                      |
+| `ai-cortex history on`                          | Remove flag file                                                                                                 |
+| `ai-cortex history install-hooks`               | Edit `~/.claude/settings.json` to add Claude Code `PreCompact` + `SessionEnd` hooks; print diff; require confirm |
+| `ai-cortex history uninstall-hooks`             | Reverse of install                                                                                               |
+| `ai-cortex history capture --session <id>`      | Run pipeline once for a session (called by hook)                                                                 |
+| `ai-cortex history prune --before <YYYY-MM-DD>` | Drop sessions older than date                                                                                    |
+| `ai-cortex history list`                        | List sessions by reading `sessions/` (id, dates, hasRaw flag)                                                    |
 
 ---
 
@@ -309,13 +315,13 @@ Three error surfaces:
 
 **Search errors** (MCP tool): mapped to MCP error codes:
 
-| Failure                                   | MCP error code   | Notes                              |
-|-------------------------------------------|------------------|------------------------------------|
-| `query` blank or missing                  | `InvalidParams`  | Server-validated before lib call   |
-| `scope` not one of allowed values         | `InvalidParams`  | Server-validated                   |
-| `path` not a git repo                     | `InvalidParams`  | Reuses existing `RepoIdentityError` mapping |
-| Storage I/O failure                       | `InternalError`  |                                    |
-| Embedding read failure                    | `InternalError`  |                                    |
+| Failure                           | MCP error code  | Notes                                       |
+| --------------------------------- | --------------- | ------------------------------------------- |
+| `query` blank or missing          | `InvalidParams` | Server-validated before lib call            |
+| `scope` not one of allowed values | `InvalidParams` | Server-validated                            |
+| `path` not a git repo             | `InvalidParams` | Reuses existing `RepoIdentityError` mapping |
+| Storage I/O failure               | `InternalError` |                                             |
+| Embedding read failure            | `InternalError` |                                             |
 
 **Hook install errors** (CLI subcommand): refuse to write if existing settings.json fails to parse; exit non-zero with explanation. Backup always written before any modification attempt.
 
@@ -373,7 +379,7 @@ When raw is dropped, search across that session uses summary + evidence only. Se
 - Stale chunk text (hash mismatch on read) flagged as stale, not silently served
 - `getChunkText(sessionId, chunkId)` returns the text from chunks.jsonl
 - `getChunkText` returns null when chunks.jsonl absent (raw retention expired)
-- Pruning a session removes chunks.jsonl + .vectors.* and updates session.json (`hasRaw: false`, `chunks: []`)
+- Pruning a session removes chunks.jsonl + .vectors.\* and updates session.json (`hasRaw: false`, `chunks: []`)
 - Two parallel writes to different sessions do not collide (verified by writing concurrently)
 - Same-session lock: first writer acquires; second writer sees lock and exits cleanly with skip log
 - Stale lock recovery: lock with dead pid is stolen by next writer
@@ -436,7 +442,7 @@ When raw is dropped, search across that session uses summary + evidence only. Se
 
 1. Install hooks: `ai-cortex history install-hooks`
 2. Run a real Claude Code session that triggers `/compact`
-3. Confirm `getCacheDir(repoKey)/history/sessions/<sessionId>/` populates with session.json + chunks.jsonl + .vectors.*
+3. Confirm `getCacheDir(repoKey)/history/sessions/<sessionId>/` populates with session.json + chunks.jsonl + .vectors.\*
 4. Call `search_history` for content from before the compact — confirm result returned
 5. Disable: `ai-cortex history off`. Confirm subsequent capture skipped, MCP tool returns disabled notice.
 6. Re-enable. Run `ai-cortex history prune --before 2026-04-01`. Confirm targeted sessions removed.
@@ -460,7 +466,7 @@ When raw is dropped, search across that session uses summary + evidence only. Se
 
 These need verification during implementation, not assumed:
 
-1. **Session env var availability per harness.** Spec relies on the resolution chain finding *some* session id (canonical `AI_CORTEX_SESSION_ID` or known-harness `CLAUDE_SESSION_ID` / `CODEX_SESSION_ID` / etc.) in the MCP server process environment at launch. If a harness only exposes session id to hooks (not MCP processes), the chain falls through to argument or heuristic on every call. Verify per harness via `printenv` from inside an MCP server invocation. If absent, escalate to: agents pass `sessionId` explicitly, or `install-hooks` writes a per-session marker file the MCP server reads.
+1. **Session env var availability per harness.** Spec relies on the resolution chain finding _some_ session id (canonical `AI_CORTEX_SESSION_ID` or known-harness `CLAUDE_SESSION_ID` / `CODEX_SESSION_ID` / etc.) in the MCP server process environment at launch. If a harness only exposes session id to hooks (not MCP processes), the chain falls through to argument or heuristic on every call. Verify per harness via `printenv` from inside an MCP server invocation. If absent, escalate to: agents pass `sessionId` explicitly, or `install-hooks` writes a per-session marker file the MCP server reads.
 2. **PreCompact hook existence.** Spec assumes Claude Code exposes a `PreCompact` hook event with access to `$CLAUDE_SESSION_ID`. If the hook name differs or the variable isn't available, fall back to `SessionEnd` only and update install-hooks accordingly.
 3. **Harness summary entries in `.jsonl`.** Spec assumes the harness writes its compact-output summary back into the `.jsonl` after compaction. If it lives elsewhere (separate file, in-memory only), Layer 1 needs a different source. Verify by triggering `/compact` and inspecting the file.
 4. **Encoded path convention.** Spec assumes `~/.claude/projects/<encoded-path>/` uses a documented `/` → `-` replacement. Used only by the fallback heuristic, but verify before relying on it for the warning path.

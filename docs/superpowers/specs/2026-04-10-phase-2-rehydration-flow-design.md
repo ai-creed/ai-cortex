@@ -69,13 +69,13 @@ All existing exports are unchanged.
 // rehydrate.ts
 
 export type RehydrateOptions = {
-  stale?: boolean;  // if true, skip re-indexing even if cache is stale
+	stale?: boolean; // if true, skip re-indexing even if cache is stale
 };
 
 export type RehydrateResult = {
-  briefingPath: string;     // absolute path to the .md file
-  cacheStatus: "fresh" | "reindexed" | "stale";
-  cache: RepoCache;
+	briefingPath: string; // absolute path to the .md file
+	cacheStatus: "fresh" | "reindexed" | "stale";
+	cache: RepoCache;
 };
 ```
 
@@ -123,14 +123,14 @@ Output format:
 ## Directory Structure
 
 electron/
-  main/
-  preload/
+main/
+preload/
 src/
-  app/
-  features/
-  components/
+app/
+features/
+components/
 shared/
-  models/
+models/
 tests/
 docs/
 
@@ -172,9 +172,9 @@ as stored by Phase 1's import-graph (e.g. `shared/models/worktree`, not
 
 ```ts
 export function rehydrateRepo(
-  repoPath: string,
-  options?: RehydrateOptions
-): RehydrateResult
+	repoPath: string,
+	options?: RehydrateOptions,
+): RehydrateResult;
 ```
 
 ### Flow
@@ -186,8 +186,8 @@ export function rehydrateRepo(
 4. If cache exists → check freshness:
    a. `buildRepoFingerprint(identity.worktreePath)` — compare HEAD hash
    b. `isWorktreeDirty(identity.worktreePath)` — run
-      `git status --porcelain -unormal`; if output is non-empty, there are
-      uncommitted changes to tracked files or new untracked files
+   `git status --porcelain -unormal`; if output is non-empty, there are
+   uncommitted changes to tracked files or new untracked files
    - Both clean (fingerprint matches + not dirty) → status = `"fresh"`
    - Either stale + `stale` option set → status = `"stale"` (use stale data
      as-is)
@@ -242,11 +242,11 @@ Status word reflects `cacheStatus`: `fresh`, `reindexed`, or `stale`.
 
 ```json
 {
-  "briefingPath": "/Users/vuphan/.cache/ai-cortex/v1/23e4.../869e...md",
-  "cacheStatus": "reindexed",
-  "packageName": "ai-14all",
-  "fileCount": 165,
-  "docCount": 8
+	"briefingPath": "/Users/vuphan/.cache/ai-cortex/v1/23e4.../869e...md",
+	"cacheStatus": "reindexed",
+	"packageName": "ai-14all",
+	"fileCount": 165,
+	"docCount": 8
 }
 ```
 

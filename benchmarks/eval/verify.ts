@@ -31,14 +31,20 @@ export function computeFilesCorrect(
 	return intersection.length / union.size;
 }
 
-export function getTouchedFiles(worktreePath: string, exclude?: Set<string>): string[] {
+export function getTouchedFiles(
+	worktreePath: string,
+	exclude?: Set<string>,
+): string[] {
 	const run = (args: string[]): string[] => {
 		try {
 			return execFileSync("git", args, {
 				cwd: worktreePath,
 				encoding: "utf8",
 				stdio: ["ignore", "pipe", "ignore"],
-			}).trimEnd().split("\n").filter((l) => l.length > 0);
+			})
+				.trimEnd()
+				.split("\n")
+				.filter((l) => l.length > 0);
 		} catch {
 			return [];
 		}

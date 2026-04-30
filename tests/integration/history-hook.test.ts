@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveRepoIdentity } from "../../src/lib/repo-identity.js";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+);
 const CLI = path.join(ROOT, "dist", "src", "cli.js");
 const FIXTURE = path.join(ROOT, "tests", "fixtures", "history", "sample.jsonl");
 
@@ -21,7 +25,14 @@ afterEach(() => {
 	fs.rmSync(home, { recursive: true, force: true });
 });
 
-function runCli(args: string[], opts: { extraEnv?: Record<string, string>; cwd?: string; input?: string } = {}): string {
+function runCli(
+	args: string[],
+	opts: {
+		extraEnv?: Record<string, string>;
+		cwd?: string;
+		input?: string;
+	} = {},
+): string {
 	return execFileSync("node", [CLI, ...args], {
 		env: { ...process.env, HOME: home, ...(opts.extraEnv ?? {}) },
 		cwd: opts.cwd,
@@ -31,11 +42,27 @@ function runCli(args: string[], opts: { extraEnv?: Record<string, string>; cwd?:
 }
 
 function setupGitRepo(): string {
-	const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-hook-repo-"));
+	const repo = fs.mkdtempSync(
+		path.join(os.tmpdir(), "ai-cortex-history-hook-repo-"),
+	);
 	execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
-	execFileSync("git", ["-C", repo, "config", "user.email", "test@test.invalid"]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"config",
+		"user.email",
+		"test@test.invalid",
+	]);
 	execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
-	execFileSync("git", ["-C", repo, "commit", "--allow-empty", "-q", "-m", "init"]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"commit",
+		"--allow-empty",
+		"-q",
+		"-m",
+		"init",
+	]);
 	return repo;
 }
 
@@ -51,20 +78,29 @@ function placeTranscriptForHookSim(repoCwd: string, sessionId: string): void {
 describe("hook install simulation", () => {
 	it("install-hooks writes settings.json with PreCompact + SessionEnd entries", () => {
 		runCli(["history", "install-hooks", "--yes"]);
-		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+		const settings = JSON.parse(
+			fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"),
+		);
 		const entries = [
 			...(settings.hooks.PreCompact ?? []),
 			...(settings.hooks.SessionEnd ?? []),
 		] as Array<{ hooks: Array<{ command: string }> }>;
-		const cmds = entries.flatMap((entry) => (entry.hooks ?? []).map((h) => h.command));
-		expect(cmds.some((c) => c.includes("ai-cortex history capture"))).toBe(true);
+		const cmds = entries.flatMap((entry) =>
+			(entry.hooks ?? []).map((h) => h.command),
+		);
+		expect(cmds.some((c) => c.includes("ai-cortex history capture"))).toBe(
+			true,
+		);
 	});
 
 	it("installed command captures via stdin hook JSON + git repoKey auto-discovery", () => {
 		// 1. Install the hook to read what the command actually contains.
 		runCli(["history", "install-hooks", "--yes"]);
-		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-		const installedCmd = settings.hooks.PreCompact[0].hooks[0].command as string;
+		const settings = JSON.parse(
+			fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"),
+		);
+		const installedCmd = settings.hooks.PreCompact[0].hooks[0]
+			.command as string;
 
 		// 2. Set up a real git repo (cwd) and the transcript at the auto-discovery path.
 		const repoCwdRaw = setupGitRepo();
@@ -82,7 +118,17 @@ describe("hook install simulation", () => {
 
 		// 4. Verify capture wrote to the git-identity-derived cache path.
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
-		const sessionJson = path.join(home, ".cache", "ai-cortex", "v1", repoKey, "history", "sessions", sessionId, "session.json");
+		const sessionJson = path.join(
+			home,
+			".cache",
+			"ai-cortex",
+			"v1",
+			repoKey,
+			"history",
+			"sessions",
+			sessionId,
+			"session.json",
+		);
 		expect(fs.existsSync(sessionJson)).toBe(true);
 
 		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
@@ -96,11 +142,23 @@ describe("hook install simulation", () => {
 		const sessionId = "off-sess";
 		placeTranscriptForHookSim(repoCwd, sessionId);
 
-		const out = runCli(["history", "capture", "--session", sessionId], { cwd: repoCwd });
+		const out = runCli(["history", "capture", "--session", sessionId], {
+			cwd: repoCwd,
+		});
 		expect(out).toContain('"status":"disabled"');
 
 		const repoKey = resolveRepoIdentity(repoCwd).repoKey;
-		const sessionJson = path.join(home, ".cache", "ai-cortex", "v1", repoKey, "history", "sessions", sessionId, "session.json");
+		const sessionJson = path.join(
+			home,
+			".cache",
+			"ai-cortex",
+			"v1",
+			repoKey,
+			"history",
+			"sessions",
+			sessionId,
+			"session.json",
+		);
 		expect(fs.existsSync(sessionJson)).toBe(false);
 
 		fs.rmSync(repoCwdRaw, { recursive: true, force: true });
@@ -122,14 +180,19 @@ describe("hook install simulation", () => {
 
 	it("uninstall-hooks removes our entries but leaves others", () => {
 		fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
-		const thirdParty = { matcher: "", hooks: [{ type: "command", command: "third-party-hook" }] };
+		const thirdParty = {
+			matcher: "",
+			hooks: [{ type: "command", command: "third-party-hook" }],
+		};
 		fs.writeFileSync(
 			path.join(home, ".claude", "settings.json"),
 			JSON.stringify({ hooks: { PreCompact: [thirdParty] } }),
 		);
 		runCli(["history", "install-hooks", "--yes"]);
 		runCli(["history", "uninstall-hooks", "--yes"]);
-		const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+		const settings = JSON.parse(
+			fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"),
+		);
 		expect(settings.hooks.PreCompact).toEqual([thirdParty]);
 	});
 });

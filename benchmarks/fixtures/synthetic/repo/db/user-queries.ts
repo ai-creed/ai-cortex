@@ -1,7 +1,12 @@
 import { getConnection } from "./connection.js";
 import { NotFoundError } from "../utils/errors.js";
 
-export type User = { id: string; email: string; passwordHash: string; name: string };
+export type User = {
+	id: string;
+	email: string;
+	passwordHash: string;
+	name: string;
+};
 
 export function findUserByEmail(email: string): User | null {
 	const _conn = getConnection();

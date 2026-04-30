@@ -1,6 +1,10 @@
 import { validate } from "../utils/validation.js";
 
-export function validateCreateUser(body: unknown): { email: string; password: string; name: string } {
+export function validateCreateUser(body: unknown): {
+	email: string;
+	password: string;
+	name: string;
+} {
 	const b = body as Record<string, unknown>;
 	validate(typeof b.email === "string", "email required");
 	validate(typeof b.password === "string", "password required");
@@ -8,7 +12,10 @@ export function validateCreateUser(body: unknown): { email: string; password: st
 	return b as { email: string; password: string; name: string };
 }
 
-export function validateCreatePost(body: unknown): { title: string; body: string } {
+export function validateCreatePost(body: unknown): {
+	title: string;
+	body: string;
+} {
 	const b = body as Record<string, unknown>;
 	validate(typeof b.title === "string", "title required");
 	validate(typeof b.body === "string", "body required");

@@ -96,7 +96,13 @@ function seedSuggestRepo(): void {
 		encoding: "utf8",
 	});
 	if (status.stdout.trim()) {
-		execFileSync("git", ["-C", tmpDir, "commit", "-m", "seed suggest fixtures"]);
+		execFileSync("git", [
+			"-C",
+			tmpDir,
+			"commit",
+			"-m",
+			"seed suggest fixtures",
+		]);
 	}
 }
 

@@ -100,17 +100,27 @@ export async function rankSuggestionsDeep(
 	// queries with no path/function-name overlap, where content scan is the only
 	// rescue path.
 	const allFilePaths = cache.files.map((f) => f.path);
-	const candidatePaths = buildCandidatePool(byPath, trigramOnlyPaths, poolSize, allFilePaths);
+	const candidatePaths = buildCandidatePool(
+		byPath,
+		trigramOnlyPaths,
+		poolSize,
+		allFilePaths,
+	);
 	const scanResult = contentScan(worktreePath, candidatePaths, taskTokens);
 
 	for (const [path, hits] of scanResult.hits) {
 		const uniqueTokens = new Set(hits.map((h) => h.token)).size;
-		const bonus = Math.min(uniqueTokens * CONTENT_SCORE_PER_TOKEN, CONTENT_SCORE_CAP);
+		const bonus = Math.min(
+			uniqueTokens * CONTENT_SCORE_PER_TOKEN,
+			CONTENT_SCORE_CAP,
+		);
 		const existing = byPath.get(path);
-		const snippetHits: { line: number; snippet: string }[] = hits.map((h: ContentHit) => ({
-			line: h.line,
-			snippet: h.snippet,
-		}));
+		const snippetHits: { line: number; snippet: string }[] = hits.map(
+			(h: ContentHit) => ({
+				line: h.line,
+				snippet: h.snippet,
+			}),
+		);
 		const firstHitLabel = hits[0]
 			? `content:${hits[0].token}@L${hits[0].line}`
 			: "content";

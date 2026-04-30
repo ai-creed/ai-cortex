@@ -33,7 +33,10 @@ function readFileContents(
 	const map: FileContentMap = new Map();
 	for (const filePath of filePaths) {
 		try {
-			const content = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
+			const content = fs.readFileSync(
+				path.join(worktreePath, filePath),
+				"utf8",
+			);
 			map.set(filePath, content);
 		} catch {
 			// skip unreadable files
@@ -49,7 +52,12 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 		const packageMeta = await readPackageMeta(identity.worktreePath);
 		const entryFiles = pickEntryFiles(filePaths, packageMeta);
 		const docs = loadDocs(identity.worktreePath, filePaths);
-		const imports = await extractImports(identity.worktreePath, filePaths, filePaths, contentMap);
+		const imports = await extractImports(
+			identity.worktreePath,
+			filePaths,
+			filePaths,
+			contentMap,
+		);
 		const fingerprint = await buildRepoFingerprint(identity.worktreePath);
 		const files = filePaths.map((p) => ({
 			path: p,
@@ -170,7 +178,10 @@ export async function buildIncrementalIndex(
 		if (touchedSet.has(edge.from)) continue;
 		for (const changed of touchedSet) {
 			const changedStripped = stripTsExt(changed);
-			if (edge.to === changedStripped || edge.to === changedStripped.replace(/\/index$/, "")) {
+			if (
+				edge.to === changedStripped ||
+				edge.to === changedStripped.replace(/\/index$/, "")
+			) {
 				affectedCallers.add(edge.from);
 			}
 		}
@@ -183,7 +194,10 @@ export async function buildIncrementalIndex(
 		return !callCleanSet.has(fromFile);
 	});
 	const keptFunctions = existingFunctions.filter(
-		(f) => !changedSet.has(f.file) && !removedSet.has(f.file) && !affectedCallers.has(f.file),
+		(f) =>
+			!changedSet.has(f.file) &&
+			!removedSet.has(f.file) &&
+			!affectedCallers.has(f.file),
 	);
 
 	// Reparse changed files + affected callers
@@ -191,8 +205,11 @@ export async function buildIncrementalIndex(
 		...changedAdapterFiles,
 		...[...affectedCallers].filter(isAdapterExt),
 	];
-	const { rawCalls, functions: newFunctions, bindingsByFile } =
-		await extractCallGraphRaw(identity.worktreePath, filesToReparse);
+	const {
+		rawCalls,
+		functions: newFunctions,
+		bindingsByFile,
+	} = await extractCallGraphRaw(identity.worktreePath, filesToReparse);
 	const mergedFunctions = [...keptFunctions, ...newFunctions];
 	const includesByFile = new Map<string, ImportEdge[]>();
 	for (const edge of imports) {
@@ -228,9 +245,14 @@ export async function buildIncrementalIndex(
 	};
 }
 
-export async function getCachedIndex(repoPath: string): Promise<RepoCache | null> {
+export async function getCachedIndex(
+	repoPath: string,
+): Promise<RepoCache | null> {
 	const identity = resolveRepoIdentity(repoPath);
-	const cached = await readCacheForWorktree(identity.repoKey, identity.worktreeKey);
+	const cached = await readCacheForWorktree(
+		identity.repoKey,
+		identity.worktreeKey,
+	);
 	if (!cached) return null;
 	const currentFingerprint = await buildRepoFingerprint(identity.worktreePath);
 	if (cached.fingerprint !== currentFingerprint) return null;

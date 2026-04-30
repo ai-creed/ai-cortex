@@ -176,7 +176,9 @@ describe("suggestRepo", () => {
 	});
 
 	it("throws IndexError for invalid limit", async () => {
-		await expect(suggestRepo("/repo", "app", { limit: 0 })).rejects.toThrow(IndexError);
+		await expect(suggestRepo("/repo", "app", { limit: 0 })).rejects.toThrow(
+			IndexError,
+		);
 	});
 
 	it("normalizes unknown from values to null", async () => {
@@ -204,7 +206,9 @@ describe("suggestRepo", () => {
 			throw new RepoIdentityError("not a repo");
 		});
 
-		await expect(suggestRepo("/repo", "app")).rejects.toThrow(RepoIdentityError);
+		await expect(suggestRepo("/repo", "app")).rejects.toThrow(
+			RepoIdentityError,
+		);
 	});
 
 	it("re-exports suggestRepo from the library entrypoint", () => {
@@ -238,9 +242,9 @@ describe("suggestRepo — option validation", () => {
 	});
 
 	it("rejects poolSize < 1", async () => {
-		await expect(
-			suggestRepo("/repo", "task", { poolSize: 0 }),
-		).rejects.toThrow(IndexError);
+		await expect(suggestRepo("/repo", "task", { poolSize: 0 })).rejects.toThrow(
+			IndexError,
+		);
 	});
 
 	it("rejects unknown mode string", async () => {

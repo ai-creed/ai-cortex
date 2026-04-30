@@ -9,7 +9,11 @@ import {
 	rehydrateRepo,
 	suggestRepo,
 } from "./lib/index.js";
-import type { FastSuggestResult, DeepSuggestResult, SemanticSuggestResult } from "./lib/suggest.js";
+import type {
+	FastSuggestResult,
+	DeepSuggestResult,
+	SemanticSuggestResult,
+} from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -71,7 +75,9 @@ function parseSuggestArgs(
 				const raw = argv[i + 1];
 				const parsed = Number(raw);
 				if (!Number.isFinite(parsed)) {
-					process.stderr.write(`ai-cortex: --limit must be a number (got '${raw}')\n`);
+					process.stderr.write(
+						`ai-cortex: --limit must be a number (got '${raw}')\n`,
+					);
 					process.exit(1);
 				}
 				limit = parsed;
@@ -84,7 +90,9 @@ function parseSuggestArgs(
 				const raw = argv[i + 1];
 				const parsed = Number(raw);
 				if (!Number.isFinite(parsed)) {
-					process.stderr.write(`ai-cortex: --pool must be a number (got '${raw}')\n`);
+					process.stderr.write(
+						`ai-cortex: --pool must be a number (got '${raw}')\n`,
+					);
 					process.exit(1);
 				}
 				poolSize = parsed;
@@ -116,7 +124,9 @@ function parseSuggestArgs(
 function renderFastCli(r: FastSuggestResult): string {
 	const lines: string[] = [];
 	lines.push(`suggested files for: ${r.task}`);
-	lines.push(`mode: fast · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs}`);
+	lines.push(
+		`mode: fast · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs}`,
+	);
 	lines.push("");
 	for (const [i, item] of r.results.entries()) {
 		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score}]`);
@@ -134,7 +144,9 @@ function renderDeepCli(r: DeepSuggestResult): string {
 		`mode: deep · cacheStatus: ${r.cacheStatus} · durationMs: ${r.durationMs} · pool: ${r.poolSize}`,
 	);
 	if (r.staleMixedEvidence) {
-		lines.push("warning: stale:true — ranking uses cached graph, snippets use current disk");
+		lines.push(
+			"warning: stale:true — ranking uses cached graph, snippets use current disk",
+		);
 	}
 	lines.push("");
 	for (const [i, item] of r.results.entries()) {
@@ -158,10 +170,155 @@ export function renderSemanticText(r: SemanticSuggestResult): string {
 	);
 	lines.push("");
 	for (const [i, item] of r.results.entries()) {
-		lines.push(`${i + 1}. ${item.path}  [${item.kind} · score ${item.score.toFixed(3)}]`);
+		lines.push(
+			`${i + 1}. ${item.path}  [${item.kind} · score ${item.score.toFixed(3)}]`,
+		);
 		lines.push(`   reason: ${item.reason}`);
 	}
 	return lines.join("\n").trimEnd();
+}
+
+function stripFlagPairs(args: string[], flags: string[]): string[] {
+	const out: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		if (flags.includes(args[i]) && i + 1 < args.length) {
+			i++;
+			continue;
+		}
+		out.push(args[i]);
+	}
+	return out;
+}
+
+async function cliMemoryRecall(args: string[]): Promise<void> {
+	let query = "";
+	let json = false;
+	let limit = 10;
+	let cwd = process.cwd();
+	let repoKey: string | null = null;
+	const scopeFiles: string[] = [];
+	const tags: string[] = [];
+	let type: string | undefined;
+
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--json") {
+			json = true;
+			continue;
+		}
+		if (a === "--limit" && args[i + 1]) {
+			limit = Number(args[++i]);
+			continue;
+		}
+		if (a === "--cwd" && args[i + 1]) {
+			cwd = args[++i];
+			continue;
+		}
+		if (a === "--repo-key" && args[i + 1]) {
+			repoKey = args[++i];
+			continue;
+		}
+		if (a === "--scope-file" && args[i + 1]) {
+			scopeFiles.push(args[++i]);
+			continue;
+		}
+		if (a === "--tag" && args[i + 1]) {
+			tags.push(args[++i]);
+			continue;
+		}
+		if (a === "--type" && args[i + 1]) {
+			type = args[++i];
+			continue;
+		}
+		if (!a.startsWith("--") && !query) {
+			query = a;
+			continue;
+		}
+	}
+	const rk = repoKey ?? (await resolveRepoKeyOrExit(cwd));
+	const { openRetrieve, recallMemory } =
+		await import("./lib/memory/retrieve.js");
+	const rh = openRetrieve(rk);
+	try {
+		const results = await recallMemory(rh, query, {
+			limit,
+			scope:
+				scopeFiles.length || tags.length
+					? { files: scopeFiles, tags }
+					: undefined,
+			type: type ? [type] : undefined,
+		});
+		if (json) {
+			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+		} else {
+			if (results.length === 0) {
+				process.stdout.write("no results\n");
+				return;
+			}
+			for (const r of results) {
+				process.stdout.write(
+					`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`,
+				);
+				process.stdout.write(`  ${r.bodyExcerpt}\n`);
+			}
+		}
+	} finally {
+		rh.close();
+	}
+}
+
+async function cliMemorySearch(args: string[]): Promise<void> {
+	let query = "";
+	let json = false;
+	let limit = 10;
+	let cwd = process.cwd();
+	let repoKey: string | null = null;
+
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--json") {
+			json = true;
+			continue;
+		}
+		if (a === "--limit" && args[i + 1]) {
+			limit = Number(args[++i]);
+			continue;
+		}
+		if (a === "--cwd" && args[i + 1]) {
+			cwd = args[++i];
+			continue;
+		}
+		if (a === "--repo-key" && args[i + 1]) {
+			repoKey = args[++i];
+			continue;
+		}
+		if (!a.startsWith("--") && !query) {
+			query = a;
+			continue;
+		}
+	}
+	const rk = repoKey ?? (await resolveRepoKeyOrExit(cwd));
+	const { openRetrieve, searchMemories } =
+		await import("./lib/memory/retrieve.js");
+	const rh = openRetrieve(rk);
+	try {
+		const results = searchMemories(rh, query, limit);
+		if (json) {
+			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+		} else {
+			if (results.length === 0) {
+				process.stdout.write("no results\n");
+				return;
+			}
+			for (const r of results) {
+				process.stdout.write(
+					`${r.id}  [${r.type}] rank=${r.rank}  ${r.title}\n`,
+				);
+			}
+		}
+	} finally {
+		rh.close();
+	}
 }
 
 function flagValue(argv: string[], name: string): string | undefined {
@@ -176,7 +333,9 @@ async function resolveRepoKeyOrExit(cwd: string): Promise<string> {
 		return resolveRepoIdentity(cwd).repoKey;
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		process.stderr.write(`history: not in a git repo (${msg}). Use --repo-key to override.\n`);
+		process.stderr.write(
+			`history: not in a git repo (${msg}). Use --repo-key to override.\n`,
+		);
 		process.exit(1);
 	}
 }
@@ -200,12 +359,14 @@ async function main(): Promise<void> {
 			const { startMcpServer } = await import("./mcp/server.js");
 			await startMcpServer();
 		} else if (command === "index") {
-			const { repoPath, options } = parseIndexOrRehydrateArgs(args, ["--refresh"]);
+			const { repoPath, options } = parseIndexOrRehydrateArgs(args, [
+				"--refresh",
+			]);
 			const refresh = options.includes("--refresh");
 			const start = performance.now();
 
 			const existing = refresh ? null : await getCachedIndex(repoPath);
-			const cache = existing ?? await indexRepo(repoPath);
+			const cache = existing ?? (await indexRepo(repoPath));
 			const duration = Math.round(performance.now() - start);
 
 			process.stdout.write(
@@ -215,7 +376,10 @@ async function main(): Promise<void> {
 					`  duration: ${duration}ms\n`,
 			);
 		} else if (command === "rehydrate") {
-			const { repoPath, options } = parseIndexOrRehydrateArgs(args, ["--stale", "--json"]);
+			const { repoPath, options } = parseIndexOrRehydrateArgs(args, [
+				"--stale",
+				"--json",
+			]);
 			const stale = options.includes("--stale");
 			const json = options.includes("--json");
 
@@ -310,7 +474,9 @@ async function main(): Promise<void> {
 						const raw = args[i + 1]!;
 						const parsed = Number(raw);
 						if (!Number.isFinite(parsed)) {
-							process.stderr.write(`ai-cortex: --limit must be a number (got '${raw}')\n`);
+							process.stderr.write(
+								`ai-cortex: --limit must be a number (got '${raw}')\n`,
+							);
 							process.exit(1);
 						}
 						limit = parsed;
@@ -342,7 +508,8 @@ async function main(): Promise<void> {
 			const rest = args.slice(1);
 			switch (sub) {
 				case "off": {
-					const { getHistoryDisabledFlagPath } = await import("./lib/history/config.js");
+					const { getHistoryDisabledFlagPath } =
+						await import("./lib/history/config.js");
 					const p = getHistoryDisabledFlagPath();
 					fs.mkdirSync(path.dirname(p), { recursive: true });
 					fs.writeFileSync(p, "");
@@ -350,7 +517,8 @@ async function main(): Promise<void> {
 					break;
 				}
 				case "on": {
-					const { getHistoryDisabledFlagPath } = await import("./lib/history/config.js");
+					const { getHistoryDisabledFlagPath } =
+						await import("./lib/history/config.js");
 					const p = getHistoryDisabledFlagPath();
 					if (fs.existsSync(p)) fs.unlinkSync(p);
 					process.stdout.write("history capture enabled\n");
@@ -359,7 +527,8 @@ async function main(): Promise<void> {
 				case "capture": {
 					const { captureSession } = await import("./lib/history/capture.js");
 					const { isHistoryEnabled } = await import("./lib/history/config.js");
-					const { resolveTranscriptPath } = await import("./lib/history/session-detect.js");
+					const { resolveTranscriptPath } =
+						await import("./lib/history/session-detect.js");
 					let sessionId = flagValue(rest, "--session");
 					let transcriptOverride = flagValue(rest, "--transcript");
 					let hookMode = false;
@@ -369,53 +538,85 @@ async function main(): Promise<void> {
 							const raw = await new Promise<string>((resolve) => {
 								let buf = "";
 								process.stdin.setEncoding("utf8");
-								process.stdin.on("data", (chunk) => { buf += chunk; });
+								process.stdin.on("data", (chunk) => {
+									buf += chunk;
+								});
 								process.stdin.on("end", () => resolve(buf));
 							});
-							const hookData = JSON.parse(raw) as { session_id?: string; transcript_path?: string };
+							const hookData = JSON.parse(raw) as {
+								session_id?: string;
+								transcript_path?: string;
+							};
 							hookMode = true;
 							if (hookData.session_id) sessionId = hookData.session_id;
-							if (!transcriptOverride && hookData.transcript_path) transcriptOverride = hookData.transcript_path;
+							if (!transcriptOverride && hookData.transcript_path)
+								transcriptOverride = hookData.transcript_path;
 						} catch {
 							// not a JSON hook payload; fall through to usage error
 						}
 					}
 					if (!isHistoryEnabled()) {
-						process.stdout.write(JSON.stringify(hookMode ? { continue: true } : { status: "disabled" }) + "\n");
+						process.stdout.write(
+							JSON.stringify(
+								hookMode ? { continue: true } : { status: "disabled" },
+							) + "\n",
+						);
 						break;
 					}
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
-					const transcript = transcriptOverride ?? (sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
-					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const transcript =
+						transcriptOverride ??
+						(sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
 					if (!sessionId || !transcript) {
-						process.stderr.write("usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n");
+						process.stderr.write(
+							"usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n",
+						);
 						process.exit(1);
 					}
 					if (!fs.existsSync(transcript)) {
-						process.stderr.write(`history: transcript not found: ${transcript}\n`);
+						process.stderr.write(
+							`history: transcript not found: ${transcript}\n`,
+						);
 						process.exit(1);
 					}
-					const result = await captureSession({ repoKey, sessionId, transcriptPath: transcript, embed: true });
-					process.stdout.write(JSON.stringify(hookMode ? { continue: true } : result) + "\n");
+					const result = await captureSession({
+						repoKey,
+						sessionId,
+						transcriptPath: transcript,
+						embed: true,
+					});
+					process.stdout.write(
+						JSON.stringify(hookMode ? { continue: true } : result) + "\n",
+					);
 					break;
 				}
 				case "list": {
-					const { listSessions, readSession } = await import("./lib/history/store.js");
+					const { listSessions, readSession } =
+						await import("./lib/history/store.js");
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
-					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
 					for (const id of await listSessions(repoKey)) {
 						const rec = await readSession(repoKey, id);
-						process.stdout.write(`${id}\t${rec?.startedAt ?? ""}\thasRaw=${rec?.hasRaw ?? "?"}\n`);
+						process.stdout.write(
+							`${id}\t${rec?.startedAt ?? ""}\thasRaw=${rec?.hasRaw ?? "?"}\n`,
+						);
 					}
 					break;
 				}
 				case "prune": {
-					const { listSessions, readSession, pruneSession } = await import("./lib/history/store.js");
+					const { listSessions, readSession, pruneSession } =
+						await import("./lib/history/store.js");
 					const before = flagValue(rest, "--before");
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
-					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
 					if (!before) {
-						process.stderr.write("usage: history prune --before YYYY-MM-DD [--cwd <dir>] [--repo-key <key>]\n");
+						process.stderr.write(
+							"usage: history prune --before YYYY-MM-DD [--cwd <dir>] [--repo-key <key>]\n",
+						);
 						process.exit(1);
 					}
 					const cutoff = new Date(before).getTime();
@@ -431,21 +632,270 @@ async function main(): Promise<void> {
 					break;
 				}
 				case "install-hooks": {
-					const { installHooks } = await import("./lib/history/hooks-install.js");
+					const { installHooks } =
+						await import("./lib/history/hooks-install.js");
 					const yes = rest.includes("--yes") || rest.includes("-y");
 					const installResult = await installHooks({ yes });
-					if (installResult === "installed") process.stdout.write("hooks installed\n");
+					if (installResult === "installed")
+						process.stdout.write("hooks installed\n");
 					break;
 				}
 				case "uninstall-hooks": {
-					const { uninstallHooks } = await import("./lib/history/hooks-install.js");
+					const { uninstallHooks } =
+						await import("./lib/history/hooks-install.js");
 					const yes = rest.includes("--yes") || rest.includes("-y");
 					const uninstallResult = await uninstallHooks({ yes });
-					if (uninstallResult === "uninstalled") process.stdout.write("hooks uninstalled\n");
+					if (uninstallResult === "uninstalled")
+						process.stdout.write("hooks uninstalled\n");
 					break;
 				}
 				default: {
-					process.stderr.write("usage: ai-cortex history <off|on|capture|list|prune|install-hooks|uninstall-hooks>\n");
+					process.stderr.write(
+						"usage: ai-cortex history <off|on|capture|list|prune|install-hooks|uninstall-hooks>\n",
+					);
+					process.exit(1);
+				}
+			}
+			process.exit(0);
+		} else if (command === "memory") {
+			const sub = args[0];
+			const rest = args.slice(1);
+			switch (sub) {
+				case "recall": {
+					await cliMemoryRecall(rest);
+					break;
+				}
+				case "search": {
+					await cliMemorySearch(rest);
+					break;
+				}
+				case "record": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryRecord } =
+						await import("./lib/memory/cli/record.js");
+					const subArgs = stripFlagPairs(rest, ["--cwd", "--repo-key"]);
+					const code = await runMemoryRecord(subArgs, { repoKey });
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "get": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryGet } = await import("./lib/memory/cli/get.js");
+					const code = await runMemoryGet(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "list": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryList } = await import("./lib/memory/cli/list.js");
+					const code = await runMemoryList(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "update": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryUpdate } =
+						await import("./lib/memory/cli/update.js");
+					const code = await runMemoryUpdate(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "deprecate": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryDeprecate } =
+						await import("./lib/memory/cli/deprecate.js");
+					const code = await runMemoryDeprecate(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "restore": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryRestore } =
+						await import("./lib/memory/cli/restore.js");
+					const code = await runMemoryRestore(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "merge": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryMerge } = await import("./lib/memory/cli/merge.js");
+					const code = await runMemoryMerge(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "trash": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryTrash } = await import("./lib/memory/cli/trash.js");
+					const code = await runMemoryTrash(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "untrash": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryUntrash } =
+						await import("./lib/memory/cli/untrash.js");
+					const code = await runMemoryUntrash(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "purge": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryPurge } = await import("./lib/memory/cli/purge.js");
+					const code = await runMemoryPurge(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "link": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryLink } = await import("./lib/memory/cli/link.js");
+					const code = await runMemoryLink(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "unlink": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryUnlink } =
+						await import("./lib/memory/cli/unlink.js");
+					const code = await runMemoryUnlink(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "pin": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryPin } = await import("./lib/memory/cli/pin.js");
+					const code = await runMemoryPin(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "unpin": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryUnpin } = await import("./lib/memory/cli/pin.js");
+					const code = await runMemoryUnpin(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "confirm": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryConfirm } =
+						await import("./lib/memory/cli/confirm.js");
+					const code = await runMemoryConfirm(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "audit": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryAudit } = await import("./lib/memory/cli/audit.js");
+					const code = await runMemoryAudit(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "rebuild-index": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryRebuildIndex } =
+						await import("./lib/memory/cli/rebuild.js");
+					const code = await runMemoryRebuildIndex(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "reconcile": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryReconcile } =
+						await import("./lib/memory/cli/reconcile.js");
+					const code = await runMemoryReconcile(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				default: {
+					process.stderr.write(
+						"usage: ai-cortex memory <recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile>\n",
+					);
 					process.exit(1);
 				}
 			}

@@ -24,17 +24,44 @@ for (let i = 2; i < process.argv.length; i++) {
 	}
 }
 if (!repoPath) {
-	process.stderr.write("Usage: grep-baseline.mjs --repo /path/to/target-repo [--corpus path]\n");
+	process.stderr.write(
+		"Usage: grep-baseline.mjs --repo /path/to/target-repo [--corpus path]\n",
+	);
 	process.exit(1);
 }
 const corpus = JSON.parse(fs.readFileSync(corpusPath, "utf8"));
 
 // Stopword set mirrors src/lib/tokenize.ts STOPWORDS (post "my" removal).
 const STOPWORDS = new Set([
-	"a", "an", "the", "of", "in", "on", "at", "to", "for", "from",
-	"by", "with", "and", "or", "is", "are", "be",
-	"your", "our", "this", "that", "new",
-	"src", "lib", "index", "utils", "helper", "helpers", "common",
+	"a",
+	"an",
+	"the",
+	"of",
+	"in",
+	"on",
+	"at",
+	"to",
+	"for",
+	"from",
+	"by",
+	"with",
+	"and",
+	"or",
+	"is",
+	"are",
+	"be",
+	"your",
+	"our",
+	"this",
+	"that",
+	"new",
+	"src",
+	"lib",
+	"index",
+	"utils",
+	"helper",
+	"helpers",
+	"common",
 ]);
 
 // Extract top N content keywords from a title — lowercase, stopword-stripped,
@@ -63,12 +90,14 @@ function filenameGrep(repo, keywords) {
 // Content grep: git grep -l -i for ANY keyword (OR, via alternation).
 function contentGrep(repo, keywords) {
 	if (keywords.length === 0) return [];
-	const pattern = keywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
-	const r = spawnSync(
-		"git",
-		["-C", repo, "grep", "-l", "-i", "-E", pattern],
-		{ encoding: "utf8", timeout: 30_000, maxBuffer: 50 * 1024 * 1024 },
-	);
+	const pattern = keywords
+		.map((k) => k.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+		.join("|");
+	const r = spawnSync("git", ["-C", repo, "grep", "-l", "-i", "-E", pattern], {
+		encoding: "utf8",
+		timeout: 30_000,
+		maxBuffer: 50 * 1024 * 1024,
+	});
 	// grep exits 1 when no match. status 0 or 1 both valid.
 	if (r.status !== 0 && r.status !== 1) return [];
 	return (r.stdout ?? "").split("\n").filter(Boolean);
@@ -117,7 +146,9 @@ function agg(key) {
 	const hit = results.reduce((s, r) => s + r[key].hit5, 0);
 	const p = results.reduce((s, r) => s + r[key].p5, 0) / results.length;
 	const rec = results.reduce((s, r) => s + r[key].r5, 0) / results.length;
-	const medTotal = [...results.map((r) => r[key].total)].sort((a, b) => a - b)[Math.floor(results.length / 2)];
+	const medTotal = [...results.map((r) => r[key].total)].sort((a, b) => a - b)[
+		Math.floor(results.length / 2)
+	];
 	return { hit, p: (p * 100).toFixed(1), r: (rec * 100).toFixed(1), medTotal };
 }
 
@@ -131,10 +162,12 @@ let md = "# Grep Baseline vs ai-cortex\n\n";
 md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n\n`;
 md += "Keywords per PR: first 2 non-stopword tokens (len ≥ 4) from PR title.\n";
 md += "Top-5 = first 5 files from grep result sorted alphabetically.\n\n";
-md += "| Strategy | hit@5 | P@5 | R@5 | median result-set size |\n|---|---:|---:|---:|---:|\n";
+md +=
+	"| Strategy | hit@5 | P@5 | R@5 | median result-set size |\n|---|---:|---:|---:|---:|\n";
 md += `| filename grep (path contains keyword) | ${fnA.hit}/${n} | ${fnA.p}% | ${fnA.r}% | ${fnA.medTotal} |\n`;
 md += `| content grep (any file with keyword) | ${cA.hit}/${n} | ${cA.p}% | ${cA.r}% | ${cA.medTotal} |\n`;
-md += "\nRun `run.mjs` against the same repo to compare these numbers to cortex fast/deep/semantic/rrf.\n";
+md +=
+	"\nRun `run.mjs` against the same repo to compare these numbers to cortex fast/deep/semantic/rrf.\n";
 
 md += "\n## Per-PR detail\n\n";
 for (const row of results) {
@@ -153,4 +186,6 @@ for (const row of results) {
 
 fs.writeFileSync(path.join(outDir, "grep-baseline.md"), md);
 process.stdout.write(md.split("\n## Per-PR detail")[0]);
-process.stderr.write(`\nFull detail: ${path.join(outDir, "grep-baseline.md")}\n`);
+process.stderr.write(
+	`\nFull detail: ${path.join(outDir, "grep-baseline.md")}\n`,
+);

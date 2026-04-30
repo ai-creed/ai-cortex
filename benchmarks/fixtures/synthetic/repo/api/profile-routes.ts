@@ -4,7 +4,11 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("api:profile");
 
-export function getUserProfile(token: string): { id: string; email: string; name: string } {
+export function getUserProfile(token: string): {
+	id: string;
+	email: string;
+	name: string;
+} {
 	const auth = requireAuth(token);
 	log.info(`Getting profile for ${auth.userId}`);
 	const user = findUserById(auth.userId);

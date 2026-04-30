@@ -31,7 +31,9 @@ function parseArgs(argv: string[]): {
 		} else if (arg === "--condition" && argv[i + 1]) {
 			const val = argv[++i];
 			if (val !== "with" && val !== "without" && val !== "both") {
-				console.error(`Invalid --condition value: ${val}. Must be "with", "without", or "both".`);
+				console.error(
+					`Invalid --condition value: ${val}. Must be "with", "without", or "both".`,
+				);
 				process.exit(1);
 			}
 			condition = val;
@@ -64,7 +66,9 @@ function printDryRun(
 		const exists = fs.existsSync(task.repoPath);
 		if (!exists) allExist = false;
 		const marker = exists ? "✓" : "✗ (not found)";
-		console.log(`  ${pad(task.name, 24)}${pad(task.repo, 12)}${pad(task.repoPath, 44)}${marker}`);
+		console.log(
+			`  ${pad(task.name, 24)}${pad(task.repo, 12)}${pad(task.repoPath, 44)}${marker}`,
+		);
 	}
 
 	console.log("\nNo agents spawned.");

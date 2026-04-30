@@ -12,8 +12,18 @@ describe("SemanticSuggestResultSchema", () => {
 			durationMs: 42,
 			poolSize: 10,
 			results: [
-				{ path: "src/auth.ts", kind: "file", score: 0.92, reason: "semantic similarity: 0.920" },
-				{ path: "docs/auth.md", kind: "doc", score: 0.75, reason: "semantic similarity: 0.750" },
+				{
+					path: "src/auth.ts",
+					kind: "file",
+					score: 0.92,
+					reason: "semantic similarity: 0.920",
+				},
+				{
+					path: "docs/auth.md",
+					kind: "doc",
+					score: 0.75,
+					reason: "semantic similarity: 0.750",
+				},
 			],
 		};
 		const result = SemanticSuggestResultSchema.safeParse(input);

@@ -115,10 +115,7 @@ describe("rehydrateRepo (real disk + real git)", () => {
 		// First ensure cache is fresh
 		await indexRepo(tmpDir);
 		// Now dirty the worktree without committing
-		fs.appendFileSync(
-			path.join(tmpDir, "README.md"),
-			"\nuncommitted change\n",
-		);
+		fs.appendFileSync(path.join(tmpDir, "README.md"), "\nuncommitted change\n");
 
 		const result = await rehydrateRepo(tmpDir);
 
@@ -147,10 +144,7 @@ describe("rehydrateRepo (real disk + real git)", () => {
 describe("bug reproductions", () => {
 	it("unstaged tracked deletion does not crash incremental refresh", async () => {
 		// Set up: two committed files
-		fs.writeFileSync(
-			path.join(tmpDir, "src", "b.ts"),
-			"export const b = 2;\n",
-		);
+		fs.writeFileSync(path.join(tmpDir, "src", "b.ts"), "export const b = 2;\n");
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add b"]);
 		await indexRepo(tmpDir);
@@ -173,7 +167,9 @@ describe("bug reproductions", () => {
 	it("dirty-revert restores clean content hashes, not stale dirty ones", async () => {
 		// Get clean cache with known hash
 		const clean = await indexRepo(tmpDir);
-		const cleanHash = clean.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		const cleanHash = clean.files.find(
+			(f) => f.path === "src/main.ts",
+		)?.contentHash;
 		expect(cleanHash).toBeDefined();
 
 		// Dirty the worktree
@@ -185,7 +181,9 @@ describe("bug reproductions", () => {
 		// First rehydrate picks up dirty content
 		const dirty = await rehydrateRepo(tmpDir);
 		expect(dirty.cache.dirtyAtIndex).toBe(true);
-		const dirtyHash = dirty.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		const dirtyHash = dirty.cache.files.find(
+			(f) => f.path === "src/main.ts",
+		)?.contentHash;
 		expect(dirtyHash).not.toBe(cleanHash);
 
 		// Revert — worktree is clean again
@@ -195,7 +193,9 @@ describe("bug reproductions", () => {
 		const reverted = await rehydrateRepo(tmpDir);
 		expect(reverted.cacheStatus).toBe("reindexed");
 		expect(reverted.cache.dirtyAtIndex).toBe(false);
-		const revertedHash = reverted.cache.files.find((f) => f.path === "src/main.ts")?.contentHash;
+		const revertedHash = reverted.cache.files.find(
+			(f) => f.path === "src/main.ts",
+		)?.contentHash;
 		expect(revertedHash).toBe(cleanHash);
 	});
 
@@ -252,9 +252,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		// File count should stay the same (incremental, not adding/removing)
 		expect(result.cache.files.length).toBe(initialFileCount);
 		// Content hash for main.ts should have changed
-		const mainFile = result.cache.files.find((f) =>
-			f.path === "src/main.ts",
-		);
+		const mainFile = result.cache.files.find((f) => f.path === "src/main.ts");
 		expect(mainFile?.contentHash).toBeDefined();
 	});
 
@@ -354,7 +352,13 @@ describe("incremental refresh (real disk + real git)", () => {
 			"export const fallback = true;\n",
 		);
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
-		execFileSync("git", ["-C", tmpDir, "commit", "-m", "change for fallback test"]);
+		execFileSync("git", [
+			"-C",
+			tmpDir,
+			"commit",
+			"-m",
+			"change for fallback test",
+		]);
 
 		const result = await rehydrateRepo(tmpDir);
 
@@ -436,7 +440,13 @@ describe("suggestRepo (real disk + real git)", () => {
 			"export const persistenceStore = true;\n",
 		);
 		execFileSync("git", ["-C", tmpDir, "add", "."]);
-		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add persistence store"]);
+		execFileSync("git", [
+			"-C",
+			tmpDir,
+			"commit",
+			"-m",
+			"add persistence store",
+		]);
 
 		const result = await suggestRepo(tmpDir, "persistence store");
 
@@ -486,7 +496,9 @@ describe("suggestRepo (real disk + real git)", () => {
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add anchor fixtures"]);
 
 		const plain = await suggestRepo(tmpDir, "store");
-		const anchored = await suggestRepo(tmpDir, "store", { from: "src/feature.ts" });
+		const anchored = await suggestRepo(tmpDir, "store", {
+			from: "src/feature.ts",
+		});
 
 		expect(plain.results[0]?.path).toContain("store");
 		expect(anchored.results[0]?.path).toBe("src/persistence-store.ts");

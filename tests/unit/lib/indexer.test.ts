@@ -10,7 +10,8 @@ vi.mock("../../../src/lib/cache-store.js");
 vi.mock("../../../src/lib/diff-files.js");
 vi.mock("../../../src/lib/adapters/ensure.js");
 vi.mock("../../../src/lib/call-graph.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../../../src/lib/call-graph.js")>();
+	const actual =
+		await importOriginal<typeof import("../../../src/lib/call-graph.js")>();
 	return {
 		...actual,
 		extractCallGraph: vi.fn(),
@@ -33,8 +34,16 @@ import {
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { hashFileContent } from "../../../src/lib/diff-files.js";
-import { extractCallGraph, extractCallGraphRaw, resolveCallSites } from "../../../src/lib/call-graph.js";
-import { isAdapterExt, registerAdapter, clearAdapters } from "../../../src/lib/adapters/index.js";
+import {
+	extractCallGraph,
+	extractCallGraphRaw,
+	resolveCallSites,
+} from "../../../src/lib/call-graph.js";
+import {
+	isAdapterExt,
+	registerAdapter,
+	clearAdapters,
+} from "../../../src/lib/adapters/index.js";
 import { ensureAdapters } from "../../../src/lib/adapters/ensure.js";
 import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
@@ -75,7 +84,11 @@ beforeEach(async () => {
 	vi.mocked(writeCache).mockResolvedValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
 	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
-	vi.mocked(extractCallGraphRaw).mockResolvedValue({ rawCalls: [], functions: [], bindingsByFile: new Map() });
+	vi.mocked(extractCallGraphRaw).mockResolvedValue({
+		rawCalls: [],
+		functions: [],
+		bindingsByFile: new Map(),
+	});
 	vi.mocked(resolveCallSites).mockReturnValue([]);
 	vi.mocked(ensureAdapters).mockResolvedValue(undefined);
 });
@@ -119,9 +132,17 @@ describe("buildIndex", () => {
 
 	it("includes call graph from extractCallGraph", async () => {
 		vi.mocked(extractCallGraph).mockResolvedValue({
-			calls: [{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" }],
+			calls: [
+				{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
+			],
 			functions: [
-				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "main",
+					file: "src/main.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 		});
 		const cache = await buildIndex(mockIdentity);
@@ -209,9 +230,7 @@ function makeCacheForIncremental(): RepoCache {
 			{ path: "src/utils.ts", kind: "file", contentHash: "hash_utils" },
 		],
 		docs: [{ path: "README.md", title: "Test App", body: "# Test App\n" }],
-		imports: [
-			{ from: "src/main.ts", to: "src/utils" },
-		],
+		imports: [{ from: "src/main.ts", to: "src/utils" }],
 		calls: [],
 		functions: [],
 	};
@@ -235,7 +254,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		// Changed file has updated hash
 		const mainFile = result.files.find((f) => f.path === "src/main.ts");
@@ -257,7 +281,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.files.find((f) => f.path === "src/utils.ts")).toBeUndefined();
 	});
@@ -278,7 +307,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		// Old edge from main.ts dropped, new one added
 		expect(result.imports).toContainEqual({
@@ -306,7 +340,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		// Edge from main.ts still points to src/utils (stale to, accepted)
 		expect(result.imports).toContainEqual({
@@ -330,7 +369,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.packageMeta.name).toBe("renamed-app");
 		expect(result.packageMeta.framework).toBe("vite");
@@ -357,7 +401,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.packageMeta.name).toBe("repo");
 		expect(result.packageMeta.version).toBe("0.0.0");
@@ -373,7 +422,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.entryFiles).toEqual(["src/main.ts", "src/new.ts"]);
 	});
@@ -390,7 +444,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		const mainFile = result.files.find((f) => f.path === "src/main.ts");
 		expect(mainFile?.contentHash).toBe("new_hash_main");
@@ -404,7 +463,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.fingerprint).toBe("newfingerprint");
 		expect(result.indexedAt).not.toBe(existing.indexedAt);
@@ -426,7 +490,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.docs).toHaveLength(2);
 		expect(result.docs[1]?.title).toBe("New Doc");
@@ -444,7 +513,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, true);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			true,
+		);
 
 		expect(result.dirtyAtIndex).toBe(true);
 	});
@@ -460,7 +534,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.dirtyAtIndex).toBe(false);
 	});
@@ -477,7 +556,12 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.docs).toHaveLength(1);
 		expect(result.docs[0]?.title).toBe("Other");
@@ -488,12 +572,22 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
 			functions: [
-				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "main",
+					file: "src/main.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 			bindingsByFile: new Map(),
 		});
 		vi.mocked(resolveCallSites).mockReturnValue([
-			{ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" },
+			{
+				from: "src/main.ts::main",
+				to: "src/utils.ts::newHelper",
+				kind: "call",
+			},
 		]);
 		vi.mocked(extractImports).mockResolvedValue([]);
 
@@ -503,8 +597,20 @@ describe("buildIncrementalIndex", () => {
 			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
 		];
 		existing.functions = [
-			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
-			{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+			{
+				qualifiedName: "main",
+				file: "src/main.ts",
+				exported: true,
+				isDefaultExport: false,
+				line: 1,
+			},
+			{
+				qualifiedName: "helper",
+				file: "src/utils.ts",
+				exported: true,
+				isDefaultExport: false,
+				line: 1,
+			},
 		];
 
 		const diff: FilesDiff = {
@@ -513,12 +619,28 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
-		expect(result.calls).toContainEqual({ from: "src/main.ts::main", to: "src/utils.ts::newHelper", kind: "call" });
-		expect(result.calls).toContainEqual({ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" });
+		expect(result.calls).toContainEqual({
+			from: "src/main.ts::main",
+			to: "src/utils.ts::newHelper",
+			kind: "call",
+		});
+		expect(result.calls).toContainEqual({
+			from: "src/utils.ts::helper",
+			to: "src/lib.ts::lib",
+			kind: "call",
+		});
 		expect(result.functions).toContainEqual(
-			expect.objectContaining({ qualifiedName: "helper", file: "src/utils.ts" }),
+			expect.objectContaining({
+				qualifiedName: "helper",
+				file: "src/utils.ts",
+			}),
 		);
 	});
 
@@ -540,8 +662,20 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
 			functions: [
-				{ qualifiedName: "helper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
-				{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
+				{
+					qualifiedName: "helper",
+					file: "src/utils.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+				{
+					qualifiedName: "main",
+					file: "src/main.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
 			],
 			bindingsByFile: new Map(),
 		});
@@ -553,12 +687,28 @@ describe("buildIncrementalIndex", () => {
 
 		const existing = makeCacheForIncremental();
 		existing.calls = [
-			{ from: "src/main.ts::main", to: "src/utils.ts::oldHelper", kind: "call" },
+			{
+				from: "src/main.ts::main",
+				to: "src/utils.ts::oldHelper",
+				kind: "call",
+			},
 			{ from: "src/utils.ts::oldHelper", to: "src/lib.ts::lib", kind: "call" },
 		];
 		existing.functions = [
-			{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
-			{ qualifiedName: "oldHelper", file: "src/utils.ts", exported: true, isDefaultExport: false, line: 1 },
+			{
+				qualifiedName: "main",
+				file: "src/main.ts",
+				exported: true,
+				isDefaultExport: false,
+				line: 1,
+			},
+			{
+				qualifiedName: "oldHelper",
+				file: "src/utils.ts",
+				exported: true,
+				isDefaultExport: false,
+				line: 1,
+			},
 		];
 
 		const diff: FilesDiff = {
@@ -567,14 +717,19 @@ describe("buildIncrementalIndex", () => {
 			method: "git-diff",
 		};
 
-		const result = await buildIncrementalIndex(mockIdentity, existing, diff, false);
+		const result = await buildIncrementalIndex(
+			mockIdentity,
+			existing,
+			diff,
+			false,
+		);
 
 		expect(result.calls).not.toContainEqual(
 			expect.objectContaining({ to: "src/utils.ts::oldHelper" }),
 		);
 
 		// Verify no duplicate functions for the affected-caller file
-		const mainFns = result.functions.filter(f => f.file === "src/main.ts");
+		const mainFns = result.functions.filter((f) => f.file === "src/main.ts");
 		expect(mainFns).toHaveLength(1);
 		// Verify extractCallGraphRaw was called with both changed + affected-caller files
 		expect(extractCallGraphRaw).toHaveBeenCalledWith(

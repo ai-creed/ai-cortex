@@ -45,7 +45,9 @@ describe("suggest deep — synthetic repo", () => {
 			poolSize: 60,
 		});
 		if (result.mode !== "deep") throw new Error("expected deep mode");
-		const top = result.results.find((r) => r.path.endsWith("CardTitleEditor.tsx"));
+		const top = result.results.find((r) =>
+			r.path.endsWith("CardTitleEditor.tsx"),
+		);
 		const hasRightPanel = top?.contentHits?.some((h) =>
 			h.snippet.includes("RightPanel"),
 		);

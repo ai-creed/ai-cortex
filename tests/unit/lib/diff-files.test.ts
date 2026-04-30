@@ -5,7 +5,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hashFileContent, diffChangedFiles } from "../../../src/lib/diff-files.js";
+import {
+	hashFileContent,
+	diffChangedFiles,
+} from "../../../src/lib/diff-files.js";
 import type { RepoCache, RepoIdentity } from "../../../src/lib/models.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 
@@ -49,7 +52,11 @@ function makeCache(
 		fingerprint: "0000000000000000000000000000000000000000",
 		packageMeta: { name: "test", version: "1.0.0", framework: null },
 		entryFiles: [],
-		files: files.map((f) => ({ path: f.path, kind: "file" as const, contentHash: f.contentHash })),
+		files: files.map((f) => ({
+			path: f.path,
+			kind: "file" as const,
+			contentHash: f.contentHash,
+		})),
 		docs: [],
 		imports: [],
 		calls: [],

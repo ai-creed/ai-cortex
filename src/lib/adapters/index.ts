@@ -19,7 +19,10 @@ export function getAdapterForFile(filePath: string): LanguageAdapter | null {
 	return adapterForFile(filePath) ?? null;
 }
 
-export function adapterSupports(filePath: string, cap: keyof AdapterCapabilities): boolean {
+export function adapterSupports(
+	filePath: string,
+	cap: keyof AdapterCapabilities,
+): boolean {
 	const adapter = getAdapterForFile(filePath);
 	return adapter?.capabilities[cap] ?? false;
 }

@@ -1,6 +1,12 @@
 import { getConnection } from "./connection.js";
 
-export type Post = { id: string; userId: string; title: string; body: string; createdAt: Date };
+export type Post = {
+	id: string;
+	userId: string;
+	title: string;
+	body: string;
+	createdAt: Date;
+};
 
 export function findPostsByUser(userId: string): Post[] {
 	const _conn = getConnection();

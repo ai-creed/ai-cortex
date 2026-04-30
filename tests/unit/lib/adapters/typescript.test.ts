@@ -242,7 +242,7 @@ describe("typescript adapter — import binding extraction", () => {
 		const result = await adapter.extractCallGraph!(
 			"",
 			"src/a.ts",
-			"import { foo } from \"./bar\";",
+			'import { foo } from "./bar";',
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "foo",
@@ -256,7 +256,7 @@ describe("typescript adapter — import binding extraction", () => {
 		const result = await adapter.extractCallGraph!(
 			"",
 			"src/a.ts",
-			"import { foo as baz } from \"./bar\";",
+			'import { foo as baz } from "./bar";',
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "baz",
@@ -270,7 +270,7 @@ describe("typescript adapter — import binding extraction", () => {
 		const result = await adapter.extractCallGraph!(
 			"",
 			"src/a.ts",
-			"import Bar from \"./bar\";",
+			'import Bar from "./bar";',
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "Bar",
@@ -284,7 +284,7 @@ describe("typescript adapter — import binding extraction", () => {
 		const result = await adapter.extractCallGraph!(
 			"",
 			"src/a.ts",
-			"import * as utils from \"./utils\";",
+			'import * as utils from "./utils";',
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "utils",
@@ -298,7 +298,7 @@ describe("typescript adapter — import binding extraction", () => {
 		const result = await adapter.extractCallGraph!(
 			"",
 			"src/a.ts",
-			"import { readFileSync } from \"node:fs\";",
+			'import { readFileSync } from "node:fs";',
 		);
 		expect(result.importBindings).toHaveLength(0);
 	});
@@ -328,7 +328,7 @@ describe("typescript adapter — import sites", () => {
 		const sites = await adapter.extractImports(
 			"",
 			"src/main.ts",
-			"import x from \"./foo\";\nimport { y } from \"../bar/baz\";\nimport \"external\";",
+			'import x from "./foo";\nimport { y } from "../bar/baz";\nimport "external";',
 		);
 		expect(sites).toEqual([
 			{
@@ -348,7 +348,7 @@ describe("typescript adapter — import sites", () => {
 		const sites = await adapter.extractImports(
 			"",
 			"src/main.ts",
-			"import { x } from \"react\";",
+			'import { x } from "react";',
 		);
 		expect(sites).toEqual([]);
 	});
@@ -357,7 +357,7 @@ describe("typescript adapter — import sites", () => {
 		const sites = await adapter.extractImports(
 			"",
 			"src/a.ts",
-			"import x from \"./b.ts\";",
+			'import x from "./b.ts";',
 		);
 		expect(sites).toHaveLength(1);
 		expect(sites[0].candidate).toBe("src/b");
@@ -368,7 +368,7 @@ describe("typescript adapter — import sites", () => {
 		const sites = await adapter.extractImports(
 			"",
 			"src/a.ts",
-			"import { helper } from \"./util.js\";",
+			'import { helper } from "./util.js";',
 		);
 		expect(sites).toHaveLength(1);
 		expect(sites[0].candidate).toBe("src/util");

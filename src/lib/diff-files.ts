@@ -20,9 +20,10 @@ export function hashFileContent(
 	filePath: string,
 	content?: string,
 ): string {
-	const data = content !== undefined
-		? content
-		: fs.readFileSync(path.join(worktreePath, filePath));
+	const data =
+		content !== undefined
+			? content
+			: fs.readFileSync(path.join(worktreePath, filePath));
 	return createHash("sha256").update(data).digest("hex");
 }
 

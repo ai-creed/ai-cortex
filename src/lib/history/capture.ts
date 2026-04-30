@@ -12,7 +12,12 @@ import {
 	writeChunkVectors,
 	readChunkVectors,
 } from "./store.js";
-import { parseTranscript, extractEvidence, liftHarnessSummary, chunkTurns } from "./compact.js";
+import {
+	parseTranscript,
+	extractEvidence,
+	liftHarnessSummary,
+	chunkTurns,
+} from "./compact.js";
 import { isHistoryEnabled } from "./config.js";
 import { HISTORY_SCHEMA_VERSION } from "./types.js";
 import type { SessionRecord } from "./types.js";
@@ -32,7 +37,9 @@ export type CaptureResult =
 	| { status: "disabled" }
 	| { status: "error"; message: string };
 
-export async function captureSession(input: CaptureInput): Promise<CaptureResult> {
+export async function captureSession(
+	input: CaptureInput,
+): Promise<CaptureResult> {
 	// Enabled check FIRST — before any disk read or lock acquisition.
 	// Hooks call into this; `ai-cortex history off` must stop them too.
 	if (!isHistoryEnabled()) return { status: "disabled" };
@@ -48,7 +55,11 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 
 		// Up-to-date only if no new turns AND on-disk side files match the recorded state.
 		// Crash-resume: if session.json says hasRaw but chunks.jsonl is missing, re-run.
-		if (newTurns.length === 0 && existing && await isCompleteOnDisk(input, existing)) {
+		if (
+			newTurns.length === 0 &&
+			existing &&
+			(await isCompleteOnDisk(input, existing))
+		) {
 			return { status: "up-to-date" };
 		}
 
@@ -71,25 +82,41 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 			transcriptPath: input.transcriptPath,
 			summary,
 			evidence,
-			chunks: chunks.map((c) => ({ id: c.id, tokenStart: c.tokenStart, tokenEnd: c.tokenEnd, preview: c.preview })),
+			chunks: chunks.map((c) => ({
+				id: c.id,
+				tokenStart: c.tokenStart,
+				tokenEnd: c.tokenEnd,
+				preview: c.preview,
+			})),
 		};
 
 		// Commit-last ordering: write side files first, session.json last.
 		// If we crash before writeSession, session.json (or absence thereof) reflects the
 		// PRIOR state — next run will detect inconsistency or new turns and re-process.
-		await writeAllChunks(input.repoKey, input.sessionId, chunks.map((c) => ({ id: c.id, text: c.text })));
+		await writeAllChunks(
+			input.repoKey,
+			input.sessionId,
+			chunks.map((c) => ({ id: c.id, text: c.text })),
+		);
 		if (input.embed && chunks.length > 0) {
 			const provider = await getProvider();
 			const vectors = await provider.embed(chunks.map((c) => c.text));
 			await writeChunkVectors(input.repoKey, input.sessionId, {
 				modelName: MODEL_NAME,
 				dim: EMBEDDING_DIM,
-				chunks: chunks.map((c, i) => ({ id: c.id, text: c.text, vector: vectors[i] })),
+				chunks: chunks.map((c, i) => ({
+					id: c.id,
+					text: c.text,
+					vector: vectors[i],
+				})),
 			});
 		}
 		await writeSession(input.repoKey, rec);
 
-		return { status: "captured", turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length };
+		return {
+			status: "captured",
+			turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length,
+		};
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		return { status: "error", message: msg };
@@ -98,17 +125,34 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 	}
 }
 
-async function isCompleteOnDisk(input: CaptureInput, rec: SessionRecord): Promise<boolean> {
+async function isCompleteOnDisk(
+	input: CaptureInput,
+	rec: SessionRecord,
+): Promise<boolean> {
 	if (!rec.hasRaw) {
 		const dir = sessionDir(input.repoKey, input.sessionId);
-		const chunksExists = await fs.promises.access(chunksJsonlPath(input.repoKey, input.sessionId)).then(() => true, () => false);
-		const vecExists = await fs.promises.access(path.join(dir, ".vectors.bin")).then(() => true, () => false);
+		const chunksExists = await fs.promises
+			.access(chunksJsonlPath(input.repoKey, input.sessionId))
+			.then(
+				() => true,
+				() => false,
+			);
+		const vecExists = await fs.promises
+			.access(path.join(dir, ".vectors.bin"))
+			.then(
+				() => true,
+				() => false,
+			);
 		return !chunksExists && !vecExists;
 	}
 	const onDiskChunks = await readAllChunks(input.repoKey, input.sessionId);
 	if (onDiskChunks.length !== rec.chunks.length) return false;
 	if (input.embed) {
-		const vecs = await readChunkVectors(input.repoKey, input.sessionId, MODEL_NAME);
+		const vecs = await readChunkVectors(
+			input.repoKey,
+			input.sessionId,
+			MODEL_NAME,
+		);
 		if (!vecs || vecs.byChunkId.size !== rec.chunks.length) return false;
 	}
 	return true;

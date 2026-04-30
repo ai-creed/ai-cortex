@@ -140,7 +140,9 @@ describe("resolveCacheWithFreshness", () => {
 		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 
-		const result = await resolveCacheWithFreshness(mockIdentity, { stale: true });
+		const result = await resolveCacheWithFreshness(mockIdentity, {
+			stale: true,
+		});
 
 		expect(result.cacheStatus).toBe("stale");
 		expect(result.cache).toBe(cache);

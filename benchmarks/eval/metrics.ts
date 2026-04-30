@@ -1,6 +1,13 @@
 // benchmarks/eval/metrics.ts
 
-const EXPLORATION_TOOLS = new Set(["Read", "Grep", "Glob", "Bash", "Agent", "Skill"]);
+const EXPLORATION_TOOLS = new Set([
+	"Read",
+	"Grep",
+	"Glob",
+	"Bash",
+	"Agent",
+	"Skill",
+]);
 const MUTATION_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
 
 export type ParsedMetrics = {
@@ -49,7 +56,8 @@ export function parseStreamJson(output: string): ParsedMetrics {
 		}
 	}
 
-	const explorationCalls = firstMutationIdx < 0 ? totalToolCalls : firstMutationIdx;
+	const explorationCalls =
+		firstMutationIdx < 0 ? totalToolCalls : firstMutationIdx;
 
 	return { explorationCalls, totalToolCalls, durationMs };
 }

@@ -4,7 +4,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createRequire } from "node:module";
 import fs from "node:fs";
-import { rehydrateRepo, suggestRepo, indexRepo, queryBlastRadius } from "../../../src/lib/index.js";
+import {
+	rehydrateRepo,
+	suggestRepo,
+	indexRepo,
+	queryBlastRadius,
+} from "../../../src/lib/index.js";
 import { IndexError, RepoIdentityError } from "../../../src/lib/models.js";
 import { createServer } from "../../../src/mcp/server.js";
 
@@ -15,7 +20,8 @@ vi.mock("node:fs");
 
 async function makeClient(): Promise<any> {
 	const server = createServer();
-	const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+	const [serverTransport, clientTransport] =
+		InMemoryTransport.createLinkedPair();
 	await server.connect(serverTransport);
 	const client = new Client(
 		{ name: "test-client", version: "0.0.1" },
@@ -36,7 +42,9 @@ describe("rehydrate_project", () => {
 			cacheStatus: "fresh",
 			cache: {} as any,
 		});
-		vi.mocked(fs.readFileSync).mockReturnValue("# Project Briefing\n..." as any);
+		vi.mocked(fs.readFileSync).mockReturnValue(
+			"# Project Briefing\n..." as any,
+		);
 
 		const client = await makeClient();
 		const result = await client.callTool({
@@ -225,7 +233,9 @@ describe("suggest_files_deep", () => {
 					kind: "file",
 					score: 15,
 					reason: "matched task terms in path: persistence",
-					contentHits: [{ line: 12, snippet: "export function persistStore()" }],
+					contentHits: [
+						{ line: 12, snippet: "export function persistStore()" },
+					],
 				},
 			],
 		});
@@ -233,7 +243,12 @@ describe("suggest_files_deep", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "suggest_files_deep",
-			arguments: { task: "persistence layer", path: "/repo", limit: 5, poolSize: 60 },
+			arguments: {
+				task: "persistence layer",
+				path: "/repo",
+				limit: 5,
+				poolSize: 60,
+			},
 		});
 
 		expect(suggestRepo).toHaveBeenCalledWith("/repo", "persistence layer", {
@@ -473,7 +488,9 @@ describe("tool call logging", () => {
 	let stderrSpy: any;
 
 	beforeEach(() => {
-		stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((() => true) as any);
+		stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation((() => true) as any);
 	});
 
 	afterEach(() => {
@@ -489,7 +506,10 @@ describe("tool call logging", () => {
 		vi.mocked(fs.readFileSync).mockReturnValue("# Briefing" as any);
 
 		const client = await makeClient();
-		await client.callTool({ name: "rehydrate_project", arguments: { path: "/repo" } });
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/repo" },
+		});
 
 		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
 		expect(logged).toMatch(/\[ai-cortex\] tool=rehydrate_project/);
@@ -528,7 +548,10 @@ describe("tool call logging", () => {
 		});
 
 		const client = await makeClient();
-		await client.callTool({ name: "rehydrate_project", arguments: { path: "/x" } });
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/x" },
+		});
 
 		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
 		expect(logged).toMatch(/\[ai-cortex\] tool=rehydrate_project/);
@@ -543,7 +566,10 @@ describe("tool call logging", () => {
 		} as any);
 
 		const client = await makeClient();
-		await client.callTool({ name: "index_project", arguments: { path: "/repo" } });
+		await client.callTool({
+			name: "index_project",
+			arguments: { path: "/repo" },
+		});
 
 		const logged = stderrSpy.mock.calls.map((c: any) => String(c[0])).join("");
 		expect(logged).toMatch(/\[ai-cortex\] tool=index_project/);

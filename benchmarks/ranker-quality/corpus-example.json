@@ -5,10 +5,7 @@
 			"pr": 1001,
 			"title": "Login button misaligned on mobile viewport",
 			"query": "login button mobile viewport alignment",
-			"truth": [
-				"src/auth/login-form.tsx",
-				"src/auth/login.module.css"
-			]
+			"truth": ["src/auth/login-form.tsx", "src/auth/login.module.css"]
 		},
 		{
 			"pr": 1002,
@@ -24,19 +21,13 @@
 			"pr": 1003,
 			"title": "Notifications are not cleared from client state after logout",
 			"query": "notifications clear logout client state",
-			"truth": [
-				"src/notifications/store.ts",
-				"src/auth/session.ts"
-			]
+			"truth": ["src/notifications/store.ts", "src/auth/session.ts"]
 		},
 		{
 			"pr": 1004,
 			"title": "CSV export truncates fields longer than 255 characters",
 			"query": "csv export truncate long fields",
-			"truth": [
-				"src/exports/csv-writer.ts",
-				"tests/exports/csv-writer.test.ts"
-			]
+			"truth": ["src/exports/csv-writer.ts", "tests/exports/csv-writer.test.ts"]
 		},
 		{
 			"pr": 1005,
