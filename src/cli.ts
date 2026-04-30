@@ -693,6 +693,31 @@ async function main(): Promise<void> {
 					if (code !== 0) process.exit(code);
 					break;
 				}
+				case "extract": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryExtract } = await import("./lib/memory/cli/extract.js");
+					const code = await runMemoryExtract(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "extractor-log": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryExtractorLog } =
+						await import("./lib/memory/cli/extractor-log.js");
+					const code = await runMemoryExtractorLog(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				case "get": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
