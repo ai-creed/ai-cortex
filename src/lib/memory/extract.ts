@@ -4,6 +4,7 @@ import { extractorRunPath, extractorRunsDir } from "./paths.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
+import type { EvidenceLayer } from "../history/types.js";
 
 export const EXTRACTOR_MANIFEST_VERSION = 1;
 export const DEFAULT_DEDUP_COSINE = 0.85;
@@ -125,5 +126,63 @@ export async function findDedupTarget(
 	}
 	if (bestId !== null && bestCos >= threshold) return bestId;
 	return null;
+}
+
+// ---------------------------------------------------------------------------
+// Shared producer types and helpers
+// ---------------------------------------------------------------------------
+
+export type ProducedCandidate = {
+	type: ExtractCandidateType;
+	title: string;
+	body: string;
+	scopeFiles: string[];
+	tags: string[];
+	confidence: number;
+	provenance: { sessionId: string; turn: number; kind: "user_correction" | "user_prompt" | "tool_call" | "summary"; excerpt?: string }[];
+	typeFields?: Record<string, unknown>;
+};
+
+const STOPWORDS = new Set([
+	"the","a","an","and","or","but","is","are","was","were","be","been","being",
+	"in","on","at","to","of","for","with","by","from","as","this","that","these","those",
+	"i","you","we","they","it","he","she","do","does","did","not","no","yes","so",
+]);
+
+export function extractTags(text: string, max = 5): string[] {
+	const counts = new Map<string, number>();
+	for (const raw of text.toLowerCase().split(/[^a-z0-9_-]+/)) {
+		if (raw.length < 4 || STOPWORDS.has(raw)) continue;
+		counts.set(raw, (counts.get(raw) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.slice(0, max)
+		.map(([w]) => w);
+}
+
+export function filesNearTurn(
+	evidence: EvidenceLayer,
+	turn: number,
+	radius = 3,
+): string[] {
+	const out = new Set<string>();
+	for (const f of evidence.filePaths) {
+		if (Math.abs(f.turn - turn) <= radius) out.add(f.path);
+	}
+	return [...out];
+}
+
+export function nearestFile(evidence: EvidenceLayer, turn: number): string | null {
+	let best: string | null = null;
+	let bestDist = Infinity;
+	for (const f of evidence.filePaths) {
+		const d = Math.abs(f.turn - turn);
+		if (d < bestDist) {
+			best = f.path;
+			bestDist = d;
+		}
+	}
+	return best;
 }
 
