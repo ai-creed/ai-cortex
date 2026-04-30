@@ -173,3 +173,49 @@ export async function updateScope(lc: LifecycleHandle, id: string, scope: { file
 		reason: null,
 	});
 }
+
+export async function deprecateMemory(lc: LifecycleHandle, id: string, reason: string): Promise<void> {
+	const current = await loadCurrent(lc, id);
+	if (current.frontmatter.status !== "active" && current.frontmatter.status !== "candidate") {
+		throw new Error(`cannot deprecate from status ${current.frontmatter.status}`);
+	}
+	const next: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			status: "deprecated",
+			deprecationReason: reason,
+		},
+		body: current.body,
+	};
+	await commit(lc, next, {
+		changeType: "deprecate",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: null,
+		reason,
+	});
+}
+
+export async function restoreMemory(lc: LifecycleHandle, id: string): Promise<void> {
+	const current = await loadCurrent(lc, id);
+	if (current.frontmatter.status !== "deprecated") {
+		throw new Error(`restoreMemory only from deprecated, not ${current.frontmatter.status}`);
+	}
+	const next: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			status: "active",
+			deprecationReason: null,
+		},
+		body: current.body,
+	};
+	await commit(lc, next, {
+		changeType: "restore",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: null,
+		reason: null,
+	});
+}

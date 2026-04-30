@@ -179,3 +179,35 @@ describe("updateScope", () => {
 		}
 	}, 30_000);
 });
+
+describe("deprecateMemory / restoreMemory", () => {
+	it("flips active → deprecated with reason; restore reverses to active", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision", title: "T", body: "## Rule\nx",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			await deprecateMemory(lc, id, "no longer applies");
+			expect(lc.index.getMemory(id)!.status).toBe("deprecated");
+
+			await restoreMemory(lc, id);
+			expect(lc.index.getMemory(id)!.status).toBe("active");
+
+			const audit = lc.index.auditRows(id);
+			expect(audit.map(a => a.changeType)).toEqual(["create", "deprecate", "restore"]);
+		} finally { lc.close(); }
+	}, 30_000);
+
+	it("restoreMemory only works from deprecated, not from merged_into", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision", title: "T", body: "## Rule\nx",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			lc.index.rawDb().prepare("UPDATE memories SET status='merged_into' WHERE id=?").run(id);
+			await expect(restoreMemory(lc, id)).rejects.toThrow(/only from deprecated/);
+		} finally { lc.close(); }
+	});
+});
