@@ -110,3 +110,66 @@ export async function createMemory(lc: LifecycleHandle, input: CreateMemoryInput
 
 	return id;
 }
+
+export type UpdateMemoryInput = {
+	body?: string;
+	title?: string;
+	pinned?: boolean;
+	typeFields?: Record<string, unknown>;
+	reason?: string;
+};
+
+async function loadCurrent(lc: LifecycleHandle, id: string): Promise<MemoryRecord> {
+	const row = lc.index.getMemory(id);
+	if (!row) throw new Error(`memory not found: ${id}`);
+	const location = row.status === "trashed" ? "trash" : "memories";
+	return readMemoryFile(lc.repoKey, id, location);
+}
+
+function shouldPreserveBody(lc: LifecycleHandle, type: string): boolean {
+	return lc.registry.types[type]?.auditPreserveBody === true;
+}
+
+export async function updateMemory(lc: LifecycleHandle, id: string, patch: UpdateMemoryInput): Promise<void> {
+	const current = await loadCurrent(lc, id);
+	const prevHash = (lc.index.getMemory(id)!).body_hash;
+	const prevBody = shouldPreserveBody(lc, current.frontmatter.type) ? current.body : null;
+
+	const next: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			title: patch.title ?? current.frontmatter.title,
+			pinned: patch.pinned ?? current.frontmatter.pinned,
+			typeFields: patch.typeFields ?? current.frontmatter.typeFields,
+		},
+		body: patch.body ?? current.body,
+	};
+
+	await commit(lc, next, {
+		changeType: "update",
+		prevBodyHash: prevHash,
+		prevBody,
+		reason: patch.reason ?? null,
+	});
+}
+
+export async function updateScope(lc: LifecycleHandle, id: string, scope: { files: string[]; tags: string[] }): Promise<void> {
+	const current = await loadCurrent(lc, id);
+	const next: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			scope: { files: [...scope.files], tags: [...scope.tags] },
+		},
+		body: current.body,
+	};
+	await commit(lc, next, {
+		changeType: "scope_change",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: null,
+		reason: null,
+	});
+}

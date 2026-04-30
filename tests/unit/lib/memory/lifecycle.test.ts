@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createMemory, openLifecycle } from "../../../../src/lib/memory/lifecycle.js";
+import { createMemory, openLifecycle, updateMemory, updateScope } from "../../../../src/lib/memory/lifecycle.js";
+import { deprecateMemory, restoreMemory } from "../../../../src/lib/memory/lifecycle.js";
+import { mergeMemories } from "../../../../src/lib/memory/lifecycle.js";
 import { readMemoryFile } from "../../../../src/lib/memory/store.js";
 
 let tmp: string;
@@ -99,4 +101,81 @@ describe("createMemory", () => {
 			lc.close();
 		}
 	}, 600_000);
+});
+
+describe("updateMemory", () => {
+	it("bumps version, refreshes updatedAt, appends audit; preserves prev_body_hash", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision", title: "T", body: "## Rule\noriginal",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			const beforeRow = lc.index.getMemory(id)!;
+
+			await updateMemory(lc, id, { body: "## Rule\nupdated", reason: "refined" });
+			const afterRow = lc.index.getMemory(id)!;
+			expect(afterRow.version).toBe(2);
+			expect(afterRow.body_hash).not.toBe(beforeRow.body_hash);
+
+			const audit = lc.index.auditRows(id);
+			expect(audit).toHaveLength(2);
+			expect(audit[1].changeType).toBe("update");
+			expect(audit[1].prevBodyHash).toBe(beforeRow.body_hash);
+			expect(audit[1].reason).toBe("refined");
+		} finally {
+			lc.close();
+		}
+	}, 30_000);
+
+	it("stores prev_body when type opts in (decision auditPreserveBody=true)", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision", title: "T", body: "## Rule\noriginal",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			await updateMemory(lc, id, { body: "## Rule\nupdated", reason: "x" });
+			const audit = lc.index.auditRows(id);
+			expect(audit[1].prevBody).toContain("original");
+		} finally {
+			lc.close();
+		}
+	}, 30_000);
+
+	it("does NOT store prev_body when type opts out (pattern auditPreserveBody not set)", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "pattern", title: "T", body: "## Where\nfile.ts",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			await updateMemory(lc, id, { body: "## Where\nother.ts", reason: "x" });
+			const audit = lc.index.auditRows(id);
+			expect(audit[1].prevBody).toBeNull();
+		} finally {
+			lc.close();
+		}
+	}, 30_000);
+});
+
+describe("updateScope", () => {
+	it("replaces scope and records audit row 'scope_change'", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision", title: "T", body: "## Rule\nx",
+				scope: { files: ["a.ts"], tags: [] }, source: "explicit",
+			});
+			await updateScope(lc, id, { files: ["b.ts"], tags: ["t"] });
+			expect(lc.index.scopeRows(id)).toEqual([
+				{ kind: "file", value: "b.ts" },
+				{ kind: "tag", value: "t" },
+			]);
+			const audit = lc.index.auditRows(id);
+			expect(audit.at(-1)!.changeType).toBe("scope_change");
+		} finally {
+			lc.close();
+		}
+	}, 30_000);
 });
