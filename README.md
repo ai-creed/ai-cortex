@@ -115,6 +115,24 @@ MCP tools: `record_memory`, `recall_memory`, `list_memories`, `search_memories`,
 
 See `ai-cortex memory --help` for all subcommands.
 
+### Auto-extractor
+
+Every session captured via the `SessionEnd` / `PreCompact` hooks runs the
+auto-extractor immediately after compaction. Extracted memories land as
+`candidate` (status), with `source: extracted` and `confidence ≤ 0.6`.
+Promote them via `confirm_memory(id)` once you've verified them; otherwise
+they age out per the configured policy (Phase 2b).
+
+### Bootstrap
+
+To extract from existing history (one-shot):
+
+    ai-cortex memory bootstrap [--limit-sessions N] [--min-confidence X]
+
+The command iterates every captured session and runs the extractor over
+each. Idempotent — re-running appends evidence to existing candidates
+rather than duplicating.
+
 ## Library API
 
 ```ts
