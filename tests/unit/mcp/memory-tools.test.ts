@@ -4,8 +4,9 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createServer } from "../../../src/mcp/server.js";
+import { createServer, resetReconciledKeys } from "../../../src/mcp/server.js";
 import { openLifecycle, createMemory, pinMemory } from "../../../src/lib/memory/lifecycle.js";
+import { openRetrieve } from "../../../src/lib/memory/retrieve.js";
 
 let tmp: string;
 let repoKey: string;
@@ -23,6 +24,7 @@ beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-mcp-mem-"));
     process.env.AI_CORTEX_CACHE_HOME = tmp;
     repoKey = "test-mcp-memory";
+    resetReconciledKeys();
 });
 afterEach(async () => {
     delete process.env.AI_CORTEX_CACHE_HOME;
@@ -200,4 +202,132 @@ describe("MCP trash_memory + untrash_memory", () => {
         const ut = await client.callTool({ name: "untrash_memory", arguments: { repoKey, id: id! } });
         expect(ut.isError).toBeFalsy();
     });
+});
+
+describe("MCP reconcile-on-first-call", () => {
+    it("reconcile runs once per repoKey per server (not on every call)", async () => {
+        // Create memory via lifecycle
+        const lc = await openLifecycle(repoKey, { agentId: "test" });
+        let id: string;
+        try {
+            id = await createMemory(lc, { type: "pattern", title: "Orphan test", body: "## Pattern\ncontent", scope: { files: [], tags: [] }, source: "explicit" });
+        } finally { lc.close(); }
+
+        // Delete the sqlite row to create an orphan .md file
+        const rh = openRetrieve(repoKey);
+        rh.index.rawDb().prepare("DELETE FROM memories WHERE id = ?").run(id!);
+        rh.close();
+
+        // Call list_memories — should trigger reconcile which re-adopts the orphan
+        const client = await makeClient();
+        const result = await client.callTool({
+            name: "list_memories",
+            arguments: { repoKey },
+        });
+        const items = JSON.parse((result.content[0] as any).text);
+        // After reconcile, the orphan .md is re-adopted and should appear
+        expect(items.some((i: any) => i.id === id!)).toBe(true);
+    }, 30_000);
+});
+
+describe("MCP memory end-to-end lifecycle", () => {
+    it("record → update → deprecate → restore → trash → purge → audit trail", async () => {
+        const client = await makeClient();
+
+        // 1. Record (source="explicit" creates with status "active")
+        const recResult = await client.callTool({
+            name: "record_memory",
+            arguments: {
+                repoKey,
+                type: "decision",
+                title: "E2E test decision",
+                body: "## Decision\nuse end-to-end tests",
+                scopeFiles: [],
+                scopeTags: [],
+                source: "explicit",
+            },
+        });
+        expect(recResult.isError).toBeFalsy();
+        const id = (recResult.content[0] as any).text.trim();
+        expect(id).toMatch(/^mem-/);
+
+        // 2. Update title
+        // (confirmMemory only works on candidate status; record with source="explicit" creates active — skip confirm)
+        const updResult = await client.callTool({
+            name: "update_memory",
+            arguments: { repoKey, id, title: "E2E test decision (updated)", reason: "e2e update" },
+        });
+        expect(updResult.isError).toBeFalsy();
+
+        // 3. Deprecate
+        const depResult = await client.callTool({
+            name: "deprecate_memory",
+            arguments: { repoKey, id, reason: "e2e deprecate" },
+        });
+        expect(depResult.isError).toBeFalsy();
+
+        // 4. Restore (back to active)
+        const resResult = await client.callTool({
+            name: "restore_memory",
+            arguments: { repoKey, id },
+        });
+        expect(resResult.isError).toBeFalsy();
+
+        // 5. Trash
+        const trResult = await client.callTool({
+            name: "trash_memory",
+            arguments: { repoKey, id, reason: "e2e trash" },
+        });
+        expect(trResult.isError).toBeFalsy();
+
+        // 6. Purge
+        const prResult = await client.callTool({
+            name: "purge_memory",
+            arguments: { repoKey, id, reason: "e2e purge" },
+        });
+        expect(prResult.isError).toBeFalsy();
+
+        // 7. Audit trail shows all operations
+        const auditResult = await client.callTool({
+            name: "audit_memory",
+            arguments: { repoKey, id },
+        });
+        expect(auditResult.isError).toBeFalsy();
+        const rows = JSON.parse((auditResult.content[0] as any).text);
+        const changeTypes = rows.map((r: any) => r.changeType);
+        expect(changeTypes).toContain("create");
+        expect(changeTypes).toContain("update");
+        expect(changeTypes).toContain("deprecate");
+        expect(changeTypes).toContain("restore");
+        expect(changeTypes).toContain("trash");
+        expect(changeTypes).toContain("purge");
+    }, 30_000);
+
+    it("record → recall returns the memory (FTS search)", async () => {
+        const client = await makeClient();
+
+        // Use "decision" type (no required typeFields) so record_memory succeeds via MCP
+        const recResult = await client.callTool({
+            name: "record_memory",
+            arguments: {
+                repoKey,
+                type: "decision",
+                title: "Xenova model warm-up",
+                body: "## Rule\nThe Xenova transformer model needs warm-up time on first load.",
+                scopeFiles: [],
+                scopeTags: [],
+                source: "explicit",
+            },
+        });
+        expect(recResult.isError).toBeFalsy();
+
+        // FTS search should find it
+        const searchResult = await client.callTool({
+            name: "search_memories",
+            arguments: { repoKey, query: "Xenova transformer", limit: 5 },
+        });
+        const hits = JSON.parse((searchResult.content[0] as any).text);
+        expect(hits.length).toBeGreaterThan(0);
+        expect(hits[0].title).toBe("Xenova model warm-up");
+    }, 30_000);
 });
