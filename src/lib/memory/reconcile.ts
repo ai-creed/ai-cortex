@@ -1,14 +1,36 @@
 import crypto from "node:crypto";
 import { openMemoryIndex } from "./index.js";
+import type { MemoryIndex } from "./index.js";
 import { listMemoryFiles, readMemoryFile } from "./store.js";
 import { upsertMemoryVector, deleteMemoryVector } from "./embed.js";
 import { bodyExcerpt } from "./markdown.js";
+import type { AuditRow } from "./types.js";
 
 export type ReconcileReport = {
 	reindexed: string[];
 	adopted: string[];
 	phantomsRemoved: string[];
 };
+
+function safeAppendAudit(
+	index: MemoryIndex,
+	row: AuditRow,
+): void {
+	try {
+		index.appendAudit(row);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (
+			!msg.includes("UNIQUE constraint failed: memory_audit.memory_id, memory_audit.version")
+		) {
+			throw err;
+		}
+		// A row with this (memoryId, version) already exists from a prior partial run.
+		// Bump version to one past the current max and retry.
+		const next = index.maxAuditVersion(row.memoryId) + 1;
+		index.appendAudit({ ...row, version: next });
+	}
+}
 
 function bodyHash(title: string, body: string): string {
 	return crypto
@@ -44,7 +66,7 @@ export async function reconcileStore(
 					bodyExcerpt: bodyExcerpt(record.body),
 					body: record.body,
 				});
-				index.appendAudit({
+				safeAppendAudit(index, {
 					memoryId: f.id,
 					version: record.frontmatter.version,
 					ts: new Date().toISOString(),
@@ -68,7 +90,7 @@ export async function reconcileStore(
 					bodyExcerpt: bodyExcerpt(record.body),
 					body: record.body,
 				});
-				index.appendAudit({
+				safeAppendAudit(index, {
 					memoryId: f.id,
 					version: record.frontmatter.version + 1,
 					ts: new Date().toISOString(),
@@ -106,7 +128,7 @@ export async function reconcileStore(
 							.get(r.id) as { v: number | null }
 					).v ?? 0;
 				index.deleteMemoryRow(r.id);
-				index.appendAudit({
+				safeAppendAudit(index, {
 					memoryId: r.id,
 					version: maxV + 1,
 					ts: new Date().toISOString(),

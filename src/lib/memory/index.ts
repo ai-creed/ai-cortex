@@ -194,6 +194,15 @@ export class MemoryIndex {
 			.run(row);
 	}
 
+	maxAuditVersion(memoryId: string): number {
+		const row = this.db
+			.prepare(
+				"SELECT COALESCE(MAX(version), 0) AS v FROM memory_audit WHERE memory_id = ?",
+			)
+			.get(memoryId) as { v: number };
+		return row.v;
+	}
+
 	auditRows(memoryId: string): AuditRow[] {
 		return this.db
 			.prepare(
