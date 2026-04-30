@@ -257,6 +257,279 @@ Captured sessions live under `~/.cache/ai-cortex/v1/<repo-key>/history/`; instal
 
 **Hit kinds and weights** (higher means stronger signal): `correction` 1.0, `userPrompt` 0.7, `filePath` 0.7, `summary` 0.6, `toolCall` 0.5, `rawChunk` 0.5.
 
+#### `recall_memory`
+
+Semantic + FTS recall. Use to retrieve relevant memories before starting work on a task.
+
+**Parameters:**
+- `query` (required) — natural-language query
+- `type` (optional) — filter by type: `decision` | `gotcha` | `pattern` | `how-to`
+- `limit` (optional, integer) — max results (default 10)
+- `scopeFiles` (optional, string[]) — restrict to memories scoped to these files
+- `tags` (optional, string[]) — filter by tags
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `record_memory`
+
+Record a new memory.
+
+**Parameters:**
+- `type` (required) — `decision` | `gotcha` | `pattern` | `how-to`
+- `title` (required) — short title
+- `body` (required) — markdown body
+- `tags` (optional, string[]) — labels
+- `scopeFiles` (optional, string[]) — files this memory pertains to
+- `source` (optional) — originating session id or reference
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `get_memory`
+
+Fetch a single memory by ID.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `list_memories`
+
+List memories with optional filters.
+
+**Parameters:**
+- `type` (optional) — filter by type
+- `status` (optional) — `active` | `deprecated` | `trashed`
+- `scopeFile` (optional) — restrict to memories scoped to this file
+- `limit` (optional, integer) — max results
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `search_memories`
+
+FTS-only search (no semantic ranking).
+
+**Parameters:**
+- `query` (required) — full-text query
+- `limit` (optional, integer) — max results
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `audit_memory`
+
+View the audit trail for a memory.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `update_memory`
+
+Update body or title of a memory.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `title` (optional) — new title
+- `body` (optional) — new markdown body
+- `reason` (optional) — reason for the change (recorded in audit log)
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `deprecate_memory`
+
+Mark a memory as deprecated.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `reason` (required) — why deprecated
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `restore_memory`
+
+Restore a deprecated memory to active.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `merge_memories`
+
+Merge source memory into destination. Source is marked `merged_into`.
+
+**Parameters:**
+- `srcId` (required) — source memory ID
+- `dstId` (required) — destination memory ID
+- `body` (required) — new body for the merged destination memory
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `trash_memory`
+
+Move a memory to trash.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `reason` (required) — reason for trashing
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `untrash_memory`
+
+Restore a trashed memory to active.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `purge_memory`
+
+Permanently delete a memory. Irreversible.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `reason` (required) — reason for purge
+- `yes` (required, boolean) — must be `true` to confirm
+- `redact` (optional, boolean) — overwrite body with tombstone before deletion (privacy erasure)
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `link_memories`
+
+Create a typed edge between two memories.
+
+**Parameters:**
+- `srcId` (required) — source memory ID
+- `dstId` (required) — destination memory ID
+- `type` (required) — `supports` | `contradicts` | `refines` | `depends_on`
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `unlink_memories`
+
+Remove a typed edge between two memories.
+
+**Parameters:**
+- `srcId` (required) — source memory ID
+- `dstId` (required) — destination memory ID
+- `type` (required) — edge type to remove
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `pin_memory`
+
+Pin a memory so it appears in every rehydration briefing.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `force` (optional, boolean) — pin even if already at pin limit
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `unpin_memory`
+
+Remove a memory from the pinned set.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `confirm_memory`
+
+Confirm a candidate memory, promoting it to active.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `add_evidence`
+
+Attach evidence to an existing memory.
+
+**Parameters:**
+- `id` (required) — memory ID
+- `evidence` (required) — evidence text or reference
+- `path` (optional) — repo path (defaults to cwd)
+
+#### `rebuild_index`
+
+Reconcile the sqlite index from `.md` source files on disk. Use after manual edits or after restoring from backup.
+
+**Parameters:**
+- `path` (optional) — repo path (defaults to cwd)
+
+---
+
+## Memory layer
+
+Project-scoped persistent memory. Stores decisions, gotchas, patterns, and how-tos as markdown files backed by a sqlite FTS5 index and vector embeddings sidecar.
+
+**Storage layout** (`~/.cache/ai-cortex/v1/<repoKey>/memory/`):
+
+| Path | Contents |
+|------|----------|
+| `memories/<id>.md` | Markdown source-of-record for each memory |
+| `memory.db` | sqlite index with FTS5 for full-text search |
+| `.vectors.bin` / `.vectors.meta.json` | Embedding sidecar for semantic recall |
+
+### Memory types
+
+| Type | Description | Notes |
+|------|-------------|-------|
+| `decision` | Architectural or process choice | Body permanently recorded in audit log at creation |
+| `gotcha` | Warning or pitfall | Requires `severity`: `minor` \| `major` \| `critical` |
+| `pattern` | Recurring code pattern | — |
+| `how-to` | Step-by-step procedure or recipe | — |
+
+### Lifecycle
+
+```
+active ──► deprecated ──► active        (restore)
+active ──► merged_into                  (merge, terminal)
+active ──► trashed ──► active           (untrash)
+trashed ──► purged                      (purge, permanent)
+```
+
+### CLI reference
+
+| Command | Description |
+|---------|-------------|
+| `memory recall "<query>" [--type T] [--limit N] [--scope-file F]... [--tag T]... [--json]` | Semantic + FTS recall |
+| `memory search "<query>" [--limit N] [--json]` | FTS-only search |
+| `memory record --type T --title T --body-file F [--tag T]... [--scope-file F]... [--source S]` | Record a new memory |
+| `memory get <id> [--json]` | Fetch memory by ID |
+| `memory list [--type T] [--status S] [--scope-file F] [--limit N] [--json]` | List with filters |
+| `memory update <id> [--title T] [--body-file F] [--reason R]` | Update body or title |
+| `memory deprecate <id> --reason R` | Mark as deprecated |
+| `memory restore <id>` | Restore deprecated to active |
+| `memory merge <src-id> <dst-id> --body-file F` | Merge src into dst |
+| `memory trash <id> --reason R` | Move to trash |
+| `memory untrash <id>` | Restore from trash |
+| `memory purge <id> --reason R --yes [--redact]` | Permanent delete (`--redact` for privacy erasure) |
+| `memory link <src-id> <dst-id> --type T` | Create typed edge (supports\|contradicts\|refines\|depends_on) |
+| `memory unlink <src-id> <dst-id> --type T` | Remove typed edge |
+| `memory pin <id> [--force]` | Pin to rehydration briefing |
+| `memory unpin <id>` | Remove from pinned set |
+| `memory confirm <id>` | Confirm a candidate memory |
+| `memory audit <id> [--json]` | View audit trail |
+| `memory rebuild-index` | Reconcile index from .md files |
+| `memory reconcile [--report]` | Run reconciliation pass |
+
+### MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `recall_memory` | Semantic + FTS recall |
+| `get_memory` | Fetch memory by ID |
+| `list_memories` | List with filters |
+| `search_memories` | FTS-only search |
+| `audit_memory` | View audit trail |
+| `record_memory` | Record a new memory |
+| `update_memory` | Update body or title |
+| `update_scope` | Update scope files |
+| `deprecate_memory` | Mark as deprecated |
+| `restore_memory` | Restore deprecated to active |
+| `merge_memories` | Merge src into dst |
+| `trash_memory` | Move to trash |
+| `untrash_memory` | Restore from trash |
+| `purge_memory` | Permanent delete |
+| `link_memories` | Create typed edge |
+| `unlink_memories` | Remove typed edge |
+| `pin_memory` | Pin to rehydration briefing |
+| `unpin_memory` | Remove from pinned set |
+| `confirm_memory` | Confirm candidate memory |
+| `add_evidence` | Attach evidence to memory |
+| `rebuild_index` | Reconcile index from .md files |
+
+---
+
 #### `index_project`
 
 Call after large structural changes to force a full reindex.

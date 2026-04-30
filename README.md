@@ -94,6 +94,27 @@ hooks) and `~/.codex/config.toml` (Codex equivalents) and creates timestamped
 repo. Search defaults to the current session and auto-broadens to the whole
 project when the current-session search returns nothing.
 
+## Memory
+
+```
+ai-cortex memory record --type decision --title "Always use pnpm" --body-file body.md
+ai-cortex memory recall "package manager"
+ai-cortex memory list --status active --json
+ai-cortex memory pin <id>
+```
+
+Persistent project-scoped memory layer. Records decisions, gotchas, patterns, and how-tos as markdown files indexed by sqlite + vector embeddings. Pinned memories appear automatically in the rehydration briefing.
+
+**Types:** `decision` · `gotcha` (severity: minor/major/critical) · `pattern` · `how-to`
+
+**Lifecycle:** `active` → `deprecated` | `merged_into` | `trashed` → `purged`
+
+**Storage:** `~/.cache/ai-cortex/v1/<repoKey>/memory/`
+
+MCP tools: `record_memory`, `recall_memory`, `list_memories`, `search_memories`, `get_memory`, `audit_memory`, and 11 write tools.
+
+See `ai-cortex memory --help` for all subcommands.
+
 ## Library API
 
 ```ts
