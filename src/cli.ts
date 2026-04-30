@@ -164,6 +164,92 @@ export function renderSemanticText(r: SemanticSuggestResult): string {
 	return lines.join("\n").trimEnd();
 }
 
+function stripFlagPairs(args: string[], flags: string[]): string[] {
+	const out: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		if (flags.includes(args[i]) && i + 1 < args.length) { i++; continue; }
+		out.push(args[i]);
+	}
+	return out;
+}
+
+async function cliMemoryRecall(args: string[]): Promise<void> {
+	let query = "";
+	let json = false;
+	let limit = 10;
+	let cwd = process.cwd();
+	let repoKey: string | null = null;
+	const scopeFiles: string[] = [];
+	const tags: string[] = [];
+	let type: string | undefined;
+
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--json") { json = true; continue; }
+		if (a === "--limit" && args[i + 1]) { limit = Number(args[++i]); continue; }
+		if (a === "--cwd" && args[i + 1]) { cwd = args[++i]; continue; }
+		if (a === "--repo-key" && args[i + 1]) { repoKey = args[++i]; continue; }
+		if (a === "--scope-file" && args[i + 1]) { scopeFiles.push(args[++i]); continue; }
+		if (a === "--tag" && args[i + 1]) { tags.push(args[++i]); continue; }
+		if (a === "--type" && args[i + 1]) { type = args[++i]; continue; }
+		if (!a.startsWith("--") && !query) { query = a; continue; }
+	}
+	const rk = repoKey ?? await resolveRepoKeyOrExit(cwd);
+	const { openRetrieve, recallMemory } = await import("./lib/memory/retrieve.js");
+	const rh = openRetrieve(rk);
+	try {
+		const results = await recallMemory(rh, query, {
+			limit,
+			scope: scopeFiles.length || tags.length ? { files: scopeFiles, tags } : undefined,
+			type: type ? [type] : undefined,
+		});
+		if (json) {
+			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+		} else {
+			if (results.length === 0) { process.stdout.write("no results\n"); return; }
+			for (const r of results) {
+				process.stdout.write(`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`);
+				process.stdout.write(`  ${r.bodyExcerpt}\n`);
+			}
+		}
+	} finally {
+		rh.close();
+	}
+}
+
+async function cliMemorySearch(args: string[]): Promise<void> {
+	let query = "";
+	let json = false;
+	let limit = 10;
+	let cwd = process.cwd();
+	let repoKey: string | null = null;
+
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--json") { json = true; continue; }
+		if (a === "--limit" && args[i + 1]) { limit = Number(args[++i]); continue; }
+		if (a === "--cwd" && args[i + 1]) { cwd = args[++i]; continue; }
+		if (a === "--repo-key" && args[i + 1]) { repoKey = args[++i]; continue; }
+		if (!a.startsWith("--") && !query) { query = a; continue; }
+	}
+	const rk = repoKey ?? await resolveRepoKeyOrExit(cwd);
+	const { openRetrieve, searchMemories } = await import("./lib/memory/retrieve.js");
+	const rh = openRetrieve(rk);
+	try {
+		const results = searchMemories(rh, query, limit);
+		if (json) {
+			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+		} else {
+			if (results.length === 0) { process.stdout.write("no results\n"); return; }
+			for (const r of results) {
+				process.stdout.write(`${r.id}  [${r.type}] rank=${r.rank}  ${r.title}\n`);
+			}
+		}
+	} finally {
+		rh.close();
+	}
+}
+
 function flagValue(argv: string[], name: string): string | undefined {
 	const idx = argv.indexOf(name);
 	if (idx === -1 || idx === argv.length - 1) return undefined;
@@ -446,6 +532,33 @@ async function main(): Promise<void> {
 				}
 				default: {
 					process.stderr.write("usage: ai-cortex history <off|on|capture|list|prune|install-hooks|uninstall-hooks>\n");
+					process.exit(1);
+				}
+			}
+			process.exit(0);
+		} else if (command === "memory") {
+			const sub = args[0];
+			const rest = args.slice(1);
+			switch (sub) {
+				case "recall": {
+					await cliMemoryRecall(rest);
+					break;
+				}
+				case "search": {
+					await cliMemorySearch(rest);
+					break;
+				}
+				case "record": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey = flagValue(rest, "--repo-key") ?? await resolveRepoKeyOrExit(cwd);
+					const { runMemoryRecord } = await import("./lib/memory/cli/record.js");
+					const subArgs = stripFlagPairs(rest, ["--cwd", "--repo-key"]);
+					const code = await runMemoryRecord(subArgs, { repoKey });
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				default: {
+					process.stderr.write("usage: ai-cortex memory <recall|search|record|...>\n");
 					process.exit(1);
 				}
 			}
