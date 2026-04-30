@@ -1,2 +1,2 @@
 // src/version.ts
-export const VERSION = "0.3.0-beta.6";
+export const VERSION = "0.4.0";
