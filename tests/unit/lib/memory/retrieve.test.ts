@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { getMemory, listMemories, auditMemory, searchMemories, openRetrieve } from "../../../../src/lib/memory/retrieve.js";
+import { getMemory, listMemories, auditMemory, searchMemories, openRetrieve, filterCandidates } from "../../../../src/lib/memory/retrieve.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
 
 let tmp: string;
@@ -92,6 +92,64 @@ describe("searchMemories", () => {
 			const hits = searchMemories(rh, "UNIQUE_FTS_NEEDLE_XYZ");
 			expect(hits.length).toBeGreaterThan(0);
 			expect(hits[0].title).toBe("Long decision");
+		} finally { rh.close(); }
+	}, 30_000);
+});
+
+describe("filterCandidates", () => {
+	it("returns all active when no scope filter", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			// project-wide
+			await createMemory(lc, { type: "decision", title: "Global", body: "x", scope: { files: [], tags: [] }, source: "explicit" });
+			// file-scoped
+			await createMemory(lc, { type: "decision", title: "FileScoped", body: "x", scope: { files: ["a.ts"], tags: [] }, source: "explicit" });
+			// tag-scoped
+			await createMemory(lc, { type: "decision", title: "TagScoped", body: "x", scope: { files: [], tags: ["linux"] }, source: "explicit" });
+			// both-scoped
+			await createMemory(lc, { type: "decision", title: "Both", body: "x", scope: { files: ["b.ts"], tags: ["caching"] }, source: "explicit" });
+		} finally { lc.close(); }
+
+		const rh = openRetrieve(repoKey);
+		try {
+			const all = filterCandidates(rh, { candidatePoolSize: 100 });
+			expect(all).toHaveLength(4);
+		} finally { rh.close(); }
+	}, 30_000);
+
+	it("files-only scope: returns file-scoped + project-wide", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, { type: "decision", title: "Global", body: "x", scope: { files: [], tags: [] }, source: "explicit" });
+			await createMemory(lc, { type: "decision", title: "FileA", body: "x", scope: { files: ["a.ts"], tags: [] }, source: "explicit" });
+			await createMemory(lc, { type: "decision", title: "TagOnly", body: "x", scope: { files: [], tags: ["linux"] }, source: "explicit" });
+		} finally { lc.close(); }
+
+		const rh = openRetrieve(repoKey);
+		try {
+			const candidates = filterCandidates(rh, { scope: { files: ["a.ts"] }, candidatePoolSize: 100 });
+			const titles = candidates.map(c => c.title);
+			expect(titles).toContain("Global");
+			expect(titles).toContain("FileA");
+			expect(titles).not.toContain("TagOnly");
+		} finally { rh.close(); }
+	}, 30_000);
+
+	it("tags-only scope: returns tag-scoped + project-wide", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, { type: "decision", title: "Global2", body: "x", scope: { files: [], tags: [] }, source: "explicit" });
+			await createMemory(lc, { type: "decision", title: "LinuxTag", body: "x", scope: { files: [], tags: ["linux"] }, source: "explicit" });
+			await createMemory(lc, { type: "decision", title: "FileOnly", body: "x", scope: { files: ["x.ts"], tags: [] }, source: "explicit" });
+		} finally { lc.close(); }
+
+		const rh = openRetrieve(repoKey);
+		try {
+			const candidates = filterCandidates(rh, { scope: { tags: ["linux"] }, candidatePoolSize: 100 });
+			const titles = candidates.map(c => c.title);
+			expect(titles).toContain("Global2");
+			expect(titles).toContain("LinuxTag");
+			expect(titles).not.toContain("FileOnly");
 		} finally { rh.close(); }
 	}, 30_000);
 });
