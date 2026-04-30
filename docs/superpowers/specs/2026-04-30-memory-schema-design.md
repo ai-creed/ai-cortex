@@ -628,15 +628,22 @@ This is appropriate when you simply want the file gone but the audit story prese
 
 **Privacy-grade purge** — `purge_memory(id, reason, { redact: true })`:
 
-Use when the body content itself is sensitive (captured a credential, leaked private info, etc.) and must not survive anywhere.
+Use when the body content itself is sensitive (captured a credential, leaked private info, etc.) and must not survive anywhere within memory M's own state.
 
-- `.md` file deleted.
-- All `memory_audit` rows for this `memory_id`: `UPDATE memory_audit SET prev_body = NULL, reason = '<redacted>' WHERE memory_id = ?`. The rows themselves stay so the existence trail is preserved (you can still tell "memory X was redact-purged on Y by agent Z"), but no body content remains.
-- All `provenance.excerpt` fields in any other memory's frontmatter that reference this `memory_id` as `sessionId` *or* via lifecycle pointer: replaced with `<redacted>`. Walking the references is a single-table query (`memory_audit` and a frontmatter scan; both bounded).
-- FTS5 row deleted.
+Scope is the purged memory's own state. The body of M never appears in other memories' fields by any path the data model exposes — `provenance.excerpt` references session content (not memory bodies), `memory_links` carries no body, lifecycle pointers (`supersedes`, `mergedInto`, `promotedFrom`) are id pointers only. So redact does *not* walk other memories.
+
+Steps applied to M:
+
+- `.md` file deleted (this also removes M's frontmatter, which is where M's own `provenance.excerpt` entries live).
+- `UPDATE memory_audit SET prev_body = NULL, reason = '<redacted>' WHERE memory_id = M.id`. Rows themselves stay so the existence trail is preserved ("memory M was redact-purged on Y by agent Z"), but no body content remains.
+- `memory_fts` row for M deleted.
+- Vector sidecar entry for M deleted.
 - `memories` row stays for join integrity, with `status = purged_redacted`, `title = '<redacted>'`, `body_excerpt = '<redacted>'`. Retrieval excludes this status by default.
+- `memory_links` rows where M is either endpoint: deleted (FK cascade or explicit DELETE; no body content here, but the relationship surface is no longer meaningful).
 
 `purged_redacted` is a terminal state — there is no `restore` from it (the body is gone).
+
+**Caveat — content that was merged before redact.** If M was merged into another memory N before being redact-purged, N's body absorbed M's content at merge time. That content survives in N's body by design — the user explicitly chose to incorporate it. Redact-purging M does not retroactively redact N. If both memories' content must be scrubbed, the caller redact-purges N as well (or undoes the merge first via `restore_memory(M)`, then redact-purges both).
 
 3. `purge_memory(id, reason)` (default mode) skips trash and hard-deletes immediately. `purge_memory(id, reason, { redact: true })` does the privacy-grade scrub described above.
 
@@ -946,8 +953,10 @@ Integration:
   - Inject sqlite row exists but `.md` is missing (status != purged_redacted). Reconcile deletes the phantom row.
   - Inject `.md` body changed out-of-band (manual edit). `body_hash` mismatch detected on read; single-record re-index applied; audit row tagged `change_type: "reconcile"`.
 - **Purge modes**:
-  - Default purge: `.md` gone, `memory_audit.prev_body` preserved per opt-in, other memories' provenance excerpts referencing this id intact, FTS row deleted.
-  - Redact purge: `.md` gone, all `memory_audit.prev_body` for this id NULL, all `provenance.excerpt` referencing this id replaced with `<redacted>`, FTS row deleted, `memories` row in `purged_redacted` state with redacted title and excerpt, retrieval excludes it.
+  - Default purge: `.md` gone, `memory_audit.prev_body` preserved per opt-in, FTS row deleted, `memory_links` rows for this id removed.
+  - Redact purge: `.md` gone (taking M's own provenance excerpts with it), all `memory_audit.prev_body` for this id NULL, FTS row deleted, vector entry deleted, `memories` row in `purged_redacted` state with redacted title and excerpt, retrieval excludes it.
+  - Redact purge does *not* touch other memories. Fixture asserts that an unrelated memory referencing the same `sessionId` in its provenance is unchanged.
+  - Merge-then-redact-purge fixture: M merged into N, then redact-purge M. Verify N's body content (which absorbed M's) is unchanged — caveat is preserved by design.
 
 E2E (existing eval harness):
 - Memory injection into rehydration briefing visible in MCP output.
