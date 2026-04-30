@@ -211,3 +211,26 @@ describe("deprecateMemory / restoreMemory", () => {
 		} finally { lc.close(); }
 	});
 });
+
+describe("mergeMemories", () => {
+	it("flips src to merged_into, points mergedInto at dst, replaces dst body", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const a = await createMemory(lc, { type: "decision", title: "A", body: "## Rule\na", scope: { files: [], tags: [] }, source: "explicit" });
+			const b = await createMemory(lc, { type: "decision", title: "B", body: "## Rule\nb", scope: { files: [], tags: [] }, source: "explicit" });
+
+			await mergeMemories(lc, a, b, "## Rule\nmerged a+b");
+
+			expect(lc.index.getMemory(a)!.status).toBe("merged_into");
+			const fileA = await readMemoryFile(repoKey, a, "memories");
+			expect(fileA.frontmatter.mergedInto).toBe(b);
+
+			expect(lc.index.getMemory(b)!.status).toBe("active");
+			const fileB = await readMemoryFile(repoKey, b, "memories");
+			expect(fileB.body).toBe("## Rule\nmerged a+b");
+
+			expect(lc.index.auditRows(a).at(-1)!.changeType).toBe("merge");
+			expect(lc.index.auditRows(b).at(-1)!.changeType).toBe("merge");
+		} finally { lc.close(); }
+	}, 30_000);
+});

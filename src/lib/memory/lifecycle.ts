@@ -219,3 +219,48 @@ export async function restoreMemory(lc: LifecycleHandle, id: string): Promise<vo
 		reason: null,
 	});
 }
+
+export async function mergeMemories(lc: LifecycleHandle, srcId: string, dstId: string, mergedBody: string): Promise<void> {
+	if (srcId === dstId) throw new Error("cannot merge a memory into itself");
+	const src = await loadCurrent(lc, srcId);
+	const dst = await loadCurrent(lc, dstId);
+	if (src.frontmatter.status !== "active" && src.frontmatter.status !== "candidate") {
+		throw new Error(`merge source must be active/candidate, got ${src.frontmatter.status}`);
+	}
+	if (dst.frontmatter.status !== "active" && dst.frontmatter.status !== "candidate") {
+		throw new Error(`merge destination must be active/candidate, got ${dst.frontmatter.status}`);
+	}
+
+	const nextSrc: MemoryRecord = {
+		frontmatter: {
+			...src.frontmatter,
+			version: src.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			status: "merged_into",
+			mergedInto: dstId,
+		},
+		body: src.body,
+	};
+	await commit(lc, nextSrc, {
+		changeType: "merge",
+		prevBodyHash: lc.index.getMemory(srcId)!.body_hash,
+		prevBody: null,
+		reason: `merged into ${dstId}`,
+	});
+
+	const nextDst: MemoryRecord = {
+		frontmatter: {
+			...dst.frontmatter,
+			version: dst.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			supersedes: [...dst.frontmatter.supersedes, srcId],
+		},
+		body: mergedBody,
+	};
+	await commit(lc, nextDst, {
+		changeType: "merge",
+		prevBodyHash: lc.index.getMemory(dstId)!.body_hash,
+		prevBody: shouldPreserveBody(lc, dst.frontmatter.type) ? dst.body : null,
+		reason: `merged from ${srcId}`,
+	});
+}
