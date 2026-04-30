@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { getMemory, listMemories, auditMemory, searchMemories, openRetrieve, filterCandidates } from "../../../../src/lib/memory/retrieve.js";
+import { getMemory, listMemories, auditMemory, searchMemories, openRetrieve, filterCandidates, recallMemory } from "../../../../src/lib/memory/retrieve.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
 
 let tmp: string;
@@ -152,4 +152,39 @@ describe("filterCandidates", () => {
 			expect(titles).not.toContain("FileOnly");
 		} finally { rh.close(); }
 	}, 30_000);
+});
+
+describe("recallMemory", () => {
+	it("returns results ordered by score (higher is better)", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "Atomic writes prevent corruption",
+				body: "## Rule\nUse atomic temp-file rename for all writes.",
+				scope: { files: [], tags: [] }, source: "explicit",
+			});
+			await createMemory(lc, {
+				type: "gotcha", title: "Unrelated gotcha about networking",
+				body: "## Symptom\nFails when DNS is slow.",
+				scope: { files: [], tags: ["networking"] }, source: "explicit",
+				typeFields: { severity: "warning" },
+			});
+		} finally { lc.close(); }
+
+		const rh = openRetrieve(repoKey);
+		try {
+			const results = await recallMemory(rh, "how do atomic file writes work");
+			expect(results.length).toBeGreaterThan(0);
+			expect(results[0].score).toBeGreaterThanOrEqual(0);
+			expect(results.every((r, i) => i === 0 || results[i - 1].score >= r.score)).toBe(true);
+		} finally { rh.close(); }
+	}, 30_000);
+
+	it("returns empty array for empty store", async () => {
+		const rh = openRetrieve(repoKey);
+		try {
+			const results = await recallMemory(rh, "anything");
+			expect(results).toHaveLength(0);
+		} finally { rh.close(); }
+	});
 });
