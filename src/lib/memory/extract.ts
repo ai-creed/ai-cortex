@@ -190,6 +190,47 @@ export function nearestFile(evidence: EvidenceLayer, turn: number): string | nul
 }
 
 // ---------------------------------------------------------------------------
+// Gotcha heuristic
+// ---------------------------------------------------------------------------
+
+const SYMPTOM_RE = /\b(breaks?|broken|fails?|race|hangs?|wrong|bug|flaky|crash(es|ed)?|errors?)\b/i;
+const WORKAROUND_RE = /\b(fix(:|es|ed)?|instead|workaround|use\s+\S+\s+instead|bypass|patch)\b/i;
+
+export function produceGotchaCandidates(
+	sessionId: string,
+	evidence: EvidenceLayer,
+): ProducedCandidate[] {
+	const out: ProducedCandidate[] = [];
+	for (const c of evidence.corrections) {
+		const symptom = SYMPTOM_RE.test(c.text);
+		if (!symptom) continue;
+		const workaround =
+			c.nextAssistantSnippet !== undefined && WORKAROUND_RE.test(c.nextAssistantSnippet);
+		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
+		const body = c.nextAssistantSnippet
+			? `**Symptom:** ${c.text}\n\n**Workaround:** ${c.nextAssistantSnippet}`
+			: `**Symptom:** ${c.text}`;
+		const file = nearestFile(evidence, c.turn);
+		out.push({
+			type: "gotcha",
+			title,
+			body,
+			scopeFiles: file ? [file] : [],
+			tags: extractTags(c.text),
+			confidence: workaround ? 0.55 : 0.45,
+			provenance: [{
+				sessionId,
+				turn: c.turn,
+				kind: "user_correction",
+				excerpt: c.text.slice(0, 280),
+			}],
+			typeFields: { severity: "warning" },
+		});
+	}
+	return out;
+}
+
+// ---------------------------------------------------------------------------
 // Decision heuristic
 // ---------------------------------------------------------------------------
 
