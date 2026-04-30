@@ -151,17 +151,41 @@ const FILE_TOOLS = new Set([
 	"NotebookEdit",
 ]);
 
+const SNIPPET_MAX_CHARS = 500;
+
+function nextAssistantSnippet(turns: RawTurn[], i: number): string | undefined {
+	for (let j = i + 1; j < turns.length; j++) {
+		const t = turns[j];
+		if (t.role === "user") return undefined;
+		if (t.role === "assistant" && t.text.length > 0) {
+			return t.text.slice(0, SNIPPET_MAX_CHARS);
+		}
+		// tool-only or empty assistant turn → keep scanning
+	}
+	return undefined;
+}
+
 export function extractEvidence(turns: RawTurn[]): EvidenceLayer {
 	const userPrompts: EvidenceLayer["userPrompts"] = [];
 	const corrections: EvidenceLayer["corrections"] = [];
 	const toolCalls: EvidenceLayer["toolCalls"] = [];
 	const filePaths: EvidenceLayer["filePaths"] = [];
 
-	for (const t of turns) {
+	for (let i = 0; i < turns.length; i++) {
+		const t = turns[i];
 		if (t.role === "user" && t.text.length > 0) {
-			userPrompts.push({ turn: t.turn, text: t.text });
+			const snippet = nextAssistantSnippet(turns, i);
+			userPrompts.push({
+				turn: t.turn,
+				text: t.text,
+				...(snippet !== undefined ? { nextAssistantSnippet: snippet } : {}),
+			});
 			if (CORRECTION_RE.test(t.text)) {
-				corrections.push({ turn: t.turn, text: t.text });
+				corrections.push({
+					turn: t.turn,
+					text: t.text,
+					...(snippet !== undefined ? { nextAssistantSnippet: snippet } : {}),
+				});
 			}
 		}
 		if (!t.toolUses) continue;
