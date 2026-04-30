@@ -26,6 +26,10 @@ export function extractorRunsDir(repoKey: string): string {
 	return path.join(memoryRootDir(repoKey), "extractor-runs");
 }
 
+export function extractorRunPath(repoKey: string, sessionId: string): string {
+	return path.join(extractorRunsDir(repoKey), `${sessionId}.json`);
+}
+
 export function memoryFilePath(
 	repoKey: string,
 	memoryId: string,
