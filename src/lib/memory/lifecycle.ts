@@ -750,3 +750,30 @@ export async function addEvidence(
 		reason: `add_evidence ${entry.sessionId}#${entry.turn}`,
 	});
 }
+
+export async function bumpConfidence(
+	lc: LifecycleHandle,
+	id: string,
+	delta: number,
+	reason: string,
+): Promise<number> {
+	const current = await loadCurrent(lc, id);
+	const next = Math.min(0.95, Math.max(0, current.frontmatter.confidence + delta));
+	if (next === current.frontmatter.confidence) return current.frontmatter.confidence;
+	const updated: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			confidence: next,
+		},
+		body: current.body,
+	};
+	await commit(lc, updated, {
+		changeType: "update",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: null,
+		reason,
+	});
+	return next;
+}
