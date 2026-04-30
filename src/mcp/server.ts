@@ -18,6 +18,9 @@ import { detectCurrentSession, resolveTranscriptPath } from "../lib/history/sess
 import { resolveRepoIdentity } from "../lib/repo-identity.js";
 import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
 import { VERSION as SERVER_VERSION } from "../version.js";
+import { openRetrieve, getMemory, listMemories, auditMemory, searchMemories, recallMemory } from "../lib/memory/retrieve.js";
+import { openLifecycle, createMemory, updateMemory, updateScope, deprecateMemory, restoreMemory, mergeMemories, trashMemory, untrashMemory, purgeMemory, linkMemories, unlinkMemories, pinMemory, unpinMemory, confirmMemory, addEvidence } from "../lib/memory/lifecycle.js";
+import { reconcileStore } from "../lib/memory/reconcile.js";
 
 function logCall(
 	tool: string,
@@ -345,6 +348,428 @@ export function createServer(): McpServer {
 			(p: SearchHistoryArgs) => ({ query: p.query, scope: p.scope, sessionId: p.sessionId }),
 			handleSearchHistory,
 		),
+	);
+
+	// ─── Memory read tools ────────────────────────────────────────────────────
+
+	server.registerTool(
+		"recall_memory",
+		{
+			description: "Semantic memory recall with SQL scope pre-filter. Returns top-K memories most relevant to the query, ranked by cosine similarity + recency + confidence.",
+			inputSchema: {
+				repoKey: z.string().describe("Project repo key (from rehydrate_project)"),
+				query: z.string().min(1),
+				limit: z.number().int().positive().max(50).optional(),
+				scopeFiles: z.array(z.string()).optional(),
+				scopeTags: z.array(z.string()).optional(),
+				type: z.string().optional(),
+			},
+		},
+		logged("recall_memory", (p) => ({ repoKey: p.repoKey, query: p.query }), async (p) => {
+			const rh = openRetrieve(p.repoKey);
+			try {
+				const results = await recallMemory(rh, p.query, {
+					limit: p.limit,
+					scope: { files: p.scopeFiles, tags: p.scopeTags },
+					type: p.type ? [p.type] : undefined,
+				});
+				return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
+			} finally { rh.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"get_memory",
+		{
+			description: "Fetch a specific memory record by ID, including its full body.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("get_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const rh = openRetrieve(p.repoKey);
+			try {
+				const record = await getMemory(rh, p.id);
+				return { content: [{ type: "text" as const, text: JSON.stringify(record, null, 2) }] };
+			} finally { rh.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"list_memories",
+		{
+			description: "List memories with optional filters by type, status, or file scope.",
+			inputSchema: {
+				repoKey: z.string(),
+				type: z.array(z.string()).optional(),
+				status: z.array(z.string()).optional(),
+				scopeFile: z.string().optional(),
+				limit: z.number().int().positive().max(200).optional(),
+			},
+		},
+		logged("list_memories", (p) => ({ repoKey: p.repoKey }), async (p) => {
+			const rh = openRetrieve(p.repoKey);
+			try {
+				const items = listMemories(rh, { type: p.type, status: p.status, scopeFile: p.scopeFile, limit: p.limit });
+				return { content: [{ type: "text" as const, text: JSON.stringify(items, null, 2) }] };
+			} finally { rh.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"search_memories",
+		{
+			description: "Full-text search across memory bodies using FTS5. Returns ranked hits.",
+			inputSchema: {
+				repoKey: z.string(),
+				query: z.string().min(1),
+				limit: z.number().int().positive().max(50).optional(),
+			},
+		},
+		logged("search_memories", (p) => ({ repoKey: p.repoKey, query: p.query }), async (p) => {
+			const rh = openRetrieve(p.repoKey);
+			try {
+				const hits = searchMemories(rh, p.query, p.limit);
+				return { content: [{ type: "text" as const, text: JSON.stringify(hits, null, 2) }] };
+			} finally { rh.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"audit_memory",
+		{
+			description: "Return the full audit trail for a memory ID.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("audit_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const rh = openRetrieve(p.repoKey);
+			try {
+				const rows = auditMemory(rh, p.id);
+				return { content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }] };
+			} finally { rh.close(); }
+		}),
+	);
+
+	// ─── Memory write tools ───────────────────────────────────────────────────
+
+	server.registerTool(
+		"record_memory",
+		{
+			description: "Record a new memory (decision, gotcha, pattern, how-to) in this project.",
+			inputSchema: {
+				repoKey: z.string(),
+				type: z.string().min(1),
+				title: z.string().min(1),
+				body: z.string().min(1),
+				scopeFiles: z.array(z.string()).optional(),
+				scopeTags: z.array(z.string()).optional(),
+				source: z.enum(["explicit", "extracted"]).optional(),
+				confidence: z.number().min(0).max(1).optional(),
+			},
+		},
+		logged("record_memory", (p) => ({ repoKey: p.repoKey, type: p.type, title: p.title }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				const id = await createMemory(lc, {
+					type: p.type,
+					title: p.title,
+					body: p.body,
+					scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
+					source: p.source ?? "explicit",
+					confidence: p.confidence,
+				});
+				return { content: [{ type: "text" as const, text: `${id}\n` }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"update_memory",
+		{
+			description: "Update the body, title, or metadata of an existing memory.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				body: z.string().optional(),
+				title: z.string().optional(),
+				reason: z.string().optional(),
+			},
+		},
+		logged("update_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await updateMemory(lc, p.id, { body: p.body, title: p.title, reason: p.reason });
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"update_scope",
+		{
+			description: "Update the file/tag scope of a memory.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				scopeFiles: z.array(z.string()),
+				scopeTags: z.array(z.string()),
+			},
+		},
+		logged("update_scope", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await updateScope(lc, p.id, { files: p.scopeFiles, tags: p.scopeTags });
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"deprecate_memory",
+		{
+			description: "Mark a memory as deprecated (superseded but preserved for audit).",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				reason: z.string().min(1),
+			},
+		},
+		logged("deprecate_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await deprecateMemory(lc, p.id, p.reason);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"restore_memory",
+		{
+			description: "Restore a deprecated memory back to active.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("restore_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await restoreMemory(lc, p.id);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"merge_memories",
+		{
+			description: "Merge src memory into dst. src becomes merged_into, dst receives the merged body.",
+			inputSchema: {
+				repoKey: z.string(),
+				srcId: z.string().min(1),
+				dstId: z.string().min(1),
+				mergedBody: z.string().min(1),
+			},
+		},
+		logged("merge_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await mergeMemories(lc, p.srcId, p.dstId, p.mergedBody);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"trash_memory",
+		{
+			description: "Move a memory to trash. Recoverable via untrash_memory.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				reason: z.string().min(1),
+			},
+		},
+		logged("trash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await trashMemory(lc, p.id, p.reason);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"untrash_memory",
+		{
+			description: "Restore a trashed memory back to active.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("untrash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await untrashMemory(lc, p.id);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"purge_memory",
+		{
+			description: "Permanently delete a trashed memory. Use redact=true for privacy-grade erasure.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				reason: z.string().min(1),
+				redact: z.boolean().optional(),
+			},
+		},
+		logged("purge_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await purgeMemory(lc, p.id, p.reason, { redact: p.redact });
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"link_memories",
+		{
+			description: "Create a typed edge between two memories.",
+			inputSchema: {
+				repoKey: z.string(),
+				srcId: z.string().min(1),
+				dstId: z.string().min(1),
+				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
+			},
+		},
+		logged("link_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await linkMemories(lc, p.srcId, p.dstId, p.relType);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"unlink_memories",
+		{
+			description: "Remove a typed edge between two memories.",
+			inputSchema: {
+				repoKey: z.string(),
+				srcId: z.string().min(1),
+				dstId: z.string().min(1),
+				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
+			},
+		},
+		logged("unlink_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await unlinkMemories(lc, p.srcId, p.dstId, p.relType);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"pin_memory",
+		{
+			description: "Pin a memory so it appears in every rehydration briefing.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				force: z.boolean().optional(),
+			},
+		},
+		logged("pin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await pinMemory(lc, p.id, { force: p.force });
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"unpin_memory",
+		{
+			description: "Remove the explicit pin from a memory.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("unpin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await unpinMemory(lc, p.id);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"confirm_memory",
+		{
+			description: "Confirm a candidate memory, promoting it to active status.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged("confirm_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await confirmMemory(lc, p.id);
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"add_evidence",
+		{
+			description: "Append a provenance entry to a memory's evidence trail.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				sessionId: z.string(),
+				turn: z.number().int(),
+				kind: z.enum(["user_correction", "user_prompt", "tool_call", "summary"]),
+			},
+		},
+		logged("add_evidence", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+			try {
+				await addEvidence(lc, p.id, { sessionId: p.sessionId, turn: p.turn, kind: p.kind });
+				return { content: [{ type: "text" as const, text: "ok\n" }] };
+			} finally { lc.close(); }
+		}),
+	);
+
+	server.registerTool(
+		"rebuild_index",
+		{
+			description: "Reconcile the in-memory index with .md files on disk. Handles orphan files, phantom rows, and body-hash drift.",
+			inputSchema: {
+				repoKey: z.string(),
+			},
+		},
+		logged("rebuild_index", (p) => ({ repoKey: p.repoKey }), async (p) => {
+			const report = await reconcileStore(p.repoKey, "mcp-rebuild");
+			return { content: [{ type: "text" as const, text: JSON.stringify(report, null, 2) }] };
+		}),
 	);
 
 	return server;
