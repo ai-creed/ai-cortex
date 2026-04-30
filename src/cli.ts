@@ -661,6 +661,19 @@ async function main(): Promise<void> {
 			const sub = args[0];
 			const rest = args.slice(1);
 			switch (sub) {
+				case "bootstrap": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryBootstrap } =
+						await import("./lib/memory/cli/bootstrap.js");
+					const code = await runMemoryBootstrap(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				case "recall": {
 					await cliMemoryRecall(rest);
 					break;
@@ -894,7 +907,7 @@ async function main(): Promise<void> {
 				}
 				default: {
 					process.stderr.write(
-						"usage: ai-cortex memory <recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile>\n",
+						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log>\n",
 					);
 					process.exit(1);
 				}
