@@ -11,6 +11,8 @@ import {
 	pinMemory,
 } from "../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../src/lib/memory/retrieve.js";
+import { writeSession } from "../../../src/lib/history/store.js";
+import { mkRepoKey, cleanupRepo } from "../../helpers/memory-fixtures.js";
 
 let tmp: string;
 let repoKey: string;
@@ -409,4 +411,32 @@ describe("MCP memory end-to-end lifecycle", () => {
 		expect(hits.length).toBeGreaterThan(0);
 		expect(hits[0].title).toBe("Xenova model warm-up");
 	}, 30_000);
+});
+
+describe("MCP extract_session", () => {
+	it("extract_session tool runs the extractor and returns the manifest", async () => {
+		const extractRepoKey = await mkRepoKey("mcp-extract");
+		try {
+			await writeSession(extractRepoKey, {
+				version: 2, id: "s-1",
+				startedAt: "2026-04-30T00:00:00Z", endedAt: "2026-04-30T01:00:00Z",
+				turnCount: 1, lastProcessedTurn: 1, hasSummary: false, hasRaw: true,
+				rawDroppedAt: null, transcriptPath: "/tmp/x", summary: "",
+				evidence: {
+					toolCalls: [], filePaths: [], userPrompts: [],
+					corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
+				}, chunks: [],
+			});
+			const client = await makeClient();
+			const result = await client.callTool({
+				name: "extract_session",
+				arguments: { sessionId: "s-1", repoKey: extractRepoKey },
+			});
+			expect(result.isError).toBeFalsy();
+			const manifest = JSON.parse((result.content[0] as any).text);
+			expect(manifest.candidatesCreated).toBe(1);
+		} finally {
+			await cleanupRepo(extractRepoKey);
+		}
+	});
 });

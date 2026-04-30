@@ -1093,6 +1093,36 @@ export function createServer(): McpServer {
 		),
 	);
 
+	// ─── Auto-extractor tool ──────────────────────────────────────────────────
+
+	server.registerTool(
+		"extract_session",
+		{
+			description:
+				"Run the auto-extractor on a captured session. Returns the manifest.",
+			inputSchema: {
+				repoKey: z.string(),
+				sessionId: z.string().min(1),
+				allowReExtract: z.boolean().optional(),
+			},
+		},
+		logged(
+			"extract_session",
+			(p) => ({ repoKey: p.repoKey, sessionId: p.sessionId }),
+			async (p) => {
+				const { extractFromSession } = await import("../lib/memory/extract.js");
+				const manifest = await extractFromSession(p.repoKey, p.sessionId, {
+					allowReExtract: p.allowReExtract === true,
+				});
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
+					],
+				};
+			},
+		),
+	);
+
 	return server;
 }
 
