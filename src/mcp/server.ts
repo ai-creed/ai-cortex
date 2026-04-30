@@ -562,13 +562,13 @@ export function createServer(): McpServer {
 				reason: z.string().min(1),
 			},
 		},
-		logged("deprecate_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("deprecate_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await deprecateMemory(lc, p.id, p.reason);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -580,13 +580,13 @@ export function createServer(): McpServer {
 				id: z.string().min(1),
 			},
 		},
-		logged("restore_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("restore_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await restoreMemory(lc, p.id);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -600,13 +600,13 @@ export function createServer(): McpServer {
 				mergedBody: z.string().min(1),
 			},
 		},
-		logged("merge_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+		logged("merge_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await mergeMemories(lc, p.srcId, p.dstId, p.mergedBody);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -619,13 +619,13 @@ export function createServer(): McpServer {
 				reason: z.string().min(1),
 			},
 		},
-		logged("trash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("trash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await trashMemory(lc, p.id, p.reason);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -637,13 +637,13 @@ export function createServer(): McpServer {
 				id: z.string().min(1),
 			},
 		},
-		logged("untrash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("untrash_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await untrashMemory(lc, p.id);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -657,13 +657,13 @@ export function createServer(): McpServer {
 				redact: z.boolean().optional(),
 			},
 		},
-		logged("purge_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("purge_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await purgeMemory(lc, p.id, p.reason, { redact: p.redact });
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -677,13 +677,13 @@ export function createServer(): McpServer {
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
 			},
 		},
-		logged("link_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+		logged("link_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await linkMemories(lc, p.srcId, p.dstId, p.relType);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -697,13 +697,13 @@ export function createServer(): McpServer {
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
 			},
 		},
-		logged("unlink_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), async (p) => {
+		logged("unlink_memories", (p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await unlinkMemories(lc, p.srcId, p.dstId, p.relType);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -716,13 +716,13 @@ export function createServer(): McpServer {
 				force: z.boolean().optional(),
 			},
 		},
-		logged("pin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("pin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await pinMemory(lc, p.id, { force: p.force });
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -734,13 +734,13 @@ export function createServer(): McpServer {
 				id: z.string().min(1),
 			},
 		},
-		logged("unpin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("unpin_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await unpinMemory(lc, p.id);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -752,13 +752,13 @@ export function createServer(): McpServer {
 				id: z.string().min(1),
 			},
 		},
-		logged("confirm_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("confirm_memory", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await confirmMemory(lc, p.id);
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -773,13 +773,13 @@ export function createServer(): McpServer {
 				kind: z.enum(["user_correction", "user_prompt", "tool_call", "summary"]),
 			},
 		},
-		logged("add_evidence", (p) => ({ repoKey: p.repoKey, id: p.id }), async (p) => {
+		logged("add_evidence", (p) => ({ repoKey: p.repoKey, id: p.id }), withReconcile(async (p) => {
 			const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
 			try {
 				await addEvidence(lc, p.id, { sessionId: p.sessionId, turn: p.turn, kind: p.kind });
 				return { content: [{ type: "text" as const, text: "ok\n" }] };
 			} finally { lc.close(); }
-		}),
+		})),
 	);
 
 	server.registerTool(
@@ -790,10 +790,10 @@ export function createServer(): McpServer {
 				repoKey: z.string(),
 			},
 		},
-		logged("rebuild_index", (p) => ({ repoKey: p.repoKey }), async (p) => {
+		logged("rebuild_index", (p) => ({ repoKey: p.repoKey }), withReconcile(async (p) => {
 			const report = await reconcileStore(p.repoKey, "mcp-rebuild");
 			return { content: [{ type: "text" as const, text: JSON.stringify(report, null, 2) }] };
-		}),
+		})),
 	);
 
 	return server;
