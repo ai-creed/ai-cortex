@@ -1,10 +1,13 @@
 // src/lib/diff-files.ts
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { exec } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { RepoCache, RepoIdentity } from "./models.js";
 import { listIndexableFiles } from "./indexable-files.js";
+
+const execAsync = promisify(exec);
 
 export type FilesDiff = {
 	changed: string[];
@@ -23,11 +26,11 @@ export function hashFileContent(
 	return createHash("sha256").update(data).digest("hex");
 }
 
-function diffByHashCompare(
+async function diffByHashCompare(
 	worktreePath: string,
 	cached: RepoCache,
-): FilesDiff {
-	const currentFiles = new Set(listIndexableFiles(worktreePath));
+): Promise<FilesDiff> {
+	const currentFiles = new Set(await listIndexableFiles(worktreePath));
 	const cachedHashByPath = new Map(
 		cached.files.map((f) => [f.path, f.contentHash]),
 	);
@@ -58,41 +61,40 @@ function diffByHashCompare(
 	return { changed, removed, method: "hash-compare" };
 }
 
-function gitDiffNames(
+async function gitDiffNames(
 	worktreePath: string,
 	args: string[],
-): string[] {
-	const output = execFileSync("git", ["-C", worktreePath, ...args], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-	});
-	return output
+): Promise<string[]> {
+	const { stdout } = await execAsync(
+		`git -C ${JSON.stringify(worktreePath)} ${args.join(" ")}`,
+	);
+	return stdout
 		.split("\n")
 		.map((l) => l.trim())
 		.filter(Boolean);
 }
 
-function diffByGitDiff(
+async function diffByGitDiff(
 	worktreePath: string,
 	cached: RepoCache,
-): FilesDiff | null {
+): Promise<FilesDiff | null> {
 	try {
 		// Committed changes since cached fingerprint
-		const committed = gitDiffNames(worktreePath, [
+		const committed = await gitDiffNames(worktreePath, [
 			"diff",
 			"--name-only",
 			`${cached.fingerprint}..HEAD`,
 		]);
 		// Unstaged changes
-		const unstaged = gitDiffNames(worktreePath, ["diff", "--name-only"]);
+		const unstaged = await gitDiffNames(worktreePath, ["diff", "--name-only"]);
 		// Staged changes
-		const staged = gitDiffNames(worktreePath, [
+		const staged = await gitDiffNames(worktreePath, [
 			"diff",
 			"--name-only",
 			"--cached",
 		]);
 		// Untracked files
-		const untracked = gitDiffNames(worktreePath, [
+		const untracked = await gitDiffNames(worktreePath, [
 			"ls-files",
 			"--others",
 			"--exclude-standard",
@@ -107,7 +109,7 @@ function diffByGitDiff(
 
 		// Filter candidates to indexable files only — git diff may include
 		// files that listIndexableFiles excludes (binaries, non-source, etc.)
-		const currentFiles = new Set(listIndexableFiles(worktreePath));
+		const currentFiles = new Set(await listIndexableFiles(worktreePath));
 
 		// Hash validation: filter out files whose content already matches cached hash
 		const cachedHashByPath = new Map(
@@ -141,13 +143,13 @@ export type DiffOptions = {
 	forceHashCompare?: boolean;
 };
 
-export function diffChangedFiles(
+export async function diffChangedFiles(
 	identity: RepoIdentity,
 	cached: RepoCache,
 	options?: DiffOptions,
-): FilesDiff {
+): Promise<FilesDiff> {
 	if (!options?.forceHashCompare) {
-		const gitResult = diffByGitDiff(identity.worktreePath, cached);
+		const gitResult = await diffByGitDiff(identity.worktreePath, cached);
 		if (gitResult) return gitResult;
 	}
 	return diffByHashCompare(identity.worktreePath, cached);

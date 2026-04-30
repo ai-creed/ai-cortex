@@ -43,14 +43,14 @@ function makeSession(): SessionRecord {
 
 describe("searchSession (lexical)", () => {
 	it("matches user prompt by substring", async () => {
-		writeSession("REPO", makeSession());
-		writeAllChunks("REPO", "s1", [{ id: 0, text: "auth talk in detail" }]);
+		await writeSession("REPO", makeSession());
+		await writeAllChunks("REPO", "s1", [{ id: 0, text: "auth talk in detail" }]);
 		const hits = await searchSession({ repoKey: "REPO", sessionId: "s1", query: "auth middleware" });
 		expect(hits.some((h) => h.kind === "userPrompt")).toBe(true);
 	});
 
 	it("matches correction with high score (corrections weighted above prompts)", async () => {
-		writeSession("REPO", makeSession());
+		await writeSession("REPO", makeSession());
 		const hits = await searchSession({ repoKey: "REPO", sessionId: "s1", query: "OTHER middleware" });
 		const correction = hits.find((h) => h.kind === "correction");
 		const prompt = hits.find((h) => h.kind === "userPrompt");
@@ -61,19 +61,19 @@ describe("searchSession (lexical)", () => {
 	});
 
 	it("matches file path in evidence", async () => {
-		writeSession("REPO", makeSession());
+		await writeSession("REPO", makeSession());
 		const hits = await searchSession({ repoKey: "REPO", sessionId: "s1", query: "src/auth.ts" });
 		expect(hits.some((h) => h.kind === "filePath")).toBe(true);
 	});
 
 	it("matches summary text", async () => {
-		writeSession("REPO", makeSession());
+		await writeSession("REPO", makeSession());
 		const hits = await searchSession({ repoKey: "REPO", sessionId: "s1", query: "refactor" });
 		expect(hits.some((h) => h.kind === "summary")).toBe(true);
 	});
 
 	it("returns empty array on no match", async () => {
-		writeSession("REPO", makeSession());
+		await writeSession("REPO", makeSession());
 		const hits = await searchSession({ repoKey: "REPO", sessionId: "s1", query: "completely unrelated" });
 		expect(hits).toEqual([]);
 	});

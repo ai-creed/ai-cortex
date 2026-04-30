@@ -1,7 +1,10 @@
 // src/lib/indexable-files.ts
-import { execFileSync } from "node:child_process";
+import { exec } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 const IGNORE_DIRS = new Set([
 	".git",
@@ -12,13 +15,14 @@ const IGNORE_DIRS = new Set([
 	"release",
 ]);
 
-function walkFs(dir: string, root: string): string[] {
+async function walkFs(dir: string, root: string): Promise<string[]> {
 	const results: string[] = [];
-	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+	const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+	for (const entry of entries) {
 		if (entry.isDirectory() && IGNORE_DIRS.has(entry.name)) continue;
 		const abs = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
-			results.push(...walkFs(abs, root));
+			results.push(...(await walkFs(abs, root)));
 		} else {
 			results.push(path.relative(root, abs));
 		}
@@ -26,30 +30,27 @@ function walkFs(dir: string, root: string): string[] {
 	return results;
 }
 
-export function listIndexableFiles(repoPath: string): string[] {
+export async function listIndexableFiles(repoPath: string): Promise<string[]> {
 	try {
-		const output = execFileSync(
-			"git",
-			[
-				"-C",
-				repoPath,
-				"ls-files",
-				"--cached",
-				"--others",
-				"--exclude-standard",
-			],
-			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+		const { stdout } = await execAsync(
+			`git -C ${JSON.stringify(repoPath)} ls-files --cached --others --exclude-standard`,
 		);
-		return output
+		const candidates = stdout
 			.split("\n")
 			.map((line) => line.trim())
-			.filter(Boolean)
-			.filter((f) => {
-				const abs = path.join(repoPath, f);
-				return fs.existsSync(abs) && !fs.statSync(abs).isDirectory();
-			})
-			.sort();
+			.filter(Boolean);
+		const results: string[] = [];
+		for (const f of candidates) {
+			const abs = path.join(repoPath, f);
+			try {
+				const stat = await fs.promises.stat(abs);
+				if (!stat.isDirectory()) results.push(f);
+			} catch {
+				// skip inaccessible
+			}
+		}
+		return results.sort();
 	} catch {
-		return walkFs(repoPath, repoPath).sort();
+		return (await walkFs(repoPath, repoPath)).sort();
 	}
 }

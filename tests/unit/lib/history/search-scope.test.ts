@@ -44,8 +44,8 @@ function rec(id: string, prompt: string): SessionRecord {
 
 describe("searchHistory (scope)", () => {
 	it("scope=session uses sessionId override", async () => {
-		writeSession("REPO", rec("a", "alpha here"));
-		writeSession("REPO", rec("b", "beta here"));
+		await writeSession("REPO", rec("a", "alpha here"));
+		await writeSession("REPO", rec("b", "beta here"));
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/x",
@@ -59,8 +59,8 @@ describe("searchHistory (scope)", () => {
 
 	it("scope=session resolves current session via env var", async () => {
 		process.env.AI_CORTEX_SESSION_ID = "a";
-		writeSession("REPO", rec("a", "alpha here"));
-		writeSession("REPO", rec("b", "beta here"));
+		await writeSession("REPO", rec("a", "alpha here"));
+		await writeSession("REPO", rec("b", "beta here"));
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/x",
@@ -73,8 +73,8 @@ describe("searchHistory (scope)", () => {
 
 	it("scope=session with empty hits auto-broadens to project", async () => {
 		process.env.AI_CORTEX_SESSION_ID = "a";
-		writeSession("REPO", rec("a", "alpha here"));
-		writeSession("REPO", rec("b", "beta in another session"));
+		await writeSession("REPO", rec("a", "alpha here"));
+		await writeSession("REPO", rec("b", "beta in another session"));
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/x",
@@ -86,7 +86,7 @@ describe("searchHistory (scope)", () => {
 	});
 
 	it("scope=session and detection fails returns error", async () => {
-		writeSession("REPO", rec("a", "alpha"));
+		await writeSession("REPO", rec("a", "alpha"));
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/x",
@@ -97,8 +97,8 @@ describe("searchHistory (scope)", () => {
 	});
 
 	it("scope=project searches all sessions, no broaden marker", async () => {
-		writeSession("REPO", rec("a", "alpha"));
-		writeSession("REPO", rec("b", "beta"));
+		await writeSession("REPO", rec("a", "alpha"));
+		await writeSession("REPO", rec("b", "beta"));
 		const result = await searchHistory({
 			repoKey: "REPO",
 			cwd: "/tmp/x",

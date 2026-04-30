@@ -204,7 +204,7 @@ async function main(): Promise<void> {
 			const refresh = options.includes("--refresh");
 			const start = performance.now();
 
-			const existing = refresh ? null : getCachedIndex(repoPath);
+			const existing = refresh ? null : await getCachedIndex(repoPath);
 			const cache = existing ?? await indexRepo(repoPath);
 			const duration = Math.round(performance.now() - start);
 
@@ -403,8 +403,8 @@ async function main(): Promise<void> {
 					const { listSessions, readSession } = await import("./lib/history/store.js");
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey = flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
-					for (const id of listSessions(repoKey)) {
-						const rec = readSession(repoKey, id);
+					for (const id of await listSessions(repoKey)) {
+						const rec = await readSession(repoKey, id);
 						process.stdout.write(`${id}\t${rec?.startedAt ?? ""}\thasRaw=${rec?.hasRaw ?? "?"}\n`);
 					}
 					break;
@@ -420,10 +420,10 @@ async function main(): Promise<void> {
 					}
 					const cutoff = new Date(before).getTime();
 					let removed = 0;
-					for (const id of listSessions(repoKey)) {
-						const rec = readSession(repoKey, id);
+					for (const id of await listSessions(repoKey)) {
+						const rec = await readSession(repoKey, id);
 						if (rec && new Date(rec.startedAt).getTime() < cutoff) {
-							pruneSession(repoKey, id);
+							await pruneSession(repoKey, id);
 							removed += 1;
 						}
 					}

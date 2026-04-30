@@ -11,21 +11,31 @@ import {
 
 const mockFs = vi.mocked(fs);
 
+function mockFsExists(exists: boolean): void {
+	if (exists) {
+		vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
+	} else {
+		vi.spyOn(fs.promises, "access").mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+	}
+}
+
+function mockFsReadFile(content: string): void {
+	vi.spyOn(fs.promises, "readFile").mockResolvedValue(content as any);
+}
+
 describe("readPackageMeta", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("reads name, version, and detects electron framework", () => {
-		mockFs.existsSync.mockReturnValue(true);
-		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({
-				name: "my-app",
-				version: "1.2.3",
-				devDependencies: { electron: "^30.0.0" },
-			}) as any,
-		);
-		const meta = readPackageMeta("/repo");
+	it("reads name, version, and detects electron framework", async () => {
+		mockFsExists(true);
+		mockFsReadFile(JSON.stringify({
+			name: "my-app",
+			version: "1.2.3",
+			devDependencies: { electron: "^30.0.0" },
+		}));
+		const meta = await readPackageMeta("/repo");
 		expect(meta).toEqual({
 			name: "my-app",
 			version: "1.2.3",
@@ -33,42 +43,38 @@ describe("readPackageMeta", () => {
 		});
 	});
 
-	it("detects next framework", () => {
-		mockFs.existsSync.mockReturnValue(true);
-		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({
-				name: "app",
-				version: "1.0.0",
-				dependencies: { next: "^14.0.0" },
-			}) as any,
-		);
-		expect(readPackageMeta("/repo").framework).toBe("next");
+	it("detects next framework", async () => {
+		mockFsExists(true);
+		mockFsReadFile(JSON.stringify({
+			name: "app",
+			version: "1.0.0",
+			dependencies: { next: "^14.0.0" },
+		}));
+		expect((await readPackageMeta("/repo")).framework).toBe("next");
 	});
 
-	it("detects vite framework", () => {
-		mockFs.existsSync.mockReturnValue(true);
-		mockFs.readFileSync.mockReturnValue(
-			JSON.stringify({
-				name: "app",
-				version: "1.0.0",
-				devDependencies: { vite: "^5.0.0" },
-			}) as any,
-		);
-		expect(readPackageMeta("/repo").framework).toBe("vite");
+	it("detects vite framework", async () => {
+		mockFsExists(true);
+		mockFsReadFile(JSON.stringify({
+			name: "app",
+			version: "1.0.0",
+			devDependencies: { vite: "^5.0.0" },
+		}));
+		expect((await readPackageMeta("/repo")).framework).toBe("vite");
 	});
 
-	it("returns safe defaults when package.json is missing", () => {
-		mockFs.existsSync.mockReturnValue(false);
-		const meta = readPackageMeta("/repo/my-project");
+	it("returns safe defaults when package.json is missing", async () => {
+		mockFsExists(false);
+		const meta = await readPackageMeta("/repo/my-project");
 		expect(meta.name).toBe("my-project");
 		expect(meta.version).toBe("0.0.0");
 		expect(meta.framework).toBeNull();
 	});
 
-	it("returns safe defaults when package.json is malformed", () => {
-		mockFs.existsSync.mockReturnValue(true);
-		mockFs.readFileSync.mockReturnValue("not json{{{" as any);
-		const meta = readPackageMeta("/repo/my-project");
+	it("returns safe defaults when package.json is malformed", async () => {
+		mockFsExists(true);
+		mockFsReadFile("not json{{{");
+		const meta = await readPackageMeta("/repo/my-project");
 		expect(meta.name).toBe("my-project");
 	});
 });

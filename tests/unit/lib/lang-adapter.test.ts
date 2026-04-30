@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { registerAdapter, adapterForFile, clearAdapters, isAdapterExt, adapterExtensions } from "../../../src/lib/adapters/index.js";
-import type { LangAdapter } from "../../../src/lib/lang-adapter.js";
+import type { LanguageAdapter } from "../../../src/lib/lang-adapter.js";
 
-const stubAdapter: LangAdapter = {
+const stubAdapter: LanguageAdapter = {
 	extensions: [".ts", ".tsx"],
-	extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
-	extractImportSites: () => [],
+	capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+	extractImports: async () => [],
+	extractCallGraph: async () => ({ functions: [], rawCalls: [], importBindings: [] }),
 };
 
 describe("adapter registry", () => {
@@ -44,8 +45,8 @@ describe("registry helpers", () => {
 	it("isAdapterExt returns true for any registered extension", () => {
 		registerAdapter({
 			extensions: [".foo", ".bar"],
-			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
-			extractImportSites: () => [],
+			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			extractImports: async () => [],
 		});
 		expect(isAdapterExt("a.foo")).toBe(true);
 		expect(isAdapterExt("a.bar")).toBe(true);
@@ -56,13 +57,13 @@ describe("registry helpers", () => {
 	it("adapterExtensions returns the union of registered extensions", () => {
 		registerAdapter({
 			extensions: [".x"],
-			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
-			extractImportSites: () => [],
+			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			extractImports: async () => [],
 		});
 		registerAdapter({
 			extensions: [".y", ".z"],
-			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
-			extractImportSites: () => [],
+			capabilities: { importExtraction: true, callGraph: false, symbolIndex: false },
+			extractImports: async () => [],
 		});
 		const exts = adapterExtensions();
 		expect(new Set(exts)).toEqual(new Set([".x", ".y", ".z"]));

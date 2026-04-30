@@ -1,7 +1,6 @@
 // src/lib/call-graph.ts
-import fs from "node:fs";
 import path from "node:path";
-import { adapterForFile } from "./adapters/index.js";
+import { getAdapterForFile, adapterSupports } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
 import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
@@ -280,24 +279,15 @@ export async function extractCallGraphRaw(
 	const bindingsByFile = new Map<string, ImportBinding[]>();
 
 	for (const filePath of filePaths) {
-		const adapter = adapterForFile(filePath);
-		if (!adapter) continue;
+		if (!adapterSupports(filePath, "callGraph")) continue;
+		const adapter = getAdapterForFile(filePath);
+		if (!adapter?.extractCallGraph) continue;
 
-		let source: string;
-		if (contentMap) {
-			const cached = contentMap.get(filePath);
-			if (cached === undefined) continue;
-			source = cached;
-		} else {
-			try {
-				source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
-			} catch {
-				continue;
-			}
-		}
+		const content = contentMap?.get(filePath);
+		if (contentMap && content === undefined) continue;
 
 		try {
-			const result = adapter.extractFile(source, filePath);
+			const result = await adapter.extractCallGraph(worktreePath, filePath, content);
 			allFunctions.push(...result.functions);
 			allRawCalls.push(...result.rawCalls);
 			if (result.importBindings.length > 0) {

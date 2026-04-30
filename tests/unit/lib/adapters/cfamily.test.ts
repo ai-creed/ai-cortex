@@ -3,10 +3,10 @@ import {
   createCAdapter,
   createCppAdapter,
 } from "../../../../src/lib/adapters/cfamily.js";
-import type { LangAdapter } from "../../../../src/lib/lang-adapter.js";
+import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
-let cAdapter: LangAdapter;
-let cppAdapter: LangAdapter;
+let cAdapter: LanguageAdapter;
+let cppAdapter: LanguageAdapter;
 
 beforeAll(async () => {
   cAdapter = await createCAdapter();
@@ -14,10 +14,11 @@ beforeAll(async () => {
 });
 
 describe("c adapter — function extraction", () => {
-  it("extracts a plain function definition as exported (non-static)", () => {
-    const r = cAdapter.extractFile(
-      "int foo(void) { return 0; }",
+  it("extracts a plain function definition as exported (non-static)", async () => {
+    const r = await cAdapter.extractCallGraph!(
+      "",
       "src/foo.c",
+      "int foo(void) { return 0; }",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({
@@ -30,10 +31,11 @@ describe("c adapter — function extraction", () => {
     );
   });
 
-  it("marks static functions as not exported", () => {
-    const r = cAdapter.extractFile(
-      "static int helper(void) { return 0; }",
+  it("marks static functions as not exported", async () => {
+    const r = await cAdapter.extractCallGraph!(
+      "",
       "src/foo.c",
+      "static int helper(void) { return 0; }",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({
@@ -44,10 +46,11 @@ describe("c adapter — function extraction", () => {
     );
   });
 
-  it("emits header declarations as isDeclarationOnly", () => {
-    const r = cAdapter.extractFile(
-      "int compute(int x);",
+  it("emits header declarations as isDeclarationOnly", async () => {
+    const r = await cAdapter.extractCallGraph!(
+      "",
       "src/foo.h",
+      "int compute(int x);",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({
@@ -61,10 +64,11 @@ describe("c adapter — function extraction", () => {
 });
 
 describe("c adapter — raw call extraction", () => {
-  it("extracts plain calls with kind 'call'", () => {
-    const r = cAdapter.extractFile(
-      "int foo(void); int main(void) { return foo(); }",
+  it("extracts plain calls with kind 'call'", async () => {
+    const r = await cAdapter.extractCallGraph!(
+      "",
       "src/main.c",
+      "int foo(void); int main(void) { return foo(); }",
     );
     expect(r.rawCalls).toContainEqual({
       callerQualifiedName: "main",
@@ -74,10 +78,11 @@ describe("c adapter — raw call extraction", () => {
     });
   });
 
-  it("treats . and -> member access as kind 'method'", () => {
-    const r = cAdapter.extractFile(
-      "struct S { int (*fn)(int); }; int main(void) { struct S* p; p->fn(1); }",
+  it("treats . and -> member access as kind 'method'", async () => {
+    const r = await cAdapter.extractCallGraph!(
+      "",
       "src/main.c",
+      "struct S { int (*fn)(int); }; int main(void) { struct S* p; p->fn(1); }",
     );
     expect(
       r.rawCalls.find((c) => c.rawCallee.endsWith(".fn") && c.kind === "method"),
@@ -86,10 +91,11 @@ describe("c adapter — raw call extraction", () => {
 });
 
 describe("c adapter — import sites (#include)", () => {
-  it("emits a RawImportSite for #include \"foo.h\"", () => {
-    const sites = cAdapter.extractImportSites(
-      "#include \"foo.h\"\nint main(void) { return 0; }",
+  it("emits a RawImportSite for #include \"foo.h\"", async () => {
+    const sites = await cAdapter.extractImports(
+      "",
       "src/main.c",
+      "#include \"foo.h\"\nint main(void) { return 0; }",
     );
     expect(sites).toHaveLength(1);
     expect(sites[0]).toEqual({
@@ -99,50 +105,55 @@ describe("c adapter — import sites (#include)", () => {
     });
   });
 
-  it("ignores #include <stdio.h> system headers", () => {
-    const sites = cAdapter.extractImportSites(
-      "#include <stdio.h>\nint main(void) { return 0; }",
+  it("ignores #include <stdio.h> system headers", async () => {
+    const sites = await cAdapter.extractImports(
+      "",
       "src/main.c",
+      "#include <stdio.h>\nint main(void) { return 0; }",
     );
     expect(sites).toEqual([]);
   });
 });
 
 describe("cpp adapter — namespace and class extraction", () => {
-  it("prefixes namespace name on functions", () => {
-    const r = cppAdapter.extractFile(
-      "namespace foo { void bar() {} }",
+  it("prefixes namespace name on functions", async () => {
+    const r = await cppAdapter.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "namespace foo { void bar() {} }",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({ qualifiedName: "foo::bar" }),
     );
   });
 
-  it("prefixes nested namespace on functions", () => {
-    const r = cppAdapter.extractFile(
-      "namespace a { namespace b { void c() {} } }",
+  it("prefixes nested namespace on functions", async () => {
+    const r = await cppAdapter.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "namespace a { namespace b { void c() {} } }",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({ qualifiedName: "a::b::c" }),
     );
   });
 
-  it("emits Class::method for inline methods inside class body", () => {
-    const r = cppAdapter.extractFile(
-      "class Foo { public: void bar() {} };",
+  it("emits Class::method for inline methods inside class body", async () => {
+    const r = await cppAdapter.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "class Foo { public: void bar() {} };",
     );
     expect(r.functions).toContainEqual(
       expect.objectContaining({ qualifiedName: "Foo::bar" }),
     );
   });
 
-  it("emits Class::method for out-of-line definitions", () => {
-    const r = cppAdapter.extractFile(
-      "class Foo { public: void bar(); }; void Foo::bar() {}",
+  it("emits Class::method for out-of-line definitions", async () => {
+    const r = await cppAdapter.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "class Foo { public: void bar(); }; void Foo::bar() {}",
     );
     expect(r.functions.filter((f) => f.qualifiedName === "Foo::bar"))
       .toHaveLength(2); // declaration + definition
@@ -161,10 +172,11 @@ describe("cpp adapter — namespace and class extraction", () => {
 
 describe("cpp adapter — qualified calls and new", () => {
   it("extracts Foo::bar() as a call with callee 'Foo::bar'", async () => {
-    const cppAdapter = await createCppAdapter();
-    const r = cppAdapter.extractFile(
-      "class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }",
+    const cppAdapter2 = await createCppAdapter();
+    const r = await cppAdapter2.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }",
     );
     expect(r.rawCalls).toContainEqual(
       expect.objectContaining({ rawCallee: "Foo::bar", kind: "call" }),
@@ -172,10 +184,11 @@ describe("cpp adapter — qualified calls and new", () => {
   });
 
   it("extracts new Foo() as kind 'new'", async () => {
-    const cppAdapter = await createCppAdapter();
-    const r = cppAdapter.extractFile(
-      "class Foo {}; void main2() { Foo* f = new Foo(); }",
+    const cppAdapter2 = await createCppAdapter();
+    const r = await cppAdapter2.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "class Foo {}; void main2() { Foo* f = new Foo(); }",
     );
     expect(r.rawCalls).toContainEqual(
       expect.objectContaining({ rawCallee: "Foo", kind: "new" }),
@@ -185,29 +198,32 @@ describe("cpp adapter — qualified calls and new", () => {
 
 describe("cfamily — function-pointer variables not emitted as declarations", () => {
   it("does not emit a function-pointer variable as a function declaration", async () => {
-    const cppAdapter = await createCppAdapter();
-    const r = cppAdapter.extractFile(
-      "int (*cmp)(const void*, const void*);",
+    const cppAdapter2 = await createCppAdapter();
+    const r = await cppAdapter2.extractCallGraph!(
+      "",
       "src/x.cpp",
+      "int (*cmp)(const void*, const void*);",
     );
     expect(r.functions).toHaveLength(0);
   });
 
   it("does not emit a function-pointer struct field as a method declaration", async () => {
-    const cppAdapter = await createCppAdapter();
-    const r = cppAdapter.extractFile(
-      "struct Sorter { int (*compare)(int, int); };",
+    const cppAdapter2 = await createCppAdapter();
+    const r = await cppAdapter2.extractCallGraph!(
+      "",
       "src/x.h",
+      "struct Sorter { int (*compare)(int, int); };",
     );
     const cmpFn = r.functions.find((f) => f.qualifiedName.includes("compare"));
     expect(cmpFn).toBeUndefined();
   });
 
   it("still emits a real function prototype from a declaration", async () => {
-    const cppAdapter = await createCppAdapter();
-    const r = cppAdapter.extractFile(
-      "int add(int a, int b);",
+    const cppAdapter2 = await createCppAdapter();
+    const r = await cppAdapter2.extractCallGraph!(
+      "",
       "src/utils.h",
+      "int add(int a, int b);",
     );
     const fn = r.functions.find((f) => f.qualifiedName === "add");
     expect(fn).toBeDefined();
@@ -226,15 +242,15 @@ describe("cfamily adapter — boot", () => {
     );
   });
 
-  it("c adapter can parse an empty source without throwing", () => {
-    const r = cAdapter.extractFile("", "x.c");
+  it("c adapter can parse an empty source without throwing", async () => {
+    const r = await cAdapter.extractCallGraph!("", "x.c", "");
     expect(r).toEqual({ functions: [], rawCalls: [], importBindings: [] });
-    expect(cAdapter.extractImportSites("", "x.c")).toEqual([]);
+    expect(await cAdapter.extractImports("", "x.c", "")).toEqual([]);
   });
 
-  it("cpp adapter can parse an empty source without throwing", () => {
-    const r = cppAdapter.extractFile("", "x.cpp");
+  it("cpp adapter can parse an empty source without throwing", async () => {
+    const r = await cppAdapter.extractCallGraph!("", "x.cpp", "");
     expect(r).toEqual({ functions: [], rawCalls: [], importBindings: [] });
-    expect(cppAdapter.extractImportSites("", "x.cpp")).toEqual([]);
+    expect(await cppAdapter.extractImports("", "x.cpp", "")).toEqual([]);
   });
 });

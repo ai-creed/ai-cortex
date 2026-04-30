@@ -61,18 +61,18 @@ describe("indexRepo + getCachedIndex (real disk + real git)", () => {
 		expect(cache.docs[0]?.title).toBe("Test Repo");
 	});
 
-	it("getCachedIndex returns the cache when fingerprint is fresh", () => {
-		const result = getCachedIndex(tmpDir);
+	it("getCachedIndex returns the cache when fingerprint is fresh", async () => {
+		const result = await getCachedIndex(tmpDir);
 		expect(result).not.toBeNull();
 		expect(result?.packageMeta.name).toBe("test-repo");
 	});
 
-	it("getCachedIndex returns null after a new commit (stale fingerprint)", () => {
+	it("getCachedIndex returns null after a new commit (stale fingerprint)", async () => {
 		fs.appendFileSync(path.join(tmpDir, "README.md"), "\nchange\n");
 		execFileSync("git", ["-C", tmpDir, "add", "README.md"]);
 		execFileSync("git", ["-C", tmpDir, "commit", "-m", "update"]);
 
-		expect(getCachedIndex(tmpDir)).toBeNull();
+		expect(await getCachedIndex(tmpDir)).toBeNull();
 	});
 });
 

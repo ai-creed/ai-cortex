@@ -26,8 +26,24 @@ export type FileExtractionResult = {
 	importBindings: ImportBinding[];
 };
 
-export interface LangAdapter {
+export type AdapterCapabilities = {
+	importExtraction: boolean;
+	callGraph: boolean;
+	symbolIndex: boolean;
+};
+
+export type RawCallData = {
+	functions: FunctionNode[];
+	rawCalls: RawCallSite[];
+	importBindings: ImportBinding[];
+};
+
+export type LanguageAdapter = {
 	extensions: string[];
-	extractFile(source: string, filePath: string): FileExtractionResult;
-	extractImportSites(source: string, filePath: string): RawImportSite[];
-}
+	capabilities: AdapterCapabilities;
+	extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]>;
+	extractCallGraph?(worktreePath: string, filePath: string, content?: string): Promise<RawCallData>;
+};
+
+// Backward-compatible alias — existing code using LangAdapter continues to work.
+export type LangAdapter = LanguageAdapter;

@@ -46,34 +46,34 @@ function rec(id: string, overrides: Partial<SessionRecord> = {}): SessionRecord 
 }
 
 describe("listSessions", () => {
-	it("returns empty when sessions dir missing", () => {
-		expect(listSessions("REPO")).toEqual([]);
+	it("returns empty when sessions dir missing", async () => {
+		expect(await listSessions("REPO")).toEqual([]);
 	});
 
-	it("returns ids of sessions with session.json", () => {
-		writeSession("REPO", rec("a"));
-		writeSession("REPO", rec("b"));
-		expect(listSessions("REPO").sort()).toEqual(["a", "b"]);
+	it("returns ids of sessions with session.json", async () => {
+		await writeSession("REPO", rec("a"));
+		await writeSession("REPO", rec("b"));
+		expect((await listSessions("REPO")).sort()).toEqual(["a", "b"]);
 	});
 
-	it("skips session dirs with no session.json", () => {
-		writeSession("REPO", rec("a"));
+	it("skips session dirs with no session.json", async () => {
+		await writeSession("REPO", rec("a"));
 		fs.mkdirSync(sessionDir("REPO", "stranded"), { recursive: true });
-		expect(listSessions("REPO").sort()).toEqual(["a"]);
+		expect((await listSessions("REPO")).sort()).toEqual(["a"]);
 	});
 });
 
 describe("pruneSessionRaw", () => {
-	it("removes chunks.jsonl + .vectors.* and updates session.json", () => {
-		writeSession("REPO", rec("a"));
-		writeAllChunks("REPO", "a", [{ id: 0, text: "x" }]);
-		writeChunkVectors("REPO", "a", {
+	it("removes chunks.jsonl + .vectors.* and updates session.json", async () => {
+		await writeSession("REPO", rec("a"));
+		await writeAllChunks("REPO", "a", [{ id: 0, text: "x" }]);
+		await writeChunkVectors("REPO", "a", {
 			modelName: "M",
 			dim: 1,
 			chunks: [{ id: 0, text: "x", vector: Float32Array.from([1]) }],
 		});
 
-		pruneSessionRaw("REPO", "a", "2026-05-25T00:00:00.000Z");
+		await pruneSessionRaw("REPO", "a", "2026-05-25T00:00:00.000Z");
 
 		expect(fs.existsSync(chunksJsonlPath("REPO", "a"))).toBe(false);
 		expect(fs.existsSync(path.join(sessionDir("REPO", "a"), ".vectors.bin"))).toBe(false);
@@ -87,9 +87,9 @@ describe("pruneSessionRaw", () => {
 });
 
 describe("pruneSession", () => {
-	it("removes the entire session directory", () => {
-		writeSession("REPO", rec("a"));
-		pruneSession("REPO", "a");
+	it("removes the entire session directory", async () => {
+		await writeSession("REPO", rec("a"));
+		await pruneSession("REPO", "a");
 		expect(fs.existsSync(sessionDir("REPO", "a"))).toBe(false);
 	});
 });

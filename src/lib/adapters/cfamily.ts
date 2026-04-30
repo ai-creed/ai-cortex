@@ -1,9 +1,11 @@
 // src/lib/adapters/cfamily.ts
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import type {
-  LangAdapter,
+  LanguageAdapter,
   FileExtractionResult,
+  RawCallData,
   RawCallSite,
   RawImportSite,
 } from "../lang-adapter.js";
@@ -349,10 +351,20 @@ function extractImportSitesFromRoot(
 function buildAdapter(
   exts: string[],
   parserGetter: () => import("web-tree-sitter").Parser | null,
-): LangAdapter {
+): LanguageAdapter {
   return {
     extensions: exts,
-    extractFile(source: string, filePath: string): FileExtractionResult {
+    capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+    async extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]> {
+      const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
+      const parser = parserGetter();
+      if (!parser) return [];
+      const tree = parser.parse(source);
+      if (!tree) return [];
+      return extractImportSitesFromRoot(tree.rootNode, filePath);
+    },
+    async extractCallGraph(worktreePath: string, filePath: string, content?: string): Promise<RawCallData> {
+      const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
       const parser = parserGetter();
       if (!parser) return { functions: [], rawCalls: [], importBindings: [] };
       const tree = parser.parse(source);
@@ -364,22 +376,15 @@ function buildAdapter(
         importBindings: [],
       };
     },
-    extractImportSites(source: string, filePath: string): RawImportSite[] {
-      const parser = parserGetter();
-      if (!parser) return [];
-      const tree = parser.parse(source);
-      if (!tree) return [];
-      return extractImportSitesFromRoot(tree.rootNode, filePath);
-    },
   };
 }
 
-export async function createCAdapter(): Promise<LangAdapter> {
+export async function createCAdapter(): Promise<LanguageAdapter> {
   await initParsers();
   return buildAdapter([".c"], () => cParser);
 }
 
-export async function createCppAdapter(): Promise<LangAdapter> {
+export async function createCppAdapter(): Promise<LanguageAdapter> {
   await initParsers();
   return buildAdapter(CPP_EXTS, () => cppParser);
 }

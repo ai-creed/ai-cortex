@@ -59,8 +59,8 @@ beforeEach(async () => {
 	registerAdapter(await createTypescriptAdapter());
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
-	vi.mocked(listIndexableFiles).mockReturnValue(["README.md", "src/main.ts"]);
-	vi.mocked(readPackageMeta).mockReturnValue({
+	vi.mocked(listIndexableFiles).mockResolvedValue(["README.md", "src/main.ts"]);
+	vi.mocked(readPackageMeta).mockResolvedValue({
 		name: "test-app",
 		version: "1.0.0",
 		framework: null,
@@ -70,9 +70,9 @@ beforeEach(async () => {
 		{ path: "README.md", title: "Test App", body: "# Test App\n" },
 	]);
 	vi.mocked(extractImports).mockResolvedValue([]);
-	vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-	vi.mocked(readCacheForWorktree).mockReturnValue(null);
-	vi.mocked(writeCache).mockReturnValue(undefined);
+	vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+	vi.mocked(readCacheForWorktree).mockResolvedValue(null);
+	vi.mocked(writeCache).mockResolvedValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
 	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
 	vi.mocked(extractCallGraphRaw).mockResolvedValue({ rawCalls: [], functions: [], bindingsByFile: new Map() });
@@ -145,12 +145,12 @@ describe("indexRepo", () => {
 });
 
 describe("getCachedIndex", () => {
-	it("returns null when no cache exists", () => {
-		vi.mocked(readCacheForWorktree).mockReturnValue(null);
-		expect(getCachedIndex("/repo")).toBeNull();
+	it("returns null when no cache exists", async () => {
+		vi.mocked(readCacheForWorktree).mockResolvedValue(null);
+		expect(await getCachedIndex("/repo")).toBeNull();
 	});
 
-	it("returns null when fingerprint is stale", () => {
+	it("returns null when fingerprint is stale", async () => {
 		const stale: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
 			repoKey: mockIdentity.repoKey,
@@ -166,12 +166,12 @@ describe("getCachedIndex", () => {
 			calls: [],
 			functions: [],
 		};
-		vi.mocked(readCacheForWorktree).mockReturnValue(stale);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		expect(getCachedIndex("/repo")).toBeNull();
+		vi.mocked(readCacheForWorktree).mockResolvedValue(stale);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
+		expect(await getCachedIndex("/repo")).toBeNull();
 	});
 
-	it("returns cached data when fingerprint matches", () => {
+	it("returns cached data when fingerprint matches", async () => {
 		const fresh: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
 			repoKey: mockIdentity.repoKey,
@@ -187,9 +187,9 @@ describe("getCachedIndex", () => {
 			calls: [],
 			functions: [],
 		};
-		vi.mocked(readCacheForWorktree).mockReturnValue(fresh);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		expect(getCachedIndex("/repo")).toBe(fresh);
+		vi.mocked(readCacheForWorktree).mockResolvedValue(fresh);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		expect(await getCachedIndex("/repo")).toBe(fresh);
 	});
 });
 
@@ -219,7 +219,7 @@ function makeCacheForIncremental(): RepoCache {
 
 describe("buildIncrementalIndex", () => {
 	beforeEach(() => {
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 	});
 
 	it("merges changed files into existing cache", async () => {
@@ -316,7 +316,7 @@ describe("buildIncrementalIndex", () => {
 	});
 
 	it("re-reads packageMeta when package.json is in changed", async () => {
-		vi.mocked(readPackageMeta).mockReturnValue({
+		vi.mocked(readPackageMeta).mockResolvedValue({
 			name: "renamed-app",
 			version: "2.0.0",
 			framework: "vite",
@@ -338,7 +338,7 @@ describe("buildIncrementalIndex", () => {
 	});
 
 	it("re-reads packageMeta when package.json is in removed", async () => {
-		vi.mocked(readPackageMeta).mockReturnValue({
+		vi.mocked(readPackageMeta).mockResolvedValue({
 			name: "repo",
 			version: "0.0.0",
 			framework: null,

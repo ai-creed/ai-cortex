@@ -106,25 +106,25 @@ describe("discoverPythonPackageRoots", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns empty string root when no config found", () => {
-    expect(discoverPythonPackageRoots(tmpDir)).toEqual(new Set([""]));
+  it("returns empty string root when no config found", async () => {
+    expect(await discoverPythonPackageRoots(tmpDir)).toEqual(new Set([""]));
   });
 
-  it("detects src layout from pyproject.toml [tool.setuptools.packages.find] where", () => {
+  it("detects src layout from pyproject.toml [tool.setuptools.packages.find] where", async () => {
     fs.writeFileSync(
       path.join(tmpDir, "pyproject.toml"),
       "[tool.setuptools.packages.find]\nwhere = [\"src\"]\n",
     );
-    const roots = discoverPythonPackageRoots(tmpDir);
+    const roots = await discoverPythonPackageRoots(tmpDir);
     expect(roots).toContain("src");
   });
 
-  it("returns all roots when pyproject.toml where lists multiple entries", () => {
+  it("returns all roots when pyproject.toml where lists multiple entries", async () => {
     fs.writeFileSync(
       path.join(tmpDir, "pyproject.toml"),
       "[tool.setuptools.packages.find]\nwhere = [\"src\", \"lib\"]\n",
     );
-    const roots = discoverPythonPackageRoots(tmpDir);
+    const roots = await discoverPythonPackageRoots(tmpDir);
     expect(roots).toContain("src");
     expect(roots).toContain("lib");
     expect(roots.size).toBe(2);

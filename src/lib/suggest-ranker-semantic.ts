@@ -26,7 +26,7 @@ export async function rankSuggestionsSemanticCore(
 	const sidecarDir = getSidecarDir(cache.worktreeKey);
 
 	// readVectorIndex throws VectorIndexCorruptError if corrupt — let it propagate
-	let index: VectorIndex | null = readVectorIndex(sidecarDir, MODEL_NAME);
+	let index: VectorIndex | null = await readVectorIndex(sidecarDir, MODEL_NAME);
 
 	if (index === null) {
 		index = await buildVectorIndex(worktreePath, cache);

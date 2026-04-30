@@ -48,13 +48,13 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
-	vi.mocked(isWorktreeDirty).mockReturnValue(false);
+	vi.mocked(isWorktreeDirty).mockResolvedValue(false);
 });
 
 describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed and calls indexRepo when no cache exists", async () => {
 		const freshCache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(null);
+		vi.mocked(readCacheForWorktree).mockResolvedValue(null);
 		vi.mocked(indexRepo).mockResolvedValue(freshCache);
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
@@ -68,15 +68,15 @@ describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed via incremental path when fingerprint is stale", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/app.ts"],
 			removed: [],
 			method: "git-diff",
 		});
 		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
 
@@ -88,16 +88,16 @@ describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed via incremental path when worktree is dirty", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, dirtyAtIndex: true };
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(isWorktreeDirty).mockReturnValue(true);
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(isWorktreeDirty).mockResolvedValue(true);
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/new.ts"],
 			removed: [],
 			method: "git-diff",
 		});
 		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
 
@@ -113,16 +113,16 @@ describe("resolveCacheWithFreshness", () => {
 	it("forces hash-compare incremental when dirtyAtIndex flag set and worktree is now clean", async () => {
 		const cache = makeCache({ dirtyAtIndex: true });
 		const updated = { ...cache, dirtyAtIndex: false };
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(isWorktreeDirty).mockReturnValue(false);
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(isWorktreeDirty).mockResolvedValue(false);
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/app.ts"],
 			removed: [],
 			method: "hash-compare",
 		});
 		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
 
@@ -137,8 +137,8 @@ describe("resolveCacheWithFreshness", () => {
 
 	it("returns stale and no refresh when stale option is true and cache is stale", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 
 		const result = await resolveCacheWithFreshness(mockIdentity, { stale: true });
 
@@ -150,8 +150,8 @@ describe("resolveCacheWithFreshness", () => {
 
 	it("returns fresh when fingerprint matches and worktree is clean", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
 

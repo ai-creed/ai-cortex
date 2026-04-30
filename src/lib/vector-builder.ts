@@ -49,8 +49,8 @@ export async function buildVectorIndex(
 	};
 
 	const sidecarDir = getSidecarDir(cache.worktreeKey);
-	fs.mkdirSync(sidecarDir, { recursive: true });
-	writeVectorIndex(sidecarDir, index);
+	await fs.promises.mkdir(sidecarDir, { recursive: true });
+	await writeVectorIndex(sidecarDir, index);
 	return index;
 }
 
@@ -106,8 +106,8 @@ export async function refreshVectorIndex(
 	};
 
 	const sidecarDir = getSidecarDir(cache.worktreeKey);
-	fs.mkdirSync(sidecarDir, { recursive: true });
-	writeVectorIndex(sidecarDir, index);
+	await fs.promises.mkdir(sidecarDir, { recursive: true });
+	await writeVectorIndex(sidecarDir, index);
 	return index;
 }
 

@@ -44,13 +44,13 @@ function readFileContents(
 
 export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 	try {
-		const filePaths = listIndexableFiles(identity.worktreePath);
+		const filePaths = await listIndexableFiles(identity.worktreePath);
 		const contentMap = readFileContents(identity.worktreePath, filePaths);
-		const packageMeta = readPackageMeta(identity.worktreePath);
+		const packageMeta = await readPackageMeta(identity.worktreePath);
 		const entryFiles = pickEntryFiles(filePaths, packageMeta);
 		const docs = loadDocs(identity.worktreePath, filePaths);
 		const imports = await extractImports(identity.worktreePath, filePaths, filePaths, contentMap);
-		const fingerprint = buildRepoFingerprint(identity.worktreePath);
+		const fingerprint = await buildRepoFingerprint(identity.worktreePath);
 		const files = filePaths.map((p) => ({
 			path: p,
 			kind: "file" as const,
@@ -87,7 +87,7 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 export async function indexRepo(repoPath: string): Promise<RepoCache> {
 	const identity = resolveRepoIdentity(repoPath);
 	const cache = await buildIndex(identity);
-	writeCache(cache);
+	await writeCache(cache);
 	return cache;
 }
 
@@ -99,7 +99,7 @@ export async function buildIncrementalIndex(
 ): Promise<RepoCache> {
 	await ensureAdapters();
 
-	const fingerprint = buildRepoFingerprint(identity.worktreePath);
+	const fingerprint = await buildRepoFingerprint(identity.worktreePath);
 	const indexedAt = new Date().toISOString();
 
 	// Empty diff — timestamp-only refresh
@@ -148,7 +148,7 @@ export async function buildIncrementalIndex(
 	const packageJsonTouched =
 		changedSet.has("package.json") || removedSet.has("package.json");
 	const packageMeta = packageJsonTouched
-		? readPackageMeta(identity.worktreePath)
+		? await readPackageMeta(identity.worktreePath)
 		: existingCache.packageMeta;
 
 	// --- entryFiles[] ---
@@ -228,11 +228,11 @@ export async function buildIncrementalIndex(
 	};
 }
 
-export function getCachedIndex(repoPath: string): RepoCache | null {
+export async function getCachedIndex(repoPath: string): Promise<RepoCache | null> {
 	const identity = resolveRepoIdentity(repoPath);
-	const cached = readCacheForWorktree(identity.repoKey, identity.worktreeKey);
+	const cached = await readCacheForWorktree(identity.repoKey, identity.worktreeKey);
 	if (!cached) return null;
-	const currentFingerprint = buildRepoFingerprint(identity.worktreePath);
+	const currentFingerprint = await buildRepoFingerprint(identity.worktreePath);
 	if (cached.fingerprint !== currentFingerprint) return null;
 	return cached;
 }

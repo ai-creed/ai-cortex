@@ -1,4 +1,5 @@
 import { readSession, readChunkVectors, getChunkText, listSessions } from "./store.js";
+import { readManifest } from "./manifest.js";
 import { detectCurrentSession } from "./session-detect.js";
 
 export type HitKind = "summary" | "userPrompt" | "correction" | "toolCall" | "filePath" | "rawChunk";
@@ -34,7 +35,7 @@ const WEIGHTS: Record<HitKind, number> = {
 };
 
 export async function searchSession(input: SearchSessionInputExtended): Promise<Hit[]> {
-	const rec = readSession(input.repoKey, input.sessionId);
+	const rec = await readSession(input.repoKey, input.sessionId);
 	if (!rec) return [];
 
 	const q = input.query.toLowerCase();
@@ -67,12 +68,12 @@ export async function searchSession(input: SearchSessionInputExtended): Promise<
 
 	if (input.embedQuery && rec.hasRaw) {
 		const { vector: qv, modelName } = await input.embedQuery(input.query);
-		const vecs = readChunkVectors(input.repoKey, input.sessionId, modelName);
+		const vecs = await readChunkVectors(input.repoKey, input.sessionId, modelName);
 		if (vecs) {
 			for (const [chunkId, cv] of vecs.byChunkId) {
 				const score = cosine(qv, cv);
 				if (score > 0.3) {
-					const text = getChunkText(input.repoKey, input.sessionId, chunkId) ?? "";
+					const text = (await getChunkText(input.repoKey, input.sessionId, chunkId)) ?? "";
 					hits.push({
 						sessionId: rec.id,
 						kind: "rawChunk",
@@ -146,8 +147,17 @@ export async function searchHistory(input: SearchHistoryInput): Promise<SearchHi
 	return { hits: broadened, broadened: true, error: null, resolvedSessionId: detected.sessionId };
 }
 
+async function getSessionIds(repoKey: string): Promise<string[]> {
+	const manifest = await readManifest(repoKey);
+	if (manifest.length > 0) {
+		return manifest.map((e) => e.id);
+	}
+	// Manifest absent — fall back to directory scan
+	return listSessions(repoKey);
+}
+
 async function searchAllSessions(input: SearchHistoryInput): Promise<Hit[]> {
-	const ids = listSessions(input.repoKey);
+	const ids = await getSessionIds(input.repoKey);
 	const all: Hit[] = [];
 	for (const id of ids) {
 		const hits = await searchSession({

@@ -1,10 +1,12 @@
 // src/lib/adapters/typescript.ts
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { FunctionNode } from "../models.js";
 import type {
-	LangAdapter,
+	LanguageAdapter,
 	FileExtractionResult,
+	RawCallData,
 	RawCallSite,
 	ImportBinding,
 	RawImportSite,
@@ -361,28 +363,29 @@ function extractImportSitesFromSource(
 	return sites;
 }
 
-export async function createTypescriptAdapter(): Promise<LangAdapter> {
+export async function createTypescriptAdapter(): Promise<LanguageAdapter> {
 	await initParsers();
 
 	return {
 		extensions: [".ts", ".tsx", ".js", ".jsx"],
-		extractFile(source: string, filePath: string): FileExtractionResult {
+		capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+		async extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]> {
+			const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
+			return extractImportSitesFromSource(source, filePath);
+		},
+		async extractCallGraph(worktreePath: string, filePath: string, content?: string): Promise<RawCallData> {
+			const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
 			const ext = path.extname(filePath);
 			const parser = parserForExt(ext);
 			if (!parser) return { functions: [], rawCalls: [], importBindings: [] };
-
 			const tree = parser.parse(source);
 			if (!tree) return { functions: [], rawCalls: [], importBindings: [] };
 			const root = tree.rootNode;
-
-			const functions = extractFunctions(root, filePath);
-			const rawCalls = extractRawCalls(root, filePath);
-			const importBindings = extractImportBindings(root);
-
-			return { functions, rawCalls, importBindings };
-		},
-		extractImportSites(source: string, filePath: string): RawImportSite[] {
-			return extractImportSitesFromSource(source, filePath);
+			return {
+				functions: extractFunctions(root, filePath),
+				rawCalls: extractRawCalls(root, filePath),
+				importBindings: extractImportBindings(root),
+			};
 		},
 	};
 }

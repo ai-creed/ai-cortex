@@ -6,9 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 
-vi.mock("node:child_process");
+// Mock child_process so promisify(exec) resolves controlled values.
+// vi.mock hoists this before imports.
+vi.mock("node:child_process", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:child_process")>();
+	return {
+		...actual,
+		exec: vi.fn(),
+	};
+});
 
-import { execFileSync } from "node:child_process";
+import { exec } from "node:child_process";
 import {
 	buildRepoFingerprint,
 	isWorktreeDirty,
@@ -16,7 +24,16 @@ import {
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 
-const mockExec = vi.mocked(execFileSync);
+const mockExec = vi.mocked(exec);
+
+function mockExecSuccess(stdout: string): void {
+	// promisify(exec) calls exec(cmd, callback) or exec(cmd, opts, callback)
+	mockExec.mockImplementation((...args: any[]) => {
+		const cb = args[args.length - 1];
+		cb(null, { stdout, stderr: "" });
+		return {} as any;
+	});
+}
 
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
@@ -49,32 +66,32 @@ afterEach(() => {
 });
 
 describe("writeCache + readCacheForWorktree", () => {
-	it("writes and reads back a cache", () => {
+	it("writes and reads back a cache", async () => {
 		const cache = makeCache();
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
 
-		writeCache(cache);
-		const result = readCacheForWorktree(cache.repoKey, cache.worktreeKey);
+		await writeCache(cache);
+		const result = await readCacheForWorktree(cache.repoKey, cache.worktreeKey);
 
 		expect(result).not.toBeNull();
 		expect(result?.fingerprint).toBe("abc123");
 		expect(result?.packageMeta.name).toBe("test");
 	});
 
-	it("returns null when no cache file exists", () => {
+	it("returns null when no cache file exists", async () => {
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
-		expect(readCacheForWorktree("unknown", "key")).toBeNull();
+		expect(await readCacheForWorktree("unknown", "key")).toBeNull();
 	});
 
-	it("returns null and warns to stderr on schema version mismatch", () => {
+	it("returns null and warns to stderr on schema version mismatch", async () => {
 		const cache = makeCache({ schemaVersion: "0" as any });
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
 		const stderrSpy = vi
 			.spyOn(process.stderr, "write")
 			.mockImplementation(() => true);
 
-		writeCache(cache);
-		const result = readCacheForWorktree(cache.repoKey, cache.worktreeKey);
+		await writeCache(cache);
+		const result = await readCacheForWorktree(cache.repoKey, cache.worktreeKey);
 
 		expect(result).toBeNull();
 		expect(stderrSpy).toHaveBeenCalledWith(
@@ -84,20 +101,20 @@ describe("writeCache + readCacheForWorktree", () => {
 });
 
 describe("buildRepoFingerprint", () => {
-	it("returns trimmed HEAD commit hash from git", () => {
-		mockExec.mockReturnValue("abc123def456\n" as any);
-		expect(buildRepoFingerprint("/repo")).toBe("abc123def456");
+	it("returns trimmed HEAD commit hash from git", async () => {
+		mockExecSuccess("abc123def456\n");
+		expect(await buildRepoFingerprint("/repo")).toBe("abc123def456");
 	});
 });
 
 describe("isWorktreeDirty", () => {
-	it("returns false when git status output is empty", () => {
-		mockExec.mockReturnValue("" as any);
-		expect(isWorktreeDirty("/repo")).toBe(false);
+	it("returns false when git status output is empty", async () => {
+		mockExecSuccess("");
+		expect(await isWorktreeDirty("/repo")).toBe(false);
 	});
 
-	it("returns true when git status output contains tracked or untracked changes", () => {
-		mockExec.mockReturnValue(" M src/main.ts\n?? newfile.ts\n" as any);
-		expect(isWorktreeDirty("/repo")).toBe(true);
+	it("returns true when git status output contains tracked or untracked changes", async () => {
+		mockExecSuccess(" M src/main.ts\n?? newfile.ts\n");
+		expect(await isWorktreeDirty("/repo")).toBe(true);
 	});
 });

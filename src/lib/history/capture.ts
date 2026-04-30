@@ -37,18 +37,18 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 	// Hooks call into this; `ai-cortex history off` must stop them too.
 	if (!isHistoryEnabled()) return { status: "disabled" };
 
-	const lock = acquireLock(input.repoKey, input.sessionId);
+	const lock = await acquireLock(input.repoKey, input.sessionId);
 	if (!lock.acquired) return { status: "skipped-locked" };
 
 	try {
 		const turns = parseTranscript(input.transcriptPath);
-		const existing = readSession(input.repoKey, input.sessionId);
+		const existing = await readSession(input.repoKey, input.sessionId);
 		const lastProcessed = existing?.lastProcessedTurn ?? -1;
 		const newTurns = turns.filter((t) => t.turn > lastProcessed);
 
 		// Up-to-date only if no new turns AND on-disk side files match the recorded state.
 		// Crash-resume: if session.json says hasRaw but chunks.jsonl is missing, re-run.
-		if (newTurns.length === 0 && existing && isCompleteOnDisk(input, existing)) {
+		if (newTurns.length === 0 && existing && await isCompleteOnDisk(input, existing)) {
 			return { status: "up-to-date" };
 		}
 
@@ -77,39 +77,38 @@ export async function captureSession(input: CaptureInput): Promise<CaptureResult
 		// Commit-last ordering: write side files first, session.json last.
 		// If we crash before writeSession, session.json (or absence thereof) reflects the
 		// PRIOR state — next run will detect inconsistency or new turns and re-process.
-		writeAllChunks(input.repoKey, input.sessionId, chunks.map((c) => ({ id: c.id, text: c.text })));
+		await writeAllChunks(input.repoKey, input.sessionId, chunks.map((c) => ({ id: c.id, text: c.text })));
 		if (input.embed && chunks.length > 0) {
 			const provider = await getProvider();
 			const vectors = await provider.embed(chunks.map((c) => c.text));
-			writeChunkVectors(input.repoKey, input.sessionId, {
+			await writeChunkVectors(input.repoKey, input.sessionId, {
 				modelName: MODEL_NAME,
 				dim: EMBEDDING_DIM,
 				chunks: chunks.map((c, i) => ({ id: c.id, text: c.text, vector: vectors[i] })),
 			});
 		}
-		writeSession(input.repoKey, rec);
+		await writeSession(input.repoKey, rec);
 
 		return { status: "captured", turnsProcessed: newTurns.length === 0 ? allTurns.length : newTurns.length };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		return { status: "error", message: msg };
 	} finally {
-		releaseLock(input.repoKey, input.sessionId);
+		await releaseLock(input.repoKey, input.sessionId);
 	}
 }
 
-function isCompleteOnDisk(input: CaptureInput, rec: SessionRecord): boolean {
+async function isCompleteOnDisk(input: CaptureInput, rec: SessionRecord): Promise<boolean> {
 	if (!rec.hasRaw) {
 		const dir = sessionDir(input.repoKey, input.sessionId);
-		return (
-			!fs.existsSync(chunksJsonlPath(input.repoKey, input.sessionId)) &&
-			!fs.existsSync(path.join(dir, ".vectors.bin"))
-		);
+		const chunksExists = await fs.promises.access(chunksJsonlPath(input.repoKey, input.sessionId)).then(() => true, () => false);
+		const vecExists = await fs.promises.access(path.join(dir, ".vectors.bin")).then(() => true, () => false);
+		return !chunksExists && !vecExists;
 	}
-	const onDiskChunks = readAllChunks(input.repoKey, input.sessionId);
+	const onDiskChunks = await readAllChunks(input.repoKey, input.sessionId);
 	if (onDiskChunks.length !== rec.chunks.length) return false;
 	if (input.embed) {
-		const vecs = readChunkVectors(input.repoKey, input.sessionId, MODEL_NAME);
+		const vecs = await readChunkVectors(input.repoKey, input.sessionId, MODEL_NAME);
 		if (!vecs || vecs.byChunkId.size !== rec.chunks.length) return false;
 	}
 	return true;

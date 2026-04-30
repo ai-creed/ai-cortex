@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("writeVectorIndex / readVectorIndex", () => {
-	it("round-trips a small VectorIndex", () => {
+	it("round-trips a small VectorIndex", async () => {
 		const index: VectorIndex = {
 			meta: {
 				modelName: "Xenova/all-MiniLM-L6-v2",
@@ -35,9 +35,9 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			matrix: new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
 		};
 
-		writeVectorIndex(tmpDir, index);
+		await writeVectorIndex(tmpDir, index);
 
-		const result = readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2");
+		const result = await readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2");
 		expect(result).not.toBeNull();
 		if (!result) throw new Error("readVectorIndex returned null for existing sidecar");
 
@@ -58,12 +58,12 @@ describe("writeVectorIndex / readVectorIndex", () => {
 		}
 	});
 
-	it("returns null when no sidecar exists", () => {
-		const result = readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2");
+	it("returns null when no sidecar exists", async () => {
+		const result = await readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2");
 		expect(result).toBeNull();
 	});
 
-	it("returns null when modelName does not match", () => {
+	it("returns null when modelName does not match", async () => {
 		const index: VectorIndex = {
 			meta: {
 				modelName: "Xenova/all-MiniLM-L6-v2",
@@ -73,12 +73,12 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			},
 			matrix: new Float32Array([0.1, 0.2, 0.3]),
 		};
-		writeVectorIndex(tmpDir, index);
-		const result = readVectorIndex(tmpDir, "some-other-model");
+		await writeVectorIndex(tmpDir, index);
+		const result = await readVectorIndex(tmpDir, "some-other-model");
 		expect(result).toBeNull();
 	});
 
-	it("throws VectorIndexCorruptError when .bin is truncated", () => {
+	it("throws VectorIndexCorruptError when .bin is truncated", async () => {
 		const index: VectorIndex = {
 			meta: {
 				modelName: "Xenova/all-MiniLM-L6-v2",
@@ -91,18 +91,18 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			},
 			matrix: new Float32Array([1, 2, 3, 4]),
 		};
-		writeVectorIndex(tmpDir, index);
+		await writeVectorIndex(tmpDir, index);
 		// Truncate the .bin file to half its size
 		const binPath = path.join(tmpDir, ".vectors.bin");
 		const stat = fs.statSync(binPath);
 		fs.truncateSync(binPath, Math.floor(stat.size / 2));
 
-		expect(() => readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).toThrow(
+		await expect(readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).rejects.toThrow(
 			VectorIndexCorruptError,
 		);
 	});
 
-	it("throws VectorIndexCorruptError when entries.length mismatches meta.count", () => {
+	it("throws VectorIndexCorruptError when entries.length mismatches meta.count", async () => {
 		// Write a valid sidecar, then overwrite meta.json with mismatched count
 		const index: VectorIndex = {
 			meta: {
@@ -113,7 +113,7 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			},
 			matrix: new Float32Array([1, 2]),
 		};
-		writeVectorIndex(tmpDir, index);
+		await writeVectorIndex(tmpDir, index);
 
 		// Overwrite meta with count=2 but entries has only 1 entry
 		const metaPath = path.join(tmpDir, ".vectors.meta.json");
@@ -125,12 +125,12 @@ describe("writeVectorIndex / readVectorIndex", () => {
 		};
 		fs.writeFileSync(metaPath, JSON.stringify(meta), "utf8");
 
-		expect(() => readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).toThrow(
+		await expect(readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).rejects.toThrow(
 			VectorIndexCorruptError,
 		);
 	});
 
-	it("throws VectorIndexCorruptError when meta JSON is corrupt", () => {
+	it("throws VectorIndexCorruptError when meta JSON is corrupt", async () => {
 		// Write a valid sidecar first
 		const index: VectorIndex = {
 			meta: {
@@ -141,13 +141,13 @@ describe("writeVectorIndex / readVectorIndex", () => {
 			},
 			matrix: new Float32Array([1, 2]),
 		};
-		writeVectorIndex(tmpDir, index);
+		await writeVectorIndex(tmpDir, index);
 
 		// Overwrite meta.json with invalid JSON
 		const metaPath = path.join(tmpDir, ".vectors.meta.json");
 		fs.writeFileSync(metaPath, "{ not valid json }", "utf8");
 
-		expect(() => readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).toThrow(
+		await expect(readVectorIndex(tmpDir, "Xenova/all-MiniLM-L6-v2")).rejects.toThrow(
 			VectorIndexCorruptError,
 		);
 	});

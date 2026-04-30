@@ -1,14 +1,12 @@
 // tests/unit/lib/call-graph.test.ts
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("node:fs");
 vi.mock("../../../src/lib/adapters/index.js");
 vi.mock("../../../src/lib/import-graph.js");
 
-import fs from "node:fs";
-import { adapterForFile } from "../../../src/lib/adapters/index.js";
+import { adapterForFile, getAdapterForFile, adapterSupports } from "../../../src/lib/adapters/index.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
-import type { LangAdapter, RawCallSite, ImportBinding } from "../../../src/lib/lang-adapter.js";
+import type { LanguageAdapter, RawCallSite, ImportBinding } from "../../../src/lib/lang-adapter.js";
 import type { FunctionNode, ImportEdge } from "../../../src/lib/models.js";
 import { resolveCallSites, extractCallGraph, resolvePythonTargetFile } from "../../../src/lib/call-graph.js";
 
@@ -365,13 +363,14 @@ describe("resolveCallSites — decl-only never becomes a call edge target", () =
 		);
 	});
 
-	it("decl-only appears in functions[] output from extractFile", async () => {
-		// This tests the extractFile path: header decl shows up in functions list
+	it("decl-only appears in functions[] output from extractCallGraph", async () => {
+		// This tests the extractCallGraph path: header decl shows up in functions list
 		const { createCppAdapter } = await import("../../../src/lib/adapters/cfamily.js");
 		const cppAdapter = await createCppAdapter();
-		const r = cppAdapter.extractFile(
-			"int add(int a, int b);",   // declaration only
+		const r = await cppAdapter.extractCallGraph!(
+			"",
 			"src/utils.h",
+			"int add(int a, int b);",   // declaration only
 		);
 		const decl = r.functions.find((f) => f.qualifiedName === "add");
 		expect(decl).toBeDefined();
@@ -385,7 +384,8 @@ describe("extractCallGraph", () => {
 	});
 
 	it("skips files with no adapter", async () => {
-		vi.mocked(adapterForFile).mockReturnValue(undefined);
+		vi.mocked(adapterSupports).mockReturnValue(false);
+		vi.mocked(getAdapterForFile).mockReturnValue(null);
 		vi.mocked(extractImports).mockResolvedValue([]);
 		const result = await extractCallGraph("/repo", ["src/styles.css"]);
 		expect(result.calls).toHaveLength(0);
@@ -393,10 +393,11 @@ describe("extractCallGraph", () => {
 	});
 
 	it("collects functions and resolved calls from adapter", async () => {
-		vi.mocked(fs.readFileSync).mockReturnValue("export function main() {}");
-		const mockAdapter: LangAdapter = {
+		const mockAdapter: LanguageAdapter = {
 			extensions: [".ts"],
-			extractFile: vi.fn().mockReturnValue({
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+			extractImports: vi.fn().mockResolvedValue([]),
+			extractCallGraph: vi.fn().mockResolvedValue({
 				functions: [
 					{ qualifiedName: "main", file: "src/main.ts", exported: true, isDefaultExport: false, line: 1 },
 					{ qualifiedName: "helper", file: "src/main.ts", exported: false, isDefaultExport: false, line: 5 },
@@ -409,9 +410,9 @@ describe("extractCallGraph", () => {
 				}],
 				importBindings: [],
 			}),
-			extractImportSites: vi.fn().mockReturnValue([]),
 		};
-		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(getAdapterForFile).mockReturnValue(mockAdapter);
 		vi.mocked(extractImports).mockResolvedValue([]);
 
 		const result = await extractCallGraph("/repo", ["src/main.ts"]);
@@ -424,13 +425,14 @@ describe("extractCallGraph", () => {
 	});
 
 	it("calls extractImports with the file list and passes results to resolver", async () => {
-		vi.mocked(fs.readFileSync).mockReturnValue("");
-		const mockAdapter: LangAdapter = {
+		const mockAdapter: LanguageAdapter = {
 			extensions: [".cpp"],
-			extractFile: vi.fn().mockReturnValue({ functions: [], rawCalls: [], importBindings: [] }),
-			extractImportSites: vi.fn().mockReturnValue([]),
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+			extractImports: vi.fn().mockResolvedValue([]),
+			extractCallGraph: vi.fn().mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] }),
 		};
-		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(getAdapterForFile).mockReturnValue(mockAdapter);
 		vi.mocked(extractImports).mockResolvedValue([]);
 
 		await extractCallGraph("/repo", ["src/main.cpp"]);
@@ -701,22 +703,24 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 		vi.mocked(extractImports).mockResolvedValue([]);
 	});
 
-	it("performs zero fs.readFileSync calls when contentMap is provided", async () => {
-		const mockAdapter: LangAdapter = {
+	it("uses content from contentMap without reading disk", async () => {
+		const extractCallGraphFn = vi.fn().mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] });
+		const mockAdapter: LanguageAdapter = {
 			extensions: [".ts"],
-			extractImportSites: () => [],
-			extractFile: () => ({ functions: [], rawCalls: [], importBindings: [] }),
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+			extractImports: vi.fn().mockResolvedValue([]),
+			extractCallGraph: extractCallGraphFn,
 		};
-		vi.mocked(adapterForFile).mockReturnValue(mockAdapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(getAdapterForFile).mockReturnValue(mockAdapter);
 
-		const spy = vi.spyOn(fs, "readFileSync");
 		const contentMap = new Map([
 			["src/a.ts", "export function foo() {}"],
 		]);
 
 		await extractCallGraph("/fake", ["src/a.ts"], contentMap);
 
-		expect(spy).not.toHaveBeenCalled();
-		spy.mockRestore();
+		// extractCallGraph should be called with the provided content, not disk read
+		expect(extractCallGraphFn).toHaveBeenCalledWith("/fake", "src/a.ts", "export function foo() {}");
 	});
 });

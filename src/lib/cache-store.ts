@@ -1,10 +1,13 @@
 // src/lib/cache-store.ts
-import { execFileSync } from "node:child_process";
+import { exec } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { SCHEMA_VERSION } from "./models.js";
 import type { RepoCache } from "./models.js";
+
+const execAsync = promisify(exec);
 
 export function getCacheDir(repoKey: string): string {
 	return path.join(os.homedir(), ".cache", "ai-cortex", "v1", repoKey);
@@ -14,38 +17,42 @@ export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 	return path.join(getCacheDir(repoKey), `${worktreeKey}.json`);
 }
 
-export function buildRepoFingerprint(worktreePath: string): string {
-	return execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-	}).trimEnd();
-}
-
-export function isWorktreeDirty(worktreePath: string): boolean {
-	const output = execFileSync(
-		"git",
-		["-C", worktreePath, "status", "--porcelain", "-unormal"],
-		{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+export async function buildRepoFingerprint(worktreePath: string): Promise<string> {
+	const { stdout } = await execAsync(
+		`git -C ${JSON.stringify(worktreePath)} rev-parse HEAD`,
 	);
-	return output.length > 0;
+	return stdout.trimEnd();
 }
 
-export function writeCache(cache: RepoCache): void {
+export async function isWorktreeDirty(worktreePath: string): Promise<boolean> {
+	const { stdout } = await execAsync(
+		`git -C ${JSON.stringify(worktreePath)} status --porcelain -unormal`,
+	);
+	return stdout.length > 0;
+}
+
+export async function writeCache(cache: RepoCache): Promise<void> {
 	const dir = getCacheDir(cache.repoKey);
-	fs.mkdirSync(dir, { recursive: true });
+	await fs.promises.mkdir(dir, { recursive: true });
 	const filePath = getCacheFilePath(cache.repoKey, cache.worktreeKey);
-	fs.writeFileSync(filePath, JSON.stringify(cache, null, 2) + "\n");
+	const tmp = filePath + ".tmp";
+	await fs.promises.writeFile(tmp, JSON.stringify(cache, null, 2) + "\n");
+	await fs.promises.rename(tmp, filePath);
 }
 
-export function readCacheForWorktree(
+export async function readCacheForWorktree(
 	repoKey: string,
 	worktreeKey: string,
-): RepoCache | null {
+): Promise<RepoCache | null> {
 	const filePath = getCacheFilePath(repoKey, worktreeKey);
-	if (!fs.existsSync(filePath)) return null;
-	const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as RepoCache;
+	try {
+		await fs.promises.access(filePath);
+	} catch {
+		return null;
+	}
+	const raw = JSON.parse(await fs.promises.readFile(filePath, "utf8")) as RepoCache;
 	if (raw.schemaVersion !== SCHEMA_VERSION) {
-		fs.rmSync(filePath, { force: true });
+		await fs.promises.rm(filePath, { force: true });
 		process.stderr.write(
 			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
 		);

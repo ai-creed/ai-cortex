@@ -41,12 +41,12 @@ function rec(): SessionRecord {
 
 describe("searchSession (semantic chunks)", () => {
 	it("returns rawChunk hits sorted by similarity to query embedding", async () => {
-		writeSession("REPO", rec());
-		writeAllChunks("REPO", "s1", [
+		await writeSession("REPO", rec());
+		await writeAllChunks("REPO", "s1", [
 			{ id: 0, text: "alpha text" },
 			{ id: 1, text: "beta text" },
 		]);
-		writeChunkVectors("REPO", "s1", {
+		await writeChunkVectors("REPO", "s1", {
 			modelName: "TEST",
 			dim: 2,
 			chunks: [

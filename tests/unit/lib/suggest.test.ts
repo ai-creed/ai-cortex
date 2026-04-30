@@ -55,7 +55,7 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
-	vi.mocked(isWorktreeDirty).mockReturnValue(false);
+	vi.mocked(isWorktreeDirty).mockResolvedValue(false);
 	vi.mocked(rankSuggestions).mockReturnValue([
 		{
 			path: "src/app.ts",
@@ -69,8 +69,8 @@ beforeEach(() => {
 describe("suggestRepo", () => {
 	it("returns fresh when cache is current and worktree is clean", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 
 		const result = await suggestRepo("/repo", "app");
 
@@ -82,7 +82,7 @@ describe("suggestRepo", () => {
 
 	it("indexes from scratch when no cache exists", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(null);
+		vi.mocked(readCacheForWorktree).mockResolvedValue(null);
 		vi.mocked(indexRepo).mockResolvedValue(cache);
 
 		const result = await suggestRepo("/repo", "app");
@@ -94,15 +94,15 @@ describe("suggestRepo", () => {
 	it("uses incremental refresh when fingerprint is stale", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/app.ts"],
 			removed: [],
 			method: "git-diff",
 		});
 		vi.mocked(buildIncrementalIndex).mockResolvedValue(updated);
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await suggestRepo("/repo", "app");
 
@@ -112,10 +112,10 @@ describe("suggestRepo", () => {
 
 	it("uses incremental refresh when the worktree is dirty at the same fingerprint", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(isWorktreeDirty).mockReturnValue(true);
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(isWorktreeDirty).mockResolvedValue(true);
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/new.ts"],
 			removed: [],
 			method: "git-diff",
@@ -124,7 +124,7 @@ describe("suggestRepo", () => {
 			...cache,
 			dirtyAtIndex: true,
 		});
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await suggestRepo("/repo", "new");
 
@@ -138,9 +138,9 @@ describe("suggestRepo", () => {
 
 	it("forces hash compare when cache was built dirty and worktree is now clean", async () => {
 		const cache = makeCache({ dirtyAtIndex: true });
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
-		vi.mocked(diffChangedFiles).mockReturnValue({
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
+		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/app.ts"],
 			removed: [],
 			method: "hash-compare",
@@ -149,7 +149,7 @@ describe("suggestRepo", () => {
 			...cache,
 			dirtyAtIndex: false,
 		});
-		vi.mocked(writeCache).mockReturnValue(undefined);
+		vi.mocked(writeCache).mockResolvedValue(undefined);
 
 		const result = await suggestRepo("/repo", "app");
 
@@ -163,8 +163,8 @@ describe("suggestRepo", () => {
 
 	it("uses stale cache when stale is requested", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("newfingerprint");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 
 		const result = await suggestRepo("/repo", "app", { stale: true });
 
@@ -181,8 +181,8 @@ describe("suggestRepo", () => {
 
 	it("normalizes unknown from values to null", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 
 		const result = await suggestRepo("/repo", "app", { from: "missing.ts" });
 
@@ -191,7 +191,7 @@ describe("suggestRepo", () => {
 
 	it("wraps non-identity errors in IndexError", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
 		vi.mocked(buildRepoFingerprint).mockImplementation(() => {
 			throw new Error("git exploded");
 		});
@@ -215,8 +215,8 @@ describe("suggestRepo", () => {
 describe("suggestRepo — option validation", () => {
 	beforeEach(() => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockReturnValue(cache);
-		vi.mocked(buildRepoFingerprint).mockReturnValue("abc123");
+		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 	});
 
 	it("rejects non-integer poolSize", async () => {

@@ -1,19 +1,20 @@
 // tests/unit/lib/adapters/typescript.test.ts
 import { describe, expect, it, beforeAll } from "vitest";
 import { createTypescriptAdapter } from "../../../../src/lib/adapters/typescript.js";
-import type { LangAdapter } from "../../../../src/lib/lang-adapter.js";
+import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
-let adapter: LangAdapter;
+let adapter: LanguageAdapter;
 
 beforeAll(async () => {
 	adapter = await createTypescriptAdapter();
 });
 
 describe("typescript adapter — function extraction", () => {
-	it("extracts named function declaration", () => {
-		const result = adapter.extractFile(
-			"function foo() { return 1; }",
+	it("extracts named function declaration", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/foo.ts",
+			"function foo() { return 1; }",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -25,10 +26,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("extracts exported function declaration", () => {
-		const result = adapter.extractFile(
-			"export function bar() {}",
+	it("extracts exported function declaration", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/bar.ts",
+			"export function bar() {}",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -39,10 +41,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("extracts arrow function assigned to const", () => {
-		const result = adapter.extractFile(
-			"const baz = () => {};",
+	it("extracts arrow function assigned to const", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/baz.ts",
+			"const baz = () => {};",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -52,10 +55,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("extracts exported arrow function", () => {
-		const result = adapter.extractFile(
-			"export const qux = () => {};",
+	it("extracts exported arrow function", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/qux.ts",
+			"export const qux = () => {};",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -66,10 +70,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("extracts class method with qualified name", () => {
-		const result = adapter.extractFile(
-			"class Foo { bar() {} render() {} }",
+	it("extracts class method with qualified name", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/foo.ts",
+			"class Foo { bar() {} render() {} }",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.bar" }),
@@ -79,10 +84,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("marks methods of exported class as exported", () => {
-		const result = adapter.extractFile(
-			"export class Svc { run() {} }",
+	it("marks methods of exported class as exported", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/svc.ts",
+			"export class Svc { run() {} }",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -92,20 +98,22 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("does not collapse same-name methods in different classes", () => {
-		const result = adapter.extractFile(
-			"class A { render() {} }\nclass B { render() {} }",
+	it("does not collapse same-name methods in different classes", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/ab.ts",
+			"class A { render() {} }\nclass B { render() {} }",
 		);
 		const names = result.functions.map((f) => f.qualifiedName);
 		expect(names).toContain("A.render");
 		expect(names).toContain("B.render");
 	});
 
-	it("extracts named default export function", () => {
-		const result = adapter.extractFile(
-			"export default function doThing() {}",
+	it("extracts named default export function", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/do.ts",
+			"export default function doThing() {}",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -116,10 +124,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("synthesizes 'default' name for anonymous default export", () => {
-		const result = adapter.extractFile(
-			"export default () => {};",
+	it("synthesizes 'default' name for anonymous default export", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/anon.ts",
+			"export default () => {};",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -130,10 +139,11 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("extracts default-exported class with methods", () => {
-		const result = adapter.extractFile(
-			"export default class Ctrl { handle() {} }",
+	it("extracts default-exported class with methods", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/ctrl.ts",
+			"export default class Ctrl { handle() {} }",
 		);
 		expect(result.functions).toContainEqual(
 			expect.objectContaining({
@@ -149,19 +159,20 @@ describe("typescript adapter — function extraction", () => {
 		);
 	});
 
-	it("reports accurate line numbers", () => {
+	it("reports accurate line numbers", async () => {
 		const source = "// comment\n\nfunction foo() {}\n";
-		const result = adapter.extractFile(source, "src/foo.ts");
+		const result = await adapter.extractCallGraph!("", "src/foo.ts", source);
 		const foo = result.functions.find((f) => f.qualifiedName === "foo");
 		expect(foo?.line).toBe(3);
 	});
 });
 
 describe("typescript adapter — raw call site extraction", () => {
-	it("extracts direct function call", () => {
-		const result = adapter.extractFile(
-			"function a() { foo(); }",
+	it("extracts direct function call", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"function a() { foo(); }",
 		);
 		expect(result.rawCalls).toContainEqual(
 			expect.objectContaining({
@@ -172,10 +183,11 @@ describe("typescript adapter — raw call site extraction", () => {
 		);
 	});
 
-	it("extracts new expression", () => {
-		const result = adapter.extractFile(
-			"function a() { new Foo(); }",
+	it("extracts new expression", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"function a() { new Foo(); }",
 		);
 		expect(result.rawCalls).toContainEqual(
 			expect.objectContaining({
@@ -185,10 +197,11 @@ describe("typescript adapter — raw call site extraction", () => {
 		);
 	});
 
-	it("extracts method call with receiver", () => {
-		const result = adapter.extractFile(
-			"function a() { obj.method(); }",
+	it("extracts method call with receiver", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"function a() { obj.method(); }",
 		);
 		expect(result.rawCalls).toContainEqual(
 			expect.objectContaining({
@@ -198,10 +211,11 @@ describe("typescript adapter — raw call site extraction", () => {
 		);
 	});
 
-	it("extracts this.method call", () => {
-		const result = adapter.extractFile(
-			"class Foo { bar() { this.baz(); } baz() {} }",
+	it("extracts this.method call", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/foo.ts",
+			"class Foo { bar() { this.baz(); } baz() {} }",
 		);
 		expect(result.rawCalls).toContainEqual(
 			expect.objectContaining({
@@ -212,10 +226,11 @@ describe("typescript adapter — raw call site extraction", () => {
 		);
 	});
 
-	it("sets callerQualifiedName to enclosing function", () => {
-		const result = adapter.extractFile(
-			"function outer() { inner(); }\nfunction inner() {}",
+	it("sets callerQualifiedName to enclosing function", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/x.ts",
+			"function outer() { inner(); }\nfunction inner() {}",
 		);
 		const call = result.rawCalls.find((c) => c.rawCallee === "inner");
 		expect(call?.callerQualifiedName).toBe("outer");
@@ -223,10 +238,11 @@ describe("typescript adapter — raw call site extraction", () => {
 });
 
 describe("typescript adapter — import binding extraction", () => {
-	it("extracts named import", () => {
-		const result = adapter.extractFile(
-			"import { foo } from \"./bar\";",
+	it("extracts named import", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"import { foo } from \"./bar\";",
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "foo",
@@ -236,10 +252,11 @@ describe("typescript adapter — import binding extraction", () => {
 		});
 	});
 
-	it("extracts aliased import", () => {
-		const result = adapter.extractFile(
-			"import { foo as baz } from \"./bar\";",
+	it("extracts aliased import", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"import { foo as baz } from \"./bar\";",
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "baz",
@@ -249,10 +266,11 @@ describe("typescript adapter — import binding extraction", () => {
 		});
 	});
 
-	it("extracts default import", () => {
-		const result = adapter.extractFile(
-			"import Bar from \"./bar\";",
+	it("extracts default import", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"import Bar from \"./bar\";",
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "Bar",
@@ -262,10 +280,11 @@ describe("typescript adapter — import binding extraction", () => {
 		});
 	});
 
-	it("extracts namespace import", () => {
-		const result = adapter.extractFile(
-			"import * as utils from \"./utils\";",
+	it("extracts namespace import", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"import * as utils from \"./utils\";",
 		);
 		expect(result.importBindings).toContainEqual({
 			localName: "utils",
@@ -275,27 +294,29 @@ describe("typescript adapter — import binding extraction", () => {
 		});
 	});
 
-	it("ignores non-relative imports", () => {
-		const result = adapter.extractFile(
-			"import { readFileSync } from \"node:fs\";",
+	it("ignores non-relative imports", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/a.ts",
+			"import { readFileSync } from \"node:fs\";",
 		);
 		expect(result.importBindings).toHaveLength(0);
 	});
 });
 
 describe("typescript adapter — edge cases", () => {
-	it("returns empty result for empty file", () => {
-		const result = adapter.extractFile("", "src/empty.ts");
+	it("returns empty result for empty file", async () => {
+		const result = await adapter.extractCallGraph!("", "src/empty.ts", "");
 		expect(result.functions).toHaveLength(0);
 		expect(result.rawCalls).toHaveLength(0);
 		expect(result.importBindings).toHaveLength(0);
 	});
 
-	it("handles file with syntax errors gracefully", () => {
-		const result = adapter.extractFile(
-			"function foo( { bar(); }",
+	it("handles file with syntax errors gracefully", async () => {
+		const result = await adapter.extractCallGraph!(
+			"",
 			"src/broken.ts",
+			"function foo( { bar(); }",
 		);
 		// Should not throw — tree-sitter does partial parsing
 		expect(result).toBeDefined();
@@ -303,10 +324,11 @@ describe("typescript adapter — edge cases", () => {
 });
 
 describe("typescript adapter — import sites", () => {
-	it("emits a RawImportSite per relative import", () => {
-		const sites = adapter.extractImportSites(
-			"import x from \"./foo\";\nimport { y } from \"../bar/baz\";\nimport \"external\";",
+	it("emits a RawImportSite per relative import", async () => {
+		const sites = await adapter.extractImports(
+			"",
 			"src/main.ts",
+			"import x from \"./foo\";\nimport { y } from \"../bar/baz\";\nimport \"external\";",
 		);
 		expect(sites).toEqual([
 			{
@@ -322,28 +344,31 @@ describe("typescript adapter — import sites", () => {
 		]);
 	});
 
-	it("ignores non-relative imports", () => {
-		const sites = adapter.extractImportSites(
-			"import { x } from \"react\";",
+	it("ignores non-relative imports", async () => {
+		const sites = await adapter.extractImports(
+			"",
 			"src/main.ts",
+			"import { x } from \"react\";",
 		);
 		expect(sites).toEqual([]);
 	});
 
-	it("strips known TS extension from candidate for import './b.ts'", () => {
-		const sites = adapter.extractImportSites(
-			"import x from \"./b.ts\";",
+	it("strips known TS extension from candidate for import './b.ts'", async () => {
+		const sites = await adapter.extractImports(
+			"",
 			"src/a.ts",
+			"import x from \"./b.ts\";",
 		);
 		expect(sites).toHaveLength(1);
 		expect(sites[0].candidate).toBe("src/b");
 		expect(sites[0].rawSpecifier).toBe("./b.ts");
 	});
 
-	it("strips .js extension from candidate for import './util.js'", () => {
-		const sites = adapter.extractImportSites(
-			"import { helper } from \"./util.js\";",
+	it("strips .js extension from candidate for import './util.js'", async () => {
+		const sites = await adapter.extractImports(
+			"",
 			"src/a.ts",
+			"import { helper } from \"./util.js\";",
 		);
 		expect(sites).toHaveLength(1);
 		expect(sites[0].candidate).toBe("src/util");

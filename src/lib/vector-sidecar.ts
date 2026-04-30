@@ -23,33 +23,42 @@ export type VectorIndex = {
 const BIN_FILE = ".vectors.bin";
 const META_FILE = ".vectors.meta.json";
 
-export function writeVectorIndex(dir: string, index: VectorIndex): void {
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.promises.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export async function writeVectorIndex(dir: string, index: VectorIndex): Promise<void> {
 	// Best-effort atomic rename — no low-level fsync; orphaned .tmp files on crash are harmless.
 	const binPath = path.join(dir, BIN_FILE);
 	const metaPath = path.join(dir, META_FILE);
 	const binTmp = binPath + ".tmp";
 	const metaTmp = metaPath + ".tmp";
 
-	fs.writeFileSync(
+	await fs.promises.writeFile(
 		binTmp,
 		Buffer.from(index.matrix.buffer, index.matrix.byteOffset, index.matrix.byteLength),
 	);
-	fs.writeFileSync(metaTmp, JSON.stringify(index.meta), "utf8");
-	fs.renameSync(metaTmp, metaPath);
-	fs.renameSync(binTmp, binPath);
+	await fs.promises.writeFile(metaTmp, JSON.stringify(index.meta), "utf8");
+	await fs.promises.rename(metaTmp, metaPath);
+	await fs.promises.rename(binTmp, binPath);
 }
 
-export function readVectorIndex(dir: string, modelName: string): VectorIndex | null {
+export async function readVectorIndex(dir: string, modelName: string): Promise<VectorIndex | null> {
 	const binPath = path.join(dir, BIN_FILE);
 	const metaPath = path.join(dir, META_FILE);
 
-	if (!fs.existsSync(metaPath) || !fs.existsSync(binPath)) {
+	if (!(await fileExists(metaPath)) || !(await fileExists(binPath))) {
 		return null;
 	}
 
 	let meta: SidecarMeta;
 	try {
-		meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) as SidecarMeta;
+		meta = JSON.parse(await fs.promises.readFile(metaPath, "utf8")) as SidecarMeta;
 	} catch {
 		throw new VectorIndexCorruptError(`failed to parse sidecar meta: ${metaPath}`);
 	}
@@ -72,7 +81,7 @@ export function readVectorIndex(dir: string, modelName: string): VectorIndex | n
 		);
 	}
 
-	const binBuf = fs.readFileSync(binPath);
+	const binBuf = await fs.promises.readFile(binPath);
 	const expectedBytes = meta.count * meta.dim * 4; // f32 = 4 bytes
 	if (binBuf.byteLength !== expectedBytes) {
 		throw new VectorIndexCorruptError(

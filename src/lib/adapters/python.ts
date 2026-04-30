@@ -1,9 +1,11 @@
 // src/lib/adapters/python.ts
+import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type {
-  LangAdapter,
+  LanguageAdapter,
   FileExtractionResult,
+  RawCallData,
   RawCallSite,
   RawImportSite,
   ImportBinding,
@@ -308,11 +310,29 @@ function extractImportSitesFromRoot(
   return sites;
 }
 
-export async function createPythonAdapter(): Promise<LangAdapter> {
+export async function createPythonAdapter(): Promise<LanguageAdapter> {
   await initParser();
   return {
     extensions: [".py"],
-    extractFile(source: string, filePath: string): FileExtractionResult {
+    capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+    async extractImports(worktreePath: string, filePath: string, content?: string): Promise<RawImportSite[]> {
+      const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
+      if (!pyParser) return [];
+      let tree;
+      try {
+        tree = pyParser.parse(source);
+      } catch {
+        return [];
+      }
+      if (!tree) return [];
+      try {
+        return extractImportSitesFromRoot(tree.rootNode, filePath);
+      } catch {
+        return [];
+      }
+    },
+    async extractCallGraph(worktreePath: string, filePath: string, content?: string): Promise<RawCallData> {
+      const source = content ?? await fs.promises.readFile(path.join(worktreePath, filePath), "utf8");
       if (!pyParser) return { functions: [], rawCalls: [], importBindings: [] };
       let tree;
       try {
@@ -329,21 +349,6 @@ export async function createPythonAdapter(): Promise<LangAdapter> {
         };
       } catch {
         return { functions: [], rawCalls: [], importBindings: [] };
-      }
-    },
-    extractImportSites(source: string, filePath: string): RawImportSite[] {
-      if (!pyParser) return [];
-      let tree;
-      try {
-        tree = pyParser.parse(source);
-      } catch {
-        return [];
-      }
-      if (!tree) return [];
-      try {
-        return extractImportSitesFromRoot(tree.rootNode, filePath);
-      } catch {
-        return [];
       }
     },
   };

@@ -1,7 +1,7 @@
 // src/lib/import-graph.ts
 import fs from "node:fs";
 import path from "node:path";
-import { adapterForFile } from "./adapters/index.js";
+import { getAdapterForFile } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import type { ImportEdge } from "./models.js";
 
@@ -19,10 +19,10 @@ function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
   return "other";
 }
 
-export function discoverPythonPackageRoots(worktreePath: string): Set<string> {
+export async function discoverPythonPackageRoots(worktreePath: string): Promise<Set<string>> {
   // pyproject.toml — look for [tool.setuptools.packages.find] where = ["src"]
   try {
-    const content = fs.readFileSync(
+    const content = await fs.promises.readFile(
       path.join(worktreePath, "pyproject.toml"),
       "utf8",
     );
@@ -35,7 +35,7 @@ export function discoverPythonPackageRoots(worktreePath: string): Set<string> {
 
   // setup.cfg — look for package_dir = = src  (or similar)
   try {
-    const content = fs.readFileSync(
+    const content = await fs.promises.readFile(
       path.join(worktreePath, "setup.cfg"),
       "utf8",
     );
@@ -45,7 +45,7 @@ export function discoverPythonPackageRoots(worktreePath: string): Set<string> {
 
   // setup.py — look for package_dir={'': 'src'}
   try {
-    const content = fs.readFileSync(
+    const content = await fs.promises.readFile(
       path.join(worktreePath, "setup.py"),
       "utf8",
     );
@@ -115,27 +115,17 @@ export async function extractImports(
   const fileSet = new Set(allFilePaths);
   const hasPy = filePaths.some((f) => f.endsWith(".py"));
   const packageRoots = hasPy
-    ? discoverPythonPackageRoots(worktreePath)
+    ? await discoverPythonPackageRoots(worktreePath)
     : undefined;
   const edges: ImportEdge[] = [];
   for (const filePath of filePaths) {
-    const adapter = adapterForFile(filePath);
+    const adapter = getAdapterForFile(filePath);
     if (!adapter) continue;
-    let source: string;
-    if (contentMap) {
-      const cached = contentMap.get(filePath);
-      if (cached === undefined) continue;
-      source = cached;
-    } else {
-      try {
-        source = fs.readFileSync(path.join(worktreePath, filePath), "utf8");
-      } catch {
-        continue;
-      }
-    }
+    const content = contentMap?.get(filePath);
+    if (contentMap && content === undefined) continue;
     let sites;
     try {
-      sites = adapter.extractImportSites(source, filePath);
+      sites = await adapter.extractImports(worktreePath, filePath, content);
     } catch {
       continue;
     }

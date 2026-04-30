@@ -3,6 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PackageMeta } from "./models.js";
 
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.promises.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const FRAMEWORK_CONVENTIONS: Record<
 	NonNullable<PackageMeta["framework"]>,
 	string[]
@@ -26,7 +35,7 @@ const COMMON_FALLBACKS = [
 	"src/index.tsx",
 ];
 
-export function readPackageMeta(worktreePath: string): PackageMeta {
+export async function readPackageMeta(worktreePath: string): Promise<PackageMeta> {
 	const pkgPath = path.join(worktreePath, "package.json");
 	const fallback: PackageMeta = {
 		name: path.basename(worktreePath),
@@ -34,10 +43,10 @@ export function readPackageMeta(worktreePath: string): PackageMeta {
 		framework: null,
 	};
 
-	if (!fs.existsSync(pkgPath)) return fallback;
+	if (!(await fileExists(pkgPath))) return fallback;
 
 	try {
-		const raw = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as Record<
+		const raw = JSON.parse(await fs.promises.readFile(pkgPath, "utf8")) as Record<
 			string,
 			unknown
 		>;

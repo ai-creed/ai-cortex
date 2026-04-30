@@ -52,7 +52,7 @@ describe("history pipeline end-to-end", () => {
 
 describe("history concurrency", () => {
 	it("second concurrent capture skips when lock held", async () => {
-		const lockHandle = acquireLock("REPO", "race-sess");
+		const lockHandle = await acquireLock("REPO", "race-sess");
 		expect(lockHandle.acquired).toBe(true);
 		const result = await captureSession({
 			repoKey: "REPO",
@@ -61,13 +61,13 @@ describe("history concurrency", () => {
 			embed: false,
 		});
 		expect(result.status).toBe("skipped-locked");
-		releaseLock("REPO", "race-sess");
+		await releaseLock("REPO", "race-sess");
 	});
 
 	it("after lock released, subsequent capture succeeds", async () => {
-		const lockHandle = acquireLock("REPO", "after-sess");
+		const lockHandle = await acquireLock("REPO", "after-sess");
 		expect(lockHandle.acquired).toBe(true);
-		releaseLock("REPO", "after-sess");
+		await releaseLock("REPO", "after-sess");
 		const result = await captureSession({
 			repoKey: "REPO",
 			sessionId: "after-sess",
