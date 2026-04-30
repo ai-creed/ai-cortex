@@ -1,9 +1,17 @@
-export const HISTORY_SCHEMA_VERSION = 1;
+export const HISTORY_SCHEMA_VERSION = 2;
 
 export type ToolCallEvidence = { turn: number; name: string; args: string };
 export type FilePathEvidence = { turn: number; path: string };
-export type UserPromptEvidence = { turn: number; text: string };
-export type CorrectionEvidence = { turn: number; text: string };
+export type UserPromptEvidence = {
+	turn: number;
+	text: string;
+	nextAssistantSnippet?: string; // ≤500 chars, populated by compactor in v2 sessions
+};
+export type CorrectionEvidence = {
+	turn: number;
+	text: string;
+	nextAssistantSnippet?: string; // ≤500 chars, populated by compactor in v2 sessions
+};
 
 export type EvidenceLayer = {
 	toolCalls: ToolCallEvidence[];
