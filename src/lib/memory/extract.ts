@@ -4,7 +4,8 @@ import { extractorRunPath, extractorRunsDir } from "./paths.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
-import type { EvidenceLayer } from "../history/types.js";
+import type { EvidenceLayer, SessionRecord } from "../history/types.js";
+import { listSessions, readSession } from "../history/store.js";
 
 export const EXTRACTOR_MANIFEST_VERSION = 1;
 export const DEFAULT_DEDUP_COSINE = 0.85;
@@ -265,5 +266,69 @@ export function produceDecisionCandidates(
 		});
 	}
 	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Pattern heuristic (cross-session co-occurrence)
+// ---------------------------------------------------------------------------
+
+const PATTERN_MIN_SESSIONS = 3;
+const PATTERN_PROMPT_COSINE = 0.7;
+
+function fileSetKey(paths: string[]): string {
+	return [...new Set(paths)].sort().join("|");
+}
+
+export async function producePatternCandidates(
+	repoKey: string,
+	thisSessionId: string,
+	thisSession: SessionRecord,
+): Promise<ProducedCandidate[]> {
+	const targetFiles = new Set(thisSession.evidence.filePaths.map((f) => f.path));
+	if (targetFiles.size === 0) return [];
+	const targetKey = fileSetKey([...targetFiles]);
+
+	const allIds = await listSessions(repoKey);
+	const matching: SessionRecord[] = [];
+	for (const id of allIds) {
+		if (id === thisSessionId) continue;
+		const rec = await readSession(repoKey, id);
+		if (!rec) continue;
+		const files = new Set(rec.evidence.filePaths.map((f) => f.path));
+		if (fileSetKey([...files]) === targetKey) matching.push(rec);
+	}
+	if (matching.length < PATTERN_MIN_SESSIONS - 1) return [];
+
+	// Cosine on userPrompts: average prompt embedding per session, then mean cosine to target.
+	const provider = await getProvider();
+	const targetPrompts = thisSession.evidence.userPrompts.map((p) => p.text).join(" ");
+	if (targetPrompts.length === 0) return [];
+	const [targetVec] = await provider.embed([targetPrompts]);
+
+	let similarCount = 0;
+	for (const rec of matching) {
+		const prompts = rec.evidence.userPrompts.map((p) => p.text).join(" ");
+		if (prompts.length === 0) continue;
+		const [vec] = await provider.embed([prompts]);
+		if (cosine(targetVec!, vec!) >= PATTERN_PROMPT_COSINE) similarCount++;
+	}
+	if (similarCount + 1 < PATTERN_MIN_SESSIONS) return [];
+
+	const files = [...targetFiles];
+	const summary = thisSession.summary.length > 0 ? thisSession.summary : targetPrompts;
+	return [{
+		type: "pattern",
+		title: `Recurring work on ${files[0]}${files.length > 1 ? ` and ${files.length - 1} others` : ""}`,
+		body: `**Where:** ${files.join(", ")}\n\n**Convention:** ${summary.slice(0, 400)}`,
+		scopeFiles: files,
+		tags: extractTags(targetPrompts),
+		confidence: 0.35,
+		provenance: [{
+			sessionId: thisSessionId,
+			turn: 0,
+			kind: "summary",
+			excerpt: summary.slice(0, 280),
+		}],
+	}];
 }
 
