@@ -1,6 +1,12 @@
 // src/lib/memory/cli/record.ts
 import fs from "node:fs/promises";
-import { openLifecycle, createMemory } from "../lifecycle.js";
+import {
+	openLifecycle,
+	openGlobalLifecycle,
+	GLOBAL_REPO_KEY,
+	createMemory,
+} from "../lifecycle.js";
+import { reconcileStore } from "../reconcile.js";
 
 type RecordArgs = {
 	type: string;
@@ -10,6 +16,7 @@ type RecordArgs = {
 	scopeFiles: string[];
 	source: "explicit" | "extracted";
 	confidence?: number;
+	globalScope: boolean;
 };
 
 function parseRecordArgs(args: string[]): RecordArgs {
@@ -17,10 +24,12 @@ function parseRecordArgs(args: string[]): RecordArgs {
 		tags: string[];
 		scopeFiles: string[];
 		source: "explicit" | "extracted";
+		globalScope: boolean;
 	} = {
 		tags: [],
 		scopeFiles: [],
 		source: "explicit",
+		globalScope: false,
 	};
 	let i = 0;
 	while (i < args.length) {
@@ -46,6 +55,9 @@ function parseRecordArgs(args: string[]): RecordArgs {
 				break;
 			case "--confidence":
 				out.confidence = Number(args[++i]);
+				break;
+			case "--global-scope":
+				out.globalScope = true;
 				break;
 			default:
 				throw new Error(`unknown flag: ${a}`);
@@ -92,9 +104,15 @@ export async function runMemoryRecord(
 		return 1;
 	}
 	const body = await readBody(parsed.bodyFile, opts.stdin);
-	const lc = await openLifecycle(opts.repoKey, {
-		agentId: opts.agentId ?? "cli-user",
-	});
+	if (parsed.globalScope) {
+		// CLI bypasses MCP reconcile layer — reconcile global store explicitly.
+		await reconcileStore(GLOBAL_REPO_KEY, "cli-record-global");
+	}
+	const lc = parsed.globalScope
+		? await openGlobalLifecycle({ agentId: opts.agentId ?? "cli-user" })
+		: await openLifecycle(opts.repoKey, {
+				agentId: opts.agentId ?? "cli-user",
+			});
 	try {
 		const id = await createMemory(lc, {
 			type: parsed.type,

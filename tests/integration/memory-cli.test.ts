@@ -95,6 +95,53 @@ describe("ai-cortex memory CLI", () => {
 		);
 	});
 
+	it("memory record --global-scope writes to global store, not project", () => {
+		const bodyFile = path.join(cacheHome, "body.md");
+		fs.writeFileSync(bodyFile, "Global gotcha body.");
+
+		const rec = run([
+			"memory",
+			"record",
+			"--type",
+			"decision",
+			"--title",
+			"Global decision",
+			"--body-file",
+			bodyFile,
+			"--global-scope",
+			"--repo-key",
+			"test-cli-global-scope",
+		]);
+
+		expect(rec.status).toBe(0);
+		const id = rec.stdout.trim();
+		expect(id).toMatch(/^mem-/);
+
+		// Verify it landed in the global store
+		const globalGet = run([
+			"memory",
+			"get",
+			id,
+			"--repo-key",
+			"global",
+			"--json",
+		]);
+		expect(globalGet.status).toBe(0);
+		const globalRecord = JSON.parse(globalGet.stdout);
+		expect(globalRecord.frontmatter.id).toBe(id);
+		expect(globalRecord.frontmatter.title).toBe("Global decision");
+
+		// Verify it did NOT land in the project store
+		const projectGet = run([
+			"memory",
+			"get",
+			id,
+			"--repo-key",
+			"test-cli-global-scope",
+		]);
+		expect(projectGet.status).not.toBe(0);
+	});
+
 	it("memory record with missing --title exits with code 1", () => {
 		const bodyFile = path.join(cacheHome, "body.md");
 		fs.writeFileSync(bodyFile, "body text");
