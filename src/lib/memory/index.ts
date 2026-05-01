@@ -276,6 +276,14 @@ export class MemoryIndex {
 			)
 			.run(new Date().toISOString(), id);
 	}
+
+	bumpReExtract(id: string): void {
+		this.db
+			.prepare(
+				"UPDATE memories SET re_extract_count = re_extract_count + 1 WHERE id = ?",
+			)
+			.run(id);
+	}
 }
 
 function addColumnIfMissing(

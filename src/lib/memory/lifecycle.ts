@@ -782,6 +782,10 @@ export async function bumpConfidence(
 	return next;
 }
 
+export function bumpReExtract(lc: LifecycleHandle, id: string): void {
+	lc.index.bumpReExtract(id);
+}
+
 export const GLOBAL_REPO_KEY = "global";
 
 export async function openGlobalLifecycle(

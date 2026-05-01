@@ -6,6 +6,7 @@ import {
 	createMemory,
 	addEvidence,
 	bumpConfidence,
+	bumpReExtract,
 } from "./lifecycle.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
@@ -159,6 +160,7 @@ export async function extractFromSession(
 					await addEvidence(lc, dedupHit, p);
 				}
 				await bumpConfidence(lc, dedupHit, 0.1, `re-extract from ${sessionId}`);
+				bumpReExtract(lc, dedupHit);
 				manifest.evidenceAppended += 1;
 				manifest.appendedToMemoryIds.push(dedupHit);
 				continue;
