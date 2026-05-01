@@ -34,6 +34,7 @@ import {
 	auditMemory,
 	searchMemories,
 	recallMemory,
+	recallMemoryCrossTier,
 } from "../lib/memory/retrieve.js";
 import {
 	openLifecycle,
@@ -507,27 +508,52 @@ export function createServer(): McpServer {
 				scopeFiles: z.array(z.string()).optional(),
 				scopeTags: z.array(z.string()).optional(),
 				type: z.string().optional(),
+				source: z.enum(["project", "global", "all"]).optional(),
 			},
 		},
 		logged(
 			"recall_memory",
 			(p) => ({ repoKey: p.repoKey, query: p.query }),
 			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const results = await recallMemory(rh, p.query, {
-						limit: p.limit,
-						scope: { files: p.scopeFiles, tags: p.scopeTags },
-						type: p.type ? [p.type] : undefined,
-					});
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(results, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
+				const source = p.source ?? "all";
+				const opts = {
+					limit: p.limit,
+					scope: { files: p.scopeFiles, tags: p.scopeTags },
+					type: p.type ? [p.type] : undefined,
+				};
+
+				let results;
+
+				if (source === "global") {
+					const rh = openRetrieve("global");
+					try {
+						results = await recallMemory(rh, p.query, opts);
+					} finally {
+						rh.close();
+					}
+				} else if (source === "all") {
+					const projectRh = openRetrieve(p.repoKey);
+					const globalRh = openRetrieve("global");
+					try {
+						results = await recallMemoryCrossTier(projectRh, globalRh, p.query, opts);
+					} finally {
+						projectRh.close();
+						globalRh.close();
+					}
+				} else {
+					const rh = openRetrieve(p.repoKey);
+					try {
+						results = await recallMemory(rh, p.query, opts);
+					} finally {
+						rh.close();
+					}
 				}
+
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(results, null, 2) },
+					],
+				};
 			}),
 		),
 	);

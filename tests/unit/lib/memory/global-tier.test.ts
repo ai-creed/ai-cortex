@@ -7,6 +7,11 @@ import {
   createMemory,
   promoteToGlobal,
 } from "../../../../src/lib/memory/lifecycle.js";
+import {
+  openRetrieve,
+  recallMemory,
+  recallMemoryCrossTier,
+} from "../../../../src/lib/memory/retrieve.js";
 
 let repoKey: string;
 
@@ -153,6 +158,104 @@ describe("promoteToGlobal", () => {
       await expect(promoteToGlobal(lc, id)).rejects.toThrow("trashed");
     } finally {
       lc.close();
+    }
+  });
+});
+
+describe("recallMemoryCrossTier", () => {
+  it("returns results from both project and global stores", async () => {
+    // Create in project
+    const projectLc = await openLifecycle(repoKey, { agentId: "test" });
+    try {
+      await createMemory(projectLc, {
+        type: "decision",
+        title: "TypeScript strict mode decision",
+        body: "## Body\nAlways enable strict mode",
+        scope: { files: [], tags: ["ts"] },
+        source: "explicit",
+      });
+    } finally {
+      projectLc.close();
+    }
+
+    // Create in global
+    const globalLc = await openGlobalLifecycle({ agentId: "test" });
+    try {
+      await createMemory(globalLc, {
+        type: "gotcha",
+        title: "TypeScript declaration merging gotcha",
+        body: "## Body\nDeclaration merging can bite you",
+        scope: { files: [], tags: ["ts"] },
+        source: "explicit",
+        typeFields: { severity: "info" },
+      });
+    } finally {
+      globalLc.close();
+    }
+
+    const projectRh = openRetrieve(repoKey);
+    const globalRh = openRetrieve("global");
+    try {
+      const results = await recallMemoryCrossTier(
+        projectRh,
+        globalRh,
+        "TypeScript",
+        { limit: 10 },
+      );
+      const types = results.map((r) => r.type);
+      expect(types).toContain("decision");
+      expect(types).toContain("gotcha");
+    } finally {
+      projectRh.close();
+      globalRh.close();
+    }
+  });
+
+  it("project results score +0.10 higher than equivalent global results", async () => {
+    // Create identical memories in both stores to check boost
+    const body = "## Body\nidentical content for boost test";
+    const projectLc = await openLifecycle(repoKey, { agentId: "test" });
+    try {
+      await createMemory(projectLc, {
+        type: "decision",
+        title: "boost test memory",
+        body,
+        scope: { files: [], tags: [] },
+        source: "explicit",
+      });
+    } finally {
+      projectLc.close();
+    }
+
+    const globalLc = await openGlobalLifecycle({ agentId: "test" });
+    try {
+      await createMemory(globalLc, {
+        type: "decision",
+        title: "boost test memory",
+        body,
+        scope: { files: [], tags: [] },
+        source: "explicit",
+      });
+    } finally {
+      globalLc.close();
+    }
+
+    const projectRh = openRetrieve(repoKey);
+    const globalRh = openRetrieve("global");
+    try {
+      const results = await recallMemoryCrossTier(
+        projectRh,
+        globalRh,
+        "boost test",
+        { limit: 10 },
+      );
+      // Both exist; project result should rank first
+      expect(results.length).toBeGreaterThanOrEqual(2);
+      // The top result's score should be higher than the second by ~0.10
+      expect(results[0]!.score - results[1]!.score).toBeGreaterThanOrEqual(0.09);
+    } finally {
+      projectRh.close();
+      globalRh.close();
     }
   });
 });

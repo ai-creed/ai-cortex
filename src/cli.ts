@@ -199,6 +199,7 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 	const scopeFiles: string[] = [];
 	const tags: string[] = [];
 	let type: string | undefined;
+	let source: "project" | "global" | "all" = "all";
 
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
@@ -230,40 +231,68 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 			type = args[++i];
 			continue;
 		}
+		if (a === "--source" && args[i + 1]) {
+			source = args[++i] as "project" | "global" | "all";
+			continue;
+		}
 		if (!a.startsWith("--") && !query) {
 			query = a;
 			continue;
 		}
 	}
 	const rk = repoKey ?? (await resolveRepoKeyOrExit(cwd));
-	const { openRetrieve, recallMemory } =
+	const { openRetrieve, recallMemory, recallMemoryCrossTier } =
 		await import("./lib/memory/retrieve.js");
-	const rh = openRetrieve(rk);
-	try {
-		const results = await recallMemory(rh, query, {
-			limit,
-			scope:
-				scopeFiles.length || tags.length
-					? { files: scopeFiles, tags }
-					: undefined,
-			type: type ? [type] : undefined,
-		});
-		if (json) {
-			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
-		} else {
-			if (results.length === 0) {
-				process.stdout.write("no results\n");
-				return;
-			}
-			for (const r of results) {
-				process.stdout.write(
-					`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`,
-				);
-				process.stdout.write(`  ${r.bodyExcerpt}\n`);
-			}
+
+	const recallOpts = {
+		limit,
+		scope:
+			scopeFiles.length || tags.length
+				? { files: scopeFiles, tags }
+				: undefined,
+		type: type ? [type] : undefined,
+	};
+
+	let results;
+
+	if (source === "global") {
+		const rh = openRetrieve("global");
+		try {
+			results = await recallMemory(rh, query, recallOpts);
+		} finally {
+			rh.close();
 		}
-	} finally {
-		rh.close();
+	} else if (source === "all") {
+		const projectRh = openRetrieve(rk);
+		const globalRh = openRetrieve("global");
+		try {
+			results = await recallMemoryCrossTier(projectRh, globalRh, query, recallOpts);
+		} finally {
+			projectRh.close();
+			globalRh.close();
+		}
+	} else {
+		const rh = openRetrieve(rk);
+		try {
+			results = await recallMemory(rh, query, recallOpts);
+		} finally {
+			rh.close();
+		}
+	}
+
+	if (json) {
+		process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+	} else {
+		if (results.length === 0) {
+			process.stdout.write("no results\n");
+			return;
+		}
+		for (const r of results) {
+			process.stdout.write(
+				`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`,
+			);
+			process.stdout.write(`  ${r.bodyExcerpt}\n`);
+		}
 	}
 }
 
