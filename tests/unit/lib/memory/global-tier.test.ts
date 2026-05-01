@@ -116,4 +116,43 @@ describe("promoteToGlobal", () => {
       lc.close();
     }
   });
+
+  it("throws when memory is already merged_into", async () => {
+    const lc = await openLifecycle(repoKey, { agentId: "test" });
+    try {
+      const id = await createMemory(lc, {
+        type: "gotcha",
+        title: "merge guard test",
+        body: "## Body\ntest",
+        scope: { files: [], tags: [] },
+        source: "explicit",
+        typeFields: { severity: "info" },
+      });
+      // First promote succeeds
+      await promoteToGlobal(lc, id);
+      // Second promote should throw because original is now merged_into
+      await expect(promoteToGlobal(lc, id)).rejects.toThrow("merged_into");
+    } finally {
+      lc.close();
+    }
+  });
+
+  it("throws when memory is trashed", async () => {
+    const lc = await openLifecycle(repoKey, { agentId: "test" });
+    try {
+      const { trashMemory } = await import("../../../../src/lib/memory/lifecycle.js");
+      const id = await createMemory(lc, {
+        type: "gotcha",
+        title: "trash guard test",
+        body: "## Body\ntest",
+        scope: { files: [], tags: [] },
+        source: "explicit",
+        typeFields: { severity: "info" },
+      });
+      await trashMemory(lc, id, "test-trash");
+      await expect(promoteToGlobal(lc, id)).rejects.toThrow("trashed");
+    } finally {
+      lc.close();
+    }
+  });
 });
