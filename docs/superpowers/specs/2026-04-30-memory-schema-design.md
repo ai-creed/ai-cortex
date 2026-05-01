@@ -493,7 +493,7 @@ These heuristics are explicitly fragile starting points. The whole pipeline is g
 
 ### Post-implementation finding (2026-05-01) — correction-prefix as boost, not gate
 
-**Status:** diagnosed during smoke testing on real session captures. Fix designed but not yet shipped at the time of writing.
+**Status:** diagnosed and shipped on 2026-05-01 (commit `48b8f63`). Validated against real Favro session captures: re-extracting 44 sessions produced 6 new candidates above the 0.4 floor, 11 evidence appends to existing memories, and 225 logged rejections at the 0.35 tier — replacing a regime that surfaced ~11 candidates from the same data.
 
 **Original design (above table):** the `decision` and `gotcha` heuristics required the trigger to be a `correction`, where `correction` is defined by the session compactor as a user prompt matching `^\s*(no|stop|don't|wait|actually|instead|but)\b`. That correction prefix was meant as a quality signal — corrections are higher-leverage than ordinary prompts.
 
