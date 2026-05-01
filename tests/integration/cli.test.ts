@@ -219,3 +219,35 @@ describe("suggest-deep CLI", () => {
 		expect(result.stderr).toMatch(/--limit must be a number/);
 	});
 });
+
+describe("ai-cortex --version", () => {
+	const expectedVersion = JSON.parse(
+		fs.readFileSync(path.join(ROOT, "package.json"), "utf-8"),
+	).version as string;
+
+	it.each(["--version", "-v", "version"])(
+		"prints version and exits 0 for '%s'",
+		(flag) => {
+			const result = spawnSync("node", [CLI, flag], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+			expect(result.stdout).toBe(`ai-cortex ${expectedVersion}\n`);
+		},
+	);
+});
+
+describe("ai-cortex --help", () => {
+	it.each(["--help", "-h", "help"])(
+		"prints command list and exits 0 for '%s'",
+		(flag) => {
+			const result = spawnSync("node", [CLI, flag], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+			expect(result.stdout).toContain("ai-cortex <command>");
+			expect(result.stdout).toContain("index");
+			expect(result.stdout).toContain("rehydrate");
+			expect(result.stdout).toContain("suggest");
+			expect(result.stdout).toContain("mcp");
+			expect(result.stdout).toContain("history");
+			expect(result.stdout).toContain("memory");
+		},
+	);
+});

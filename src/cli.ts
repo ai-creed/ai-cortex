@@ -18,6 +18,29 @@ import { IndexError, RepoIdentityError } from "./lib/models.js";
 
 const [, , command = "index", ...args] = process.argv;
 
+function readPackageVersion(): string {
+	const pkgPath = new URL("../../package.json", import.meta.url);
+	const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+		version: string;
+	};
+	return pkg.version;
+}
+
+const HELP_TEXT = `ai-cortex <command> [options]
+
+Commands:
+  index [path] [--refresh]         Index a repository (default command)
+  rehydrate [path] [--stale]       Refresh and load cached index
+  suggest <task> [path] [options]  Suggest relevant files for a task
+  mcp                              Start the MCP server (stdio)
+  history <subcommand>             Manage session history capture
+  memory <subcommand>              Manage the memory store
+  help, --help, -h                 Show this help
+  version, --version, -v           Show version
+
+Run 'ai-cortex <command>' with no args to see subcommand usage.
+`;
+
 function parseIndexOrRehydrateArgs(
 	argv: string[],
 	flags: string[],
@@ -391,6 +414,14 @@ function escalationHint(r: FastSuggestResult): string {
 
 async function main(): Promise<void> {
 	try {
+		if (command === "--version" || command === "-v" || command === "version") {
+			process.stdout.write(`ai-cortex ${readPackageVersion()}\n`);
+			process.exit(0);
+		}
+		if (command === "--help" || command === "-h" || command === "help") {
+			process.stdout.write(HELP_TEXT);
+			process.exit(0);
+		}
 		if (command === "mcp") {
 			const { startMcpServer } = await import("./mcp/server.js");
 			await startMcpServer();
