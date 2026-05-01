@@ -105,9 +105,17 @@ export function listMemoriesPendingRewrite(
 	filter: PendingRewriteFilter = {},
 ): PendingRewriteRow[] {
 	const limit = filter.limit ?? 25;
-	const sinceClause = filter.since ? "AND updated_at >= ?" : "";
+	// `since` filters by the most recent eligibility-relevant event:
+	// - `updated_at` covers re-extraction (bumpConfidence commits a new version)
+	//   and pin/unpin operations.
+	// - `last_accessed_at` covers `get_memory` accesses, which set the column
+	//   without bumping `updated_at`. A months-old candidate accessed today
+	//   becomes eligible today; filtering on `updated_at` alone would miss it.
+	const sinceClause = filter.since
+		? "AND (updated_at >= ? OR last_accessed_at >= ?)"
+		: "";
 	const params: Array<string | number> = filter.since
-		? [filter.since, limit]
+		? [filter.since, filter.since, limit]
 		: [limit];
 	return rh.index
 		.rawDb()

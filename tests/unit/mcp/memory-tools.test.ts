@@ -677,8 +677,13 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 			lc.index.bumpReExtract(newId);
 			lc.index.bumpGetCount(oldId);
 			lc.index.bumpGetCount(newId);
+			// Backdate BOTH timestamps for the old row — `since` now considers
+			// updated_at OR last_accessed_at, so we need both stale to truly
+			// pre-date the cutoff.
 			lc.index.rawDb()
-				.prepare("UPDATE memories SET updated_at='2025-01-01T00:00:00Z' WHERE id=?")
+				.prepare(
+					"UPDATE memories SET updated_at='2025-01-01T00:00:00Z', last_accessed_at='2025-01-01T00:00:00Z' WHERE id=?",
+				)
 				.run(oldId);
 		} finally {
 			lc.close();
@@ -693,6 +698,36 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const ids = items.map((i) => i.id);
 		expect(ids).toContain(newId);
 		expect(ids).not.toContain(oldId);
+	});
+
+	it("list_memories_pending_rewrite includes candidates accessed via get_memory after `since` even if updated_at is older", async () => {
+		// A candidate that became eligible via get_memory access (not via
+		// re-extract or pin) should not be excluded by `since` just because
+		// its updated_at is stale. See `since` filter comment in retrieve.ts.
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let oldId: string;
+		try {
+			oldId = await createMemory(lc, {
+				type: "decision", title: "old but accessed today",
+				body: "## Body\nold",
+				scope: { files: [], tags: [] }, source: "extracted",
+			});
+			lc.index.bumpReExtract(oldId);
+			lc.index.bumpGetCount(oldId); // sets last_accessed_at = now
+			// Backdate updated_at to before the since cutoff.
+			lc.index.rawDb()
+				.prepare("UPDATE memories SET updated_at='2025-01-01T00:00:00Z' WHERE id=?")
+				.run(oldId);
+		} finally { lc.close(); }
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "list_memories_pending_rewrite",
+			arguments: { repoKey, since: "2026-01-01T00:00:00Z" },
+		});
+		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
+		const ids = items.map((i) => i.id);
+		expect(ids).toContain(oldId); // recent last_accessed_at brings it in
 	});
 
 	it("rewrite_memory promotes candidate to active and updates content", async () => {

@@ -793,6 +793,7 @@ export type RewriteMemoryFields = {
 	scopeFiles: string[];
 	scopeTags: string[];
 	type?: string;
+	typeFields?: Record<string, unknown>;
 };
 
 export async function rewriteMemory(
@@ -814,6 +815,25 @@ export async function rewriteMemory(
 
 	const current = await loadCurrent(lc, id);
 
+	// If the rewrite changes type, the new (type, typeFields) pair must satisfy
+	// the registry — same contract createMemory enforces. typeFields default to
+	// the current memory's typeFields if the caller doesn't pass new ones, so
+	// changing type to one with stricter requirements without supplying the
+	// matching fields is rejected here.
+	const nextType = fields.type ?? current.frontmatter.type;
+	const nextTypeFields = fields.typeFields ?? current.frontmatter.typeFields;
+	if (fields.type && fields.type !== current.frontmatter.type) {
+		const validation = validateRegistration(lc.registry, {
+			type: nextType,
+			typeFields: nextTypeFields,
+		});
+		if (!validation.ok) {
+			throw new Error(
+				`rewriteMemory: ${validation.errors.join("; ")}`,
+			);
+		}
+	}
+
 	const now = new Date().toISOString();
 	const promotedFromCandidate = status === "candidate";
 	const nextStatus = promotedFromCandidate ? "active" : status;
@@ -829,7 +849,10 @@ export async function rewriteMemory(
 			title: fields.title,
 			scope: { files: [...fields.scopeFiles], tags: [...fields.scopeTags] },
 			confidence: nextConfidence,
-			...(fields.type ? { type: fields.type } : {}),
+			type: nextType,
+			...(fields.typeFields !== undefined
+				? { typeFields: fields.typeFields }
+				: {}),
 		},
 		body: fields.body,
 	};

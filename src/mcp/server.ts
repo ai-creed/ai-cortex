@@ -1272,6 +1272,7 @@ export function createServer(): McpServer {
 				scopeFiles: z.array(z.string()),
 				scopeTags: z.array(z.string()),
 				type: z.string().optional(),
+				typeFields: z.record(z.unknown()).optional(),
 			},
 		},
 		logged(
@@ -1286,6 +1287,7 @@ export function createServer(): McpServer {
 						scopeFiles: p.scopeFiles,
 						scopeTags: p.scopeTags,
 						type: p.type,
+						typeFields: p.typeFields,
 					});
 					return { content: [{ type: "text" as const, text: "ok\n" }] };
 				} finally {

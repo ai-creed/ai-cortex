@@ -227,4 +227,78 @@ describe("rewriteMemory", () => {
 			lc.close();
 		}
 	}, 30_000);
+
+	it("rejects type change to one that requires typeFields not provided", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision",
+				title: "rule",
+				body: "## Body\nrule",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			// gotcha requires typeFields.severity per the registry seed.
+			await expect(
+				rewriteMemory(lc, id, {
+					title: "now a gotcha",
+					body: "## Symptom\nx\n## Workaround\ny",
+					scopeFiles: [],
+					scopeTags: [],
+					type: "gotcha",
+				}),
+			).rejects.toThrow(/severity/i);
+		} finally {
+			lc.close();
+		}
+	});
+
+	it("rejects type change to an unregistered type", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision",
+				title: "rule",
+				body: "## Body\nrule",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			await expect(
+				rewriteMemory(lc, id, {
+					title: "y",
+					body: "## Body\ny",
+					scopeFiles: [],
+					scopeTags: [],
+					type: "not-a-real-type",
+				}),
+			).rejects.toThrow(/unregistered type/i);
+		} finally {
+			lc.close();
+		}
+	});
+
+	it("accepts type change when caller provides matching typeFields", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "decision",
+				title: "rule",
+				body: "## Body\nrule",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			await rewriteMemory(lc, id, {
+				title: "now a gotcha",
+				body: "## Symptom\nx",
+				scopeFiles: [],
+				scopeTags: [],
+				type: "gotcha",
+				typeFields: { severity: "warning" },
+			});
+			const row = lc.index.getMemory(id);
+			expect(row?.type).toBe("gotcha");
+		} finally {
+			lc.close();
+		}
+	});
 });
