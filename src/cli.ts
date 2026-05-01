@@ -931,9 +931,21 @@ async function main(): Promise<void> {
 					if (code !== 0) process.exit(code);
 					break;
 				}
+				case "sweep": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemorySweep } = await import("./lib/memory/cli/sweep.js");
+					const code = await runMemorySweep(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				default: {
 					process.stderr.write(
-						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log>\n",
+						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log|sweep|promote>\n",
 					);
 					process.exit(1);
 				}

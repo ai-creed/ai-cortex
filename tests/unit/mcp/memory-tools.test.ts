@@ -51,6 +51,14 @@ describe("MCP memory read tools — registration", () => {
 		expect(names).toContain("search_memories");
 		expect(names).toContain("audit_memory");
 	});
+
+	it("registers sweep_aging and promote_to_global", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const names = tools.map((t: { name: string }) => t.name);
+		expect(names).toContain("sweep_aging");
+		expect(names).toContain("promote_to_global");
+	});
 });
 
 describe("MCP list_memories", () => {

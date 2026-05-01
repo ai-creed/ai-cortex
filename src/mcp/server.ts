@@ -1093,6 +1093,33 @@ export function createServer(): McpServer {
 		),
 	);
 
+	// ─── Aging sweep tool ────────────────────────────────────────────────────
+
+	server.registerTool(
+		"sweep_aging",
+		{
+			description:
+				"Sweep aging transitions: trash stale candidates/deprecated/merged_into memories and purge old trashed memories. Use dryRun=true to preview without applying changes.",
+			inputSchema: {
+				repoKey: z.string(),
+				dryRun: z.boolean().optional(),
+			},
+		},
+		logged(
+			"sweep_aging",
+			(p) => ({ repoKey: p.repoKey }),
+			withReconcile(async (p) => {
+				const { sweepAging } = await import("../lib/memory/aging.js");
+				const report = await sweepAging(p.repoKey, { dryRun: p.dryRun });
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
+					],
+				};
+			}),
+		),
+	);
+
 	// ─── Auto-extractor tool ──────────────────────────────────────────────────
 
 	server.registerTool(
