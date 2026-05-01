@@ -34,10 +34,14 @@ import {
 	auditMemory,
 	searchMemories,
 	recallMemory,
+	recallMemoryCrossTier,
 } from "../lib/memory/retrieve.js";
 import {
 	openLifecycle,
+	openGlobalLifecycle,
+	GLOBAL_REPO_KEY,
 	createMemory,
+	promoteToGlobal,
 	updateMemory,
 	updateScope,
 	deprecateMemory,
@@ -507,27 +511,52 @@ export function createServer(): McpServer {
 				scopeFiles: z.array(z.string()).optional(),
 				scopeTags: z.array(z.string()).optional(),
 				type: z.string().optional(),
+				source: z.enum(["project", "global", "all"]).optional(),
 			},
 		},
 		logged(
 			"recall_memory",
 			(p) => ({ repoKey: p.repoKey, query: p.query }),
 			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const results = await recallMemory(rh, p.query, {
-						limit: p.limit,
-						scope: { files: p.scopeFiles, tags: p.scopeTags },
-						type: p.type ? [p.type] : undefined,
-					});
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(results, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
+				const source = p.source ?? "all";
+				const opts = {
+					limit: p.limit,
+					scope: { files: p.scopeFiles, tags: p.scopeTags },
+					type: p.type ? [p.type] : undefined,
+				};
+
+				let results;
+
+				if (source === "global") {
+					const rh = openRetrieve("global");
+					try {
+						results = await recallMemory(rh, p.query, opts);
+					} finally {
+						rh.close();
+					}
+				} else if (source === "all") {
+					const projectRh = openRetrieve(p.repoKey);
+					const globalRh = openRetrieve("global");
+					try {
+						results = await recallMemoryCrossTier(projectRh, globalRh, p.query, opts);
+					} finally {
+						projectRh.close();
+						globalRh.close();
+					}
+				} else {
+					const rh = openRetrieve(p.repoKey);
+					try {
+						results = await recallMemory(rh, p.query, opts);
+					} finally {
+						rh.close();
+					}
 				}
+
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(results, null, 2) },
+					],
+				};
 			}),
 		),
 	);
@@ -662,7 +691,7 @@ export function createServer(): McpServer {
 		"record_memory",
 		{
 			description:
-				"Record a new memory (decision, gotcha, pattern, how-to) in this project.",
+				"Record a new memory (decision, gotcha, pattern, how-to) in this project. Set globalScope=true to write to the cross-project global store instead.",
 			inputSchema: {
 				repoKey: z.string(),
 				type: z.string().min(1),
@@ -672,13 +701,18 @@ export function createServer(): McpServer {
 				scopeTags: z.array(z.string()).optional(),
 				source: z.enum(["explicit", "extracted"]).optional(),
 				confidence: z.number().min(0).max(1).optional(),
+				typeFields: z.record(z.unknown()).optional(),
+				globalScope: z.boolean().optional(),
 			},
 		},
 		logged(
 			"record_memory",
 			(p) => ({ repoKey: p.repoKey, type: p.type, title: p.title }),
 			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				if (p.globalScope) await maybeReconcile(GLOBAL_REPO_KEY);
+				const lc = p.globalScope
+					? await openGlobalLifecycle({ agentId: "mcp" })
+					: await openLifecycle(p.repoKey, { agentId: "mcp" });
 				try {
 					const id = await createMemory(lc, {
 						type: p.type,
@@ -687,6 +721,7 @@ export function createServer(): McpServer {
 						scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
 						source: p.source ?? "explicit",
 						confidence: p.confidence,
+						typeFields: p.typeFields,
 					});
 					return { content: [{ type: "text" as const, text: `${id}\n` }] };
 				} finally {
@@ -1089,6 +1124,65 @@ export function createServer(): McpServer {
 						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
 					],
 				};
+			}),
+		),
+	);
+
+	// ─── Aging sweep tool ────────────────────────────────────────────────────
+
+	server.registerTool(
+		"sweep_aging",
+		{
+			description:
+				"Sweep aging transitions: trash stale candidates/deprecated/merged_into memories and purge old trashed memories. Use dryRun=true to preview without applying changes.",
+			inputSchema: {
+				repoKey: z.string(),
+				dryRun: z.boolean().optional(),
+			},
+		},
+		logged(
+			"sweep_aging",
+			(p) => ({ repoKey: p.repoKey }),
+			withReconcile(async (p) => {
+				const { sweepAging } = await import("../lib/memory/aging.js");
+				const report = await sweepAging(p.repoKey, { dryRun: p.dryRun });
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
+					],
+				};
+			}),
+		),
+	);
+
+	// ─── Promote to global tool ───────────────────────────────────────────────
+
+	server.registerTool(
+		"promote_to_global",
+		{
+			description:
+				"Promote a project memory to the global store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for cross-project gotchas, language patterns, and tool quirks.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged(
+			"promote_to_global",
+			(p) => ({ repoKey: p.repoKey, id: p.id }),
+			withReconcile(async (p) => {
+				// withReconcile reconciles p.repoKey (project); explicitly reconcile
+				// the global store too since that's the second write target.
+				await maybeReconcile(GLOBAL_REPO_KEY);
+				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				try {
+					const globalId = await promoteToGlobal(lc, p.id);
+					return {
+						content: [{ type: "text" as const, text: `${globalId}\n` }],
+					};
+				} finally {
+					lc.close();
+				}
 			}),
 		),
 	);

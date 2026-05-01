@@ -297,3 +297,31 @@ export async function recallMemory(
 	const limit = options.limit ?? cfg.ranking.topK;
 	return ranked.slice(0, limit);
 }
+
+// ─── Task 4.3: Cross-tier recall ───────────────────────────────────────────
+
+export type RecallSource = "project" | "global" | "all";
+
+const SOURCE_BOOST = 0.1;
+
+export async function recallMemoryCrossTier(
+	projectRh: RetrieveHandle,
+	globalRh: RetrieveHandle,
+	query: string,
+	options: RecallOptions,
+): Promise<RecallResult[]> {
+	const limit = options.limit ?? 10;
+	const fetchOpts = { ...options, limit: limit * 2 };
+
+	const [projectResults, globalResults] = await Promise.all([
+		recallMemory(projectRh, query, fetchOpts),
+		recallMemory(globalRh, query, fetchOpts),
+	]);
+
+	const merged = [
+		...projectResults.map((r) => ({ ...r, score: r.score + SOURCE_BOOST })),
+		...globalResults,
+	];
+	merged.sort((a, b) => b.score - a.score);
+	return merged.slice(0, limit);
+}

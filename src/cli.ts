@@ -199,6 +199,7 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 	const scopeFiles: string[] = [];
 	const tags: string[] = [];
 	let type: string | undefined;
+	let source: "project" | "global" | "all" = "all";
 
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
@@ -230,40 +231,75 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 			type = args[++i];
 			continue;
 		}
+		if (a === "--source" && args[i + 1]) {
+			const val = args[++i];
+			if (val !== "project" && val !== "global" && val !== "all") {
+				process.stderr.write(
+					`ai-cortex: --source must be project, global, or all (got '${val}')\n`,
+				);
+				process.exit(1);
+			}
+			source = val;
+			continue;
+		}
 		if (!a.startsWith("--") && !query) {
 			query = a;
 			continue;
 		}
 	}
 	const rk = repoKey ?? (await resolveRepoKeyOrExit(cwd));
-	const { openRetrieve, recallMemory } =
+	const { openRetrieve, recallMemory, recallMemoryCrossTier } =
 		await import("./lib/memory/retrieve.js");
-	const rh = openRetrieve(rk);
-	try {
-		const results = await recallMemory(rh, query, {
-			limit,
-			scope:
-				scopeFiles.length || tags.length
-					? { files: scopeFiles, tags }
-					: undefined,
-			type: type ? [type] : undefined,
-		});
-		if (json) {
-			process.stdout.write(JSON.stringify(results, null, 2) + "\n");
-		} else {
-			if (results.length === 0) {
-				process.stdout.write("no results\n");
-				return;
-			}
-			for (const r of results) {
-				process.stdout.write(
-					`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`,
-				);
-				process.stdout.write(`  ${r.bodyExcerpt}\n`);
-			}
+
+	const recallOpts = {
+		limit,
+		scope:
+			scopeFiles.length || tags.length
+				? { files: scopeFiles, tags }
+				: undefined,
+		type: type ? [type] : undefined,
+	};
+
+	let results;
+
+	if (source === "global") {
+		const rh = openRetrieve("global");
+		try {
+			results = await recallMemory(rh, query, recallOpts);
+		} finally {
+			rh.close();
 		}
-	} finally {
-		rh.close();
+	} else if (source === "all") {
+		const projectRh = openRetrieve(rk);
+		const globalRh = openRetrieve("global");
+		try {
+			results = await recallMemoryCrossTier(projectRh, globalRh, query, recallOpts);
+		} finally {
+			projectRh.close();
+			globalRh.close();
+		}
+	} else {
+		const rh = openRetrieve(rk);
+		try {
+			results = await recallMemory(rh, query, recallOpts);
+		} finally {
+			rh.close();
+		}
+	}
+
+	if (json) {
+		process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+	} else {
+		if (results.length === 0) {
+			process.stdout.write("no results\n");
+			return;
+		}
+		for (const r of results) {
+			process.stdout.write(
+				`${r.id}  [${r.type}/${r.status}] score=${r.score.toFixed(3)}  ${r.title}\n`,
+			);
+			process.stdout.write(`  ${r.bodyExcerpt}\n`);
+		}
 	}
 }
 
@@ -931,9 +967,34 @@ async function main(): Promise<void> {
 					if (code !== 0) process.exit(code);
 					break;
 				}
+				case "sweep": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemorySweep } = await import("./lib/memory/cli/sweep.js");
+					const code = await runMemorySweep(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "promote": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const repoKey =
+						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+					const { runMemoryPromote } =
+						await import("./lib/memory/cli/promote.js");
+					const code = await runMemoryPromote(
+						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
+						{ repoKey },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				default: {
 					process.stderr.write(
-						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log>\n",
+						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log|sweep|promote>\n",
 					);
 					process.exit(1);
 				}

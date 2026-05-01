@@ -51,6 +51,14 @@ describe("MCP memory read tools — registration", () => {
 		expect(names).toContain("search_memories");
 		expect(names).toContain("audit_memory");
 	});
+
+	it("registers sweep_aging and promote_to_global", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const names = tools.map((t: { name: string }) => t.name);
+		expect(names).toContain("sweep_aging");
+		expect(names).toContain("promote_to_global");
+	});
 });
 
 describe("MCP list_memories", () => {
@@ -412,6 +420,48 @@ describe("MCP memory end-to-end lifecycle", () => {
 	}, 30_000);
 });
 
+describe("MCP record_memory with globalScope=true", () => {
+  it("writes to global store when globalScope=true", async () => {
+    const client = await makeClient();
+    const result = await client.callTool({
+      name: "record_memory",
+      arguments: {
+        repoKey,
+        type: "gotcha",
+        title: "global gotcha via MCP",
+        body: "## Body\nglobal content",
+        scopeFiles: [],
+        scopeTags: [],
+        source: "explicit",
+        typeFields: { severity: "info" },
+        globalScope: true,
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const globalId = (result.content[0] as any).text.trim();
+    expect(globalId).toMatch(/^mem-/);
+
+    // Verify it landed in global store, not project
+    const { openRetrieve } = await import("../../../src/lib/memory/retrieve.js");
+    const globalRh = openRetrieve("global");
+    try {
+      const row = globalRh.index.getMemory(globalId);
+      expect(row).toBeDefined();
+      expect(row?.title).toBe("global gotcha via MCP");
+    } finally {
+      globalRh.close();
+    }
+
+    // Verify it did NOT land in project store
+    const projectRh = openRetrieve(repoKey);
+    try {
+      expect(projectRh.index.getMemory(globalId)).toBeUndefined();
+    } finally {
+      projectRh.close();
+    }
+  });
+});
+
 describe("MCP extract_session", () => {
 	it("extract_session tool runs the extractor and returns the manifest", async () => {
 		const extractRepoKey = await mkRepoKey("mcp-extract");
@@ -446,6 +496,42 @@ describe("MCP extract_session", () => {
 			expect(manifest.candidatesCreated).toBe(1);
 		} finally {
 			await cleanupRepo(extractRepoKey);
+		}
+	});
+});
+
+describe("MCP promote_to_global", () => {
+	it("promotes a project memory to global", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let id: string;
+		try {
+			id = await createMemory(lc, {
+				type: "gotcha",
+				title: "mcp promote test",
+				body: "## Body\ntest",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+				typeFields: { severity: "info" },
+			});
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "promote_to_global",
+			arguments: { repoKey, id: id! },
+		});
+		expect(result.isError).toBeFalsy();
+		const globalId = (result.content[0] as any).text.trim();
+		expect(globalId).toMatch(/^mem-/);
+
+		const { openRetrieve } = await import("../../../src/lib/memory/retrieve.js");
+		const globalRh = openRetrieve("global");
+		try {
+			expect(globalRh.index.getMemory(globalId)?.title).toBe("mcp promote test");
+		} finally {
+			globalRh.close();
 		}
 	});
 });
