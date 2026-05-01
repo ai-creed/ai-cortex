@@ -414,8 +414,28 @@ function escalationHint(r: FastSuggestResult): string {
 
 async function main(): Promise<void> {
 	try {
+		const {
+			INTERNAL_UPDATE_CHECK_FLAG,
+			checkForUpdate,
+			runBackgroundFetch,
+			printUpdateNotice,
+		} = await import("./lib/update-notifier.js");
+
+		if (command === INTERNAL_UPDATE_CHECK_FLAG) {
+			await runBackgroundFetch();
+			process.exit(0);
+		}
+
+		const currentVersion = readPackageVersion();
+		const updateAvailable = checkForUpdate({ currentVersion, command });
+		if (updateAvailable) {
+			process.on("exit", () => {
+				printUpdateNotice(currentVersion, updateAvailable);
+			});
+		}
+
 		if (command === "--version" || command === "-v" || command === "version") {
-			process.stdout.write(`ai-cortex ${readPackageVersion()}\n`);
+			process.stdout.write(`ai-cortex ${currentVersion}\n`);
 			process.exit(0);
 		}
 		if (command === "--help" || command === "-h" || command === "help") {
