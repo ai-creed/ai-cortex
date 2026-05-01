@@ -1,5 +1,6 @@
 // src/lib/memory/cli/promote.ts
 import { openLifecycle, promoteToGlobal, GLOBAL_REPO_KEY } from "../lifecycle.js";
+import { reconcileStore } from "../reconcile.js";
 
 export async function runMemoryPromote(
   args: string[],
@@ -15,9 +16,7 @@ export async function runMemoryPromote(
   }
   const out = opts.stdout ?? process.stdout;
   try {
-    // Reconcile global store before any write to it — CLI bypasses the MCP
-    // reconcile layer, so we call reconcileStore directly here.
-    const { reconcileStore } = await import("../reconcile.js");
+    // Reconcile global store before any write — CLI bypasses the MCP reconcile layer.
     await reconcileStore(GLOBAL_REPO_KEY, "cli-promote");
     const lc = await openLifecycle(opts.repoKey, { agentId: "cli-user" });
     try {
