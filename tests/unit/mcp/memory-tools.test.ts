@@ -8,6 +8,7 @@ import { createServer, resetReconciledKeys } from "../../../src/mcp/server.js";
 import {
 	openLifecycle,
 	createMemory,
+	trashMemory,
 } from "../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../src/lib/memory/retrieve.js";
 import { writeSession } from "../../../src/lib/history/store.js";
@@ -583,5 +584,185 @@ describe("MCP memory tool descriptions — opinionated guidance", () => {
 		const { tools } = await client.listTools();
 		const pro = tools.find((t: { name: string }) => t.name === "promote_to_global");
 		expect(pro?.description).toMatch(/cross-project|universal|language pattern/i);
+	});
+});
+
+describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
+	it("registers both tools with opinionated descriptions", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const names = tools.map((t: { name: string }) => t.name);
+		expect(names).toContain("list_memories_pending_rewrite");
+		expect(names).toContain("rewrite_memory");
+		const rewrite = tools.find((t: { name: string }) => t.name === "rewrite_memory");
+		expect(rewrite?.description).toMatch(/rule card|rule \+ rationale/i);
+		expect(rewrite?.description).toMatch(/promote|active/i);
+	});
+
+	it("list_memories_pending_rewrite returns only candidates passing the eligibility predicate", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		const ids: Record<string, string> = {};
+		try {
+			// (a) candidate, no signals — NOT eligible
+			ids.bare = await createMemory(lc, {
+				type: "decision",
+				title: "bare",
+				body: "## Body\nbare",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			// (b) candidate, re-extracted but no pin/get — NOT eligible
+			ids.reExtracted = await createMemory(lc, {
+				type: "decision",
+				title: "re-extracted only",
+				body: "## Body\nre",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index.bumpReExtract(ids.reExtracted);
+			// (c) candidate, re-extracted AND pinned — eligible
+			ids.eligibleByPin = await createMemory(lc, {
+				type: "decision",
+				title: "eligible by pin",
+				body: "## Body\np",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index.bumpReExtract(ids.eligibleByPin);
+			lc.index.rawDb().prepare("UPDATE memories SET pinned=1 WHERE id=?").run(ids.eligibleByPin);
+			// (d) candidate, re-extracted AND get_count > 0 — eligible
+			ids.eligibleByGet = await createMemory(lc, {
+				type: "decision",
+				title: "eligible by get",
+				body: "## Body\ng",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index.bumpReExtract(ids.eligibleByGet);
+			lc.index.bumpGetCount(ids.eligibleByGet);
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "list_memories_pending_rewrite",
+			arguments: { repoKey, limit: 10 },
+		});
+		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
+		const returnedIds = items.map((i) => i.id).sort();
+		expect(returnedIds).toEqual([ids.eligibleByGet, ids.eligibleByPin].sort());
+	});
+
+	it("list_memories_pending_rewrite honors the `since` filter", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let oldId: string;
+		let newId: string;
+		try {
+			oldId = await createMemory(lc, {
+				type: "decision",
+				title: "old",
+				body: "## Body\nold",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			newId = await createMemory(lc, {
+				type: "decision",
+				title: "new",
+				body: "## Body\nnew",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index.bumpReExtract(oldId);
+			lc.index.bumpReExtract(newId);
+			lc.index.bumpGetCount(oldId);
+			lc.index.bumpGetCount(newId);
+			lc.index.rawDb()
+				.prepare("UPDATE memories SET updated_at='2025-01-01T00:00:00Z' WHERE id=?")
+				.run(oldId);
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "list_memories_pending_rewrite",
+			arguments: { repoKey, since: "2026-01-01T00:00:00Z" },
+		});
+		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
+		const ids = items.map((i) => i.id);
+		expect(ids).toContain(newId);
+		expect(ids).not.toContain(oldId);
+	});
+
+	it("rewrite_memory promotes candidate to active and updates content", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let id: string;
+		try {
+			id = await createMemory(lc, {
+				type: "decision",
+				title: "raw",
+				body: "## Body\nraw",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "rewrite_memory",
+			arguments: {
+				repoKey,
+				id,
+				title: "Clean rule",
+				body: "## Rule\nclean\n\n## Rationale\nbecause",
+				scopeFiles: ["src/x.ts"],
+				scopeTags: ["x"],
+			},
+		});
+		expect(result.isError).toBeFalsy();
+
+		const lc2 = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const row = lc2.index.getMemory(id);
+			expect(row?.status).toBe("active");
+			expect(row?.title).toBe("Clean rule");
+			expect(row?.rewritten_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+		} finally {
+			lc2.close();
+		}
+	});
+
+	it("rewrite_memory errors on terminal-state memories", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let id: string;
+		try {
+			id = await createMemory(lc, {
+				type: "decision",
+				title: "x",
+				body: "## Body\nx",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			await trashMemory(lc, id, "test");
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "rewrite_memory",
+			arguments: {
+				repoKey,
+				id,
+				title: "y",
+				body: "## Rule\ny",
+				scopeFiles: [],
+				scopeTags: [],
+			},
+		});
+		expect(result.isError).toBe(true);
 	});
 });

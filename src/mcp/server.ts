@@ -56,6 +56,7 @@ import {
 	unpinMemory,
 	confirmMemory,
 	addEvidence,
+	rewriteMemory,
 } from "../lib/memory/lifecycle.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
 
@@ -1213,6 +1214,98 @@ export function createServer(): McpServer {
 						{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
 					],
 				};
+			}),
+		),
+	);
+
+	// ─── Subagent-driven cleanup ────────────────────────────────────────────────
+
+	server.registerTool(
+		"list_memories_pending_rewrite",
+		{
+			description:
+				"List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
+			inputSchema: {
+				repoKey: z.string(),
+				limit: z.number().int().positive().max(100).optional(),
+				since: z
+					.string()
+					.optional()
+					.describe(
+						"ISO timestamp; if provided, returns only candidates with updated_at >= since",
+					),
+			},
+		},
+		logged(
+			"list_memories_pending_rewrite",
+			(p) => ({ repoKey: p.repoKey }),
+			withReconcile(async (p) => {
+				const rh = openRetrieve(p.repoKey);
+				try {
+					const limit = p.limit ?? 25;
+					const sinceClause = p.since ? "AND updated_at >= ?" : "";
+					const params: Array<string | number> = p.since
+						? [p.since, limit]
+						: [limit];
+					const rows = rh.index
+						.rawDb()
+						.prepare(
+							`SELECT id, type, title, body_excerpt AS bodyExcerpt, confidence,
+							        re_extract_count AS reExtractCount, get_count AS getCount, pinned
+							 FROM memories
+							 WHERE status = 'candidate'
+							   AND rewritten_at IS NULL
+							   AND re_extract_count >= 1
+							   AND (pinned = 1 OR get_count > 0)
+							   ${sinceClause}
+							 ORDER BY confidence DESC, updated_at DESC
+							 LIMIT ?`,
+						)
+						.all(...params);
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
+						],
+					};
+				} finally {
+					rh.close();
+				}
+			}),
+		),
+	);
+
+	server.registerTool(
+		"rewrite_memory",
+		{
+			description:
+				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active memories stay active.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				title: z.string().min(1),
+				body: z.string().min(1),
+				scopeFiles: z.array(z.string()),
+				scopeTags: z.array(z.string()),
+				type: z.string().optional(),
+			},
+		},
+		logged(
+			"rewrite_memory",
+			(p) => ({ repoKey: p.repoKey, id: p.id }),
+			withReconcile(async (p) => {
+				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				try {
+					await rewriteMemory(lc, p.id, {
+						title: p.title,
+						body: p.body,
+						scopeFiles: p.scopeFiles,
+						scopeTags: p.scopeTags,
+						type: p.type,
+					});
+					return { content: [{ type: "text" as const, text: "ok\n" }] };
+				} finally {
+					lc.close();
+				}
 			}),
 		),
 	);
