@@ -33,10 +33,10 @@ export async function sweepAging(
   try {
     const db = lc.index.rawDb();
 
-    type AgingRow = { id: string; title: string; status: string; updated_at: string; confidence: number };
+    type AgingRow = { id: string; title: string; status: string; updated_at: string };
 
     const toTrash: AgingRow[] = db.prepare<[], AgingRow>(`
-      SELECT id, title, status, updated_at, confidence FROM memories
+      SELECT id, title, status, updated_at FROM memories
       WHERE (
         (status = 'candidate'    AND updated_at < ?)
         OR (status = 'deprecated'  AND updated_at < ?)
@@ -49,7 +49,7 @@ export async function sweepAging(
     );
 
     const toPurge: AgingRow[] = db.prepare<[], AgingRow>(`
-      SELECT id, title, status, updated_at, confidence FROM memories
+      SELECT id, title, status, updated_at FROM memories
       WHERE status = 'trashed' AND updated_at < ?
     `).all(cutoff(a.trashedToPurgedDays));
 
