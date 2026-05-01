@@ -31,6 +31,7 @@ import {
 	openRetrieve,
 	getMemory,
 	listMemories,
+	listMemoriesPendingRewrite,
 	auditMemory,
 	searchMemories,
 	recallMemory,
@@ -56,6 +57,7 @@ import {
 	unpinMemory,
 	confirmMemory,
 	addEvidence,
+	rewriteMemory,
 } from "../lib/memory/lifecycle.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
 
@@ -501,7 +503,7 @@ export function createServer(): McpServer {
 		"recall_memory",
 		{
 			description:
-				"Semantic memory recall with SQL scope pre-filter. Returns top-K memories most relevant to the query, ranked by cosine similarity + recency + confidence.",
+				"Browse stored project knowledge by query. Use BEFORE non-trivial edits to unfamiliar files, when debugging recurring symptoms, or when the user references a past decision. Pass scope.files for file-specific context; pass source: 'all' to include cross-project patterns. NOTE: this is browse-only and does not signal usage. To actually consult and use a result, follow up with get_memory(id). The store contains decisions, gotchas, how-tos, and patterns extracted from prior sessions.",
 			inputSchema: {
 				repoKey: z
 					.string()
@@ -565,7 +567,7 @@ export function createServer(): McpServer {
 		"get_memory",
 		{
 			description:
-				"Fetch a specific memory record by ID, including its full body.",
+				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -691,7 +693,7 @@ export function createServer(): McpServer {
 		"record_memory",
 		{
 			description:
-				"Record a new memory (decision, gotcha, pattern, how-to) in this project. Set globalScope=true to write to the cross-project global store instead.",
+				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks).",
 			inputSchema: {
 				repoKey: z.string(),
 				type: z.string().min(1),
@@ -795,7 +797,7 @@ export function createServer(): McpServer {
 		"deprecate_memory",
 		{
 			description:
-				"Mark a memory as deprecated (superseded but preserved for audit).",
+				"Deprecate a memory when its rule contradicts current code, conflicts with current user direction, or is otherwise no longer applicable. Deprecated memories are excluded from recall but preserved in audit. Use restore_memory to bring one back.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -1048,7 +1050,7 @@ export function createServer(): McpServer {
 	server.registerTool(
 		"confirm_memory",
 		{
-			description: "Confirm a candidate memory, promoting it to active status.",
+			description: "Confirm a candidate memory, promoting it to active. Call when the user explicitly endorses a candidate, or when the agent has used the rule successfully and validated it produced the right outcome. Note that rewrite_memory also auto-promotes candidate→active as a side effect of cleanup.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -1161,7 +1163,7 @@ export function createServer(): McpServer {
 		"promote_to_global",
 		{
 			description:
-				"Promote a project memory to the global store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for cross-project gotchas, language patterns, and tool quirks.",
+				"Promote a project memory to the global cross-project store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for universal patterns, language quirks, and tool gotchas that apply across multiple projects.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -1213,6 +1215,82 @@ export function createServer(): McpServer {
 						{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
 					],
 				};
+			}),
+		),
+	);
+
+	// ─── Subagent-driven cleanup ────────────────────────────────────────────────
+
+	server.registerTool(
+		"list_memories_pending_rewrite",
+		{
+			description:
+				"List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
+			inputSchema: {
+				repoKey: z.string(),
+				limit: z.number().int().positive().max(100).optional(),
+				since: z
+					.string()
+					.optional()
+					.describe(
+						"ISO timestamp; if provided, returns only candidates with updated_at >= since",
+					),
+			},
+		},
+		logged(
+			"list_memories_pending_rewrite",
+			(p) => ({ repoKey: p.repoKey }),
+			withReconcile(async (p) => {
+				const rh = openRetrieve(p.repoKey);
+				try {
+					const rows = listMemoriesPendingRewrite(rh, {
+						limit: p.limit,
+						since: p.since,
+					});
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
+						],
+					};
+				} finally {
+					rh.close();
+				}
+			}),
+		),
+	);
+
+	server.registerTool(
+		"rewrite_memory",
+		{
+			description:
+				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it).",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+				title: z.string().min(1),
+				body: z.string().min(1),
+				scopeFiles: z.array(z.string()),
+				scopeTags: z.array(z.string()),
+				type: z.string().optional(),
+			},
+		},
+		logged(
+			"rewrite_memory",
+			(p) => ({ repoKey: p.repoKey, id: p.id }),
+			withReconcile(async (p) => {
+				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				try {
+					await rewriteMemory(lc, p.id, {
+						title: p.title,
+						body: p.body,
+						scopeFiles: p.scopeFiles,
+						scopeTags: p.scopeTags,
+						type: p.type,
+					});
+					return { content: [{ type: "text" as const, text: "ok\n" }] };
+				} finally {
+					lc.close();
+				}
 			}),
 		),
 	);

@@ -23,10 +23,14 @@ export function parseMemoryMarkdown(text: string): MemoryRecord {
 	}
 	const fmText = text.slice(DELIM.length + 1, endIdx);
 	const body = text.slice(endIdx + DELIM.length + 2);
-	const fm = yaml.load(fmText) as MemoryFrontmatter;
-	if (!fm || typeof fm !== "object") {
+	const obj = yaml.load(fmText) as Record<string, unknown>;
+	if (!obj || typeof obj !== "object") {
 		throw new Error("frontmatter is not an object");
 	}
+	const fm: MemoryFrontmatter = {
+		...(obj as MemoryFrontmatter),
+		rewrittenAt: typeof obj.rewrittenAt === "string" ? obj.rewrittenAt : null,
+	};
 	return { frontmatter: fm, body };
 }
 

@@ -17,6 +17,10 @@ export type MemoryRow = {
 	pinned: number;
 	body_hash: string;
 	body_excerpt: string;
+	get_count: number;
+	last_accessed_at: string | null;
+	re_extract_count: number;
+	rewritten_at: string | null;
 };
 
 export type ScopeRow = { kind: "file" | "tag"; value: string };
@@ -39,7 +43,11 @@ CREATE TABLE IF NOT EXISTS memories (
   confidence REAL NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
   body_hash TEXT NOT NULL,
-  body_excerpt TEXT NOT NULL
+  body_excerpt TEXT NOT NULL,
+  get_count INTEGER NOT NULL DEFAULT 0,
+  last_accessed_at TEXT,
+  re_extract_count INTEGER NOT NULL DEFAULT 0,
+  rewritten_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
@@ -121,12 +129,12 @@ export class MemoryIndex {
 			this.db
 				.prepare(
 					`
-				INSERT INTO memories (id, type, status, title, version, created_at, updated_at, source, confidence, pinned, body_hash, body_excerpt)
-				VALUES (@id, @type, @status, @title, @version, @createdAt, @updatedAt, @source, @confidence, @pinned, @bodyHash, @bodyExcerpt)
+				INSERT INTO memories (id, type, status, title, version, created_at, updated_at, source, confidence, pinned, body_hash, body_excerpt, rewritten_at)
+				VALUES (@id, @type, @status, @title, @version, @createdAt, @updatedAt, @source, @confidence, @pinned, @bodyHash, @bodyExcerpt, @rewrittenAt)
 				ON CONFLICT(id) DO UPDATE SET
 					type=excluded.type, status=excluded.status, title=excluded.title, version=excluded.version,
 					updated_at=excluded.updated_at, source=excluded.source, confidence=excluded.confidence,
-					pinned=excluded.pinned, body_hash=excluded.body_hash, body_excerpt=excluded.body_excerpt
+					pinned=excluded.pinned, body_hash=excluded.body_hash, body_excerpt=excluded.body_excerpt, rewritten_at=excluded.rewritten_at
 			`,
 				)
 				.run({
@@ -142,6 +150,7 @@ export class MemoryIndex {
 					pinned: fm.pinned ? 1 : 0,
 					bodyHash: opts.bodyHash,
 					bodyExcerpt: opts.bodyExcerpt,
+					rewrittenAt: fm.rewrittenAt,
 				});
 
 			this.db
@@ -260,6 +269,36 @@ export class MemoryIndex {
 	rawDb(): DB {
 		return this.db;
 	}
+
+	bumpGetCount(id: string): void {
+		this.db
+			.prepare(
+				"UPDATE memories SET get_count = get_count + 1, last_accessed_at = ? WHERE id = ?",
+			)
+			.run(new Date().toISOString(), id);
+	}
+
+	bumpReExtract(id: string): void {
+		this.db
+			.prepare(
+				"UPDATE memories SET re_extract_count = re_extract_count + 1 WHERE id = ?",
+			)
+			.run(id);
+	}
+}
+
+function addColumnIfMissing(
+	db: DB,
+	table: string,
+	column: string,
+	definition: string,
+): void {
+	try {
+		db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) throw err;
+	}
 }
 
 export function openMemoryIndex(repoKey: string): MemoryIndex {
@@ -267,5 +306,9 @@ export function openMemoryIndex(repoKey: string): MemoryIndex {
 	fs.mkdirSync(dir, { recursive: true });
 	const db = new Database(indexDbPath(repoKey));
 	db.exec(SCHEMA_SQL);
+	addColumnIfMissing(db, "memories", "get_count", "INTEGER NOT NULL DEFAULT 0");
+	addColumnIfMissing(db, "memories", "last_accessed_at", "TEXT");
+	addColumnIfMissing(db, "memories", "re_extract_count", "INTEGER NOT NULL DEFAULT 0");
+	addColumnIfMissing(db, "memories", "rewritten_at", "TEXT");
 	return new MemoryIndex(db);
 }

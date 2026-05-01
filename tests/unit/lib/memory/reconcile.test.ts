@@ -43,6 +43,7 @@ function makeRecord(id: string): MemoryRecord {
 			mergedInto: null,
 			deprecationReason: null,
 			promotedFrom: [],
+			rewrittenAt: null,
 		},
 		body: "## Rule\ntest body",
 	};
@@ -93,6 +94,7 @@ describe("reconcileStore", () => {
 				mergedInto: null,
 				deprecationReason: null,
 				promotedFrom: [],
+				rewrittenAt: null,
 			},
 			{ bodyHash: "fakehash", bodyExcerpt: "x", body: "x" },
 		);

@@ -170,6 +170,7 @@ export async function createMemory(
 		mergedInto: null,
 		deprecationReason: null,
 		promotedFrom: [],
+		rewrittenAt: null,
 		typeFields: input.typeFields,
 	};
 
@@ -782,6 +783,69 @@ export async function bumpConfidence(
 	return next;
 }
 
+export function bumpReExtract(lc: LifecycleHandle, id: string): void {
+	lc.index.bumpReExtract(id);
+}
+
+export type RewriteMemoryFields = {
+	title: string;
+	body: string;
+	scopeFiles: string[];
+	scopeTags: string[];
+	type?: string;
+};
+
+export async function rewriteMemory(
+	lc: LifecycleHandle,
+	id: string,
+	fields: RewriteMemoryFields,
+): Promise<void> {
+	const memRow = lc.index.getMemory(id);
+	if (!memRow) throw new Error(`memory not found: ${id}`);
+
+	const status = memRow.status as MemoryStatus;
+	if (
+		status === "merged_into" ||
+		status === "trashed" ||
+		status === "purged_redacted"
+	) {
+		throw new Error(`cannot rewrite a ${status} memory`);
+	}
+
+	const current = await loadCurrent(lc, id);
+
+	const now = new Date().toISOString();
+	const promotedFromCandidate = status === "candidate";
+	const nextStatus = promotedFromCandidate ? "active" : status;
+	const nextConfidence = promotedFromCandidate ? 1.0 : current.frontmatter.confidence;
+
+	const updated: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: now,
+			rewrittenAt: now,
+			status: nextStatus,
+			title: fields.title,
+			scope: { files: [...fields.scopeFiles], tags: [...fields.scopeTags] },
+			confidence: nextConfidence,
+			...(fields.type ? { type: fields.type } : {}),
+		},
+		body: fields.body,
+	};
+
+	const prevBody = shouldPreserveBody(lc, current.frontmatter.type)
+		? current.body
+		: null;
+
+	await commit(lc, updated, {
+		changeType: "update",
+		prevBodyHash: memRow.body_hash,
+		prevBody,
+		reason: "rewrite",
+	});
+}
+
 export const GLOBAL_REPO_KEY = "global";
 
 export async function openGlobalLifecycle(
@@ -823,6 +887,7 @@ export async function promoteToGlobal(
 			supersedes: [],
 			mergedInto: null,
 			provenance: [...current.frontmatter.provenance],
+			rewrittenAt: null,
 		};
 		await commit(
 			globalLc,
