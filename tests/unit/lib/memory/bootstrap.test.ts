@@ -25,8 +25,11 @@ function mkSession(
 		evidence: {
 			toolCalls: [],
 			filePaths: [{ turn: 4, path: "src/x.ts" }],
-			userPrompts: [],
-			corrections: [{ turn: 4, text: correction }],
+			// Both fields populated as the real compactor would: every
+			// correction is also a userPrompt (and the extractor iterates
+			// over userPrompts for the imperative/symptom regex pass).
+			userPrompts: [{ turn: 4, text: `actually, ${correction}` }],
+			corrections: [{ turn: 4, text: `actually, ${correction}` }],
 		},
 		chunks: [],
 	};

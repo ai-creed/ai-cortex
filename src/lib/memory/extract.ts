@@ -405,6 +405,24 @@ export function nearestFile(
 }
 
 // ---------------------------------------------------------------------------
+// Confidence model — see specs/2026-04-30-memory-schema-design.md
+// "Post-implementation finding (2026-05-01) — correction-prefix as boost".
+// Decision/gotcha extractors iterate over all userPrompts; correction-prefix
+// and assistant-ACK each contribute +0.10 above a 0.35 base. The default
+// minConfidence: 0.4 floor (applied in extractFromSession) rejects bare
+// matches that pick up neither boost.
+// ---------------------------------------------------------------------------
+
+const BASE_CONFIDENCE = 0.35;
+const SIGNAL_BOOST = 0.1;
+
+// Mirror of CORRECTION_RE in src/lib/history/compact.ts. Kept local to the
+// extractor so the boost is computed from the prompt text directly without a
+// reverse lookup against evidence.corrections.
+const CORRECTION_PREFIX_RE =
+	/^\s*(no|stop|don't|dont|wait|actually|instead|but)\b/i;
+
+// ---------------------------------------------------------------------------
 // Gotcha heuristic
 // ---------------------------------------------------------------------------
 
@@ -418,30 +436,34 @@ export function produceGotchaCandidates(
 	evidence: EvidenceLayer,
 ): ProducedCandidate[] {
 	const out: ProducedCandidate[] = [];
-	for (const c of evidence.corrections) {
-		const symptom = SYMPTOM_RE.test(c.text);
-		if (!symptom) continue;
+	for (const u of evidence.userPrompts) {
+		if (!SYMPTOM_RE.test(u.text)) continue;
 		const workaround =
-			c.nextAssistantSnippet !== undefined &&
-			WORKAROUND_RE.test(c.nextAssistantSnippet);
-		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
-		const body = c.nextAssistantSnippet
-			? `**Symptom:** ${c.text}\n\n**Workaround:** ${c.nextAssistantSnippet}`
-			: `**Symptom:** ${c.text}`;
-		const file = nearestFile(evidence, c.turn);
+			u.nextAssistantSnippet !== undefined &&
+			WORKAROUND_RE.test(u.nextAssistantSnippet);
+		const correction = CORRECTION_PREFIX_RE.test(u.text);
+		const confidence =
+			BASE_CONFIDENCE +
+			(workaround ? SIGNAL_BOOST : 0) +
+			(correction ? SIGNAL_BOOST : 0);
+		const title = u.text.length <= 80 ? u.text : u.text.slice(0, 77) + "…";
+		const body = u.nextAssistantSnippet
+			? `**Symptom:** ${u.text}\n\n**Workaround:** ${u.nextAssistantSnippet}`
+			: `**Symptom:** ${u.text}`;
+		const file = nearestFile(evidence, u.turn);
 		out.push({
 			type: "gotcha",
 			title,
 			body,
 			scopeFiles: file ? [file] : [],
-			tags: extractTags(c.text),
-			confidence: workaround ? 0.55 : 0.45,
+			tags: extractTags(u.text),
+			confidence,
 			provenance: [
 				{
 					sessionId,
-					turn: c.turn,
-					kind: "user_correction",
-					excerpt: c.text.slice(0, 280),
+					turn: u.turn,
+					kind: correction ? "user_correction" : "user_prompt",
+					excerpt: u.text.slice(0, 280),
 				},
 			],
 			typeFields: { severity: "warning" },
@@ -463,28 +485,33 @@ export function produceDecisionCandidates(
 	evidence: EvidenceLayer,
 ): ProducedCandidate[] {
 	const out: ProducedCandidate[] = [];
-	for (const c of evidence.corrections) {
-		if (!IMPERATIVE_RE.test(c.text)) continue;
+	for (const u of evidence.userPrompts) {
+		if (!IMPERATIVE_RE.test(u.text)) continue;
 		const ack =
-			c.nextAssistantSnippet !== undefined &&
-			ACK_RE.test(c.nextAssistantSnippet);
-		const title = c.text.length <= 80 ? c.text : c.text.slice(0, 77) + "…";
-		const body = c.nextAssistantSnippet
-			? `${c.text}\n\n_Acknowledged:_ ${c.nextAssistantSnippet}`
-			: c.text;
+			u.nextAssistantSnippet !== undefined &&
+			ACK_RE.test(u.nextAssistantSnippet);
+		const correction = CORRECTION_PREFIX_RE.test(u.text);
+		const confidence =
+			BASE_CONFIDENCE +
+			(ack ? SIGNAL_BOOST : 0) +
+			(correction ? SIGNAL_BOOST : 0);
+		const title = u.text.length <= 80 ? u.text : u.text.slice(0, 77) + "…";
+		const body = u.nextAssistantSnippet
+			? `${u.text}\n\n_Acknowledged:_ ${u.nextAssistantSnippet}`
+			: u.text;
 		out.push({
 			type: "decision",
 			title,
 			body,
-			scopeFiles: filesNearTurn(evidence, c.turn, 3),
-			tags: extractTags(c.text),
-			confidence: ack ? 0.55 : 0.45,
+			scopeFiles: filesNearTurn(evidence, u.turn, 3),
+			tags: extractTags(u.text),
+			confidence,
 			provenance: [
 				{
 					sessionId,
-					turn: c.turn,
-					kind: "user_correction",
-					excerpt: c.text.slice(0, 280),
+					turn: u.turn,
+					kind: correction ? "user_correction" : "user_prompt",
+					excerpt: u.text.slice(0, 280),
 				},
 			],
 		});

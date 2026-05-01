@@ -481,8 +481,12 @@ describe("MCP extract_session", () => {
 				evidence: {
 					toolCalls: [],
 					filePaths: [],
-					userPrompts: [],
-					corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
+					userPrompts: [
+						{ turn: 1, text: "actually, always run pnpm typecheck" },
+					],
+					corrections: [
+						{ turn: 1, text: "actually, always run pnpm typecheck" },
+					],
 				},
 				chunks: [],
 			});

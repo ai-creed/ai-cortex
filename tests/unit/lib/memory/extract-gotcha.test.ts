@@ -10,15 +10,15 @@ const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	...overrides,
 });
 
-describe("produceGotchaCandidates", () => {
-	it("emits a candidate when symptom + workaround signals are both present", () => {
+describe("produceGotchaCandidates — confidence tiers", () => {
+	it("0.55: correction prefix + symptom + workaround", () => {
 		const out = produceGotchaCandidates(
 			"s-1",
 			ev({
-				corrections: [
+				userPrompts: [
 					{
 						turn: 6,
-						text: "the build breaks on Linux because Parser isn't initialized",
+						text: "actually, the build breaks on Linux because Parser isn't initialized",
 						nextAssistantSnippet:
 							"Fix: call Parser.init() once before parallel adapters instead of in each factory.",
 					},
@@ -33,21 +33,53 @@ describe("produceGotchaCandidates", () => {
 		expect(out[0].typeFields).toEqual({ severity: "warning" });
 	});
 
-	it("emits at 0.45 when only the symptom is present", () => {
+	it("0.45: symptom + workaround, no correction prefix", () => {
 		const out = produceGotchaCandidates(
 			"s-2",
 			ev({
-				corrections: [{ turn: 1, text: "the test is flaky and hangs on CI" }],
+				userPrompts: [
+					{
+						turn: 6,
+						text: "the build breaks on Linux because Parser isn't initialized",
+						nextAssistantSnippet:
+							"Fix: call Parser.init() once before parallel adapters.",
+					},
+				],
 			}),
 		);
+		expect(out).toHaveLength(1);
 		expect(out[0].confidence).toBeCloseTo(0.45, 2);
 	});
 
-	it("ignores corrections with neither symptom nor workaround signals", () => {
+	it("0.45: symptom + correction prefix, no workaround", () => {
 		const out = produceGotchaCandidates(
 			"s-3",
 			ev({
-				corrections: [{ turn: 1, text: "actually use a different name" }],
+				userPrompts: [
+					{ turn: 1, text: "actually the test is flaky and hangs on CI" },
+				],
+			}),
+		);
+		expect(out).toHaveLength(1);
+		expect(out[0].confidence).toBeCloseTo(0.45, 2);
+	});
+
+	it("0.35: bare symptom, no boost", () => {
+		const out = produceGotchaCandidates(
+			"s-4",
+			ev({
+				userPrompts: [{ turn: 1, text: "the test is flaky and hangs on CI" }],
+			}),
+		);
+		expect(out).toHaveLength(1);
+		expect(out[0].confidence).toBeCloseTo(0.35, 2);
+	});
+
+	it("ignores prompts without symptom cues", () => {
+		const out = produceGotchaCandidates(
+			"s-5",
+			ev({
+				userPrompts: [{ turn: 1, text: "actually use a different name" }],
 			}),
 		);
 		expect(out).toEqual([]);

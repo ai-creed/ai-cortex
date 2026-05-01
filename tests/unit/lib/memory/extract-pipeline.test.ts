@@ -29,11 +29,17 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [{ turn: 5, path: "src/api/create.ts" }],
-				userPrompts: [],
+				userPrompts: [
+					{
+						turn: 4,
+						text: "actually, you must always use POST for create endpoints",
+						nextAssistantSnippet: "Got it — switching to POST.",
+					},
+				],
 				corrections: [
 					{
 						turn: 4,
-						text: "you must always use POST for create endpoints",
+						text: "actually, you must always use POST for create endpoints",
 						nextAssistantSnippet: "Got it — switching to POST.",
 					},
 				],
@@ -73,9 +79,11 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [{ turn: 4, path: "src/api/create.ts" }],
-				userPrompts: [],
+				userPrompts: [
+					{ turn: 4, text: "actually, always use POST for create endpoints" },
+				],
 				corrections: [
-					{ turn: 4, text: "always use POST for create endpoints" },
+					{ turn: 4, text: "actually, always use POST for create endpoints" },
 				],
 			},
 			chunks: [],
@@ -97,9 +105,17 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [{ turn: 2, path: "src/api/update.ts" }],
-				userPrompts: [],
+				userPrompts: [
+					{
+						turn: 2,
+						text: "actually, always prefer POST for create endpoints",
+					},
+				],
 				corrections: [
-					{ turn: 2, text: "always prefer POST for create endpoints" },
+					{
+						turn: 2,
+						text: "actually, always prefer POST for create endpoints",
+					},
 				],
 			},
 			chunks: [],
@@ -134,8 +150,12 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [],
-				userPrompts: [],
-				corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
+				userPrompts: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
+				corrections: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
 			},
 			chunks: [],
 		});
@@ -172,8 +192,12 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [],
-				userPrompts: [],
-				corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
+				userPrompts: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
+				corrections: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
 			},
 			chunks: [],
 		});
@@ -196,10 +220,13 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [],
-				userPrompts: [],
+				userPrompts: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+					{ turn: 5, text: "actually, never disable hooks during commit" },
+				],
 				corrections: [
-					{ turn: 1, text: "always run pnpm typecheck" },
-					{ turn: 5, text: "never disable hooks during commit" },
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+					{ turn: 5, text: "actually, never disable hooks during commit" },
 				],
 			},
 			chunks: [],
@@ -232,8 +259,12 @@ describe("extractFromSession — end to end", () => {
 			evidence: {
 				toolCalls: [],
 				filePaths: [],
-				userPrompts: [],
-				corrections: [{ turn: 1, text: "always run pnpm typecheck" }],
+				userPrompts: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
+				corrections: [
+					{ turn: 1, text: "actually, always run pnpm typecheck" },
+				],
 			},
 			chunks: [],
 		});

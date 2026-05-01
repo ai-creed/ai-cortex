@@ -10,65 +10,119 @@ const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	...overrides,
 });
 
-describe("produceDecisionCandidates", () => {
-	it("emits a candidate for an imperative correction", () => {
+describe("produceDecisionCandidates — confidence tiers", () => {
+	it("0.55: correction prefix + imperative + assistant ACK", () => {
 		const out = produceDecisionCandidates(
 			"s-1",
 			ev({
-				corrections: [
-					{ turn: 4, text: "you must always use POST for create endpoints" },
-				],
-				filePaths: [{ turn: 5, path: "src/api/create.ts" }],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].type).toBe("decision");
-		expect(out[0].confidence).toBeCloseTo(0.45, 2);
-		expect(out[0].scopeFiles).toEqual(["src/api/create.ts"]);
-		expect(out[0].provenance[0].sessionId).toBe("s-1");
-	});
-
-	it("bumps confidence to 0.55 when an acknowledgment cue is in nextAssistantSnippet", () => {
-		const out = produceDecisionCandidates(
-			"s-2",
-			ev({
-				corrections: [
+				userPrompts: [
 					{
 						turn: 4,
-						text: "always prefer composition over inheritance",
+						text: "actually, always prefer composition over inheritance",
 						nextAssistantSnippet:
 							"Got it — I'll use composition going forward.",
 					},
 				],
 			}),
 		);
+		expect(out).toHaveLength(1);
 		expect(out[0].confidence).toBeCloseTo(0.55, 2);
 	});
 
-	it("ignores corrections without imperative cues", () => {
+	it("0.45: imperative + ACK, no correction prefix", () => {
+		const out = produceDecisionCandidates(
+			"s-2",
+			ev({
+				userPrompts: [
+					{
+						turn: 4,
+						text: "always use POST for create endpoints",
+						nextAssistantSnippet: "Understood — POST it is.",
+					},
+				],
+			}),
+		);
+		expect(out).toHaveLength(1);
+		expect(out[0].confidence).toBeCloseTo(0.45, 2);
+	});
+
+	it("0.45: imperative + correction prefix, no ACK", () => {
 		const out = produceDecisionCandidates(
 			"s-3",
 			ev({
-				corrections: [{ turn: 4, text: "wait, hold on a sec" }],
+				userPrompts: [
+					{
+						turn: 4,
+						text: "actually, always use POST for create endpoints",
+					},
+				],
+			}),
+		);
+		expect(out).toHaveLength(1);
+		expect(out[0].confidence).toBeCloseTo(0.45, 2);
+	});
+
+	it("0.35: bare imperative, no ACK, no correction prefix", () => {
+		const out = produceDecisionCandidates(
+			"s-4",
+			ev({
+				userPrompts: [
+					{
+						turn: 4,
+						text: "always use POST for create endpoints",
+					},
+				],
+			}),
+		);
+		expect(out).toHaveLength(1);
+		expect(out[0].confidence).toBeCloseTo(0.35, 2);
+	});
+
+	it("ignores prompts without imperative cues", () => {
+		const out = produceDecisionCandidates(
+			"s-5",
+			ev({
+				userPrompts: [{ turn: 4, text: "wait, hold on a sec" }],
 			}),
 		);
 		expect(out).toEqual([]);
 	});
 
-	it("derives tags from the correction body", () => {
+	it("derives tags and scope files from the prompt and surrounding evidence", () => {
 		const out = produceDecisionCandidates(
-			"s-4",
+			"s-6",
 			ev({
-				corrections: [
+				userPrompts: [
 					{
-						turn: 1,
+						turn: 5,
 						text: "always validate webhook signatures before processing",
 					},
 				],
+				filePaths: [{ turn: 5, path: "src/api/create.ts" }],
 			}),
 		);
 		expect(out[0].tags).toEqual(
 			expect.arrayContaining(["webhook", "signatures"]),
 		);
+		expect(out[0].scopeFiles).toEqual(["src/api/create.ts"]);
+	});
+
+	it("provenance kind reflects whether the prompt was a correction", () => {
+		const out = produceDecisionCandidates(
+			"s-7",
+			ev({
+				userPrompts: [
+					{ turn: 1, text: "actually, always prefer pino over winston" },
+					{ turn: 2, text: "always use POST for create endpoints" },
+				],
+			}),
+		);
+		expect(out).toHaveLength(2);
+		const correctionEntry = out.find((c) =>
+			c.title.startsWith("actually,"),
+		)!;
+		const plainEntry = out.find((c) => c.title.startsWith("always use POST"))!;
+		expect(correctionEntry.provenance[0].kind).toBe("user_correction");
+		expect(plainEntry.provenance[0].kind).toBe("user_prompt");
 	});
 });
