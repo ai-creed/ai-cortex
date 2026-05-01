@@ -38,6 +38,8 @@ import {
 } from "../lib/memory/retrieve.js";
 import {
 	openLifecycle,
+	openGlobalLifecycle,
+	GLOBAL_REPO_KEY,
 	createMemory,
 	updateMemory,
 	updateScope,
@@ -688,7 +690,7 @@ export function createServer(): McpServer {
 		"record_memory",
 		{
 			description:
-				"Record a new memory (decision, gotcha, pattern, how-to) in this project.",
+				"Record a new memory (decision, gotcha, pattern, how-to) in this project. Set globalScope=true to write to the cross-project global store instead.",
 			inputSchema: {
 				repoKey: z.string(),
 				type: z.string().min(1),
@@ -698,13 +700,18 @@ export function createServer(): McpServer {
 				scopeTags: z.array(z.string()).optional(),
 				source: z.enum(["explicit", "extracted"]).optional(),
 				confidence: z.number().min(0).max(1).optional(),
+				typeFields: z.record(z.unknown()).optional(),
+				globalScope: z.boolean().optional(),
 			},
 		},
 		logged(
 			"record_memory",
 			(p) => ({ repoKey: p.repoKey, type: p.type, title: p.title }),
 			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				if (p.globalScope) await maybeReconcile(GLOBAL_REPO_KEY);
+				const lc = p.globalScope
+					? await openGlobalLifecycle({ agentId: "mcp" })
+					: await openLifecycle(p.repoKey, { agentId: "mcp" });
 				try {
 					const id = await createMemory(lc, {
 						type: p.type,
@@ -713,6 +720,7 @@ export function createServer(): McpServer {
 						scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
 						source: p.source ?? "explicit",
 						confidence: p.confidence,
+						typeFields: p.typeFields,
 					});
 					return { content: [{ type: "text" as const, text: `${id}\n` }] };
 				} finally {
