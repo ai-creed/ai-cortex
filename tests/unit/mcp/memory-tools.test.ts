@@ -568,7 +568,7 @@ describe("MCP memory tool descriptions — opinionated guidance", () => {
 		const client = await makeClient();
 		const { tools } = await client.listTools();
 		const dep = tools.find((t: { name: string }) => t.name === "deprecate_memory");
-		expect(dep?.description).toMatch(/contradicts|no longer applies|outdated/i);
+		expect(dep?.description).toMatch(/contradicts|no longer applicable|outdated/i);
 	});
 
 	it("confirm_memory description names when to call", async () => {
