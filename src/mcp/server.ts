@@ -31,6 +31,7 @@ import {
 	openRetrieve,
 	getMemory,
 	listMemories,
+	listMemoriesPendingRewrite,
 	auditMemory,
 	searchMemories,
 	recallMemory,
@@ -1242,26 +1243,10 @@ export function createServer(): McpServer {
 			withReconcile(async (p) => {
 				const rh = openRetrieve(p.repoKey);
 				try {
-					const limit = p.limit ?? 25;
-					const sinceClause = p.since ? "AND updated_at >= ?" : "";
-					const params: Array<string | number> = p.since
-						? [p.since, limit]
-						: [limit];
-					const rows = rh.index
-						.rawDb()
-						.prepare(
-							`SELECT id, type, title, body_excerpt AS bodyExcerpt, confidence,
-							        re_extract_count AS reExtractCount, get_count AS getCount, pinned
-							 FROM memories
-							 WHERE status = 'candidate'
-							   AND rewritten_at IS NULL
-							   AND re_extract_count >= 1
-							   AND (pinned = 1 OR get_count > 0)
-							   ${sinceClause}
-							 ORDER BY confidence DESC, updated_at DESC
-							 LIMIT ?`,
-						)
-						.all(...params);
+					const rows = listMemoriesPendingRewrite(rh, {
+						limit: p.limit,
+						since: p.since,
+					});
 					return {
 						content: [
 							{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
@@ -1278,7 +1263,7 @@ export function createServer(): McpServer {
 		"rewrite_memory",
 		{
 			description:
-				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active memories stay active.",
+				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it).",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),

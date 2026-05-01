@@ -84,6 +84,48 @@ export function auditMemory(rh: RetrieveHandle, id: string): AuditRow[] {
 	return rh.index.auditRows(id);
 }
 
+export type PendingRewriteRow = {
+	id: string;
+	type: string;
+	title: string;
+	bodyExcerpt: string;
+	confidence: number;
+	reExtractCount: number;
+	getCount: number;
+	pinned: number;
+};
+
+export type PendingRewriteFilter = {
+	limit?: number;
+	since?: string;
+};
+
+export function listMemoriesPendingRewrite(
+	rh: RetrieveHandle,
+	filter: PendingRewriteFilter = {},
+): PendingRewriteRow[] {
+	const limit = filter.limit ?? 25;
+	const sinceClause = filter.since ? "AND updated_at >= ?" : "";
+	const params: Array<string | number> = filter.since
+		? [filter.since, limit]
+		: [limit];
+	return rh.index
+		.rawDb()
+		.prepare(
+			`SELECT id, type, title, body_excerpt AS bodyExcerpt, confidence,
+			        re_extract_count AS reExtractCount, get_count AS getCount, pinned
+			 FROM memories
+			 WHERE status = 'candidate'
+			   AND rewritten_at IS NULL
+			   AND re_extract_count >= 1
+			   AND (pinned = 1 OR get_count > 0)
+			   ${sinceClause}
+			 ORDER BY confidence DESC, updated_at DESC
+			 LIMIT ?`,
+		)
+		.all(...params) as PendingRewriteRow[];
+}
+
 export type SearchHit = {
 	id: string;
 	title: string;
