@@ -182,6 +182,6 @@ Total: ~7–11 hours of focused work plus tests. No big-bang.
 
 ## Cross-references
 
-- Builds on: `2026-04-30-memory-schema-design.md` — the schema, lifecycle, and extractor pipeline this spec extends.
-- Post-impl finding 2026-05-01 (correction-prefix as boost): commit `48b8f63`. Validates that extraction recall is now adequate; this spec addresses the next bottleneck (precision and utility).
-- Phase 2b — `2026-05-01-memory-schema-phase-2b-aging-global.md`: aging sweep + global tier; both still required and unaffected by this spec.
+- Builds on: `docs/superpowers/specs/2026-04-30-memory-schema-design.md` — the schema, lifecycle, and extractor pipeline this spec extends.
+- Post-impl finding 2026-05-01 (correction-prefix as boost): commit `48b8f63`. Documented in the parent spec above. Validates that extraction recall is now adequate; this spec addresses the next bottleneck (precision and utility).
+- Phase 2 implementation plans (already shipped): `docs/superpowers/plans/2026-04-30-memory-schema-phase-2a-extractor-bootstrap.md` and `docs/superpowers/plans/2026-05-01-memory-schema-phase-2b-aging-global.md`. Their lifecycle, aging sweep, and two-tier storage are unaffected by this spec.
