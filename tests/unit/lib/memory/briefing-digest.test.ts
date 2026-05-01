@@ -65,12 +65,10 @@ describe("renderMemoryDigest", () => {
 		expect(matches.length).toBe(5);
 	});
 
-	it("renders every type present in the store, not a hard-coded subset", async () => {
-		// Verifies the digest queries DISTINCT type from the index rather than
-		// iterating a hardcoded list. If a custom type is registered (via
-		// types.json), it must appear too. Here we cover decision + gotcha to
-		// prove the renderer is type-agnostic; user-registered types follow the
-		// same code path because the implementation reads from the index.
+	it("renders multiple types present in the store via lifecycle createMemory", async () => {
+		// Smoke test that the digest renders one section per type that appears
+		// in the store. Two built-in types (decision, gotcha) cover the
+		// happy path through createMemory + registry validation.
 		const lc = await openLifecycle(repoKey, { agentId: "test" });
 		try {
 			await createMemory(lc, {
@@ -94,6 +92,34 @@ describe("renderMemoryDigest", () => {
 		const out = await renderMemoryDigest(repoKey);
 		expect(out!).toMatch(/### .*Decision/);
 		expect(out!).toMatch(/### .*Gotcha/);
+	});
+
+	it("renders user-registered (non-built-in) types via direct SQL — proves the renderer queries DISTINCT type, not a hardcoded list", async () => {
+		// Bypass the registry/lifecycle to simulate a future user-registered
+		// type. Insert a row directly with type="custom-rule"; the renderer
+		// must surface it in its own section because the SQL query is
+		// type-agnostic.
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const db = lc.index.rawDb();
+			db.prepare(
+				`INSERT INTO memories
+				 (id, type, status, title, version, created_at, updated_at,
+				  source, confidence, pinned, body_hash, body_excerpt)
+				 VALUES (?, ?, 'active', ?, 1, ?, ?, 'explicit', 1.0, 0, '0', '')`,
+			).run(
+				"mem-custom-1",
+				"custom-rule",
+				"a custom-rule memory",
+				new Date().toISOString(),
+				new Date().toISOString(),
+			);
+		} finally {
+			lc.close();
+		}
+		const out = await renderMemoryDigest(repoKey);
+		expect(out!).toMatch(/### .*custom-rule/i);
+		expect(out!).toContain("a custom-rule memory");
 	});
 
 	it("includes 'How to consult' guidance with get_memory mention", async () => {
