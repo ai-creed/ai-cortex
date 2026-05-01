@@ -491,6 +491,45 @@ Rule-based and regex-heavy. Confidence reflects signal strength; nothing extract
 
 These heuristics are explicitly fragile starting points. The whole pipeline is gated by the `candidate` lifecycle state; the dedup + aging story is the safety net.
 
+### Post-implementation finding (2026-05-01) — correction-prefix as boost, not gate
+
+**Status:** diagnosed during smoke testing on real session captures. Fix designed but not yet shipped at the time of writing.
+
+**Original design (above table):** the `decision` and `gotcha` heuristics required the trigger to be a `correction`, where `correction` is defined by the session compactor as a user prompt matching `^\s*(no|stop|don't|wait|actually|instead|but)\b`. That correction prefix was meant as a quality signal — corrections are higher-leverage than ordinary prompts.
+
+**Actual behavior:** the correction-prefix predicate was implemented as a **hard gate** rather than a quality signal. Decision/gotcha extractors iterate over `evidence.corrections`, not `evidence.userPrompts`, so any prompt without a correction prefix is silently dropped before the imperative/symptom regexes ever run.
+
+**Measured impact across two real repos:**
+
+| Repo | User prompts | Detected corrections (`%`) | Current pipeline (dec / got) | Available signal if regex applied to all prompts (dec / got) | Signal kept |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ai-cortex | 323 | 5 (1.5%) | 2 / 0 | 84 / 61 | 1.4% |
+| Favro | 815 | 26 (3.2%) | 8 / 3 | 153 / 89 | 4.5% |
+
+The gate drops 95–98% of available signal. A user prompt like `"always use pino for logging"` followed by `"got it"` is discarded because the user didn't start with `actually`/`but`/etc. — even though the imperative cue is present and the assistant acknowledged.
+
+**Corrective design — decouple-and-stratify:** treat the correction prefix as one of two **additive confidence boosts**, not a gate.
+
+- `decision` and `gotcha` extractors iterate over `evidence.userPrompts` (not `evidence.corrections`).
+- Confidence is computed as `0.35` base + `0.10` if the next assistant turn matches the ACK cue + `0.10` if the user prompt itself matches the correction-prefix regex.
+- The default `minConfidence: 0.4` floor stays. A bare imperative/symptom match (0.35) gets rejected unless it picks up at least one quality signal (ack OR correction prefix → 0.45). Both signals together → 0.55, matching today's high-confidence tier.
+
+Resulting tiers (effective with `minConfidence: 0.4`):
+
+| User signal stack | Confidence | Pass floor? | Captured today? |
+| --- | ---: | --- | --- |
+| Bare imperative/symptom | 0.35 | rejected | n/a (gate blocks) |
+| + assistant ACK | 0.45 | accepted | n/a (gate blocks) |
+| + correction prefix | 0.45 | accepted | n/a (gate blocks) |
+| + ACK + correction prefix | 0.55 | accepted | yes — unchanged |
+
+**The 0.55 high-confidence tier is unchanged** — same prompts produce the same candidates with the same confidence. The fix only widens the middle (0.45) tier and adds a logged-but-rejected (0.35) tier.
+
+**Out of scope for this correction:**
+- `pattern` extractor (cross-session co-occurrence) — different mechanism, not affected.
+- `how-to` extractor — review separately; if it has the same shape, apply the same fix.
+- `evidence.corrections` field is still populated by the compactor and used by history search ranking. Only the *gate semantics* in the extractors change.
+
 ### Cross-session deduplication
 
 The single most important step. Without it, the same insight produces N candidates over N sessions.
