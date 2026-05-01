@@ -26,7 +26,9 @@ export async function getMemory(
 	const row = rh.index.getMemory(id);
 	if (!row) throw new Error(`memory not found: ${id}`);
 	const location = row.status === "trashed" ? "trash" : "memories";
-	return readMemoryFile(rh.repoKey, id, location);
+	const record = await readMemoryFile(rh.repoKey, id, location);
+	rh.index.bumpGetCount(id);
+	return record;
 }
 
 export type ListFilter = {
