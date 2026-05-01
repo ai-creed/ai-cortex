@@ -787,6 +787,61 @@ export function bumpReExtract(lc: LifecycleHandle, id: string): void {
 	lc.index.bumpReExtract(id);
 }
 
+export type RewriteMemoryFields = {
+	title: string;
+	body: string;
+	scopeFiles: string[];
+	scopeTags: string[];
+	type?: string;
+};
+
+export async function rewriteMemory(
+	lc: LifecycleHandle,
+	id: string,
+	fields: RewriteMemoryFields,
+): Promise<void> {
+	const memRow = lc.index.getMemory(id);
+	if (!memRow) throw new Error(`memory not found: ${id}`);
+
+	const status = memRow.status as MemoryStatus;
+	if (
+		status === "merged_into" ||
+		status === "trashed" ||
+		status === "purged_redacted"
+	) {
+		throw new Error(`cannot rewrite a ${status} memory`);
+	}
+
+	const current = await loadCurrent(lc, id);
+
+	const now = new Date().toISOString();
+	const promotedFromCandidate = status === "candidate";
+	const nextStatus = promotedFromCandidate ? "active" : status;
+	const nextConfidence = promotedFromCandidate ? 1.0 : current.frontmatter.confidence;
+
+	const updated: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: now,
+			rewrittenAt: now,
+			status: nextStatus,
+			title: fields.title,
+			scope: { files: fields.scopeFiles, tags: fields.scopeTags },
+			confidence: nextConfidence,
+			...(fields.type ? { type: fields.type } : {}),
+		},
+		body: fields.body,
+	};
+
+	await commit(lc, updated, {
+		changeType: "update",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: current.body,
+		reason: "rewrite",
+	});
+}
+
 export const GLOBAL_REPO_KEY = "global";
 
 export async function openGlobalLifecycle(
