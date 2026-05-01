@@ -35,7 +35,7 @@ export async function sweepAging(
 
     type AgingRow = { id: string; title: string; status: string; updated_at: string };
 
-    const toTrash: AgingRow[] = db.prepare<[], AgingRow>(`
+    const toTrash = db.prepare(`
       SELECT id, title, status, updated_at FROM memories
       WHERE (
         (status = 'candidate'    AND updated_at < ?)
@@ -46,12 +46,12 @@ export async function sweepAging(
       cutoff(a.candidateToTrashedDays),
       cutoff(a.deprecatedToTrashedDays),
       cutoff(a.mergedIntoToTrashedDays),
-    );
+    ) as AgingRow[];
 
-    const toPurge: AgingRow[] = db.prepare<[], AgingRow>(`
+    const toPurge = db.prepare(`
       SELECT id, title, status, updated_at FROM memories
       WHERE status = 'trashed' AND updated_at < ?
-    `).all(cutoff(a.trashedToPurgedDays));
+    `).all(cutoff(a.trashedToPurgedDays)) as AgingRow[];
 
     const actions: AgingAction[] = [];
 
