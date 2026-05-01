@@ -72,7 +72,7 @@ The agent's flow:
 3. Spawns a subagent with the candidates as context: "Rewrite each into a rule card."
 4. Subagent returns cleaned versions; main agent calls `apply_rewrite` for each.
 
-ai-cortex sees only the MCP calls. It has no opinion on which agent invoked them or how the rewrite was generated. A user without a subagent-capable agent can manually `apply_rewrite` via CLI; a user with no rewrite capability at all just leaves candidates raw.
+ai-cortex sees only the MCP calls. It has no opinion on which agent invoked them or how the rewrite was generated. **No CLI commands** ship for `list_pending_rewrites` / `apply_rewrite` in this round — manual cleanup would require the user to bring their own LLM/API key, which contradicts the "no LLM dependency" stance. Users with subagent-capable agents drive cleanup via MCP; users without simply leave candidates raw and accept the lower memory quality.
 
 **Cleanup triggers (what makes a candidate "pending"):**
 
@@ -152,7 +152,7 @@ These additions are cheap and unlock future work where the agent (or a server-si
 | 1 | C: Tool description hardening | 30 min |
 | 2 | A: Briefing memory digest section | 1–2 h |
 | 3 | D: Audit `recall` changeType + `recallCount` field (data shape) | 30 min |
-| 4 | B': MCP `list_pending_rewrites` + `apply_rewrite`, schema additions, eligibility logic, descriptions | 4–8 h |
+| 4 | B': MCP `list_pending_rewrites` + `apply_rewrite`, schema additions, eligibility logic, descriptions (MCP-only — no CLI parity) | 4–8 h |
 
 Each phase ships a working improvement. Phase 1 lifts call rate even with no other changes. Phase 2 lifts agent awareness. Phase 3 locks future-loop schema. Phase 4 enables cleanup.
 
