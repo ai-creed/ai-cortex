@@ -232,7 +232,14 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 			continue;
 		}
 		if (a === "--source" && args[i + 1]) {
-			source = args[++i] as "project" | "global" | "all";
+			const val = args[++i];
+			if (val !== "project" && val !== "global" && val !== "all") {
+				process.stderr.write(
+					`ai-cortex: --source must be project, global, or all (got '${val}')\n`,
+				);
+				process.exit(1);
+			}
+			source = val;
 			continue;
 		}
 		if (!a.startsWith("--") && !query) {

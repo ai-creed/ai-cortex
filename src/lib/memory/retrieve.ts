@@ -302,6 +302,8 @@ export async function recallMemory(
 
 export type RecallSource = "project" | "global" | "all";
 
+const SOURCE_BOOST = 0.1;
+
 export async function recallMemoryCrossTier(
 	projectRh: RetrieveHandle,
 	globalRh: RetrieveHandle,
@@ -316,7 +318,6 @@ export async function recallMemoryCrossTier(
 		recallMemory(globalRh, query, fetchOpts),
 	]);
 
-	const SOURCE_BOOST = 0.1;
 	const merged = [
 		...projectResults.map((r) => ({ ...r, score: r.score + SOURCE_BOOST })),
 		...globalResults,
