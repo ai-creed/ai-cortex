@@ -501,7 +501,7 @@ export function createServer(): McpServer {
 		"recall_memory",
 		{
 			description:
-				"Semantic memory recall with SQL scope pre-filter. Returns top-K memories most relevant to the query, ranked by cosine similarity + recency + confidence.",
+				"Browse stored project knowledge by query. Use BEFORE non-trivial edits to unfamiliar files, when debugging recurring symptoms, or when the user references a past decision. Pass scope.files for file-specific context; pass source: 'all' to include cross-project patterns. NOTE: this is browse-only and does not signal usage. To actually consult and use a result, follow up with get_memory(id). The store contains decisions, gotchas, how-tos, and patterns extracted from prior sessions.",
 			inputSchema: {
 				repoKey: z
 					.string()
@@ -565,7 +565,7 @@ export function createServer(): McpServer {
 		"get_memory",
 		{
 			description:
-				"Fetch a specific memory record by ID, including its full body.",
+				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -691,7 +691,7 @@ export function createServer(): McpServer {
 		"record_memory",
 		{
 			description:
-				"Record a new memory (decision, gotcha, pattern, how-to) in this project. Set globalScope=true to write to the cross-project global store instead.",
+				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks).",
 			inputSchema: {
 				repoKey: z.string(),
 				type: z.string().min(1),
@@ -795,7 +795,7 @@ export function createServer(): McpServer {
 		"deprecate_memory",
 		{
 			description:
-				"Mark a memory as deprecated (superseded but preserved for audit).",
+				"Deprecate a memory when its rule contradicts current code, conflicts with current user direction, or is otherwise no longer applicable. Deprecated memories are excluded from recall but preserved in audit. Use restore_memory to bring one back.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -1048,7 +1048,7 @@ export function createServer(): McpServer {
 	server.registerTool(
 		"confirm_memory",
 		{
-			description: "Confirm a candidate memory, promoting it to active status.",
+			description: "Confirm a candidate memory, promoting it to active. Call when the user explicitly endorses a candidate, or when the agent has used the rule successfully and validated it produced the right outcome. Note that rewrite_memory also auto-promotes candidate→active as a side effect of cleanup.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),
@@ -1161,7 +1161,7 @@ export function createServer(): McpServer {
 		"promote_to_global",
 		{
 			description:
-				"Promote a project memory to the global store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for cross-project gotchas, language patterns, and tool quirks.",
+				"Promote a project memory to the global cross-project store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for universal patterns, language quirks, and tool gotchas that apply across multiple projects.",
 			inputSchema: {
 				repoKey: z.string(),
 				id: z.string().min(1),

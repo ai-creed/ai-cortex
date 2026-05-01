@@ -539,3 +539,49 @@ describe("MCP promote_to_global", () => {
 		}
 	});
 });
+
+describe("MCP memory tool descriptions — opinionated guidance", () => {
+	it("recall_memory description marks it browse-only and points to get_memory for use", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const recall = tools.find((t: { name: string }) => t.name === "recall_memory");
+		expect(recall?.description).toMatch(/browse/i);
+		expect(recall?.description).toMatch(/get_memory/);
+	});
+
+	it("get_memory description marks it as the use signal", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const get = tools.find((t: { name: string }) => t.name === "get_memory");
+		expect(get?.description).toMatch(/use|apply/i);
+		expect(get?.description).toMatch(/cleanup|signal/i);
+	});
+
+	it("record_memory description names the trigger conditions", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const rec = tools.find((t: { name: string }) => t.name === "record_memory");
+		expect(rec?.description).toMatch(/rule|preference|constraint/i);
+	});
+
+	it("deprecate_memory description names when to call", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const dep = tools.find((t: { name: string }) => t.name === "deprecate_memory");
+		expect(dep?.description).toMatch(/contradicts|no longer applies|outdated/i);
+	});
+
+	it("confirm_memory description names when to call", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const conf = tools.find((t: { name: string }) => t.name === "confirm_memory");
+		expect(conf?.description).toMatch(/endorse|validated|user/i);
+	});
+
+	it("promote_to_global description names when to call", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const pro = tools.find((t: { name: string }) => t.name === "promote_to_global");
+		expect(pro?.description).toMatch(/cross-project|universal|language pattern/i);
+	});
+});
