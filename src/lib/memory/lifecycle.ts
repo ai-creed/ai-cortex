@@ -827,17 +827,21 @@ export async function rewriteMemory(
 			rewrittenAt: now,
 			status: nextStatus,
 			title: fields.title,
-			scope: { files: fields.scopeFiles, tags: fields.scopeTags },
+			scope: { files: [...fields.scopeFiles], tags: [...fields.scopeTags] },
 			confidence: nextConfidence,
 			...(fields.type ? { type: fields.type } : {}),
 		},
 		body: fields.body,
 	};
 
+	const prevBody = shouldPreserveBody(lc, current.frontmatter.type)
+		? current.body
+		: null;
+
 	await commit(lc, updated, {
 		changeType: "update",
-		prevBodyHash: lc.index.getMemory(id)!.body_hash,
-		prevBody: current.body,
+		prevBodyHash: memRow.body_hash,
+		prevBody,
 		reason: "rewrite",
 	});
 }
