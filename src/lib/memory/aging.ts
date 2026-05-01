@@ -33,10 +33,10 @@ export async function sweepAging(
   try {
     const db = lc.index.rawDb();
 
-    type AgingRow = { id: string; title: string; status: string; updated_at: string };
+    type AgingRow = { id: string; title: string; status: string; updated_at: string; confidence: number };
 
     const toTrash = db.prepare(`
-      SELECT id, title, status, updated_at FROM memories
+      SELECT id, title, status, updated_at, confidence FROM memories
       WHERE (
         (status = 'candidate'    AND updated_at < ?)
         OR (status = 'deprecated'  AND updated_at < ?)
@@ -49,7 +49,7 @@ export async function sweepAging(
     ) as AgingRow[];
 
     const toPurge = db.prepare(`
-      SELECT id, title, status, updated_at FROM memories
+      SELECT id, title, status, updated_at, confidence FROM memories
       WHERE status = 'trashed' AND updated_at < ?
     `).all(cutoff(a.trashedToPurgedDays)) as AgingRow[];
 
@@ -62,7 +62,11 @@ export async function sweepAging(
           : row.status === "merged_into"
             ? a.mergedIntoToTrashedDays
             : a.candidateToTrashedDays;
-      const reason = `aging: ${row.status} for >${threshold}d`;
+      const isLowConf =
+        row.status === "candidate" && row.confidence < a.lowConfidenceThreshold;
+      const reason = isLowConf
+        ? `aging: low-confidence candidate (${row.confidence.toFixed(2)} < ${a.lowConfidenceThreshold}) for >${threshold}d`
+        : `aging: ${row.status} for >${threshold}d`;
       actions.push({
         id: row.id,
         title: row.title,

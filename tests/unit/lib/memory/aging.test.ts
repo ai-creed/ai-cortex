@@ -23,7 +23,7 @@ afterEach(async () => {
 // Backdating is SQL-only after the transition since the sweeper reads updated_at
 // from the index, while the lifecycle functions read the .md file for frontmatter.
 
-async function makeCandidate(ageMs: number): Promise<string> {
+async function makeCandidate(ageMs: number, confidence?: number): Promise<string> {
   const lc = await openLifecycle(repoKey, { agentId: "test" });
   try {
     // source:"extracted" → createMemory writes status=candidate in both SQL and .md
@@ -33,6 +33,7 @@ async function makeCandidate(ageMs: number): Promise<string> {
       body: "## Body\ntest",
       scope: { files: [], tags: [] },
       source: "extracted",
+      confidence: confidence ?? 0.5,
     });
     const cutoff = new Date(Date.now() - ageMs).toISOString();
     lc.index.rawDb().prepare("UPDATE memories SET updated_at=? WHERE id=?").run(cutoff, id);
@@ -123,6 +124,23 @@ describe("sweepAging — candidate transitions", () => {
     expect(report.actionsApplied.find((a) => a.id === id)).toBeUndefined();
   });
 
+  it("trashes a low-confidence candidate (< 0.4) older than 90 days with a specific reason", async () => {
+    const id = await makeCandidate(91 * DAY_MS, 0.3);
+    const report = await sweepAging(repoKey);
+    const action = report.actionsApplied.find((a) => a.id === id);
+    expect(action?.newStatus).toBe("trashed");
+    expect(action?.reason).toContain("low-confidence candidate");
+    expect(action?.reason).toContain("0.30");
+  });
+
+  it("does not mark a high-confidence candidate as low-confidence in the reason", async () => {
+    const id = await makeCandidate(91 * DAY_MS, 0.8);
+    const report = await sweepAging(repoKey);
+    const action = report.actionsApplied.find((a) => a.id === id);
+    expect(action?.newStatus).toBe("trashed");
+    expect(action?.reason).not.toContain("low-confidence");
+    expect(action?.reason).toBe("aging: candidate for >90d");
+  });
 });
 
 describe("sweepAging — deprecated transitions", () => {
