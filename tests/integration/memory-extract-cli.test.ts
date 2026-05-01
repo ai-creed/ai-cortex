@@ -25,9 +25,15 @@ function mkSession(id: string): SessionRecord {
 		evidence: {
 			toolCalls: [],
 			filePaths: [],
-			userPrompts: [],
+			// Both fields populated as the real compactor would: every
+			// correction is also a userPrompt. The current extractor iterates
+			// over userPrompts; populating only corrections would yield zero
+			// candidates after the 2026-05-01 boost-not-gate fix.
+			userPrompts: [
+				{ turn: 1, text: "actually, always run pnpm typecheck before commit" },
+			],
 			corrections: [
-				{ turn: 1, text: "always run pnpm typecheck before commit" },
+				{ turn: 1, text: "actually, always run pnpm typecheck before commit" },
 			],
 		},
 		chunks: [],
