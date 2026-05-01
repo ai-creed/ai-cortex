@@ -59,6 +59,7 @@ export type MemoryFrontmatter = {
 	mergedInto: string | null;
 	deprecationReason: string | null;
 	promotedFrom: PromotedFromEntry[];
+	rewrittenAt: string | null;
 	typeFields?: Record<string, unknown>;
 };
 

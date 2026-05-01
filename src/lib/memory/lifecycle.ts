@@ -170,6 +170,7 @@ export async function createMemory(
 		mergedInto: null,
 		deprecationReason: null,
 		promotedFrom: [],
+		rewrittenAt: null,
 		typeFields: input.typeFields,
 	};
 
@@ -827,6 +828,7 @@ export async function promoteToGlobal(
 			supersedes: [],
 			mergedInto: null,
 			provenance: [...current.frontmatter.provenance],
+			rewrittenAt: null,
 		};
 		await commit(
 			globalLc,

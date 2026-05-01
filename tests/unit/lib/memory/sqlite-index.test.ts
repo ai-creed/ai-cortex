@@ -38,6 +38,7 @@ function fm(
 		mergedInto: null,
 		deprecationReason: null,
 		promotedFrom: [],
+		rewrittenAt: null,
 		...overrides,
 	};
 }

@@ -24,6 +24,7 @@ const sampleRecord: MemoryRecord = {
 		mergedInto: null,
 		deprecationReason: null,
 		promotedFrom: [],
+		rewrittenAt: null,
 	},
 	body: "## Rule\nAll writes use atomic temp-file rename.\n\n## Why\nCrash safety.\n",
 };
@@ -72,5 +73,48 @@ describe("bodyExcerpt", () => {
 
 	it("returns the full body when ≤280", () => {
 		expect(bodyExcerpt("short body")).toBe("short body");
+	});
+});
+
+describe("rewrittenAt round-trip", () => {
+	const baseFrontmatter = {
+		id: "mem-rewritten-test",
+		type: "decision",
+		status: "active" as const,
+		title: "x",
+		version: 1,
+		createdAt: "2026-05-01T00:00:00.000Z",
+		updatedAt: "2026-05-01T00:00:00.000Z",
+		source: "explicit" as const,
+		confidence: 1,
+		pinned: false,
+		scope: { files: [], tags: [] },
+		provenance: [],
+		supersedes: [],
+		mergedInto: null,
+		deprecationReason: null,
+		promotedFrom: [],
+	};
+
+	it("serializes and parses rewrittenAt as ISO timestamp", () => {
+		const record: MemoryRecord = {
+			frontmatter: { ...baseFrontmatter, rewrittenAt: "2026-05-01T12:34:56.000Z" },
+			body: "## Body\ntest",
+		};
+		const md = serializeMemoryMarkdown(record);
+		expect(md).toContain("rewrittenAt:");
+		expect(md).toContain("2026-05-01T12:34:56.000Z");
+		const parsed = parseMemoryMarkdown(md);
+		expect(parsed.frontmatter.rewrittenAt).toBe("2026-05-01T12:34:56.000Z");
+	});
+
+	it("treats missing rewrittenAt as null", () => {
+		const record: MemoryRecord = {
+			frontmatter: { ...baseFrontmatter, rewrittenAt: null },
+			body: "## Body\ntest",
+		};
+		const md = serializeMemoryMarkdown(record);
+		const parsed = parseMemoryMarkdown(md);
+		expect(parsed.frontmatter.rewrittenAt).toBeNull();
 	});
 });

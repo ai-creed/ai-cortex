@@ -129,12 +129,12 @@ export class MemoryIndex {
 			this.db
 				.prepare(
 					`
-				INSERT INTO memories (id, type, status, title, version, created_at, updated_at, source, confidence, pinned, body_hash, body_excerpt)
-				VALUES (@id, @type, @status, @title, @version, @createdAt, @updatedAt, @source, @confidence, @pinned, @bodyHash, @bodyExcerpt)
+				INSERT INTO memories (id, type, status, title, version, created_at, updated_at, source, confidence, pinned, body_hash, body_excerpt, rewritten_at)
+				VALUES (@id, @type, @status, @title, @version, @createdAt, @updatedAt, @source, @confidence, @pinned, @bodyHash, @bodyExcerpt, @rewrittenAt)
 				ON CONFLICT(id) DO UPDATE SET
 					type=excluded.type, status=excluded.status, title=excluded.title, version=excluded.version,
 					updated_at=excluded.updated_at, source=excluded.source, confidence=excluded.confidence,
-					pinned=excluded.pinned, body_hash=excluded.body_hash, body_excerpt=excluded.body_excerpt
+					pinned=excluded.pinned, body_hash=excluded.body_hash, body_excerpt=excluded.body_excerpt, rewritten_at=excluded.rewritten_at
 			`,
 				)
 				.run({
@@ -150,6 +150,7 @@ export class MemoryIndex {
 					pinned: fm.pinned ? 1 : 0,
 					bodyHash: opts.bodyHash,
 					bodyExcerpt: opts.bodyExcerpt,
+					rewrittenAt: fm.rewrittenAt,
 				});
 
 			this.db

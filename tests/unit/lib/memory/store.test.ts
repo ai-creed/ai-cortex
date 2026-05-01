@@ -47,6 +47,7 @@ function rec(id: string, body = "## Body\nx"): MemoryRecord {
 			mergedInto: null,
 			deprecationReason: null,
 			promotedFrom: [],
+			rewrittenAt: null,
 		},
 		body,
 	};

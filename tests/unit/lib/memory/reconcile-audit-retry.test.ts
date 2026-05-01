@@ -32,6 +32,7 @@ describe("reconcileStore — audit UNIQUE retry", () => {
 				mergedInto: null,
 				deprecationReason: null,
 				promotedFrom: [],
+				rewrittenAt: null,
 			},
 			body: "Body of the orphan memory.",
 		};
