@@ -781,3 +781,80 @@ export async function bumpConfidence(
 	});
 	return next;
 }
+
+export const GLOBAL_REPO_KEY = "global";
+
+export async function openGlobalLifecycle(
+	opts: { agentId?: string } = {},
+): Promise<LifecycleHandle> {
+	return openLifecycle(GLOBAL_REPO_KEY, opts);
+}
+
+export async function promoteToGlobal(
+	lc: LifecycleHandle,
+	id: string,
+): Promise<string> {
+	const current = await loadCurrent(lc, id);
+	if (current.frontmatter.status === "merged_into") {
+		throw new Error(
+			`memory ${id} is already merged_into ${current.frontmatter.mergedInto}`,
+		);
+	}
+	if (
+		current.frontmatter.status === "trashed" ||
+		current.frontmatter.status === "purged_redacted"
+	) {
+		throw new Error(`cannot promote a ${current.frontmatter.status} memory`);
+	}
+
+	const globalLc = await openGlobalLifecycle({
+		agentId: lc.agentId ?? "promote",
+	});
+	try {
+		const now = new Date().toISOString();
+		const globalId = generateUniqueMemoryId(globalLc, current.frontmatter.title);
+		const globalFm: MemoryFrontmatter = {
+			...current.frontmatter,
+			id: globalId,
+			version: 1,
+			createdAt: now,
+			updatedAt: now,
+			promotedFrom: [{ repoKey: lc.repoKey, memoryId: id }],
+			supersedes: [],
+			mergedInto: null,
+			provenance: [...current.frontmatter.provenance],
+		};
+		await commit(
+			globalLc,
+			{ frontmatter: globalFm, body: current.body },
+			{
+				changeType: "create",
+				prevBodyHash: null,
+				prevBody: null,
+				reason: `promoted from ${lc.repoKey}:${id}`,
+			},
+		);
+
+		// Mark original as merged_into the global copy
+		const updatedOriginal: MemoryRecord = {
+			frontmatter: {
+				...current.frontmatter,
+				version: current.frontmatter.version + 1,
+				updatedAt: now,
+				status: "merged_into",
+				mergedInto: globalId,
+			},
+			body: current.body,
+		};
+		await commit(lc, updatedOriginal, {
+			changeType: "merge",
+			prevBodyHash: lc.index.getMemory(id)!.body_hash,
+			prevBody: null,
+			reason: `promoted to global:${globalId}`,
+		});
+
+		return globalId;
+	} finally {
+		globalLc.close();
+	}
+}
