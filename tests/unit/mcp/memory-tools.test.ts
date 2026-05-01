@@ -499,3 +499,39 @@ describe("MCP extract_session", () => {
 		}
 	});
 });
+
+describe("MCP promote_to_global", () => {
+	it("promotes a project memory to global", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let id: string;
+		try {
+			id = await createMemory(lc, {
+				type: "gotcha",
+				title: "mcp promote test",
+				body: "## Body\ntest",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+				typeFields: { severity: "info" },
+			});
+		} finally {
+			lc.close();
+		}
+
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "promote_to_global",
+			arguments: { repoKey, id: id! },
+		});
+		expect(result.isError).toBeFalsy();
+		const globalId = (result.content[0] as any).text.trim();
+		expect(globalId).toMatch(/^mem-/);
+
+		const { openRetrieve } = await import("../../../src/lib/memory/retrieve.js");
+		const globalRh = openRetrieve("global");
+		try {
+			expect(globalRh.index.getMemory(globalId)?.title).toBe("mcp promote test");
+		} finally {
+			globalRh.close();
+		}
+	});
+});

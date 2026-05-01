@@ -41,6 +41,7 @@ import {
 	openGlobalLifecycle,
 	GLOBAL_REPO_KEY,
 	createMemory,
+	promoteToGlobal,
 	updateMemory,
 	updateScope,
 	deprecateMemory,
@@ -1150,6 +1151,38 @@ export function createServer(): McpServer {
 						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
 					],
 				};
+			}),
+		),
+	);
+
+	// ─── Promote to global tool ───────────────────────────────────────────────
+
+	server.registerTool(
+		"promote_to_global",
+		{
+			description:
+				"Promote a project memory to the global store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for cross-project gotchas, language patterns, and tool quirks.",
+			inputSchema: {
+				repoKey: z.string(),
+				id: z.string().min(1),
+			},
+		},
+		logged(
+			"promote_to_global",
+			(p) => ({ repoKey: p.repoKey, id: p.id }),
+			withReconcile(async (p) => {
+				// withReconcile reconciles p.repoKey (project); explicitly reconcile
+				// the global store too since that's the second write target.
+				await maybeReconcile(GLOBAL_REPO_KEY);
+				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
+				try {
+					const globalId = await promoteToGlobal(lc, p.id);
+					return {
+						content: [{ type: "text" as const, text: `${globalId}\n` }],
+					};
+				} finally {
+					lc.close();
+				}
 			}),
 		),
 	);
