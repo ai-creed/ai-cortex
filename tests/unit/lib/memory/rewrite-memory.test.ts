@@ -277,6 +277,33 @@ describe("rewriteMemory", () => {
 		}
 	});
 
+	it("rejects invalid typeFields even when type does not change", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			const id = await createMemory(lc, {
+				type: "gotcha",
+				title: "race",
+				body: "## Symptom\nrace\n## Workaround\nuse a mutex",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+				typeFields: { severity: "warning" },
+			});
+			// gotcha.severity must be one of {info, warning, critical}; "bogus"
+			// is not a registered value.
+			await expect(
+				rewriteMemory(lc, id, {
+					title: "refined race",
+					body: "## Symptom\nrace\n## Workaround\nuse a mutex always",
+					scopeFiles: [],
+					scopeTags: [],
+					typeFields: { severity: "bogus" },
+				}),
+			).rejects.toThrow(/severity/i);
+		} finally {
+			lc.close();
+		}
+	});
+
 	it("accepts type change when caller provides matching typeFields", async () => {
 		const lc = await openLifecycle(repoKey, { agentId: "test" });
 		try {

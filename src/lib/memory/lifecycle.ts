@@ -815,14 +815,16 @@ export async function rewriteMemory(
 
 	const current = await loadCurrent(lc, id);
 
-	// If the rewrite changes type, the new (type, typeFields) pair must satisfy
-	// the registry — same contract createMemory enforces. typeFields default to
-	// the current memory's typeFields if the caller doesn't pass new ones, so
-	// changing type to one with stricter requirements without supplying the
-	// matching fields is rejected here.
+	// Whenever the caller explicitly touches `type` or `typeFields`, validate
+	// the resulting (type, typeFields) pair against the registry — same contract
+	// createMemory enforces. This catches:
+	//   - changing type to one with stricter requirements without supplying the
+	//     matching fields,
+	//   - setting an invalid value on a typeFields field of the existing type
+	//     (e.g., severity: "bogus" on a gotcha) even when type doesn't change.
 	const nextType = fields.type ?? current.frontmatter.type;
 	const nextTypeFields = fields.typeFields ?? current.frontmatter.typeFields;
-	if (fields.type && fields.type !== current.frontmatter.type) {
+	if (fields.type !== undefined || fields.typeFields !== undefined) {
 		const validation = validateRegistration(lc.registry, {
 			type: nextType,
 			typeFields: nextTypeFields,
