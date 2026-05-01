@@ -8,6 +8,7 @@ import { IndexError, RepoIdentityError } from "./models.js";
 import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 import { renderPinnedSection } from "./memory/briefing-pinned.js";
+import { renderMemoryDigest } from "./memory/briefing-digest.js";
 
 export type RehydrateOptions = {
 	stale?: boolean;
@@ -32,7 +33,11 @@ export async function rehydrateRepo(
 
 		const briefing = renderBriefing(cache);
 		const pinned = await renderPinnedSection(identity.repoKey);
-		const md = pinned ? `${briefing}\n${pinned}\n` : briefing;
+		const digest = await renderMemoryDigest(identity.repoKey);
+		const extras = [pinned, digest].filter((p): p is string => Boolean(p));
+		const md = extras.length
+			? `${briefing}\n${extras.join("\n")}\n`
+			: briefing;
 		const dir = getCacheDir(identity.repoKey);
 		fs.mkdirSync(dir, { recursive: true });
 		const briefingPath = path.join(dir, `${identity.worktreeKey}.md`);
