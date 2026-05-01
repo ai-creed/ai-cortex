@@ -62,25 +62,25 @@ ai-cortex publishes raw candidates and accepts polished updates. The agent drive
 
 **MCP surface (new tools):**
 
-- `list_pending_rewrites(repoKey, limit?, since?)` — returns candidates that pass the cleanup eligibility predicate (see below) AND have no `rewrittenAt` timestamp.
-- `apply_rewrite(repoKey, id, { title, body, scopeFiles, scopeTags, type? })` — replaces the candidate's content fields with the cleaned version, sets `rewrittenAt`, **promotes status `candidate → active`**, audit-logs as `update` with reason `rewrite`. Body should follow a soft rule-card structure (rule + rationale + when-applies); the tool description recommends sections but the server does not validate.
+- `list_memories_pending_rewrite(repoKey, limit?, since?)` — returns candidates that pass the cleanup eligibility predicate (see below) AND have no `rewrittenAt` timestamp.
+- `rewrite_memory(repoKey, id, { title, body, scopeFiles, scopeTags, type? })` — replaces the candidate's content fields with the cleaned version, sets `rewrittenAt`, **promotes status `candidate → active`**, audit-logs as `update` with reason `rewrite`. Body should follow a soft rule-card structure (rule + rationale + when-applies); the tool description recommends sections but the server does not validate.
 
-**Rewrite implies promotion.** A rewrite represents a deliberate decision by the agent (and its subagent) to read the candidate, judge it worth keeping, and rewrite it as a rule card. That investment is a stronger confirmation signal than `confirm_memory`'s one-touch endorsement. So `apply_rewrite` auto-promotes `candidate → active` as part of the same operation. Rewriting an already-active memory leaves status as `active`. Rewriting a `merged_into` / `trashed` / `purged_redacted` memory errors — there is no candidate lifecycle to resolve.
+**Rewrite implies promotion.** A rewrite represents a deliberate decision by the agent (and its subagent) to read the candidate, judge it worth keeping, and rewrite it as a rule card. That investment is a stronger confirmation signal than `confirm_memory`'s one-touch endorsement. So `rewrite_memory` auto-promotes `candidate → active` as part of the same operation. Rewriting an already-active memory leaves status as `active`. Rewriting a `merged_into` / `trashed` / `purged_redacted` memory errors — there is no candidate lifecycle to resolve.
 
-This means `confirm_memory` and `apply_rewrite` are two distinct paths from candidate to active, with different costs and signals: `confirm_memory` is a cheap explicit endorsement; `apply_rewrite` is an investment that produces a cleaner artifact. Both are valid; the agent picks based on what it has at hand.
+This means `confirm_memory` and `rewrite_memory` are two distinct paths from candidate to active, with different costs and signals: `confirm_memory` is a cheap explicit endorsement; `rewrite_memory` is an investment that produces a cleaner artifact. Both are valid; the agent picks based on what it has at hand.
 
 The agent's flow:
 
 1. Sees `N pending rewrites` line in briefing or notices via tool description nudge.
-2. Calls `list_pending_rewrites` to fetch the queue.
+2. Calls `list_memories_pending_rewrite` to fetch the queue.
 3. Spawns a subagent with the candidates as context: "Rewrite each into a rule card."
-4. Subagent returns cleaned versions; main agent calls `apply_rewrite` for each.
+4. Subagent returns cleaned versions; main agent calls `rewrite_memory` for each.
 
-ai-cortex sees only the MCP calls. It has no opinion on which agent invoked them or how the rewrite was generated. **No CLI commands** ship for `list_pending_rewrites` / `apply_rewrite` in this round — manual cleanup would require the user to bring their own LLM/API key, which contradicts the "no LLM dependency" stance. Users with subagent-capable agents drive cleanup via MCP; users without simply leave candidates raw and accept the lower memory quality.
+ai-cortex sees only the MCP calls. It has no opinion on which agent invoked them or how the rewrite was generated. **No CLI commands** ship for `list_memories_pending_rewrite` / `rewrite_memory` in this round — manual cleanup would require the user to bring their own LLM/API key, which contradicts the "no LLM dependency" stance. Users with subagent-capable agents drive cleanup via MCP; users without simply leave candidates raw and accept the lower memory quality.
 
 **Cleanup eligibility:**
 
-A candidate is *pending* (eligible for surfacing in `list_pending_rewrites`) when:
+A candidate is *pending* (eligible for surfacing in `list_memories_pending_rewrite`) when:
 
 ```
 status = 'candidate'
@@ -117,7 +117,7 @@ Tool descriptions are the only universal lever for influencing agent behavior. T
 - `record_memory`: when to record (user states a rule, expresses a preference, or describes a constraint), what makes a good memory (specific, actionable, scoped).
 - `deprecate_memory`: when to deprecate (a recalled memory contradicts current code or current user direction).
 - `confirm_memory`: when to confirm (user explicitly endorses a candidate; agent has used it successfully and validated).
-- `list_pending_rewrites` / `apply_rewrite`: when to clean up, how to structure rule cards (soft template: rule + rationale + when-applies), and that `apply_rewrite` auto-promotes `candidate → active`.
+- `list_memories_pending_rewrite` / `rewrite_memory`: when to clean up, how to structure rule cards (soft template: rule + rationale + when-applies), and that `rewrite_memory` auto-promotes `candidate → active`.
 
 Strong descriptions teach the loop. Weak descriptions get ignored. This is cheap to do and ships immediately.
 
@@ -163,8 +163,8 @@ The counters above are sufficient for cleanup eligibility today and serviceable 
 
 ## Test plan sketch
 
-- Unit: tool description content (tests assert key phrases present); pending-rewrite filter logic (eligibility predicate `reExtractCount >= 1 AND (pinned OR getCount > 0)` with status/rewrittenAt gates); `get_memory` increments `getCount` and `lastAccessedAt`; `recall_memory` does not; `findDedupTarget` increments `reExtractCount` on collapse; `apply_rewrite` auto-promotes `candidate → active`, errors on `merged_into` / `trashed` / `purged_redacted`.
-- Integration: rehydration briefing contains memory digest with expected sections; `list_pending_rewrites` → `apply_rewrite` round-trip preserves audit history and produces an `active` memory with `rewrittenAt` set.
+- Unit: tool description content (tests assert key phrases present); pending-rewrite filter logic (eligibility predicate `reExtractCount >= 1 AND (pinned OR getCount > 0)` with status/rewrittenAt gates); `get_memory` increments `getCount` and `lastAccessedAt`; `recall_memory` does not; `findDedupTarget` increments `reExtractCount` on collapse; `rewrite_memory` auto-promotes `candidate → active`, errors on `merged_into` / `trashed` / `purged_redacted`.
+- Integration: rehydration briefing contains memory digest with expected sections; `list_memories_pending_rewrite` → `rewrite_memory` round-trip preserves audit history and produces an `active` memory with `rewrittenAt` set.
 - Smoke: re-extract Favro and ai-cortex sessions, run briefing, verify digest reflects current store. Manually drive a cleanup loop with a real subagent on 5 candidates, validate the rewritten cards meet the soft rule-card shape (title is a rule, body has rule + rationale + when-applies sections) and have promoted to `active`.
 
 ## Implementation phases
@@ -174,7 +174,7 @@ The counters above are sufficient for cleanup eligibility today and serviceable 
 | 1 | C: Tool description hardening — incl. `recall` (browse) vs `get_memory` (use) distinction | 30 min |
 | 2 | A: Briefing memory digest section (counts + top-5 per type with title/scope/confidence) | 1–2 h |
 | 3 | D: SQL index counter columns (`getCount`, `lastAccessedAt`); `get_memory` increments them; `recall_memory` does not. Per-event logging deferred. | 30 min |
-| 4 | B': MCP `list_pending_rewrites` + `apply_rewrite` (auto-promote), `reExtractCount` column + increment in extractor dedup, `rewrittenAt` in frontmatter and SQL, conservative eligibility predicate, descriptions (MCP-only — no CLI parity) | 4–8 h |
+| 4 | B': MCP `list_memories_pending_rewrite` + `rewrite_memory` (auto-promote), `reExtractCount` column + increment in extractor dedup, `rewrittenAt` in frontmatter and SQL, conservative eligibility predicate, descriptions (MCP-only — no CLI parity) | 4–8 h |
 
 Each phase ships a working improvement. Phase 1 lifts call rate even with no other changes. Phase 2 lifts agent awareness. Phase 3 introduces the access-counter primitives. Phase 4 enables cleanup and depends on Phase 3's counters.
 
