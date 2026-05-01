@@ -41,7 +41,7 @@ This is a deliberate inversion of the typical pattern (service-with-LLM-inside).
 - **Aligned with the pull model.** The agent decides when cleanup is worth it, just as it decides when to recall. Consistent semantics throughout.
 - **Graceful degradation.** Without subagent cleanup, raw candidates still work via FTS; the system stays functional. Cleanup is opt-in.
 
-**Tradeoff accepted.** Memories are not crisp at the moment of creation. Raw candidates sit in the store until a cleanup pass converts them. This is fine: most candidates are noise that ages out at 90d; paying to rewrite ephemera wastes tokens. Cleanup runs on signals of value (re-extraction stability, pin, first recall) — not on every candidate.
+**Tradeoff accepted.** Memories are not crisp at the moment of creation. Raw candidates sit in the store until a cleanup pass converts them. This is fine: most candidates are noise that ages out at 90d; paying to rewrite ephemera wastes tokens. Cleanup runs on signals of value (re-extraction stability, pin, explicit `get_memory` access) — not on every candidate.
 
 ## Architecture
 
@@ -62,8 +62,12 @@ ai-cortex publishes raw candidates and accepts polished updates. The agent drive
 
 **MCP surface (new tools):**
 
-- `list_pending_rewrites(repoKey, limit?, since?)` — returns candidates that match `source: "extracted"` AND have no `rewrittenAt` timestamp. Filtered to high-signal candidates only (re-extraction stability ≥1, or pinned, or recently recalled — see "Cleanup triggers" below).
-- `apply_rewrite(repoKey, id, { title, body, scopeFiles, scopeTags, type? })` — replaces the candidate fields with the cleaned version, sets `rewrittenAt`, audit-logs as `update` with reason `rewrite`. Body must be a structured rule card (rule + rationale + when-applies).
+- `list_pending_rewrites(repoKey, limit?, since?)` — returns candidates that pass the cleanup eligibility predicate (see below) AND have no `rewrittenAt` timestamp.
+- `apply_rewrite(repoKey, id, { title, body, scopeFiles, scopeTags, type? })` — replaces the candidate's content fields with the cleaned version, sets `rewrittenAt`, **promotes status `candidate → active`**, audit-logs as `update` with reason `rewrite`. Body should follow a soft rule-card structure (rule + rationale + when-applies); the tool description recommends sections but the server does not validate.
+
+**Rewrite implies promotion.** A rewrite represents a deliberate decision by the agent (and its subagent) to read the candidate, judge it worth keeping, and rewrite it as a rule card. That investment is a stronger confirmation signal than `confirm_memory`'s one-touch endorsement. So `apply_rewrite` auto-promotes `candidate → active` as part of the same operation. Rewriting an already-active memory leaves status as `active`. Rewriting a `merged_into` / `trashed` / `purged_redacted` memory errors — there is no candidate lifecycle to resolve.
+
+This means `confirm_memory` and `apply_rewrite` are two distinct paths from candidate to active, with different costs and signals: `confirm_memory` is a cheap explicit endorsement; `apply_rewrite` is an investment that produces a cleaner artifact. Both are valid; the agent picks based on what it has at hand.
 
 The agent's flow:
 
@@ -74,44 +78,61 @@ The agent's flow:
 
 ai-cortex sees only the MCP calls. It has no opinion on which agent invoked them or how the rewrite was generated. **No CLI commands** ship for `list_pending_rewrites` / `apply_rewrite` in this round — manual cleanup would require the user to bring their own LLM/API key, which contradicts the "no LLM dependency" stance. Users with subagent-capable agents drive cleanup via MCP; users without simply leave candidates raw and accept the lower memory quality.
 
-**Cleanup triggers (what makes a candidate "pending"):**
+**Cleanup eligibility:**
 
-A candidate is *pending* (eligible for surfacing in `list_pending_rewrites`) if any of:
+A candidate is *pending* (eligible for surfacing in `list_pending_rewrites`) when:
 
-- It has been re-extracted at least once (the dedup loop bumped its confidence — proves it's recurring).
-- It is pinned.
-- It has been recalled at least once (some session needed it; worth investing).
+```
+status = 'candidate'
+  AND rewrittenAt IS NULL
+  AND reExtractCount >= 1
+  AND (pinned = 1 OR getCount > 0)
+```
 
-Otherwise candidates stay raw and age out at 90d as designed. This is the economic gate — only valuable candidates earn cleanup tokens.
+In words: the candidate has shown re-extraction stability (it recurs), AND it is either pinned (manually marked valuable) or has been explicitly accessed via `get_memory` (an agent picked it out of recall results and used it). Conservative on purpose — only valuable candidates earn cleanup tokens.
+
+**Why `get_memory` and not `recall_memory` as the access signal.** `recall_memory` returns top-K results, most of which the agent doesn't actually use. Counting them all as "valuable" would enqueue false-positive rewrites. `get_memory(id)` is a deliberate act: the agent picked one specific memory and asked for the full record. That is the real "agent used this" signal, and it's what `getCount` tracks.
 
 **Schema additions:**
 
-- `rewrittenAt: string | null` in `MemoryFrontmatter` — ISO timestamp of last rewrite, or null.
-- `recallCount: integer` in the SQL index — incremented when the memory appears in `recall_memory` results. Used by both cleanup eligibility and (later) the feedback loop.
+In `MemoryFrontmatter` (durable, in markdown):
+
+- `rewrittenAt: string | null` — ISO timestamp of last rewrite, or null.
+
+In the SQL index only (counters that change too frequently for markdown rewrites):
+
+- `reExtractCount INTEGER NOT NULL DEFAULT 0` — incremented in `extract.ts` whenever `findDedupTarget` collapses a new candidate into this memory (the same call site that runs `bumpConfidence`).
+- `getCount INTEGER NOT NULL DEFAULT 0` — incremented on each `get_memory(id)` call.
+- `lastAccessedAt TEXT NULL` — ISO timestamp of last `get_memory(id)` call.
+- `rewrittenAt TEXT NULL` — mirrors the frontmatter field for fast SQL filtering.
+
+`recall_memory` does not increment any counter — it is a pure read.
 
 ### 3. MCP tool description hardening
 
 Tool descriptions are the only universal lever for influencing agent behavior. Today's descriptions are generic ("recall memory by query"). Replace with explicit, opinionated guidance:
 
-- `recall_memory`: when to call (before non-trivial edits to unfamiliar files, when debugging recurring symptoms, when the user references past decisions), how to call (pass `scope.files`, use `source: 'all'` for cross-project), what's available (decisions / gotchas / how-tos / patterns).
+- `recall_memory`: when to call (before non-trivial edits to unfamiliar files, when debugging recurring symptoms, when the user references past decisions), how to call (pass `scope.files`, use `source: 'all'` for cross-project), what's available (decisions / gotchas / how-tos / patterns), **and that recall is browse-only** — to actually use a result, follow up with `get_memory(id)`.
+- `get_memory`: when to call (after `recall_memory` returns a relevant hit and you intend to apply it; when the user references a memory by ID; when verifying a rule before relying on it). Note that `get_memory` is the "I'm using this" signal — it counts toward cleanup eligibility, while `recall_memory` does not.
 - `record_memory`: when to record (user states a rule, expresses a preference, or describes a constraint), what makes a good memory (specific, actionable, scoped).
 - `deprecate_memory`: when to deprecate (a recalled memory contradicts current code or current user direction).
 - `confirm_memory`: when to confirm (user explicitly endorses a candidate; agent has used it successfully and validated).
-- `list_pending_rewrites` / `apply_rewrite`: when to clean up, how to structure rule cards.
+- `list_pending_rewrites` / `apply_rewrite`: when to clean up, how to structure rule cards (soft template: rule + rationale + when-applies), and that `apply_rewrite` auto-promotes `candidate → active`.
 
 Strong descriptions teach the loop. Weak descriptions get ignored. This is cheap to do and ships immediately.
 
-### 4. Closed feedback loop foundation (data shape now, behavior later)
+### 4. Closed feedback loop foundation (counters now, event log later)
 
-The eventual goal: confidence reflects actual utility, not just text patterns. The signal would be "this memory was recalled in session S, and S's evidence shows the rule was not violated → bump." Or conversely, "memory recalled but evidence shows violation → decay or flag."
+The eventual goal: confidence reflects actual utility, not just text patterns. The signal would be "this memory was accessed in session S, and S's evidence shows the rule was not violated → bump." Or conversely, "memory accessed but evidence shows violation → decay or flag."
 
-Implementing the full loop is out of scope for this round. But the data shape must be in place so we can add the behavior without schema migration:
+Implementing the full loop is out of scope for this round. The minimum viable data shape is the access counters added in piece 2:
 
-- `recallCount` on the index (already required for cleanup triggers above).
-- A new audit `changeType: "recall"` row appended each time a memory is returned from `recall_memory`. The audit row carries `sessionId` (if known) and timestamp.
-- An optional `lastRecalledAt` field on the index row.
+- `getCount` and `lastAccessedAt` on the SQL index (required for cleanup eligibility above) — these double as the foundation for utility scoring later.
+- `reExtractCount` on the SQL index (also required for cleanup eligibility) — gives the stability dimension.
 
-These additions are cheap and unlock future work where the agent (or a server-side analyzer) reconciles recalls against subsequent session evidence to compute utility scores.
+**What is explicitly deferred:** a per-event memory access log (a separate `memory_events` table or similar). The current audit log is keyed on `(memory_id, version)` for write events and cannot accommodate read events without redesign or version-bump invention. Rather than shoehorn read events into the audit schema, we leave per-event logging for whenever the closed feedback loop actually ships — at which point the right schema can be designed against the real requirements (utility-vs-violation reconciliation, time-windowed analysis, session-grouped queries).
+
+The counters above are sufficient for cleanup eligibility today and serviceable as a coarse signal for the loop tomorrow. If we need fine-grained event timeseries later, that's a future spec.
 
 ## Tradeoffs
 
@@ -132,7 +153,8 @@ These additions are cheap and unlock future work where the agent (or a server-si
 
 ## Out of scope (this round)
 
-- Closed-loop confidence updates from session evidence — data shape only.
+- Closed-loop confidence updates from session evidence — counters only; reconciliation logic deferred.
+- Per-event memory access log (separate events table) — counters cover cleanup eligibility; event-grain logging deferred until the feedback loop spec ships.
 - Larger embedding model swap (`bge-small`, `e5-small`) — orthogonal optimization.
 - Domain alias / synonym expansion at query time — orthogonal optimization.
 - Symbol-level scope (function, class) — extends file/module scope, future work.
@@ -141,20 +163,20 @@ These additions are cheap and unlock future work where the agent (or a server-si
 
 ## Test plan sketch
 
-- Unit: tool description content (tests assert key phrases present); pending-rewrite filter logic (eligibility predicate); audit row creation on recall.
-- Integration: rehydration briefing contains memory digest with expected sections; `list_pending_rewrites` → `apply_rewrite` round-trip preserves audit history.
-- Smoke: re-extract Favro and ai-cortex sessions, run briefing, verify digest reflects current store. Manually drive a cleanup loop with a real subagent on 5 candidates, validate the rewritten cards meet the rule-card shape (title is a rule, body is structured).
+- Unit: tool description content (tests assert key phrases present); pending-rewrite filter logic (eligibility predicate `reExtractCount >= 1 AND (pinned OR getCount > 0)` with status/rewrittenAt gates); `get_memory` increments `getCount` and `lastAccessedAt`; `recall_memory` does not; `findDedupTarget` increments `reExtractCount` on collapse; `apply_rewrite` auto-promotes `candidate → active`, errors on `merged_into` / `trashed` / `purged_redacted`.
+- Integration: rehydration briefing contains memory digest with expected sections; `list_pending_rewrites` → `apply_rewrite` round-trip preserves audit history and produces an `active` memory with `rewrittenAt` set.
+- Smoke: re-extract Favro and ai-cortex sessions, run briefing, verify digest reflects current store. Manually drive a cleanup loop with a real subagent on 5 candidates, validate the rewritten cards meet the soft rule-card shape (title is a rule, body has rule + rationale + when-applies sections) and have promoted to `active`.
 
 ## Implementation phases
 
 | Phase | Work | Effort |
 |---|---|---|
-| 1 | C: Tool description hardening | 30 min |
-| 2 | A: Briefing memory digest section | 1–2 h |
-| 3 | D: Audit `recall` changeType + `recallCount` field (data shape) | 30 min |
-| 4 | B': MCP `list_pending_rewrites` + `apply_rewrite`, schema additions, eligibility logic, descriptions (MCP-only — no CLI parity) | 4–8 h |
+| 1 | C: Tool description hardening — incl. `recall` (browse) vs `get_memory` (use) distinction | 30 min |
+| 2 | A: Briefing memory digest section (counts + top-5 per type with title/scope/confidence) | 1–2 h |
+| 3 | D: SQL index counter columns (`getCount`, `lastAccessedAt`); `get_memory` increments them; `recall_memory` does not. Per-event logging deferred. | 30 min |
+| 4 | B': MCP `list_pending_rewrites` + `apply_rewrite` (auto-promote), `reExtractCount` column + increment in extractor dedup, `rewrittenAt` in frontmatter and SQL, conservative eligibility predicate, descriptions (MCP-only — no CLI parity) | 4–8 h |
 
-Each phase ships a working improvement. Phase 1 lifts call rate even with no other changes. Phase 2 lifts agent awareness. Phase 3 locks future-loop schema. Phase 4 enables cleanup.
+Each phase ships a working improvement. Phase 1 lifts call rate even with no other changes. Phase 2 lifts agent awareness. Phase 3 introduces the access-counter primitives. Phase 4 enables cleanup and depends on Phase 3's counters.
 
 Total: ~7–11 hours of focused work plus tests. No big-bang.
 
