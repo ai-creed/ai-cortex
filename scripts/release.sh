@@ -36,7 +36,13 @@ echo "Releasing $TAG..."
 # Bump version in package.json (no commit or tag — we do that ourselves)
 npm version "$VERSION" --no-git-tag-version
 
-git add package.json
+# Keep src/version.ts in lockstep with package.json — there's a CI test
+# (tests/unit/mcp/server.test.ts SERVER_VERSION) that asserts the two match.
+# Forgetting this drift was the cause of the v0.5.0 ship-then-fix cycle.
+sed -i.bak "s|export const VERSION = \".*\";|export const VERSION = \"$VERSION\";|" src/version.ts
+rm -f src/version.ts.bak
+
+git add package.json src/version.ts
 git commit -m "chore: bump to $TAG"
 git tag "$TAG"
 git push && git push origin "$TAG"
