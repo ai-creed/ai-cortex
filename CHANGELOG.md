@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.1] — 2026-05-02
+
+Patch release tightening the auto-extractor, plugging a benchmark-test data-loss bug, and aligning MANUAL.md with the actual project surface.
+
+### Fixed
+
+- **Auto-extractor noise** — skill bodies, slash-command output templates, system reminders, and shell I/O wrappers were being captured as user prompts because their text hits `IMPERATIVE_RE` / `SYMPTOM_RE` on words like "must"/"should"/"errors". Added `isHarnessInjection(text)` predicate matching known harness markers (`Base directory for this skill:`, `<command-*>`, `<local-command-*>`, `<system-reminder>`, `<bash-*>`, `The user just ran /`, and `# <Title> Skill` first-line skill bodies via `SKILL_HEADING_RE`). Filter applies at compaction (clean source going forward) and defensively in `filterEvidenceAfterTurn` (cleans existing v2 sessions on re-extract, no re-capture needed).
+- **Trivial-prompt extraction** — added structural floor `BASE_CONFIDENCE_MIN_BODY_CHARS = 25`: candidates that score exactly at `BASE` (no boost fired) and have <25 char bodies are rejected. Catches throwaway prompts like "okay good" while letting boost-lifted short feedback (correction-prefix or ack snippet) through.
+- **Benchmark wiped real cache** — `perf-suite.clearCache()` resolves the real `ai-cortex` `repoKey` when run with `--repo ai-cortex` and `fs.rmSync`'d the cache dir between scenarios. The smoke test spawned the bench without setting `AI_CORTEX_CACHE_HOME`, so every full `pnpm vitest run` wiped `~/.cache/ai-cortex/v1/<ai-cortex-repoKey>/history/` and `memory/`. Smoke test now isolates an `AI_CORTEX_CACHE_HOME` per run; `clearCache()` throws if the env var is unset (running the bench CLI directly against the real cache is now a hard error rather than silent data loss).
+
+### Docs
+
+- **MANUAL.md alignment** — audited and fixed 13 misalignments: storage layout (`index.sqlite` not `memory.db`; `extractor-runs/`, `trash/`, `types.json`); memory CLI table missing `bootstrap` / `extract` / `extractor-log` / `sweep` / `promote` / `install/uninstall-prompt-guide`; MCP tools table missing `extract_session` / `list_memories_pending_rewrite` / `rewrite_memory` / `promote_to_global` / `sweep_aging`; 20 memory tool param blocks said `path (optional)` but actual schemas require `repoKey: string`; `recall_memory` `tags` → `scopeTags` and missing `source` param; new `history` CLI section; bootstrap section now documents `--re-extract` / `--cwd` / `--repo-key`; cache storage layout shows full subdirectory tree; architecture documents the History + Memory data flow (hook → compact → evidence → extractor → dedup → recall); language support lists TS/JS, Python, C/C++ adapters (was "Phase 5 ships TS/JS only"); gotcha severity enum is `info | warning | critical` (was `minor | major | critical`); library API notes that history/memory layers are CLI/MCP-only.
+
+---
+
 ## [0.5.0] — 2026-05-02
 
 The memory layer release. ai-cortex grows from "fast project rehydration" into a three-layer local-first intelligence layer: structural (rehydrate / suggest / blast-radius), continuity (history + memory), and integration (MCP + briefing + adoption tooling). The memory layer ships end-to-end — full lifecycle, two-tier storage, auto-extraction from session evidence, aging sweeps, and subagent-driven cleanup. Plus npm distribution, opt-in adoption tooling for Claude / Codex, and a refreshed product narrative.
