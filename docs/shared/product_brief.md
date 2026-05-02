@@ -1,133 +1,124 @@
 # ai-cortex Product Brief
 
+> **v2** (2026-05-02). Supersedes v1 (now at `docs/misc/product_brief-v1.md`),
+> which framed ai-cortex as an MVP-stage rehydration tool. The product has
+> grown well past that scope and warrants a current-state brief.
+
 ## One Line
 
-`ai-cortex` builds local cached project knowledge for agents, so new sessions can
-rehydrate fast and consistently without broad repo scans or repo pollution.
+**ai-cortex is a local-first intelligence layer that gives AI agents fast project context, persistent memory, and session continuity — without writing into the target repository.**
 
-## User
+## Users
 
-- Day 1 user: solo AI-heavy developer
-- Later fit: other tools in the `ai-*` ecosystem
+**Primary (today):** solo AI-heavy developers who use Claude Code, Codex, Cline, or similar MCP-compliant agents. They have multiple projects, switch contexts often, and lose hours per week to agents re-deriving the same project knowledge.
 
-## Core Problem
+**Adjacent (planned):** the broader `ai-*` ecosystem of agent-adjacent tools (e.g. `ai-14all` workspace tooling) that benefit from a shared substrate for project knowledge.
 
-New agent sessions start with little reliable project context.
+**Not the user:** team-shared knowledge bases, cloud-hosted RAG products, IDE-integrated assistants. ai-cortex is per-developer, local-only, and substrate-not-product.
 
-Agents must re-scan repositories, rediscover structure, and re-read the same
-docs. This wastes time, tokens, and consistency, especially in large repos.
+## Core Problems
 
-## Job To Be Done
+Three problems compound and reinforce each other:
 
-When starting a new agent session on a project, provide enough cached project
-knowledge for the agent to become useful quickly and consistently, without a
-full repo scan every time.
+1. **Cold start.** New agent sessions don't understand the project — structure, conventions, entry points. Default response: broad repo scan, slow startup, inconsistent context.
+2. **Continuity.** Agents don't remember past sessions — decisions, gotchas, mistakes already made and corrected. Default response: rediscover, redebate, remistake.
+3. **Hidden knowledge.** Code shows the *what*. Docs sometimes show the *how*. Neither shows the *why* and the *what we tried that didn't work*. The most valuable context lives nowhere in the repo.
 
-## Product Goal
+## Value Props
 
-Make project rehydration fast, repeatable, and good enough to answer
-architecture questions and jump to likely relevant files from cache.
+| Job to be done | How ai-cortex does it |
+|---|---|
+| Start a new session productively | `rehydrate` produces a markdown briefing in milliseconds: structure, key files, pinned memories, memory digest, recent changes |
+| Find the right files for a task | `suggest` (fast / deep / semantic) ranks files by relevance with explanations |
+| Recover context lost to harness compaction | `search_history` queries past sessions for decisions, file paths, prior discussion |
+| Capture project-specific rules and gotchas | Memory layer auto-extracts from session evidence; agent uses the recall→get pattern to apply them |
+| Keep the target repo clean | All data is tool-owned in `~/.cache/ai-cortex/`. The repo never sees a write. |
+| Work across whichever agent you prefer | MCP server delivers 30 tools to any MCP-compliant agent. No agent-specific lock-in. |
 
-## V1 Scope
+## Current Scope
 
-- local-only
-- one real repo proof first, but the product model should support many repos later
-- TypeScript and JavaScript first-class
-- C and C++ as later adapter targets
-- knowledge inputs: code structure plus project docs
-- output forms: compact text briefing plus structured JSON
-- delivery surfaces: library plus CLI
-- primary command: `rehydrate`
-- secondary commands: `index`, `suggest`
+Three layers, each useful on its own, each compounding when stacked.
 
-## V1 Non-Goals
+**Structural layer**
+- Repo indexing with tree-sitter (TypeScript, JavaScript, Python, C, C++)
+- Call graph + import graph + trigram index + content scan
+- File ranking in three modes: fast, deep, semantic
+- Blast-radius / impact analysis
 
-- no writes into the target repo
-- no user-managed notes or annotations
-- no cloud sync
-- no team or shared memory
-- no editor or IDE workflow expansion
-- no real-time watcher or index daemon
-- no full semantic understanding of every language
-- no generic code search engine ambitions in the MVP
+**Continuity layer**
+- Session history capture (Claude Code, Codex hooks)
+- Compacted history search across past sessions
+- Persistent memory layer (markdown-of-record + SQLite + vectors)
+  - Four built-in types: `decision`, `gotcha`, `pattern`, `how-to`
+  - Full lifecycle: candidate → active → deprecated → trashed → purged
+  - Two-tier storage: project-scoped + cross-project global
+  - Auto-extraction from session evidence with re-extraction confidence stability
+  - Aging sweeps remove stale candidates; rewrite cleanup polishes high-signal ones
 
-## Core User Value
+**Integration layer**
+- MCP server with 30 tools
+- Briefing injection at session start (rehydration + memory digest + tool guidance)
+- `install-prompt-guide` writes a versioned guidance block to CLAUDE.md / AGENTS.md to nudge agents into the recall→get pattern
 
-- faster new-session startup
-- more consistent agent context
-- better file targeting
-- less repeated rediscovery of the same project structure
+## Non-Goals
 
-## Primary Flows
+These are deliberate, not deferred:
 
-### `index`
-
-Build a local cache for a repo.
-
-### `rehydrate`
-
-Load cache, refresh stale parts, and return an agent-ready project briefing.
-
-This is the primary flow for V1.
-
-### `suggest`
-
-Return likely relevant files or modules for a task, with short reasons.
-
-## Success Criteria
-
-- agent can answer repo architecture questions from cache
-- agent can suggest likely relevant files or modules with short reasons
-- `rehydrate` is measurably faster than a cold broad repo scan
-- works on at least one real repo, with credibility toward multi-thousand-file repos
-
-## Freshness Model
-
-- explicit `index` is supported
-- `rehydrate` auto-refreshes stale parts before answering
-- V1 does not promise near-real-time freshness
+- **Not a full assistant.** ai-cortex is a context substrate; the agent is the agent.
+- **Not an LLM-hosting service.** Zero LLM calls in the substrate. No API keys. Cost transparency stays with the user's agent.
+- **Not committed-to-repo memory.** Cache is tool-owned and local. Repos stay publish-safe. (Differentiator vs. CLAUDE.md / `.cursor/rules`.)
+- **Not cloud-synced.** No multi-machine sync, no team sharing.
+- **Not a real-time watcher.** Cache refreshes on-demand, not continuously.
+- **Not a code search engine.** Tree-sitter parsing is good enough for navigation; not a replacement for grep on file content.
 
 ## Storage Model
 
-- cache lives outside the target repo
-- storage is tool-owned and local-only
-- target repos stay clean and publish-safe
+- Cache lives outside the target repo (`~/.cache/ai-cortex/<repoKey>/`)
+- Storage is tool-owned and local-only
+- Markdown is the source of truth for memories; SQLite + vectors are derived (rebuildable)
+- Audit log captures every state transition; full version chain is reconstructable
+- Target repos stay clean and publish-safe
 
-## Why This Product Is Plausible
+## Distribution
 
-- the needed inputs already exist locally: file tree, imports, docs, and package metadata
-- rehydration does not require perfect understanding of every file
-- useful agent startup can come from partial structured knowledge
-- local cache plus targeted refresh is much simpler than a full always-on graph platform
+- npm: `npm install -g ai-cortex` (current)
+- From source: `git clone … && pnpm build && pnpm link --global`
+- Homepage: <https://ai-creed.dev/projects/ai-cortex/>
+- Source: <https://github.com/ai-creed/ai-cortex>
 
-## MVP Definition
+## Roadmap (Near-Term)
 
-Given a repo path, `ai-cortex` can:
+These are intentions, not commitments. Order is rough; priorities shift with usage signal.
 
-- build a local cache from code structure and docs
-- produce a compact project briefing for a new agent session
-- suggest relevant files for a user task
-- refresh stale cache enough to stay practical
-
-## Roadmap
-
-1. Prove value on one real repo with `index`, `rehydrate`, and `suggest`.
-2. Harden stale refresh and performance for larger repos.
-3. Add multi-repo management.
-4. Add language adapters beyond TypeScript and JavaScript.
-5. Integrate cleanly into `ai-*` apps and session flows.
+1. **Adoption telemetry.** Aggregate the `logged()` MCP tool-call traces into a per-session histogram so call rate is observable. Without this we're guessing whether agents actually use the tools.
+2. **Closed feedback loop.** Reconcile recall events against subsequent session evidence to detect "memory recalled but rule violated" — auto-decay confidence on negative signal, bump on positive. Counters are in place; the analyzer is not.
+3. **Wider ecosystem integration.** First-class hooks for `ai-14all` and other `ai-*` tools. Currently the integration is via MCP; tighter coupling may be warranted.
+4. **Wow-loop UX wrapper.** Thin command wrapper (`ai ask "how does auth work?"`) that hides the verbose `ai-cortex memory recall …` form. Primitives exist; the wrapper doesn't.
+5. **Larger embedding model option.** `bge-small-en-v1.5` or `multilingual-e5-small` as opt-in via config to handle short / abbreviation-heavy queries the current 22M model misses.
+6. **Memory extraction quality.** The regex-based heuristics catch some signal; an LLM-based extractor (running in a subagent) would catch much more. Deferred until call rate validates the demand.
 
 ## Key Risks
 
-- cache may know structure but miss intent and rationale
-- large repos may need careful scope trimming to stay fast
-- suggestion quality may degrade with weak docs or noisy module structure
-- C and C++ support is materially harder than TypeScript and JavaScript
+- **Adoption gap.** Tools are useless if the agent doesn't call them. The cardinal pattern (`recall`→`get`) and `install-prompt-guide` are bets on changing this; we need real-use telemetry to know if they work.
+- **Recall ceiling on short queries.** The default 22M embedding model handles thematic matches well but struggles with domain abbreviations. A keyword anchor in the query usually rescues it; pure-semantic recall on 2–3 word queries can fail.
+- **Heuristic extractor.** Auto-extraction misses well-phrased decisions that don't match the regex. The boost-not-gate confidence model recovered ~30× of dropped signal in real session data, but the upper bound is still the regex itself.
+- **MCP tool-discovery friction.** Agents must read tool descriptions and act on them. Even with hardened descriptions, behavior is inconsistent across agents and sessions. Adoption tooling helps but doesn't guarantee.
+- **Per-developer cache drift.** No multi-machine sync means a developer's memory store is per-laptop. Acceptable for the user persona today; may become a constraint as the user base grows.
 
 ## Product Thesis
 
-Agents do not need a full repo scan every session.
+The original v1 thesis is still load-bearing:
 
-Agents need a good cached project map plus a small live refresh.
+> Agents do not need a full repo scan every session. Agents need a good cached project map plus a small live refresh. ai-cortex exists to provide that map.
 
-`ai-cortex` exists to provide that map.
+The v2 extension:
+
+> Agents also need durable knowledge of past decisions, recurring gotchas, and conventions. Code shows the *what*; ai-cortex memory captures the *why* and the *what we already tried*. Together with rehydration and history, the result is **usable context across time** — not just retrieval.
+
+## Cross-References
+
+- Strategy / competitive positioning: `docs/misc/ai-cortex-strategy-v4.md` (gitignored)
+- Current state and next phases: `docs/shared/high_level_plan.md`
+- Memory layer technical reference: `MEMORY_LAYER.md`
+- User-facing CLI manual: `MANUAL.md`
+- v1 brief (historical): `docs/misc/product_brief-v1.md`

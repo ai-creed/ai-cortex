@@ -1,215 +1,183 @@
 # ai-cortex — High-Level Plan
 
+> **v2** (2026-05-02). Supersedes v1 (now at `docs/misc/high_level_plan-v1.md`),
+> which framed the project as a 3–4 week MVP push. The product has shipped
+> well past that scope and warrants a current-state plan.
+
 ## Planning Intent
 
-This document is a high-level delivery plan for the current V1 direction.
+This document is a current-state map of the project — what's been delivered, where things stand today, and what's proposed next. It is not a task-by-task implementation checklist (those live in `docs/superpowers/plans/`, gitignored).
 
-It is not a task-by-task implementation checklist yet.
-
-The plan assumes:
+The plan continues to assume:
 
 - local-first execution
 - no writes into target repositories
-- TypeScript and JavaScript as the first-class language target
-- one real repo proof first, with a path to many repos later
-- `rehydrate` as the primary user flow
-- CLI plus library delivery surface
+- agent-agnostic via MCP (no hooks beyond opt-in capture)
+- no LLM client in the substrate; intelligence delegated to the user's agent
+- markdown is the source of truth for memories; derived indexes are rebuildable
 
-The goal is to move from product plausibility to a useful personal MVP without
-overcommitting to premature infrastructure.
+These are durable principles, not phase goals.
 
-## Delivery Strategy
+## Delivery Cadence
 
-The project should be delivered in stages with explicit validation gates.
+The project ships in **phases** with explicit gates. Each phase produces working product on its own; subsequent phases compose on top without reshuffling earlier work.
 
-The sequence should be:
+We've stopped using day-count timelines (they were misleading even in v1). Phases ship when their gate is met.
 
-1. Prove the core rehydration thesis on one real repository
-2. Build a durable local indexing and query spine
-3. Make `rehydrate` useful enough to replace broad startup scans
-4. Add `suggest` as a practical targeting tool for agent workflows
-5. Harden for larger repos before expanding language and ecosystem scope
+## Status of Past Phases
 
-## Proposed Timeline
+### Phase 0 — Plausibility Spike
 
-This is a realistic high-level timeline for a focused solo build:
+**Status:** complete (2026-04-10)
 
-- Phase 0: 3 to 5 days
-- Phase 1: 4 to 6 days
-- Phase 2: 4 to 6 days
-- Phase 3: 3 to 5 days
-- Phase 4: 4 to 7 days
+Cached rehydration beat cold-orient on the N=20 median benchmark on `ai-14all`. Cleared the gate to productize.
 
-That puts the first useful personal MVP in roughly 3 to 4 weeks, depending on
-how hard stale refresh and repo-scale performance fight back during the proof.
+### Phase 1 — Core Indexing Spine
 
-## Phase 0 — Plausibility Spike
+**Status:** complete
 
-**Status:** complete on `2026-04-10`
+Repo-scoped local cache, indexing pipeline (file tree, package metadata, imports, docs), tree-sitter adapters for TypeScript and JavaScript, stable internal representation, CLI `index`. The indexing backbone is in place; subsequent features compose against it without reshuffling.
 
-**Goal:** Validate that cached rehydration is worth building before deeper
-product work.
+### Phase 2 — Rehydration Flow
 
-**Focus areas:**
+**Status:** complete
 
-- repository inspection inputs
-- simple local cache shape
-- cold-scan versus cached-briefing comparison
-- proof on one real repository
+`rehydrate` command (CLI + library + MCP), markdown briefing format, structured JSON output, stale detection, targeted refresh. New agent sessions can start from `rehydrate` output instead of a broad repo scan. Briefing now also carries pinned memories and the memory digest (added in later phases).
 
-**Deliverables:**
+### Phase 3 — Suggest Flow
 
-- minimal local indexing experiment for one repo
-- baseline measurement for cold startup context gathering
-- cached rehydration experiment for the same repo
-- example architecture questions answered from cache
-- example file targeting suggestions produced from cached knowledge
+**Status:** complete and expanded
 
-**Success gate:**
+Initial scope was a single `suggest` mode. Shipped in three modes: fast (path + symbol + import graph), deep (adds trigram + content scan), semantic (sentence embeddings via `Xenova/all-MiniLM-L6-v2`). Each mode escalates from the last when relevance is unclear. Plus `blast_radius` impact analysis using the call graph, added during this phase.
 
-- cached rehydration is materially faster than broad cold scanning
-- output is useful enough to orient a new agent session
-- the proof looks credible enough to justify productizing the approach
+### Phase 4 — Hardening
 
-**Failure signals:**
+**Status:** complete
 
-- cached output is too vague to guide an agent
-- refresh cost approaches cold-scan cost too quickly
-- suggestion quality depends on too much manual tuning
+Performance work for larger repos, refresh cost control, cache invalidation via repo-fingerprint + worktree-key, atomic write protocols. The product is dependable enough that the user prefers `ai-cortex rehydrate` over manual repo scanning for new sessions.
 
-**Outcome:**
+### Phase 5 — Multi-Language Adapters
 
-Phase 0 cleared its gate using the N=20 median benchmark on `ai-14all`.
-Cached `rehydrate` beat `cold-orient` in the in-process measurement that best
-matches the intended product path. The product should now move forward into
-durable Phase 1 work rather than extending the spike further.
+**Status:** complete
 
-## Phase 1 — Core Indexing Spine
+Tree-sitter adapters for Python, C, and C++ shipped beyond the original TS/JS scope. Go and Rust will index but yield no call graph; documented as a known limitation rather than a phase commitment.
 
-**Status:** active next phase
+### Phase 6 — History Capture
 
-**Goal:** Establish the durable product core without overbuilding ranking or
-language support.
+**Status:** complete
 
-**Focus areas:**
+Session capture for Claude Code and Codex via hooks (`ai-cortex history install-hooks`). Compaction → `EvidenceLayer` → `search_history` MCP tool. Recovers context lost to harness compaction.
 
-- repo identity and storage model
-- local cache lifecycle
-- TypeScript and JavaScript structure extraction
-- doc ingestion
+### Phase 7 — Memory Layer (Phase 1: foundation)
 
-**Deliverables:**
+**Status:** complete
 
-- core library structure
-- repo-scoped local cache in tool-owned storage
-- indexing pipeline for file tree, package metadata, imports, and docs
-- stable internal representation sufficient for rehydration queries
-- CLI entrypoint for `index`
+Markdown-of-record + SQLite (WAL + FTS5) + vector sidecar. Full lifecycle (10 states), 18 lifecycle functions, 24 MCP tools at the time of shipping. Reconcile-on-first-call recovery for orphan files and phantom rows. Type registry with extensible JSON config.
 
-**Outcome:**
+### Phase 8 — Memory Layer (Phase 2a: auto-extractor + bootstrap)
 
-The codebase should now have a stable indexing backbone so rehydration features
-do not get tangled with one-off spike logic.
+**Status:** complete
 
-## Phase 2 — Rehydration Flow
+Heuristic extractor with four candidate types (decision, gotcha, pattern, how-to). Cross-session dedup (cosine ≥ 0.85 + same type + tag overlap). Re-extraction stability bumps confidence by 0.10 per match. Manifest persistence for incremental runs. CLI `bootstrap` for one-shot extraction over existing transcripts. `history capture` auto-triggers extraction.
 
-**Goal:** Make `rehydrate` genuinely useful for starting a new agent session.
+Post-implementation correction shipped: changed correction-prefix from a hard gate to a +0.10 confidence boost. Recovered ~30× of previously-dropped signal in real session data.
 
-**Focus areas:**
+### Phase 9 — Memory Layer (Phase 2b: aging + global tier)
 
-- stale detection
-- targeted refresh
-- compact text briefing
-- structured JSON output
+**Status:** complete
 
-**Deliverables:**
+Aging sweeps (candidate→trashed at 90d, deprecated→trashed at 180d, etc.). Two-tier storage: project-scoped + cross-project global. `promote_to_global` lifecycle function. Cross-tier recall with `+0.10` source boost for project results. CLI `sweep` and `promote`.
 
-- `rehydrate` command in CLI and library
-- text output suitable for direct agent prompting
-- JSON output suitable for later `ai-*` integration
-- concise repo summary focused on orientation and next reads
+### Phase 10 — Memory Layer (Phase 3: utility)
 
-**Success gate:**
+**Status:** complete (current release)
 
-- a new session can start from `rehydrate` output instead of broad repo scan for
-  common project-orientation tasks
-- output stays compact enough to be practical in agent prompts
+The release that turns the memory layer from "stored data" into "a consultation point the agent learns to trust":
 
-## Phase 3 — Suggest Flow
+- Hardened MCP tool descriptions teaching the cardinal pattern (`recall_memory` browse-only vs. `get_memory` use signal)
+- Briefing-phase memory digest (counts + top-5 per type + tool guidance)
+- Access counters: `get_count`, `last_accessed_at`, `re_extract_count`, `rewritten_at`
+- Subagent-driven cleanup MCP tools: `list_memories_pending_rewrite`, `rewrite_memory`
+- `install-prompt-guide` CLI for nudging agents (Claude / Codex / both, project / global) into the recall→get pattern
+- Architectural decisions captured: pull-only injection, no LLM in substrate, agent-agnostic via MCP
 
-**Goal:** Help agents jump toward likely relevant files instead of searching
-widely.
+Plus ancillary CLI improvements: `--version` / `--help`, `--global-scope` on `memory record` (CLI parity with MCP), update-available notice with cached daily background check.
 
-**Focus areas:**
+## Current Phase — v0.5 release prep
 
-- task-to-file targeting
-- short explanation strings
-- practical ranking heuristics
+**Status:** in flight
 
-**Deliverables:**
+What this phase is doing:
 
-- `suggest` command in CLI and library
-- likely relevant files or modules returned with short reasons
-- enough relevance to support common “where should I look first?” tasks
+- Documentation refresh: README aligned with current product shape (npm-published, three-layer architecture, memory section rewritten, install flow expanded). New `MEMORY_LAYER.md` user-facing reference doc. Strategy doc v4 (gitignored).
+- Repository housekeeping: docs/shared reorganized — only durable project knowledge stays; historical docs archived to `docs/misc/`.
+- npm package homepage updated to `ai-creed.dev/projects/ai-cortex/`.
 
-**Success gate:**
+Exit gate: ready to cut a `0.5.0` release with a coherent README, complete user docs for the memory layer, and accurate npm metadata.
 
-- suggestions improve first-step targeting often enough to change workflow
-- explanations are short, concrete, and believable
+## Proposed Next Phases
 
-**Design note — function call graph:**
+These are intentions. Order will shift with real-use signal.
 
-Phase 3 should evaluate adding a function-level call graph (`CallEdge[]`) to
-`RepoCache` alongside the existing file-level import graph. This directly
-addresses the Phase 0 weakness where path-token matching could not bridge
-task vocabulary (“UI shell flow”) to renderer component files whose paths do
-not share those terms.
+### Phase 11 — Adoption telemetry
 
-With a call graph, `suggest` can traverse from known entry points through
-call chains to surface relevant files without relying on path-name matches.
-It also enables feature flow tracing (“how does worktree creation work
-end-to-end?”) and basic impact analysis (“what calls this function?”).
+The `logged()` middleware already captures every MCP tool call. Aggregate those traces into a per-session histogram so call rate is observable: which tools the agent actually invokes, the recall→get conversion rate, the extract→cleanup rate. Without this we're guessing whether the cardinal pattern works in practice. ~1 day of work.
 
-Recommended extraction approach: tree-sitter AST parsing (not full TypeScript
-compiler). Accurate enough for navigation, fast enough for the indexing budget.
-Unresolved calls (dynamic dispatch, higher-order functions) are an acceptable
-limitation at MVP scale.
+**Gate:** the user (and eventually anyone running ai-cortex) can answer "did the agent use memory this session?" with a number, not a feeling.
 
-`RepoCache` schema already reserves space for this — add `calls: CallEdge[]`
-when Phase 3 indexing work begins. No Phase 1 or Phase 2 changes required.
+### Phase 12 — Closed feedback loop
 
-## Phase 4 — Hardening For Real Repos
+Counters are in place. The reconciliation logic isn't. Implement: recall events compared against subsequent session evidence; rule-violation detection from corrections; auto-decay confidence on negative signal, bump on positive. Counters as input → confidence drift as output. ~1 week.
 
-**Goal:** Make the product dependable enough for repeated personal use on larger
-repositories.
+**Gate:** memory confidence reflects observed utility, not just text patterns. A memory recalled and ignored decays; a memory recalled and applied climbs.
 
-**Focus areas:**
+### Phase 13 — `ai-14all` integration
 
-- performance on larger repos
-- refresh cost control
-- cache invalidation behavior
-- practical failure handling
+ai-cortex provides the substrate; `ai-14all` is the workspace layer that consumes it. First-class hooks (briefing injection at task start, memory write on user-stated rules, history search on context loss). Currently integration is via MCP; tighter coupling may be warranted.
 
-**Deliverables:**
+**Gate:** working in `ai-14all` produces and consumes ai-cortex memories naturally without explicit CLI invocation.
 
-- acceptable rehydration latency on at least one substantial real repo
-- clearer stale-versus-fresh behavior
-- better handling for missing docs, noisy trees, or weak import signals
-- repeatable CLI behavior suitable for embedding into `ai-*` tools
+### Phase 14 — Wow-loop UX wrapper
 
-**Exit condition:**
+Strategy v4 §11 describes a future user experience:
 
-The user prefers starting at least some new agent sessions through
-`ai-cortex rehydrate` instead of broad manual repo scanning.
+```
+ai ask "how does auth work?"
+ai ask "what did we decide about auth?"
+ai do "modify auth middleware"
+```
 
-## Deferred Until After MVP
+The primitives exist. A thin wrapper command (`ai-cortex ask`, `ai-cortex do`) can land this without changing the substrate. Deferred until adoption telemetry validates the demand. ~3–5 days when triggered.
 
-These should stay out of the initial delivery unless real usage proves they are
-urgently needed:
+**Gate:** a new user can install ai-cortex and reach the wow loop in three commands.
 
-- real-time watching or daemonized indexing
-- cloud sync
-- team-shared caches
-- manual annotations
-- non-TS/JS language depth beyond light experiments
-- broad platform ambitions beyond rehydration and suggestion
+### Phase 15 — Memory extraction quality
+
+The regex-based extractor has a clear ceiling. An LLM-based extractor (running in the user's subagent, no LLM in substrate) would catch much more signal. Architectural decision is in place; implementation is deferred until adoption telemetry validates the demand. ~1–2 weeks when triggered.
+
+**Gate:** memory candidate quality is determined by the agent's intelligence, not by the substrate's regex.
+
+### Phase 16 — Larger embedding model (opt-in)
+
+`bge-small-en-v1.5` or `multilingual-e5-small` as a config-selectable alternative to `Xenova/all-MiniLM-L6-v2`. Handles short / abbreviation-heavy queries better. Tradeoff: 60–100 MB download + slower first-call. Worth shipping when users actually report the recall ceiling. ~2 days.
+
+**Gate:** users with abbreviation-heavy domain vocabulary (`cxx`, `py`, `ts`) get usable semantic recall.
+
+## Permanent Non-Goals
+
+These have been deliberate from v1 and remain so:
+
+- Real-time watching or daemonized indexing (refresh-on-demand is sufficient)
+- Cloud sync (per-developer local cache is the model)
+- Team-shared caches (knowledge sharing is a different product)
+- Manual annotation surfaces (memory layer captures rules; we don't build a notes UI)
+- IDE / editor extensions (CLI + MCP is the interface)
+- Generic code search (tree-sitter parsing is good enough for navigation; we don't compete with ripgrep)
+
+## Cross-References
+
+- Product brief: `docs/shared/product_brief.md`
+- Strategy / competitive positioning: `docs/misc/ai-cortex-strategy-v4.md` (gitignored)
+- v1 plan (historical): `docs/misc/high_level_plan-v1.md`
+- Memory layer technical reference: `MEMORY_LAYER.md`
+- Design specs: `docs/superpowers/specs/`
