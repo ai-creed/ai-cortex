@@ -241,14 +241,13 @@ For a deeper architectural view, see [MEMORY_LAYER.md](./MEMORY_LAYER.md) (memor
 
 ## Known limitations
 
-- **TypeScript, JavaScript, Python, C, and C++.** Tree-sitter adapters cover `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.c`, `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`, `.hh`, `.hxx`, `.h++`. Go/Rust repos will index but yield no call graph.
-- **Semantic ranker embeds file paths, not file bodies.** Good for "which file is about X"; not a replacement for grep on file content.
-- **First semantic call downloads ~23 MB** (`Xenova/all-MiniLM-L6-v2`) into `~/.cache/ai-cortex/models/`.
-- **Cache is local** — not shared across machines or users. Worktree-keyed.
-- **MCP tool discovery:** in Claude Code, ai-cortex tools are deferred. Agents may default to Grep/Glob unless nudged. `ai-cortex memory install-prompt-guide` writes a guidance block to your CLAUDE.md/AGENTS.md to nudge the recall→get pattern.
-- **Memory extractor is heuristic.** The auto-extractor uses regex (imperative cues, symptom cues, correction prefixes). It misses well-phrased decisions that don't match the regex. The boost-not-gate confidence model recovered ~30× of dropped signal in real session data, but the upper bound is still the regex itself.
-- **Memory recall on short / abbreviation-heavy queries can be weak.** The default `Xenova/all-MiniLM-L6-v2` (22M params, 384-dim) handles general-English thematic matches well but struggles with domain abbreviations (`cxx` ≠ `c++`) and multi-hop semantic chains. A keyword anchor in the query usually rescues it. Larger models (`bge-small`, `e5-small`) are deferred.
-- **Python: no type inference for attribute calls.** `obj.method()` where `obj` is not `self`/`cls` emits an unresolved `::method` edge. Self/cls calls resolve correctly. `from pkg import submodule; submodule.func()` also produces a missed edge — use `import pkg.submodule as submodule` or `from pkg.submodule import func` instead.
-- **Python: no `__all__` awareness.** All top-level names are treated as exported.
-- **Python: dynamic imports not tracked.** `importlib.import_module(...)` and `__import__(...)` produce no edges.
-- **Cosmetic zsh warning during command substitution on macOS.** Capturing the output of memory commands that run embeddings (e.g. `ID=$(ai-cortex memory promote …)`) inside zsh on macOS can emit `failed to change group ID: operation not permitted`. The command succeeds and exits 0; the warning is from zsh's job control reacting to `@xenova/transformers` worker threads being torn down on `process.exit`. Direct invocations are unaffected. Workarounds: pipe stdout to a file, or `2>/dev/null` the substitution.
+ai-cortex has known limitations across language support, semantic ranking, the memory layer, agent integration, and environment-specific edge cases. They're documented in detail with workarounds and roadmap pointers in [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md).
+
+Highlights:
+- Call graph is **TypeScript / JavaScript / Python / C / C++** only (Go and Rust index but produce no call graph).
+- The semantic ranker embeds file **paths**, not file content — good for "which file is about X", not a grep replacement.
+- The memory extractor is **heuristic (regex-based)** — it catches the high-signal cases but misses well-phrased decisions that don't match the regex.
+- Memory recall on **short / abbreviation-heavy queries** can be weak; a keyword anchor usually rescues it.
+- A **cosmetic zsh warning** can appear during `$()` capture on macOS — the command still succeeds.
+
+See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for the full list and workarounds.
