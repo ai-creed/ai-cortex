@@ -5,11 +5,13 @@
 // versioned HTML-comment markers so install/uninstall is idempotent and the
 // rule content can be revised by bumping PROMPT_GUIDE_VERSION.
 
-export const PROMPT_GUIDE_VERSION = "v1";
+export const PROMPT_GUIDE_VERSION = "v2";
 
 export const MEMORY_GUIDE_TEXT = `## Memory consultation (ai-cortex MCP)
 
 This project uses ai-cortex's memory layer. Consult it to avoid repeating past mistakes and re-deriving past decisions.
+
+**Load schemas first (Claude Code).** ai-cortex MCP tool schemas are deferred-loaded — only tool names appear in context until you fetch them. At session start, run \`ToolSearch\` with query \`select:mcp__ai-cortex__recall_memory,mcp__ai-cortex__get_memory,mcp__ai-cortex__record_memory,mcp__ai-cortex__deprecate_memory,mcp__ai-cortex__confirm_memory\` so the rules below are actionable without an extra round-trip. (Other agents that load all MCP schemas eagerly can skip this step.)
 
 **When to call:**
 - Before non-trivial edits to unfamiliar files → \`recall_memory\` with \`scope.files\`

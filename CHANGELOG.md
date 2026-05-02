@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.2] — 2026-05-03
+
+Docs + adoption patch. Restores a Claude-Code-specific limitation note that was dropped during the README → KNOWN_LIMITATIONS extraction in 4c39c99, and teaches the prompt-guide block to preload tool schemas so memory rules become actionable from turn one.
+
+### Docs
+
+- **KNOWN_LIMITATIONS.md** — restored the "Claude Code: tool schemas are deferred-loaded" sub-bullet under "MCP tool discovery is best-effort". Frames the failure mode (out-of-sight = out-of-mind: agent forgets `record_memory` exists because its description isn't in context until `ToolSearch` fetches it) and provides a copy-pasteable SessionStart hook that preloads structural + memory schemas and biases the agent to ai-cortex over `ls`/`grep`/`rg`. Notes explicitly that the hook is **not** installed by `ai-cortex history install-hooks` — the deferred-loading is a Claude Code harness behavior, the nudge is user-side configuration.
+
+### Changed
+
+- **`install-prompt-guide` block bumped v1 → v2** (`src/lib/memory/prompt-guide.ts`). Adds a "Load schemas first (Claude Code)" preamble with the exact `ToolSearch` query for the five memory tools (`recall_memory`, `get_memory`, `record_memory`, `deprecate_memory`, `confirm_memory`). Existing v1 blocks are replaced in-place via the versioned `<!-- ai-cortex:memory-rule:start vN -->` markers, so re-running `ai-cortex memory install-prompt-guide` upgrades cleanly.
+
+---
+
 ## [0.5.1] — 2026-05-02
 
 Patch release tightening the auto-extractor, plugging a benchmark-test data-loss bug, and aligning MANUAL.md with the actual project surface.

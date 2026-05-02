@@ -81,6 +81,27 @@ Agents must read tool descriptions and act on them. Even with hardened opinionat
 
 …but ultimately the agent decides whether to call the tools. The pull-only architecture means low call rate is the worst case (memory layer dormant), not catastrophic context corruption.
 
+**Claude Code specific: tool schemas are deferred-loaded.** In Claude Code, MCP tool schemas (including ai-cortex's) are not loaded into the agent's context up front — only the tool names appear, and the agent must call `ToolSearch` to fetch a schema before it can invoke the tool. Out of sight = out of mind: even when a memory rule applies, the agent may forget `record_memory` exists because its description isn't in context. Workaround: add a SessionStart hook to your `~/.claude/settings.json` that nudges the agent to preload the ai-cortex schemas via `ToolSearch` at session start, and tell it to prefer ai-cortex over `ls`/`grep`/`rg`. Example:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"RULE: Before any ls/Bash/git codebase exploration, first load ai-cortex MCP tool schemas via ToolSearch with query \\\"select:mcp__ai-cortex__rehydrate_project,mcp__ai-cortex__suggest_files,mcp__ai-cortex__suggest_files_deep,mcp__ai-cortex__suggest_files_semantic,mcp__ai-cortex__blast_radius,mcp__ai-cortex__index_project,mcp__ai-cortex__recall_memory,mcp__ai-cortex__get_memory,mcp__ai-cortex__record_memory,mcp__ai-cortex__deprecate_memory,mcp__ai-cortex__confirm_memory\\\", then call mcp__ai-cortex__rehydrate_project for project orientation. Only fall back to ls/grep/rg after ai-cortex or when ai-cortex is insufficient.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+This hook is **not** installed by `ai-cortex history install-hooks` — the harness behavior is Claude Code's, not ai-cortex's, and the nudge is user-side configuration.
+
 ### No public adoption telemetry yet
 
 The `logged()` middleware captures every MCP tool call locally, but there's no aggregator that turns that into a per-session histogram. So *"is the agent actually using the tools"* is currently observable only by `tail -f`-ing the MCP log. Phase 11 in the plan addresses this.
