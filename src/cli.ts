@@ -15,15 +15,17 @@ import type {
 	SemanticSuggestResult,
 } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
+import { VERSION } from "./version.js";
 
 const [, , command = "index", ...args] = process.argv;
 
+// VERSION is kept in lockstep with package.json by scripts/release.sh.
+// Don't try to read package.json at runtime — the relative-path math
+// breaks differently between `dist/src/cli.js` (production) and
+// `src/cli.ts` (vitest), and a CI test that imports cli.ts will fail
+// with ENOENT regardless of what the path is set to.
 function readPackageVersion(): string {
-	const pkgPath = new URL("../../package.json", import.meta.url);
-	const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
-		version: string;
-	};
-	return pkg.version;
+	return VERSION;
 }
 
 const HELP_TEXT = `ai-cortex <command> [options]
