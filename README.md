@@ -4,6 +4,12 @@
 
 It gives new agent sessions cached project knowledge without broad repo scans, captures the decisions and gotchas that don't live in code, and never writes into the target repository.
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="ai-cortex demo: agent recalls a past decision and cites it" width="800" />
+</p>
+
+> Session 47 finds a rule from session 12, cites it, applies it. The agent didn't re-derive — it remembered.
+
 - 🌐 Homepage: <https://ai-creed.dev/projects/ai-cortex/>
 - 📦 npm: <https://www.npmjs.com/package/ai-cortex>
 - 📂 GitHub: <https://github.com/ai-creed/ai-cortex>
