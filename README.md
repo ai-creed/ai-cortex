@@ -111,7 +111,9 @@ Persistent project-scoped memory layer. Records decisions, gotchas, patterns, an
 
 **Storage:** `~/.cache/ai-cortex/v1/<repoKey>/memory/`
 
-MCP tools: `record_memory`, `recall_memory`, `list_memories`, `search_memories`, `get_memory`, `audit_memory`, and 11 write tools.
+MCP tools: `record_memory`, `recall_memory`, `get_memory`, `list_memories`, `search_memories`, `audit_memory`, plus write tools (`update_memory`, `confirm_memory`, `deprecate_memory`, `merge_memories`, `trash/untrash/purge_memory`, `pin/unpin_memory`, `link/unlink_memories`, `add_evidence`), Phase 2b ops (`sweep_aging`, `promote_to_global`), and subagent cleanup tools (`list_memories_pending_rewrite`, `rewrite_memory`).
+
+See [MEMORY_LAYER.md](./MEMORY_LAYER.md) for the full memory-layer guide — mental model, core loop (observe → capture → distill → retrieve → inject → evolve), common flows, storage layout, architectural decisions, and limitations.
 
 See `ai-cortex memory --help` for all subcommands.
 
