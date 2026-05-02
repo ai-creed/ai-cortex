@@ -9,7 +9,7 @@ test-results/
 playwright-report/
 docs/superpowers/plans/
 docs/superpowers/ideas/
-docs/shared/ai-cortex-strategy-*.md
+docs/misc/ai-cortex-strategy-*.md
 .worktrees/
 .superpowers/
 release/
