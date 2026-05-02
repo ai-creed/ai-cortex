@@ -2,9 +2,14 @@
 
 ## What it does
 
-ai-cortex builds a local cache of project knowledge for AI agents. When an agent session starts on a project, it can call ai-cortex to get a fast, consistent briefing — file structure, key entry points, relevant files for a task, and call graph impact analysis — without scanning the repo from scratch.
+ai-cortex builds a local cache of project knowledge for AI agents. It covers four layers:
 
-It stores all data locally (`~/.cache/ai-cortex/`), never writes into the target repository, and works on any git repo that contains TypeScript or JavaScript.
+- **Index** — file tree, imports, functions, call graph (TypeScript/JavaScript, Python, C/C++)
+- **Rehydration** — agent-ready Markdown briefing of project structure, key files, and recent changes
+- **History** — captured agent sessions (transcripts compacted into evidence: tool calls, file paths, user prompts, corrections)
+- **Memory** — extracted, persistent decisions / gotchas / patterns / how-tos with semantic + FTS recall, audit trail, and lifecycle (active → deprecated → trashed → purged)
+
+It stores all data locally under `~/.cache/ai-cortex/`, never writes into the target repository, and works on any git repo.
 
 ---
 
@@ -141,6 +146,32 @@ ai-cortex suggest-deep "<task>" --json           # Machine-readable output
 
 ---
 
+### `history`
+
+Manage captured agent sessions (transcripts compacted into evidence used by the memory extractor and `search_history`). Sessions live under `~/.cache/ai-cortex/v1/<repoKey>/history/`.
+
+```bash
+ai-cortex history off                                    # Disable capture (writes a flag file)
+ai-cortex history on                                     # Re-enable capture
+ai-cortex history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]
+ai-cortex history list [--cwd <dir>] [--repo-key <key>]  # List captured sessions
+ai-cortex history prune [--before <iso>] [--cwd <dir>] [--repo-key <key>]
+ai-cortex history install-hooks                          # Wire PreCompact + SessionEnd hooks
+ai-cortex history uninstall-hooks                        # Remove the hooks (with .bak.* backups)
+```
+
+**Setup once per machine:**
+
+```bash
+ai-cortex history install-hooks
+```
+
+This installs `PreCompact` + `SessionEnd` hooks into `~/.claude/settings.json` (Claude Code) and `~/.codex/config.toml` (Codex CLI), creating timestamped `.bak.*` backups for any file it modifies. From then on, every session is captured automatically and the auto-extractor runs immediately after compaction.
+
+If `--transcript` is omitted, `capture` resolves the transcript path from the harness convention (`~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` for Claude Code).
+
+---
+
 ### `mcp`
 
 Start the MCP server on stdio transport. Used by MCP clients (Claude, Codex, etc.) — not called directly.
@@ -269,16 +300,17 @@ Captured sessions live under `~/.cache/ai-cortex/v1/<repo-key>/history/`; instal
 
 #### `recall_memory`
 
-Semantic + FTS recall. Use to retrieve relevant memories before starting work on a task.
+Browse stored project knowledge by query. Browse-only — does NOT signal usage. Follow up with `get_memory(id)` on a relevant hit to actually consult and apply a memory (that call counts toward cleanup eligibility).
 
 **Parameters:**
 
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 - `query` (required) — natural-language query
 - `type` (optional) — filter by type: `decision` | `gotcha` | `pattern` | `how-to`
-- `limit` (optional, integer) — max results (default 10)
+- `limit` (optional, integer) — max results (default 10, max 50)
 - `scopeFiles` (optional, string[]) — restrict to memories scoped to these files
-- `tags` (optional, string[]) — filter by tags
-- `path` (optional) — repo path (defaults to cwd)
+- `scopeTags` (optional, string[]) — filter by tags
+- `source` (optional, `"project" | "global" | "all"`) — which store to search (default `"all"`)
 
 #### `record_memory`
 
@@ -292,7 +324,7 @@ Record a new memory.
 - `tags` (optional, string[]) — labels
 - `scopeFiles` (optional, string[]) — files this memory pertains to
 - `source` (optional) — originating session id or reference
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `get_memory`
 
@@ -301,7 +333,7 @@ Fetch a single memory by ID.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `list_memories`
 
@@ -313,7 +345,7 @@ List memories with optional filters.
 - `status` (optional) — `active` | `deprecated` | `trashed`
 - `scopeFile` (optional) — restrict to memories scoped to this file
 - `limit` (optional, integer) — max results
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `search_memories`
 
@@ -323,7 +355,7 @@ FTS-only search (no semantic ranking).
 
 - `query` (required) — full-text query
 - `limit` (optional, integer) — max results
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `audit_memory`
 
@@ -332,7 +364,7 @@ View the audit trail for a memory.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `update_memory`
 
@@ -344,7 +376,7 @@ Update body or title of a memory.
 - `title` (optional) — new title
 - `body` (optional) — new markdown body
 - `reason` (optional) — reason for the change (recorded in audit log)
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `deprecate_memory`
 
@@ -354,7 +386,7 @@ Mark a memory as deprecated.
 
 - `id` (required) — memory ID
 - `reason` (required) — why deprecated
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `restore_memory`
 
@@ -363,7 +395,7 @@ Restore a deprecated memory to active.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `merge_memories`
 
@@ -374,7 +406,7 @@ Merge source memory into destination. Source is marked `merged_into`.
 - `srcId` (required) — source memory ID
 - `dstId` (required) — destination memory ID
 - `body` (required) — new body for the merged destination memory
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `trash_memory`
 
@@ -384,7 +416,7 @@ Move a memory to trash.
 
 - `id` (required) — memory ID
 - `reason` (required) — reason for trashing
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `untrash_memory`
 
@@ -393,7 +425,7 @@ Restore a trashed memory to active.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `purge_memory`
 
@@ -405,7 +437,7 @@ Permanently delete a memory. Irreversible.
 - `reason` (required) — reason for purge
 - `yes` (required, boolean) — must be `true` to confirm
 - `redact` (optional, boolean) — overwrite body with tombstone before deletion (privacy erasure)
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `link_memories`
 
@@ -416,7 +448,7 @@ Create a typed edge between two memories.
 - `srcId` (required) — source memory ID
 - `dstId` (required) — destination memory ID
 - `type` (required) — `supports` | `contradicts` | `refines` | `depends_on`
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `unlink_memories`
 
@@ -427,7 +459,7 @@ Remove a typed edge between two memories.
 - `srcId` (required) — source memory ID
 - `dstId` (required) — destination memory ID
 - `type` (required) — edge type to remove
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `pin_memory`
 
@@ -437,7 +469,7 @@ Pin a memory so it appears in every rehydration briefing.
 
 - `id` (required) — memory ID
 - `force` (optional, boolean) — pin even if already at pin limit
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `unpin_memory`
 
@@ -446,7 +478,7 @@ Remove a memory from the pinned set.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `confirm_memory`
 
@@ -455,7 +487,7 @@ Confirm a candidate memory, promoting it to active.
 **Parameters:**
 
 - `id` (required) — memory ID
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `add_evidence`
 
@@ -465,7 +497,7 @@ Attach evidence to an existing memory.
 
 - `id` (required) — memory ID
 - `evidence` (required) — evidence text or reference
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 #### `rebuild_index`
 
@@ -473,7 +505,7 @@ Reconcile the sqlite index from `.md` source files on disk. Use after manual edi
 
 **Parameters:**
 
-- `path` (optional) — repo path (defaults to cwd)
+- `repoKey` (required) — repo key (from `rehydrate_project` or derived from git common dir)
 
 ---
 
@@ -483,20 +515,22 @@ Project-scoped persistent memory. Stores decisions, gotchas, patterns, and how-t
 
 **Storage layout** (`~/.cache/ai-cortex/v1/<repoKey>/memory/`):
 
-| Path                                  | Contents                                    |
-| ------------------------------------- | ------------------------------------------- |
-| `memories/<id>.md`                    | Markdown source-of-record for each memory   |
-| `memory.db`                           | sqlite index with FTS5 for full-text search |
-| `.vectors.bin` / `.vectors.meta.json` | Embedding sidecar for semantic recall       |
+| Path                  | Contents                                                         |
+| --------------------- | ---------------------------------------------------------------- |
+| `memories/<id>.md`    | Markdown source-of-record for each active/candidate memory       |
+| `trash/<id>.md`       | Markdown for trashed memories (recoverable until purge)          |
+| `index.sqlite`        | sqlite index with FTS5 for full-text + vector embeddings sidecar |
+| `extractor-runs/<sessionId>.json` | Manifest per session: which evidence has been processed |
+| `types.json`          | Type registry / schema enums (e.g. gotcha severity allowlist)    |
 
 ### Memory types
 
-| Type       | Description                      | Notes                                                 |
-| ---------- | -------------------------------- | ----------------------------------------------------- |
-| `decision` | Architectural or process choice  | Body permanently recorded in audit log at creation    |
-| `gotcha`   | Warning or pitfall               | Requires `severity`: `minor` \| `major` \| `critical` |
-| `pattern`  | Recurring code pattern           | —                                                     |
-| `how-to`   | Step-by-step procedure or recipe | —                                                     |
+| Type       | Description                      | Notes                                                |
+| ---------- | -------------------------------- | ---------------------------------------------------- |
+| `decision` | Architectural or process choice  | Body permanently recorded in audit log at creation   |
+| `gotcha`   | Warning or pitfall               | Requires `severity`: `info` \| `warning` \| `critical` |
+| `pattern`  | Recurring code pattern           | —                                                    |
+| `how-to`   | Step-by-step procedure or recipe | —                                                    |
 
 ### Lifecycle
 
@@ -531,6 +565,12 @@ trashed ──► purged                      (purge, permanent)
 | `memory audit <id> [--json]`                                                                   | View audit trail                                               |
 | `memory rebuild-index`                                                                         | Reconcile index from .md files                                 |
 | `memory reconcile [--report]`                                                                  | Run reconciliation pass                                        |
+| `memory bootstrap [--limit-sessions N] [--min-confidence X] [--re-extract] [--cwd D] [--repo-key K]` | One-shot: extract memories from every captured session         |
+| `memory extract <session-id> [--min-confidence X] [--re-extract]`                              | Extract from a single session                                  |
+| `memory extractor-log [--session ID] [--limit N]`                                              | Inspect per-session extractor manifests                        |
+| `memory sweep [--dry-run]`                                                                     | Age out unused candidates per the configured policy            |
+| `memory promote <id>`                                                                          | Promote a project-scoped memory to global (cross-project)      |
+| `memory install-prompt-guide` / `memory uninstall-prompt-guide`                                | Install/remove the agent-facing memory usage prompt guide      |
 
 ### MCP tools
 
@@ -557,6 +597,11 @@ trashed ──► purged                      (purge, permanent)
 | `confirm_memory`   | Confirm candidate memory       |
 | `add_evidence`     | Attach evidence to memory      |
 | `rebuild_index`    | Reconcile index from .md files |
+| `extract_session`  | Run extractor on a single captured session |
+| `list_memories_pending_rewrite` | List candidates flagged for rewrite |
+| `rewrite_memory`   | Apply a rewritten body to a memory |
+| `promote_to_global` | Promote a project-scoped memory to global cross-project store |
+| `sweep_aging`      | Age out unused candidates per policy |
 
 ### Auto-extractor
 
@@ -570,11 +615,26 @@ they age out per the configured policy (Phase 2b).
 
 To extract from existing history (one-shot):
 
-    ai-cortex memory bootstrap [--limit-sessions N] [--min-confidence X]
+    ai-cortex memory bootstrap [--limit-sessions N] [--min-confidence X] [--re-extract]
+                               [--cwd D] [--repo-key K]
 
 The command iterates every captured session and runs the extractor over
-each. Idempotent — re-running appends evidence to existing candidates
-rather than duplicating.
+each. Idempotent by default — re-running on a session whose manifest is
+up-to-date is a no-op. Pass `--re-extract` to force reprocessing of every
+session (useful after tuning extractor thresholds or filters). Existing
+memories are not duplicated; near-duplicates dedup via cosine similarity
+(threshold 0.85, `DEFAULT_DEDUP_COSINE`) and accrue evidence + a
+confidence bump instead.
+
+Flags:
+
+| Flag                    | Default | Description                                     |
+| ----------------------- | ------- | ----------------------------------------------- |
+| `--limit-sessions <N>`  | all     | Process only the N oldest sessions              |
+| `--min-confidence <X>`  | `0.4`   | Reject candidates scoring below this floor      |
+| `--re-extract`          | off     | Reprocess sessions whose manifest already exists |
+| `--cwd <D>`             | `pwd`   | Worktree path used to resolve `repoKey`         |
+| `--repo-key <K>`        | derived | Override repo key (skips git resolution)        |
 
 ---
 
@@ -640,6 +700,8 @@ npm install github:ai-creed/ai-cortex
 # or
 pnpm add github:ai-creed/ai-cortex
 ```
+
+The library currently exposes only the **indexing layer** (`indexRepo`, `rehydrateRepo`, `suggestRepo`, `queryBlastRadius`, `extractCallGraph` + types). The history and memory layers are not part of the public library surface — drive them via the CLI (`ai-cortex history *`, `ai-cortex memory *`) or the MCP server.
 
 ```ts
 import {
@@ -758,13 +820,22 @@ type BlastRadiusResult = {
 
 ## Architecture
 
-**Data flow:**
+**Indexing path:**
 
-1. `index` — tree-sitter parses TS/JS files, extracts functions and call edges, stores `RepoCache` as JSON
+1. `index` — tree-sitter parses TS/JS, Python, C/C++ files via per-language adapters, extracts functions and call edges, stores `RepoCache` as JSON
 2. `rehydrate` — loads cache, detects staleness, generates a Markdown briefing
 3. `suggest` (fast) — ranks files by path/function token overlap + import graph + call graph proximity to the task and anchor
 4. `suggest-deep` — extends fast with per-token trigram fuzzy matching (Jaccard ≥ 0.4) and query-time content scan (400 ms budget, 500 KB cap, 3 hits/file)
-5. `blast_radius` — BFS reverse traversal of call edges, returns callers by hop tier
+5. `suggest-semantic` — sentence-embedding (`Xenova/all-MiniLM-L6-v2`, 384-dim) similarity ranking; first call downloads the model (~23 MB) into `~/.cache/ai-cortex/models/`
+6. `blast_radius` — BFS reverse traversal of call edges, returns callers by hop tier
+
+**History + memory path:**
+
+1. `PreCompact` / `SessionEnd` hook fires `ai-cortex history capture` with the harness session id and transcript path
+2. The compactor (`src/lib/history/compact.ts`) reads the JSONL transcript, filters harness-injected pseudo-prompts (skill bodies, slash command output, `<system-reminder>`, `<bash-*>`, `<command-*>`, etc.), and produces an `EvidenceLayer` (tool calls, file paths, user prompts, corrections — each with a `nextAssistantSnippet` for ack/workaround signal in v2 sessions)
+3. The auto-extractor (`src/lib/memory/extract.ts`) runs immediately after compaction, producing candidate `decision` / `gotcha` / `pattern` / `how-to` records. Confidence model: `BASE = 0.35`, +0.10 for correction-prefix on user text, +0.10 for ack/workaround in `nextAssistantSnippet`. Default floor `minConfidence = 0.4` rejects bare matches; a structural floor rejects base-confidence candidates with body < 25 chars
+4. Near-duplicates dedup against existing memories of the same type via cosine similarity (threshold 0.85) on title + body embedding, with a non-empty tag-intersection guard. On a hit, evidence is appended and confidence bumped by 0.10
+5. Candidates surface via `recall_memory` (browse) → `get_memory` (apply, signals usage). Promote with `confirm_memory`; remove with `deprecate_memory` / `trash_memory` / `purge_memory`. Pin a memory with `pin_memory` to include it in every rehydration briefing
 
 **Call graph:**
 
@@ -782,11 +853,26 @@ All data is stored in `~/.cache/ai-cortex/`. The directory is organized as:
 ```
 ~/.cache/ai-cortex/
   v1/
-    <repo-key>/          # hash of the repo's absolute path
-      <fingerprint>.json # cache file, keyed by git state + dirty flag
+    <repo-key>/                       # sha16 of the git common dir
+      <worktree-key>.json             # index cache, keyed by git fingerprint
+      <worktree-key>.md               # last rehydration briefing snapshot
+      history/
+        manifest.jsonl                # append-only session manifest
+        sessions/<sessionId>/
+          session.json                # compacted evidence + summary
+          chunks.jsonl                # raw chunks (until pruned per retention policy)
+          .vectors.bin                # embeddings sidecar (if enabled)
+          .vectors.meta.json
+      memory/
+        memories/<id>.md              # active + candidate memories
+        trash/<id>.md                 # trashed memories (pre-purge)
+        index.sqlite                  # FTS5 + vector index
+        extractor-runs/<sessionId>.json
+        types.json                    # type registry / enums
+  models/                             # downloaded embedding models (~23 MB)
 ```
 
-Each cache file is a JSON snapshot (`RepoCache`, schema v3) containing:
+The index cache file is a JSON snapshot (`RepoCache`, schema v3) containing:
 
 - File tree with hashes
 - Import edges
@@ -818,18 +904,19 @@ rm -rf ~/.cache/ai-cortex/
 
 ## Language Support
 
-Phase 5 ships with a TypeScript/JavaScript adapter covering `.ts`, `.tsx`, `.js`, `.jsx` files.
+Adapters are auto-registered on first use (`src/lib/adapters/ensure.ts`):
 
-The adapter extracts:
+| Adapter      | Extensions                  | Notes                                      |
+| ------------ | --------------------------- | ------------------------------------------ |
+| TypeScript / JavaScript | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` | Named functions, arrows, class methods; named/default/namespace import resolution |
+| Python       | `.py`                       | Module-level + class-method functions      |
+| C / C++      | `.c`, `.h`, `.cc`, `.cpp`, `.hpp`, `.hh`, `.cxx`, `.hxx` | Function definitions; header/source pairing |
 
-- Named function declarations
-- Arrow functions assigned to variables or exported directly
-- Class methods
-- Cross-file call edges resolved through import bindings (named, default, namespace imports)
+All adapters share the `LangAdapter` interface and run via `web-tree-sitter`. The first call initializes the WASM runtime once before parallel adapter creation to avoid races.
 
 Dynamic calls (higher-order functions, computed method names) are not resolved; they contribute to `unresolvedEdges` and set `confidence: "partial"`.
 
-Other language adapters can be registered programmatically:
+Other adapters can be registered programmatically:
 
 ```ts
 import { registerAdapter } from "ai-cortex";
