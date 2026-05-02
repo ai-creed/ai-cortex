@@ -13,6 +13,7 @@ import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
 import type { EvidenceLayer, SessionRecord } from "../history/types.js";
 import { listSessions, readSession } from "../history/store.js";
+import { isHarnessInjection } from "../history/compact.js";
 
 export const EXTRACTOR_MANIFEST_VERSION = 1;
 export const DEFAULT_DEDUP_COSINE = 0.85;
@@ -65,11 +66,18 @@ function filterEvidenceAfterTurn(
 	evidence: EvidenceLayer,
 	afterTurn: number,
 ): EvidenceLayer {
+	// Defensively drop harness-injected pseudo-prompts that may be present in
+	// sessions captured before the compactor learned to filter them. Tool calls
+	// and file paths are unaffected.
 	return {
 		toolCalls: evidence.toolCalls.filter((t) => t.turn > afterTurn),
 		filePaths: evidence.filePaths.filter((f) => f.turn > afterTurn),
-		userPrompts: evidence.userPrompts.filter((u) => u.turn > afterTurn),
-		corrections: evidence.corrections.filter((c) => c.turn > afterTurn),
+		userPrompts: evidence.userPrompts.filter(
+			(u) => u.turn > afterTurn && !isHarnessInjection(u.text),
+		),
+		corrections: evidence.corrections.filter(
+			(c) => c.turn > afterTurn && !isHarnessInjection(c.text),
+		),
 	};
 }
 
@@ -136,6 +144,22 @@ export async function extractFromSession(
 		const all = [...decisions, ...gotchas, ...howtos, ...patterns];
 
 		for (const cand of all) {
+			// Structural floor: when no boost fired (confidence still at BASE),
+			// require a non-trivial body. Catches throwaway prompts like "okay good"
+			// that match IMPERATIVE_RE / SYMPTOM_RE on a single stopword. Only
+			// applies at exactly BASE_CONFIDENCE so any boost (correction prefix,
+			// ack, workaround) lets short-but-strong feedback through.
+			if (
+				cand.confidence === BASE_CONFIDENCE &&
+				cand.body.trim().length < BASE_CONFIDENCE_MIN_BODY_CHARS
+			) {
+				manifest.rejectedCandidates.push({
+					type: cand.type,
+					reason: `base-confidence body too short (<${BASE_CONFIDENCE_MIN_BODY_CHARS} chars)`,
+					previewText: cand.title,
+				});
+				continue;
+			}
 			if (cand.confidence < minConfidence) {
 				manifest.rejectedCandidates.push({
 					type: cand.type,
@@ -417,6 +441,7 @@ export function nearestFile(
 
 const BASE_CONFIDENCE = 0.35;
 const SIGNAL_BOOST = 0.1;
+const BASE_CONFIDENCE_MIN_BODY_CHARS = 25;
 
 // Mirror of CORRECTION_RE in src/lib/history/compact.ts. Kept local to the
 // extractor so the boost is computed from the prompt text directly without a

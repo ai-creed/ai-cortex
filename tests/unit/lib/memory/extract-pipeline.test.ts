@@ -243,6 +243,114 @@ describe("extractFromSession — end to end", () => {
 		expect(count).toBe(2);
 	}, 60_000);
 
+	it("rejects base-confidence candidates with bodies under 25 chars", async () => {
+		await writeSession(repoKey, {
+			version: 2,
+			id: "s-short",
+			startedAt: "2026-04-30T00:00:00Z",
+			endedAt: "2026-04-30T01:00:00Z",
+			turnCount: 1,
+			lastProcessedTurn: 1,
+			hasSummary: false,
+			hasRaw: true,
+			rawDroppedAt: null,
+			transcriptPath: "/tmp/x",
+			summary: "",
+			evidence: {
+				toolCalls: [],
+				filePaths: [],
+				// "we should ship" — IMPERATIVE_RE hits "should", no correction prefix,
+				// no nextAssistantSnippet → confidence stays at BASE 0.35, body < 25.
+				userPrompts: [{ turn: 1, text: "we should ship" }],
+				corrections: [],
+			},
+			chunks: [],
+		});
+		const r = await extractFromSession(repoKey, "s-short", {
+			minConfidence: 0.35,
+		});
+		expect(r.candidatesCreated).toBe(0);
+		expect(
+			r.rejectedCandidates.some((c) =>
+				c.reason.startsWith("base-confidence body too short"),
+			),
+		).toBe(true);
+	}, 60_000);
+
+	it("accepts short bodies when a boost lifts confidence above BASE", async () => {
+		await writeSession(repoKey, {
+			version: 2,
+			id: "s-short-ack",
+			startedAt: "2026-04-30T00:00:00Z",
+			endedAt: "2026-04-30T01:00:00Z",
+			turnCount: 1,
+			lastProcessedTurn: 1,
+			hasSummary: false,
+			hasRaw: true,
+			rawDroppedAt: null,
+			transcriptPath: "/tmp/x",
+			summary: "",
+			evidence: {
+				toolCalls: [],
+				filePaths: [],
+				// Same short prompt, but assistant ack snippet boosts +0.10 → 0.45 > BASE.
+				userPrompts: [
+					{
+						turn: 1,
+						text: "always use rg",
+						nextAssistantSnippet: "Got it",
+					},
+				],
+				corrections: [],
+			},
+			chunks: [],
+		});
+		const r = await extractFromSession(repoKey, "s-short-ack", {
+			minConfidence: 0.35,
+		});
+		expect(r.candidatesCreated).toBe(1);
+	}, 60_000);
+
+	it("filters harness-injected pseudo-prompts from evidence at extract time", async () => {
+		await writeSession(repoKey, {
+			version: 2,
+			id: "s-harness",
+			startedAt: "2026-04-30T00:00:00Z",
+			endedAt: "2026-04-30T01:00:00Z",
+			turnCount: 2,
+			lastProcessedTurn: 2,
+			hasSummary: false,
+			hasRaw: true,
+			rawDroppedAt: null,
+			transcriptPath: "/tmp/x",
+			summary: "",
+			evidence: {
+				toolCalls: [],
+				filePaths: [],
+				// Skill body got captured as a userPrompt under an older compactor.
+				// IMPERATIVE_RE would match "must / should". Defensive filter must
+				// drop it before it ever reaches a producer.
+				userPrompts: [
+					{
+						turn: 1,
+						text: "Base directory for this skill: /Users/x/.claude/skills/foo\n\n# Foo\n\nMUST always do bar",
+					},
+					{
+						turn: 2,
+						text: "<system-reminder>\nMUST follow this rule\n</system-reminder>",
+					},
+				],
+				corrections: [],
+			},
+			chunks: [],
+		});
+		const r = await extractFromSession(repoKey, "s-harness", {
+			minConfidence: 0.35,
+		});
+		expect(r.candidatesCreated).toBe(0);
+		expect(r.rejectedCandidates).toEqual([]);
+	}, 60_000);
+
 	it("allowReExtract: true re-scans from turn 0 and overwrites the manifest", async () => {
 		await writeSession(repoKey, {
 			version: 2,

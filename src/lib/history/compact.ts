@@ -140,6 +140,38 @@ function parseCodexArguments(args: unknown): unknown {
 }
 
 const CORRECTION_RE = /^\s*(no|stop|don't|dont|wait|actually|instead|but)\b/i;
+
+// Harness-injected pseudo-prompts. Claude Code injects skill bodies, slash
+// command transcripts, system reminders, and shell I/O into the transcript
+// under role=user. These are not user statements and should not feed memory
+// extraction. Match on the leading marker only — text after may be arbitrary.
+const HARNESS_INJECTION_PREFIXES = [
+	"Base directory for this skill:",
+	"<command-name>",
+	"<command-message>",
+	"<command-args>",
+	"<local-command-",
+	"<system-reminder>",
+	"<bash-input>",
+	"<bash-stdout>",
+	"<bash-stderr>",
+	"The user just ran /",
+] as const;
+
+// Skill bodies without the "Base directory" wrapper open with a markdown
+// heading like `# Update Config Skill`. Match a first non-empty line of the
+// form `# <words> Skill` to catch these without flagging ordinary user docs.
+const SKILL_HEADING_RE = /^#[ \t]+[A-Z][\w-]+(?:[ \t]+[\w-]+)*[ \t]+Skill[ \t]*$/;
+
+export function isHarnessInjection(text: string): boolean {
+	const trimmed = text.trimStart();
+	for (const p of HARNESS_INJECTION_PREFIXES) {
+		if (trimmed.startsWith(p)) return true;
+	}
+	const firstLine = trimmed.split("\n", 1)[0] ?? "";
+	if (SKILL_HEADING_RE.test(firstLine)) return true;
+	return false;
+}
 const PATH_TOOL_KEYS = ["file_path", "path", "pattern"] as const;
 const FILE_TOOLS = new Set([
 	"Read",
@@ -173,7 +205,11 @@ export function extractEvidence(turns: RawTurn[]): EvidenceLayer {
 
 	for (let i = 0; i < turns.length; i++) {
 		const t = turns[i];
-		if (t.role === "user" && t.text.length > 0) {
+		if (
+			t.role === "user" &&
+			t.text.length > 0 &&
+			!isHarnessInjection(t.text)
+		) {
 			const snippet = nextAssistantSnippet(turns, i);
 			userPrompts.push({
 				turn: t.turn,

@@ -66,4 +66,75 @@ describe("extractEvidence", () => {
 		const e = extractEvidence(turns);
 		expect(e.filePaths).toContainEqual({ turn: 1, path: "src/foo.ts" });
 	});
+
+	it("skips harness-injected pseudo-prompts", () => {
+		const t: RawTurn[] = [
+			{ turn: 0, role: "user", text: "real user question?" },
+			{
+				turn: 1,
+				role: "user",
+				text: "Base directory for this skill: /Users/x/.claude/skills/foo\n\n# Foo\n\nMUST always do bar",
+			},
+			{
+				turn: 2,
+				role: "user",
+				text: "<command-name>/resume</command-name>",
+			},
+			{
+				turn: 3,
+				role: "user",
+				text: "<system-reminder>\nThe task tools haven't been used\n</system-reminder>",
+			},
+			{
+				turn: 4,
+				role: "user",
+				text: "<local-command-stdout>No conversations</local-command-stdout>",
+			},
+			{ turn: 5, role: "user", text: "<bash-input>ls</bash-input>" },
+			{ turn: 6, role: "user", text: "another real prompt" },
+		];
+		const e = extractEvidence(t);
+		expect(e.userPrompts.map((u) => u.turn)).toEqual([0, 6]);
+		expect(e.corrections).toEqual([]);
+	});
+
+	it("skips slash-command output templates and skill-heading injections", () => {
+		const t: RawTurn[] = [
+			{ turn: 0, role: "user", text: "real prompt" },
+			{
+				turn: 1,
+				role: "user",
+				text: "The user just ran /insights to generate a usage report\nHere is the data:\n{...}",
+			},
+			{
+				turn: 2,
+				role: "user",
+				text: "# Update Config Skill\n\nModify Claude Code configuration by updating settings.json files.",
+			},
+			{
+				turn: 3,
+				role: "user",
+				text: "# Brainstorming Skill\n\nHelp turn ideas into designs",
+			},
+			// Negative: ordinary user docs with a Skill word should NOT be filtered
+			{
+				turn: 4,
+				role: "user",
+				text: "# How to use the skill panel\n\nClick the skill button.",
+			},
+		];
+		const e = extractEvidence(t);
+		expect(e.userPrompts.map((u) => u.turn)).toEqual([0, 4]);
+	});
+
+	it("skips harness injection even with leading whitespace", () => {
+		const t: RawTurn[] = [
+			{
+				turn: 0,
+				role: "user",
+				text: "  \n<system-reminder>noisy</system-reminder>",
+			},
+		];
+		expect(extractEvidence(t).userPrompts).toEqual([]);
+	});
 });
