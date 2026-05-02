@@ -1043,9 +1043,33 @@ async function main(): Promise<void> {
 					if (code !== 0) process.exit(code);
 					break;
 				}
+				case "install-prompt-guide": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const { runMemoryInstallPromptGuide } = await import(
+						"./lib/memory/cli/install-prompt-guide.js"
+					);
+					const code = await runMemoryInstallPromptGuide(
+						stripFlagPairs(rest, ["--cwd"]),
+						{ cwd },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
+				case "uninstall-prompt-guide": {
+					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
+					const { runMemoryUninstallPromptGuide } = await import(
+						"./lib/memory/cli/install-prompt-guide.js"
+					);
+					const code = await runMemoryUninstallPromptGuide(
+						stripFlagPairs(rest, ["--cwd"]),
+						{ cwd },
+					);
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				default: {
 					process.stderr.write(
-						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log|sweep|promote>\n",
+						"usage: ai-cortex memory <bootstrap|recall|search|record|get|list|update|deprecate|restore|merge|trash|untrash|purge|link|unlink|pin|unpin|confirm|audit|rebuild-index|reconcile|extract|extractor-log|sweep|promote|install-prompt-guide|uninstall-prompt-guide>\n",
 					);
 					process.exit(1);
 				}
