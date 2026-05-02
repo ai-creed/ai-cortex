@@ -19,6 +19,16 @@ import type {
 } from "../lib/types.js";
 
 function clearCache(repoPath: string): void {
+	// Refuse to wipe the user's real cache. The perf suite indexes real repos
+	// and clears their cache between scenarios; without an isolated cache home
+	// this nukes production memory + history. Require AI_CORTEX_CACHE_HOME so
+	// the destructive path can only ever target a sandbox.
+	if (!process.env.AI_CORTEX_CACHE_HOME) {
+		throw new Error(
+			"perf-suite.clearCache: refusing to clear cache without AI_CORTEX_CACHE_HOME set. " +
+				"Set it to an isolated tmp dir before running the perf suite.",
+		);
+	}
 	const identity = resolveRepoIdentity(repoPath);
 	const dir = getCacheDir(identity.repoKey);
 	if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
