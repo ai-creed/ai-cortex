@@ -517,7 +517,7 @@ export function createServer(): McpServer {
 			description:
 				"Browse stored project knowledge by query. Use BEFORE non-trivial edits to unfamiliar files, when debugging recurring symptoms, or when the user references a past decision. Pass scope.files for file-specific context; pass source: 'all' to include cross-project patterns. NOTE: this is browse-only and does not signal usage. To actually consult and use a result, follow up with get_memory(id). The store contains decisions, gotchas, how-tos, and patterns extracted from prior sessions.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				query: z.string().min(1),
 				limit: z.number().int().positive().max(50).optional(),
 				scopeFiles: z.array(z.string()).optional(),
@@ -581,7 +581,7 @@ export function createServer(): McpServer {
 			description:
 				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -612,7 +612,7 @@ export function createServer(): McpServer {
 			description:
 				"List memories with optional filters by type, status, or file scope.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				type: z.array(z.string()).optional(),
 				status: z.array(z.string()).optional(),
 				scopeFile: z.string().optional(),
@@ -651,7 +651,7 @@ export function createServer(): McpServer {
 			description:
 				"Full-text search across memory bodies using FTS5. Returns ranked hits.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				query: z.string().min(1),
 				limit: z.number().int().positive().max(50).optional(),
 			},
@@ -682,7 +682,7 @@ export function createServer(): McpServer {
 		{
 			description: "Return the full audit trail for a memory ID.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -715,7 +715,7 @@ export function createServer(): McpServer {
 			description:
 				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks).",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				type: z.string().min(1),
 				title: z.string().min(1),
 				body: z.string().min(1),
@@ -760,7 +760,7 @@ export function createServer(): McpServer {
 		{
 			description: "Update the body, title, or metadata of an existing memory.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				body: z.string().optional(),
 				title: z.string().optional(),
@@ -793,7 +793,7 @@ export function createServer(): McpServer {
 		{
 			description: "Update the file/tag scope of a memory.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				scopeFiles: z.array(z.string()),
 				scopeTags: z.array(z.string()),
@@ -825,7 +825,7 @@ export function createServer(): McpServer {
 			description:
 				"Deprecate a memory when its rule contradicts current code, conflicts with current user direction, or is otherwise no longer applicable. Deprecated memories are excluded from recall but preserved in audit. Use restore_memory to bring one back.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 			},
@@ -852,7 +852,7 @@ export function createServer(): McpServer {
 		{
 			description: "Restore a deprecated memory back to active.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -879,7 +879,7 @@ export function createServer(): McpServer {
 			description:
 				"Merge src memory into dst. src becomes merged_into, dst receives the merged body.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				mergedBody: z.string().min(1),
@@ -907,7 +907,7 @@ export function createServer(): McpServer {
 		{
 			description: "Move a memory to trash. Recoverable via untrash_memory.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 			},
@@ -934,7 +934,7 @@ export function createServer(): McpServer {
 		{
 			description: "Restore a trashed memory back to active.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -961,7 +961,7 @@ export function createServer(): McpServer {
 			description:
 				"Permanently delete a trashed memory. Use redact=true for privacy-grade erasure.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 				redact: z.boolean().optional(),
@@ -989,7 +989,7 @@ export function createServer(): McpServer {
 		{
 			description: "Create a typed edge between two memories.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
@@ -1017,7 +1017,7 @@ export function createServer(): McpServer {
 		{
 			description: "Remove a typed edge between two memories.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
@@ -1045,7 +1045,7 @@ export function createServer(): McpServer {
 		{
 			description: "Pin a memory so it appears in every rehydration briefing.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				force: z.boolean().optional(),
 			},
@@ -1072,7 +1072,7 @@ export function createServer(): McpServer {
 		{
 			description: "Remove the explicit pin from a memory.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -1098,7 +1098,7 @@ export function createServer(): McpServer {
 		{
 			description: "Confirm a candidate memory, promoting it to active. Call when the user explicitly endorses a candidate, or when the agent has used the rule successfully and validated it produced the right outcome. Note that rewrite_memory also auto-promotes candidate→active as a side effect of cleanup.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -1124,7 +1124,7 @@ export function createServer(): McpServer {
 		{
 			description: "Append a provenance entry to a memory's evidence trail.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				sessionId: z.string(),
 				turn: z.number().int(),
@@ -1163,7 +1163,7 @@ export function createServer(): McpServer {
 			description:
 				"Reconcile the in-memory index with .md files on disk. Handles orphan files, phantom rows, and body-hash drift.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 			},
 		},
 		logged(
@@ -1190,7 +1190,7 @@ export function createServer(): McpServer {
 			description:
 				"Sweep aging transitions: trash stale candidates/deprecated/merged_into memories and purge old trashed memories. Use dryRun=true to preview without applying changes.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				dryRun: z.boolean().optional(),
 			},
 		},
@@ -1219,7 +1219,7 @@ export function createServer(): McpServer {
 			description:
 				"Promote a project memory to the global cross-project store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for universal patterns, language quirks, and tool gotchas that apply across multiple projects.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 			},
 		},
@@ -1253,7 +1253,7 @@ export function createServer(): McpServer {
 			description:
 				"Run the auto-extractor on a captured session. Returns the manifest.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				sessionId: z.string().min(1),
 				allowReExtract: z.boolean().optional(),
 			},
@@ -1285,7 +1285,7 @@ export function createServer(): McpServer {
 			description:
 				"List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				limit: z.number().int().positive().max(100).optional(),
 				since: z
 					.string()
@@ -1325,7 +1325,7 @@ export function createServer(): McpServer {
 			description:
 				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it).",
 			inputSchema: {
-				worktreePath: z.string(),
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
 				title: z.string().min(1),
 				body: z.string().min(1),

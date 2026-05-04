@@ -173,7 +173,7 @@ ai-cortex memory list --status active --json   # all active memories
 
 **The cardinal pattern.** `recall_memory` is browse-only — it ranks results but doesn't signal usage. `get_memory(id)` is the "I am applying this rule" signal. The split lets ai-cortex measure which memories actually drive agent behavior, which gates cleanup eligibility (only valuable memories earn token-spend on rewrite).
 
-**Two tiers.** Memories start project-scoped (`~/.cache/ai-cortex/<repoKey>/memory/`). Promote to a global cross-project tier (`~/.cache/ai-cortex/global/memory/`) when the rule applies beyond the current repo. Cross-tier recall queries both stores in parallel.
+**Two tiers.** Memories start project-scoped (`~/.cache/ai-cortex/v1/<hashedRepoKey>/memory/`). Promote to a global cross-project tier (`~/.cache/ai-cortex/global/memory/`) when the rule applies beyond the current repo. Cross-tier recall queries both stores in parallel.
 
 **Lifecycle.** `candidate` → `active` → `deprecated`/`merged_into`/`trashed` → `purged`. Aging sweeps trash old candidates (90d) and purge old trashed memories (90d) automatically. `stale_reference` is never auto-aged.
 
@@ -257,3 +257,7 @@ Highlights:
 - A **cosmetic zsh warning** can appear during `$()` capture on macOS — the command still succeeds.
 
 See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for the full list and workarounds.
+
+## Breaking Changes
+
+**Breaking change (vNext — repo-key keying fix):** Memory MCP tools now require `worktreePath` (an absolute path inside the project's git worktree) in place of the prior `repoKey` argument. The server derives the canonical hashed `repoKey` from `worktreePath` via `resolveRepoIdentity`. Existing literal-name cache directories are auto-migrated on first call. CLI commands still accept `--repo-key` as an escape hatch but only accept 16-hex hashed keys (or the reserved literal `"global"`).
