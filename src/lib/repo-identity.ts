@@ -1,6 +1,7 @@
 // src/lib/repo-identity.ts
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { RepoIdentityError } from "./models.js";
 import type { RepoIdentity } from "./models.js";
@@ -14,6 +15,32 @@ function execGit(cwd: string, args: string[]): string {
 
 function sha16(input: string): string {
 	return createHash("sha256").update(input).digest("hex").slice(0, 16);
+}
+
+export class WorktreePathError extends Error {}
+
+export function validateWorktreePath(input: string): void {
+	if (typeof input !== "string" || input.length === 0) {
+		throw new WorktreePathError("worktreePath must be a non-empty string");
+	}
+	if (!path.isAbsolute(input)) {
+		throw new WorktreePathError(
+			`worktreePath must be absolute (got ${JSON.stringify(input)})`,
+		);
+	}
+	let stat: fs.Stats;
+	try {
+		stat = fs.statSync(input);
+	} catch {
+		throw new WorktreePathError(
+			`worktreePath does not exist: ${input}`,
+		);
+	}
+	if (!stat.isDirectory()) {
+		throw new WorktreePathError(
+			`worktreePath must be a directory: ${input}`,
+		);
+	}
 }
 
 export function resolveRepoIdentity(inputPath: string): RepoIdentity {
