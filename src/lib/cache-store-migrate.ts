@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import Database from "better-sqlite3";
 import { getCacheDir } from "./cache-store.js";
 
 export const SENTINEL_NAME = ".migration-v1-complete";
@@ -75,4 +76,63 @@ export async function runRepoKeyMigrationIfNeeded(
 	}
 	// Real migration logic lands in subsequent tasks.
 	return { outcome: "no-op", details: [] };
+}
+
+export type StoreClassification = "empty" | "populated";
+
+export function classifyStore(dir: string): StoreClassification {
+	if (!fs.existsSync(dir)) return "empty";
+
+	const dbPath = path.join(dir, "memory", "index.sqlite");
+	if (fs.existsSync(dbPath)) {
+		try {
+			const db = new Database(dbPath, { readonly: true });
+			try {
+				const row = db
+					.prepare(
+						"SELECT name FROM sqlite_master WHERE type='table' AND name='memories'",
+					)
+					.get();
+				if (row) {
+					const count = db
+						.prepare("SELECT COUNT(*) AS c FROM memories")
+						.get() as { c: number };
+					if (count.c > 0) return "populated";
+				}
+			} finally {
+				db.close();
+			}
+		} catch {
+			// corrupt or locked — treat as populated to be safe (don't auto-delete)
+			return "populated";
+		}
+	}
+
+	const sessionsDir = path.join(dir, "history", "sessions");
+	if (fs.existsSync(sessionsDir)) {
+		const entries = fs.readdirSync(sessionsDir);
+		for (const id of entries) {
+			if (
+				fs.existsSync(path.join(sessionsDir, id, "session.json")) ||
+				fs.existsSync(path.join(sessionsDir, id, "chunks.jsonl"))
+			) {
+				return "populated";
+			}
+		}
+	}
+
+	const extractorDir = path.join(dir, "extractor-runs");
+	if (fs.existsSync(extractorDir)) {
+		const entries = fs.readdirSync(extractorDir);
+		if (entries.some((e) => e !== "." && e !== "..")) return "populated";
+	}
+
+	return "empty";
+}
+
+export function deleteEmptyStore(dir: string): void {
+	if (classifyStore(dir) !== "empty") {
+		throw new Error(`Refusing to delete: ${dir} is not empty`);
+	}
+	fs.rmSync(dir, { recursive: true, force: true });
 }

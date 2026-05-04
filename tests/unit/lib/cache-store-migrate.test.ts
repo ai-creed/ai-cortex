@@ -2,11 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	runRepoKeyMigrationIfNeeded,
 	SENTINEL_NAME,
 	discoverLiteralCandidates,
+	classifyStore,
+	deleteEmptyStore,
 } from "../../../src/lib/cache-store-migrate.js";
 
 let tmp: string;
@@ -97,5 +100,74 @@ describe("discoverLiteralCandidates", () => {
 		expect(() => discoverLiteralCandidates(repoRoot)).not.toThrow();
 		const candidates = discoverLiteralCandidates(repoRoot);
 		expect(candidates).toContain("detached");
+	});
+});
+
+function makeStore(dir: string): void {
+	fs.mkdirSync(path.join(dir, "memory"), { recursive: true });
+	fs.mkdirSync(path.join(dir, "history", "sessions"), { recursive: true });
+	fs.mkdirSync(path.join(dir, "extractor-runs"), { recursive: true });
+}
+
+function makeDbWithRow(dir: string): void {
+	makeStore(dir);
+	const db = new Database(path.join(dir, "memory", "index.sqlite"));
+	db.exec(`CREATE TABLE memories (id TEXT PRIMARY KEY)`);
+	db.prepare("INSERT INTO memories(id) VALUES (?)").run("m1");
+	db.close();
+}
+
+describe("classifyStore", () => {
+	it("returns 'empty' for a directory that does not exist", () => {
+		expect(classifyStore(path.join(tmp, "nonexistent"))).toBe("empty");
+	});
+
+	it("returns 'empty' for an existing dir with only schema (zero rows)", () => {
+		const dir = path.join(tmp, "empty-schema");
+		makeStore(dir);
+		const db = new Database(path.join(dir, "memory", "index.sqlite"));
+		db.exec(`CREATE TABLE memories (id TEXT PRIMARY KEY)`);
+		db.close();
+		expect(classifyStore(dir)).toBe("empty");
+	});
+
+	it("returns 'populated' when memories table has rows", () => {
+		const dir = path.join(tmp, "populated-rows");
+		makeDbWithRow(dir);
+		expect(classifyStore(dir)).toBe("populated");
+	});
+
+	it("returns 'populated' when history sessions exist", () => {
+		const dir = path.join(tmp, "populated-history");
+		makeStore(dir);
+		fs.mkdirSync(path.join(dir, "history", "sessions", "uuid-1"));
+		fs.writeFileSync(
+			path.join(dir, "history", "sessions", "uuid-1", "session.json"),
+			"{}",
+		);
+		expect(classifyStore(dir)).toBe("populated");
+	});
+
+	it("returns 'populated' when extractor-runs has files", () => {
+		const dir = path.join(tmp, "populated-extractor");
+		makeStore(dir);
+		fs.writeFileSync(path.join(dir, "extractor-runs", "uuid.json"), "{}");
+		expect(classifyStore(dir)).toBe("populated");
+	});
+});
+
+describe("deleteEmptyStore", () => {
+	it("removes the directory when classification is empty", () => {
+		const dir = path.join(tmp, "to-delete");
+		makeStore(dir);
+		deleteEmptyStore(dir);
+		expect(fs.existsSync(dir)).toBe(false);
+	});
+
+	it("throws if classification is populated", () => {
+		const dir = path.join(tmp, "do-not-delete");
+		makeDbWithRow(dir);
+		expect(() => deleteEmptyStore(dir)).toThrow(/not empty/i);
+		expect(fs.existsSync(dir)).toBe(true);
 	});
 });
