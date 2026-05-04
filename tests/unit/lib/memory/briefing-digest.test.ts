@@ -231,4 +231,22 @@ describe("renderMemoryDigest", () => {
 		expect(pendingIdx).toBeGreaterThan(decisionTypeIdx);
 		expect(howIdx).toBeGreaterThan(pendingIdx);
 	});
+
+	it("does not claim get_memory is the cleanup-eligibility signal in How to consult", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, {
+				type: "decision",
+				title: "any active",
+				body: "## Body\na",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+		} finally {
+			lc.close();
+		}
+		const out = await renderMemoryDigest(repoKey);
+		expect(out).not.toBeNull();
+		expect(out!).not.toContain("that's the cleanup-eligibility signal");
+	});
 });

@@ -113,7 +113,7 @@ export async function renderMemoryDigest(
 			"- For cross-project patterns (language quirks, tool gotchas), pass `source: 'all'`.",
 		);
 		lines.push(
-			"- After `recall_memory` returns a relevant hit, call `get_memory(id)` to actually use it — that's the cleanup-eligibility signal.",
+			"- After `recall_memory` returns a relevant hit, call `get_memory(id)` to fetch the full record before applying the rule. `get_memory` bumps an access counter and last-access timestamp; `recall_memory` is browse-only.",
 		);
 		lines.push(
 			"- If a recalled memory contradicts current code, call `deprecate_memory(id, reason)`.",

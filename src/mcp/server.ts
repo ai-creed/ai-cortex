@@ -579,7 +579,7 @@ export function createServer(): McpServer {
 		"get_memory",
 		{
 			description:
-				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.",
+				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. Calling get_memory bumps the memory's access counter and last-access timestamp; recall_memory is browse-only and does not.",
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
@@ -1283,7 +1283,7 @@ export function createServer(): McpServer {
 		"list_memories_pending_rewrite",
 		{
 			description:
-				"List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
+				"List candidate memories eligible for cleanup. A candidate is eligible when it is `status=candidate` and has not yet been rewritten (`rewritten_at IS NULL`). Highest-confidence candidates are returned first. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				limit: z.number().int().positive().max(100).optional(),

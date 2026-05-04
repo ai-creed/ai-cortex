@@ -577,7 +577,7 @@ describe("MCP memory tool descriptions — opinionated guidance", () => {
 		const { tools } = await client.listTools();
 		const get = tools.find((t: { name: string }) => t.name === "get_memory");
 		expect(get?.description).toMatch(/use|apply/i);
-		expect(get?.description).toMatch(/cleanup|signal/i);
+		expect(get?.description).toMatch(/access counter|last-access|browse-only/i);
 	});
 
 	it("record_memory description names the trigger conditions", async () => {
@@ -817,5 +817,26 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 			},
 		});
 		expect(result.isError).toBe(true);
+	});
+});
+
+describe("MCP tool description regression guards", () => {
+	it("get_memory description no longer claims cleanup-eligibility coupling", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const get = tools.find((t: { name: string }) => t.name === "get_memory");
+		expect(get).toBeDefined();
+		expect(get!.description).not.toContain("counts toward cleanup eligibility");
+	});
+
+	it("list_memories_pending_rewrite description reflects the loosened predicate", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const list = tools.find(
+			(t: { name: string }) => t.name === "list_memories_pending_rewrite",
+		);
+		expect(list).toBeDefined();
+		expect(list!.description).not.toContain("re-extracted at least once");
+		expect(list!.description).not.toContain("accessed via get_memory");
 	});
 });
