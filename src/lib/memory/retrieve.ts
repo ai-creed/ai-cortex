@@ -105,12 +105,18 @@ export function listMemoriesPendingRewrite(
 	filter: PendingRewriteFilter = {},
 ): PendingRewriteRow[] {
 	const limit = filter.limit ?? 25;
+	// Eligibility: any unrewritten candidate. The earlier predicate gated on
+	// `re_extract_count >= 1 AND (pinned = 1 OR get_count > 0)` as a "value
+	// signal" filter, but real-world agents rarely produce those signals during
+	// task work, so the queue stayed empty and cleanup never ran. The looser
+	// predicate lets the agent (with user budget awareness) decide what's worth
+	// rewriting versus deprecating.
+	//
 	// `since` filters by the most recent eligibility-relevant event:
-	// - `updated_at` covers re-extraction (bumpConfidence commits a new version)
-	//   and pin/unpin operations.
+	// - `updated_at` covers re-extraction and pin/unpin operations.
 	// - `last_accessed_at` covers `get_memory` accesses, which set the column
-	//   without bumping `updated_at`. A months-old candidate accessed today
-	//   becomes eligible today; filtering on `updated_at` alone would miss it.
+	//   without bumping `updated_at`. A candidate accessed today via get_memory
+	//   becomes eligible-since-today; filtering on `updated_at` alone would miss it.
 	const sinceClause = filter.since
 		? "AND (updated_at >= ? OR last_accessed_at >= ?)"
 		: "";
@@ -125,8 +131,6 @@ export function listMemoriesPendingRewrite(
 			 FROM memories
 			 WHERE status = 'candidate'
 			   AND rewritten_at IS NULL
-			   AND re_extract_count >= 1
-			   AND (pinned = 1 OR get_count > 0)
 			   ${sinceClause}
 			 ORDER BY confidence DESC, updated_at DESC
 			 LIMIT ?`,
