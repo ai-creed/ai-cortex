@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { assertHashedRepoKey } from "./cache-store.js";
 import { EMBEDDING_DIM, MODEL_NAME, getProvider } from "./embed-provider.js";
 import type { SidecarEntry, VectorIndex } from "./vector-sidecar.js";
 import { writeVectorIndex } from "./vector-sidecar.js";
@@ -9,12 +10,16 @@ import type { RepoCache } from "./models.js";
 
 /**
  * Returns the directory where sidecar vector files (.vectors.bin, .vectors.meta.json)
- * are stored for a given worktree key. Mirrors the base path used by cache-store.ts
- * (getCacheDir uses ~/.cache/ai-cortex/v1/<repoKey>), but keyed per worktreeKey so
- * the sidecar is isolated per worktree.
+ * are stored for a given worktree key. Keyed by hashed `worktreeKey`; passes through
+ * `assertHashedRepoKey` so the invariant is honored. Honors `AI_CORTEX_CACHE_HOME`
+ * the same way `getCacheDir` does, ensuring test isolation via env override works.
  */
 export function getSidecarDir(worktreeKey: string): string {
-	return path.join(os.homedir(), ".cache", "ai-cortex", "v1", worktreeKey);
+	assertHashedRepoKey(worktreeKey);
+	const home =
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	return path.join(home, worktreeKey);
 }
 
 /**

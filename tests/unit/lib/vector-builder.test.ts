@@ -21,7 +21,7 @@ function makeCache(files: { path: string; hash?: string }[]): RepoCache {
 	return {
 		schemaVersion: "3",
 		repoKey: "test-repo",
-		worktreeKey: "test-worktree",
+		worktreeKey: "abcdef1234567890",
 		worktreePath: "/tmp/test-repo",
 		indexedAt: new Date().toISOString(),
 		fingerprint: "fp",
