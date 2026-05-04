@@ -155,6 +155,38 @@ describe("classifyStore", () => {
 		fs.writeFileSync(path.join(dir, "extractor-runs", "uuid.json"), "{}");
 		expect(classifyStore(dir)).toBe("populated");
 	});
+
+	it("returns 'populated' when memory/memories has .md files even with empty SQLite index", () => {
+		const dir = path.join(tmp, "md-only-memories");
+		fs.mkdirSync(path.join(dir, "memory", "memories"), { recursive: true });
+		fs.writeFileSync(
+			path.join(dir, "memory", "memories", "mem-foo.md"),
+			"---\nid: mem-foo\ntype: decision\n---\n\nbody\n",
+		);
+		expect(classifyStore(dir)).toBe("populated");
+	});
+
+	it("returns 'populated' when memory/trash has .md files", () => {
+		const dir = path.join(tmp, "md-trash");
+		fs.mkdirSync(path.join(dir, "memory", "trash"), { recursive: true });
+		fs.writeFileSync(
+			path.join(dir, "memory", "trash", "mem-deleted.md"),
+			"---\nid: mem-deleted\nstatus: trashed\n---\n\nbody\n",
+		);
+		expect(classifyStore(dir)).toBe("populated");
+	});
+
+	it("returns 'populated' when both .md files and history sessions exist", () => {
+		const dir = path.join(tmp, "md-and-sessions");
+		fs.mkdirSync(path.join(dir, "memory", "memories"), { recursive: true });
+		fs.writeFileSync(
+			path.join(dir, "memory", "memories", "m1.md"),
+			"---\nid: m1\n---\n\nbody\n",
+		);
+		fs.mkdirSync(path.join(dir, "history", "sessions", "s1"), { recursive: true });
+		fs.writeFileSync(path.join(dir, "history", "sessions", "s1", "session.json"), "{}");
+		expect(classifyStore(dir)).toBe("populated");
+	});
 });
 
 describe("deleteEmptyStore", () => {

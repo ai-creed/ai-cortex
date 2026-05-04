@@ -207,6 +207,15 @@ export function classifyStore(dir: string): StoreClassification {
 		}
 	}
 
+	const memoriesMdDir = path.join(dir, "memory", "memories");
+	const trashMdDir = path.join(dir, "memory", "trash");
+	for (const mdDir of [memoriesMdDir, trashMdDir]) {
+		if (fs.existsSync(mdDir)) {
+			const entries = fs.readdirSync(mdDir);
+			if (entries.some((e) => e.endsWith(".md"))) return "populated";
+		}
+	}
+
 	const sessionsDir = path.join(dir, "history", "sessions");
 	if (fs.existsSync(sessionsDir)) {
 		const entries = fs.readdirSync(sessionsDir);

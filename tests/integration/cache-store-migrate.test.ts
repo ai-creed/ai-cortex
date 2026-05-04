@@ -343,4 +343,27 @@ describe("runRepoKeyMigrationIfNeeded — end to end", () => {
 		expect(result.outcome).toBe("no-op");
 		expect(fs.existsSync(path.join(cacheHome, repoKey, SENTINEL_NAME))).toBe(true);
 	});
+
+	it("does NOT delete a literal store with markdown memories but missing SQLite index", async () => {
+		const { cacheHome, repoRoot, literalDir } = setUp("MdOnly");
+		const repoKey = "deadbeefcafebabe";
+		// Simulate the data-loss scenario: markdown memories exist, no SQLite.
+		fs.mkdirSync(path.join(literalDir, "memory", "memories"), { recursive: true });
+		fs.writeFileSync(
+			path.join(literalDir, "memory", "memories", "mem-x.md"),
+			"---\nid: mem-x\n---\n\ncontent\n",
+		);
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		// The literal store must be migrated as case-b "renamed", not deleted.
+		// After migration the markdown file should exist at the canonical hashed path.
+		expect(result.outcome).toBe("renamed");
+		expect(fs.existsSync(literalDir)).toBe(false);
+		expect(
+			fs.existsSync(
+				path.join(cacheHome, repoKey, "memory", "memories", "mem-x.md"),
+			),
+		).toBe(true);
+	});
 });
