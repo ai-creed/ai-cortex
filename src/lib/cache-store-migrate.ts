@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import Database from "better-sqlite3";
-import { getCacheDir } from "./cache-store.js";
 
 export const SENTINEL_NAME = ".migration-v1-complete";
 
@@ -70,13 +69,112 @@ export async function runRepoKeyMigrationIfNeeded(
 	repoKey: string,
 	worktreePath: string,
 ): Promise<MigrationResult> {
-	const repoDir = getCacheDir(repoKey);
-	const sentinel = path.join(repoDir, SENTINEL_NAME);
-	if (fs.existsSync(sentinel)) {
+	const cacheRoot =
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	const repoDir = path.join(cacheRoot, repoKey);
+	const sentinelPath = path.join(repoDir, SENTINEL_NAME);
+
+	if (fs.existsSync(sentinelPath)) {
 		return { outcome: "already-migrated", details: [] };
 	}
-	// Real migration logic lands in subsequent tasks.
-	return { outcome: "no-op", details: [] };
+
+	const lock = await acquireMigrationLock(repoKey);
+	if (lock.kind === "sentinel-found") {
+		return { outcome: "already-migrated", details: [] };
+	}
+	const { release } = lock;
+	try {
+		if (fs.existsSync(sentinelPath)) {
+			return { outcome: "already-migrated", details: [] };
+		}
+
+		const candidates = discoverLiteralCandidates(worktreePath);
+		const details: MigrationDetail[] = [];
+
+		for (const literalKey of candidates) {
+			const literalDir = path.join(cacheRoot, literalKey);
+			if (!fs.existsSync(literalDir)) continue;
+
+			const literalClass = classifyStore(literalDir);
+			const canonicalClass = classifyStore(repoDir);
+
+			if (literalClass === "empty") {
+				deleteEmptyStore(literalDir);
+				details.push({ literalKey, action: "deleted-empty" });
+				continue;
+			}
+
+			if (canonicalClass === "empty") {
+				if (fs.existsSync(repoDir)) {
+					fs.rmSync(repoDir, { recursive: true, force: true });
+				}
+				try {
+					renameStore(literalDir, repoDir);
+					details.push({ literalKey, action: "renamed" });
+				} catch (err) {
+					if (err instanceof WalCheckpointIncompleteError) {
+						const q = quarantineStore({
+							cacheRoot,
+							literalKey,
+							literalDir,
+							canonicalDir: repoDir,
+						});
+						details.push({
+							literalKey,
+							action: "quarantined",
+							reason: `wal-checkpoint-incomplete: ${q.quarantinePath}`,
+						});
+					} else {
+						throw err;
+					}
+				}
+				continue;
+			}
+
+			const q = quarantineStore({
+				cacheRoot,
+				literalKey,
+				literalDir,
+				canonicalDir: repoDir,
+			});
+			details.push({
+				literalKey,
+				action: "quarantined",
+				reason: `both populated; quarantined to ${q.quarantinePath}`,
+			});
+		}
+
+		fs.mkdirSync(repoDir, { recursive: true });
+		fs.writeFileSync(
+			sentinelPath,
+			JSON.stringify(
+				{
+					migratedAt: new Date().toISOString(),
+					outcomes: details,
+				},
+				null,
+				2,
+			),
+		);
+
+		const outcome = pickOutcome(details);
+		return { outcome, details };
+	} finally {
+		release();
+	}
+}
+
+function pickOutcome(details: MigrationDetail[]): MigrationOutcome {
+	if (details.length === 0) return "no-op";
+	const actions = new Set(details.map((d) => d.action));
+	if (actions.size === 1) {
+		const only = [...actions][0];
+		if (only === "deleted-empty") return "deleted-empty";
+		if (only === "renamed") return "renamed";
+		if (only === "quarantined") return "quarantined";
+	}
+	return "mixed";
 }
 
 export type StoreClassification = "empty" | "populated";

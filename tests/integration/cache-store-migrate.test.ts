@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
 	classifyStore,
 	quarantineStore,
 	acquireMigrationLock,
+	runRepoKeyMigrationIfNeeded,
 	SENTINEL_NAME,
 } from "../../src/lib/cache-store-migrate.js";
 
@@ -239,5 +241,106 @@ describe("acquireMigrationLock", () => {
 
 		if (r1.kind === "acquired") r1.release();
 		delete process.env.AI_CORTEX_CACHE_HOME;
+	});
+});
+
+function gitInit(dir: string, branch = "main"): void {
+	execFileSync("git", ["-C", dir, "init", "-b", branch], { stdio: "ignore" });
+	execFileSync("git", ["-C", dir, "config", "user.email", "t@t"], { stdio: "ignore" });
+	execFileSync("git", ["-C", dir, "config", "user.name", "t"], { stdio: "ignore" });
+	execFileSync("git", ["-C", dir, "commit", "--allow-empty", "-m", "init"], { stdio: "ignore" });
+}
+
+// IMPORTANT: cacheHome and the git worktree MUST be different directories.
+function setUp(repoBasename: string, branch = "main"): {
+	cacheHome: string;
+	repoRoot: string;
+	literalDir: string;
+} {
+	const cacheHome = path.join(tmp, "cache");
+	const workspace = path.join(tmp, "work");
+	const repoRoot = path.join(workspace, repoBasename);
+	fs.mkdirSync(cacheHome, { recursive: true });
+	fs.mkdirSync(repoRoot, { recursive: true });
+	gitInit(repoRoot, branch);
+	process.env.AI_CORTEX_CACHE_HOME = cacheHome;
+	return {
+		cacheHome,
+		repoRoot,
+		literalDir: path.join(cacheHome, repoBasename),
+	};
+}
+
+describe("runRepoKeyMigrationIfNeeded — end to end", () => {
+	afterEach(() => {
+		delete process.env.AI_CORTEX_CACHE_HOME;
+	});
+
+	it("Fixture B1: literal populated, hashed absent → renamed", async () => {
+		const { cacheHome, repoRoot, literalDir } = setUp("MyRepo");
+		const repoKey = "0123456789abcdef";
+		makePopulated(literalDir);
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		expect(result.outcome).toBe("renamed");
+		const hashed = path.join(cacheHome, repoKey);
+		expect(classifyStore(hashed)).toBe("populated");
+		expect(fs.existsSync(path.join(hashed, SENTINEL_NAME))).toBe(true);
+		expect(fs.existsSync(path.join(repoRoot, ".git"))).toBe(true);
+	});
+
+	it("Fixture A1: literal empty, hashed absent → deleted-empty + sentinel", async () => {
+		const { cacheHome, repoRoot, literalDir } = setUp("EmptyRepo");
+		const repoKey = "abcdef0123456789";
+		fs.mkdirSync(path.join(literalDir, "memory"), { recursive: true });
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		expect(result.outcome).toBe("deleted-empty");
+		expect(fs.existsSync(literalDir)).toBe(false);
+		expect(fs.existsSync(path.join(cacheHome, repoKey, SENTINEL_NAME))).toBe(true);
+		expect(fs.existsSync(path.join(repoRoot, ".git"))).toBe(true);
+	});
+
+	it("Fixture C1: both populated → quarantined, hashed unchanged", async () => {
+		const { cacheHome, repoRoot, literalDir } = setUp("Both");
+		const repoKey = "1111111111111111";
+		const hashed = path.join(cacheHome, repoKey);
+		makePopulated(literalDir);
+		makePopulated(hashed);
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		expect(result.outcome).toBe("quarantined");
+		expect(fs.existsSync(literalDir)).toBe(false);
+		expect(classifyStore(hashed)).toBe("populated");
+		expect(fs.existsSync(path.join(cacheHome, ".quarantine"))).toBe(true);
+	});
+
+	it("Fixture S1: sentinel present → already-migrated, no scan", async () => {
+		const { cacheHome, repoRoot, literalDir } = setUp("Sealed");
+		const repoKey = "2222222222222222";
+		fs.mkdirSync(path.join(cacheHome, repoKey), { recursive: true });
+		fs.writeFileSync(
+			path.join(cacheHome, repoKey, SENTINEL_NAME),
+			JSON.stringify({ migratedAt: "x", outcomes: [] }),
+		);
+		makePopulated(literalDir);
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		expect(result.outcome).toBe("already-migrated");
+		expect(fs.existsSync(literalDir)).toBe(true);
+	});
+
+	it("Fixture R3: no candidate literal dirs → no-op + sentinel", async () => {
+		const { cacheHome, repoRoot } = setUp("Pristine");
+		const repoKey = "3333333333333333";
+
+		const result = await runRepoKeyMigrationIfNeeded(repoKey, repoRoot);
+
+		expect(result.outcome).toBe("no-op");
+		expect(fs.existsSync(path.join(cacheHome, repoKey, SENTINEL_NAME))).toBe(true);
 	});
 });
