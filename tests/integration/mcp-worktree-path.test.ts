@@ -186,7 +186,7 @@ describe.each(TOOL_NAMES)("%s contract", (toolName) => {
 		// validation error embedded in content[0].text — handle both.
 		let result: { isError?: boolean; content?: Array<{ text?: string }> } = {};
 		try {
-			result = await client.callTool({ name: toolName, arguments: legacyArgs });
+			result = (await client.callTool({ name: toolName, arguments: legacyArgs })) as typeof result;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			expect(msg).toMatch(/worktreePath|Required/i);

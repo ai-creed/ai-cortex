@@ -208,7 +208,7 @@ describe("checkpointAndVerify", () => {
 				/checkpoint incomplete|frames remaining/i,
 			);
 		} finally {
-			iter.return();
+			iter.return?.();
 			reader.close();
 			db.close();
 		}
