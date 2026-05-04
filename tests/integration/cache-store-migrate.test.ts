@@ -7,6 +7,8 @@ import {
 	renameStore,
 	classifyStore,
 	quarantineStore,
+	acquireMigrationLock,
+	SENTINEL_NAME,
 } from "../../src/lib/cache-store-migrate.js";
 
 let tmp: string;
@@ -166,5 +168,76 @@ describe("quarantineStore", () => {
 
 		expect(fs.existsSync(literal)).toBe(true);
 		expect(classifyStore(literal)).toBe("populated");
+	});
+});
+
+describe("acquireMigrationLock", () => {
+	it("acquires when not held", async () => {
+		process.env.AI_CORTEX_CACHE_HOME = tmp;
+		const result = await acquireMigrationLock("0123456789abcdef", {
+			timeoutMs: 1000,
+		});
+		expect(result.kind).toBe("acquired");
+		if (result.kind === "acquired") result.release();
+		delete process.env.AI_CORTEX_CACHE_HOME;
+	});
+
+	it("blocks a second caller until first releases", async () => {
+		process.env.AI_CORTEX_CACHE_HOME = tmp;
+		const repoKey = "abcdef0123456789";
+		const r1 = await acquireMigrationLock(repoKey, { timeoutMs: 5000 });
+		expect(r1.kind).toBe("acquired");
+
+		let acquired2 = false;
+		const p2 = (async () => {
+			const r = await acquireMigrationLock(repoKey, { timeoutMs: 5000 });
+			acquired2 = true;
+			if (r.kind === "acquired") r.release();
+		})();
+
+		await new Promise((r) => setTimeout(r, 100));
+		expect(acquired2).toBe(false);
+
+		if (r1.kind === "acquired") r1.release();
+		await p2;
+		expect(acquired2).toBe(true);
+		delete process.env.AI_CORTEX_CACHE_HOME;
+	});
+
+	it("returns sentinel-found when sentinel appears during polling", async () => {
+		process.env.AI_CORTEX_CACHE_HOME = tmp;
+		const repoKey = "1111111111111111";
+		const cacheRoot = tmp;
+		const repoDir = path.join(cacheRoot, repoKey);
+		fs.mkdirSync(repoDir, { recursive: true });
+
+		const orphan = await acquireMigrationLock(repoKey, { timeoutMs: 5000 });
+		expect(orphan.kind).toBe("acquired");
+		fs.writeFileSync(
+			path.join(repoDir, SENTINEL_NAME),
+			JSON.stringify({ migratedAt: "x", outcomes: [] }),
+		);
+
+		const result = await acquireMigrationLock(repoKey, {
+			timeoutMs: 5000,
+			pollMs: 25,
+		});
+		expect(result.kind).toBe("sentinel-found");
+
+		if (orphan.kind === "acquired") orphan.release();
+		delete process.env.AI_CORTEX_CACHE_HOME;
+	});
+
+	it("times out only when neither lock nor sentinel becomes available", async () => {
+		process.env.AI_CORTEX_CACHE_HOME = tmp;
+		const repoKey = "deadbeefcafebabe";
+		const r1 = await acquireMigrationLock(repoKey, { timeoutMs: 5000 });
+
+		await expect(
+			acquireMigrationLock(repoKey, { timeoutMs: 200, pollMs: 25 }),
+		).rejects.toThrow(/timeout/i);
+
+		if (r1.kind === "acquired") r1.release();
+		delete process.env.AI_CORTEX_CACHE_HOME;
 	});
 });

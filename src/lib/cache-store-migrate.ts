@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import Database from "better-sqlite3";
@@ -245,6 +246,56 @@ function listAllFiles(root: string): string[] {
 	}
 	walk(root, "");
 	return out.sort();
+}
+
+export type LockOptions = { timeoutMs?: number; pollMs?: number };
+
+export type LockAcquisition =
+	| { kind: "acquired"; release: () => void }
+	| { kind: "sentinel-found" };
+
+export async function acquireMigrationLock(
+	repoKey: string,
+	opts: LockOptions = {},
+): Promise<LockAcquisition> {
+	const cacheRoot =
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	fs.mkdirSync(cacheRoot, { recursive: true });
+	const lockPath = path.join(cacheRoot, `.migration-${repoKey}.lock`);
+	const sentinelPath = path.join(cacheRoot, repoKey, SENTINEL_NAME);
+	const timeoutMs = opts.timeoutMs ?? 30_000;
+	const pollMs = opts.pollMs ?? 50;
+	const deadline = Date.now() + timeoutMs;
+
+	while (true) {
+		if (fs.existsSync(sentinelPath)) {
+			return { kind: "sentinel-found" };
+		}
+		try {
+			const fd = fs.openSync(lockPath, "wx");
+			fs.writeSync(fd, String(process.pid));
+			fs.closeSync(fd);
+			return {
+				kind: "acquired",
+				release: () => {
+					try {
+						fs.unlinkSync(lockPath);
+					} catch {
+						// already gone
+					}
+				},
+			};
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		}
+		if (Date.now() >= deadline) {
+			throw new Error(
+				`acquireMigrationLock: timeout after ${timeoutMs}ms (lock at ${lockPath}; sentinel not present at ${sentinelPath})`,
+			);
+		}
+		await new Promise((r) => setTimeout(r, pollMs));
+	}
 }
 
 export type QuarantineInput = {
