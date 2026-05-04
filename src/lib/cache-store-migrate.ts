@@ -246,3 +246,100 @@ function listAllFiles(root: string): string[] {
 	walk(root, "");
 	return out.sort();
 }
+
+export type QuarantineInput = {
+	cacheRoot: string;
+	literalKey: string;
+	literalDir: string;
+	canonicalDir: string;
+};
+
+export type QuarantineResult = {
+	quarantinePath: string;
+};
+
+export function quarantineStore(input: QuarantineInput): QuarantineResult {
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	const quarantineRoot = path.join(input.cacheRoot, ".quarantine");
+	fs.mkdirSync(quarantineRoot, { recursive: true });
+	const dest = path.join(quarantineRoot, `${input.literalKey}-${stamp}`);
+
+	// Quarantine is the data-preserving path; safeMove handles EXDEV with parity.
+	safeMove(input.literalDir, dest);
+
+	const report = renderConflictReport({
+		literalKey: input.literalKey,
+		canonicalDir: input.canonicalDir,
+		quarantineDir: dest,
+	});
+	fs.writeFileSync(path.join(dest, "MIGRATION-CONFLICT.md"), report);
+
+	return { quarantinePath: dest };
+}
+
+function renderConflictReport(args: {
+	literalKey: string;
+	canonicalDir: string;
+	quarantineDir: string;
+}): string {
+	const counts = readStoreCounts(args.quarantineDir);
+	return [
+		`# Quarantined cache directory`,
+		``,
+		`Literal key: \`${args.literalKey}\``,
+		`Canonical hashed dir: \`${args.canonicalDir}\``,
+		`Quarantined at: \`${args.quarantineDir}\``,
+		``,
+		`## Summary at quarantine time`,
+		``,
+		`- memories: ${counts.memories}`,
+		`- history sessions: ${counts.sessions}`,
+		`- extractor runs: ${counts.extractorRuns}`,
+		``,
+		`This directory was kept intact in case its contents are still needed.`,
+		`Both literal and canonical stores were populated when migration ran;`,
+		`row-level merging is not implemented in v1, so the literal store was`,
+		`moved here to leave the canonical store unchanged.`,
+		``,
+	].join("\n");
+}
+
+function readStoreCounts(dir: string): {
+	memories: number;
+	sessions: number;
+	extractorRuns: number;
+} {
+	let memories = 0;
+	const dbPath = path.join(dir, "memory", "index.sqlite");
+	if (fs.existsSync(dbPath)) {
+		try {
+			const db = new Database(dbPath, { readonly: true });
+			try {
+				const has = db
+					.prepare(
+						"SELECT name FROM sqlite_master WHERE type='table' AND name='memories'",
+					)
+					.get();
+				if (has) {
+					const r = db
+						.prepare("SELECT COUNT(*) AS c FROM memories")
+						.get() as { c: number };
+					memories = r.c;
+				}
+			} finally {
+				db.close();
+			}
+		} catch {
+			// ignore
+		}
+	}
+	const sessionsDir = path.join(dir, "history", "sessions");
+	const sessions = fs.existsSync(sessionsDir)
+		? fs.readdirSync(sessionsDir).length
+		: 0;
+	const extractorDir = path.join(dir, "extractor-runs");
+	const extractorRuns = fs.existsSync(extractorDir)
+		? fs.readdirSync(extractorDir).length
+		: 0;
+	return { memories, sessions, extractorRuns };
+}

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	renameStore,
 	classifyStore,
+	quarantineStore,
 } from "../../src/lib/cache-store-migrate.js";
 
 let tmp: string;
@@ -78,5 +79,92 @@ describe("renameStore EXDEV fallback", () => {
 
 		expect(fs.existsSync(literal)).toBe(false);
 		expect(classifyStore(hashed)).toBe("populated");
+	});
+});
+
+describe("quarantineStore", () => {
+	it("moves the literal dir under .quarantine and writes MIGRATION-CONFLICT.md", () => {
+		const literal = path.join(tmp, "MyRepo");
+		const hashed = path.join(tmp, "0123456789abcdef");
+		makePopulated(literal);
+		makePopulated(hashed);
+
+		const result = quarantineStore({
+			cacheRoot: tmp,
+			literalKey: "MyRepo",
+			literalDir: literal,
+			canonicalDir: hashed,
+		});
+
+		expect(fs.existsSync(literal)).toBe(false);
+		expect(fs.existsSync(result.quarantinePath)).toBe(true);
+		expect(
+			fs.existsSync(path.join(result.quarantinePath, "MIGRATION-CONFLICT.md")),
+		).toBe(true);
+		expect(classifyStore(hashed)).toBe("populated");
+	});
+
+	it("includes literal/canonical paths and row-count summary in the report", () => {
+		const literal = path.join(tmp, "X");
+		const hashed = path.join(tmp, "1111111111111111");
+		makePopulated(literal);
+		makePopulated(hashed);
+
+		const result = quarantineStore({
+			cacheRoot: tmp,
+			literalKey: "X",
+			literalDir: literal,
+			canonicalDir: hashed,
+		});
+
+		const md = fs.readFileSync(
+			path.join(result.quarantinePath, "MIGRATION-CONFLICT.md"),
+			"utf8",
+		);
+		expect(md).toMatch(/canonical hashed dir/i);
+		expect(md).toMatch(/1111111111111111/);
+		expect(md).toMatch(/memories.*1/i);
+	});
+
+	it("preserves the source when EXDEV copy parity fails", () => {
+		const literal = path.join(tmp, "PartialCopy");
+		const hashed = path.join(tmp, "2222222222222222");
+		makePopulated(literal);
+		makePopulated(hashed);
+
+		const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation(((
+			from: fs.PathLike,
+			_to: fs.PathLike,
+		) => {
+			const err: NodeJS.ErrnoException = new Error("cross-device");
+			err.code = "EXDEV";
+			throw err;
+		}) as typeof fs.renameSync);
+		const cpSpy = vi
+			.spyOn(fs, "cpSync")
+			.mockImplementation(((
+				_from: fs.PathLike,
+				to: fs.PathLike,
+				_opts: any,
+			) => {
+				fs.mkdirSync(to as string, { recursive: true });
+			}) as typeof fs.cpSync);
+
+		try {
+			expect(() =>
+				quarantineStore({
+					cacheRoot: tmp,
+					literalKey: "PartialCopy",
+					literalDir: literal,
+					canonicalDir: hashed,
+				}),
+			).toThrow(/parity/i);
+		} finally {
+			renameSpy.mockRestore();
+			cpSpy.mockRestore();
+		}
+
+		expect(fs.existsSync(literal)).toBe(true);
+		expect(classifyStore(literal)).toBe("populated");
 	});
 });
