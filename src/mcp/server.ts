@@ -24,7 +24,8 @@ import {
 	detectCurrentSession,
 	resolveTranscriptPath,
 } from "../lib/history/session-detect.js";
-import { resolveRepoIdentity } from "../lib/repo-identity.js";
+import { resolveRepoIdentity, validateWorktreePath } from "../lib/repo-identity.js";
+import { runRepoKeyMigrationIfNeeded } from "../lib/cache-store-migrate.js";
 import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
 import { VERSION as SERVER_VERSION } from "../version.js";
 import {
@@ -145,6 +146,16 @@ function withReconcile<P extends { repoKey: string }, R>(
 		await maybeReconcile(p.repoKey);
 		return handler(p);
 	};
+}
+
+export async function withRepoIdentity<T>(
+	worktreePath: string,
+	fn: (repoKey: string) => Promise<T>,
+): Promise<T> {
+	validateWorktreePath(worktreePath);
+	const { repoKey } = resolveRepoIdentity(worktreePath);
+	await runRepoKeyMigrationIfNeeded(repoKey, worktreePath);
+	return fn(repoKey);
 }
 
 function maybeNotice(): string {
