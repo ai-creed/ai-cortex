@@ -25,7 +25,7 @@ import { readMemoryFile } from "../../../../src/lib/memory/store.js";
 import { memoryFilePath } from "../../../../src/lib/memory/paths.js";
 
 let tmp: string;
-const repoKey = "lc-test";
+const repoKey = "6c632d7465737400"; // 16-hex fixture
 
 beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-lc-"));

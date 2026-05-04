@@ -48,26 +48,26 @@ function makeRecord(overrides: Partial<SessionRecord> = {}): SessionRecord {
 describe("writeSession + readSession", () => {
 	it("round-trips a session record", async () => {
 		const rec = makeRecord();
-		await writeSession("REPO", rec);
-		expect(await readSession("REPO", "abc")).toEqual(rec);
+		await writeSession("aabbccdd00112233", rec);
+		expect(await readSession("aabbccdd00112233", "abc")).toEqual(rec);
 	});
 
 	it("creates the session directory if absent", async () => {
-		await writeSession("REPO", makeRecord());
-		expect(fs.existsSync(path.dirname(sessionJsonPath("REPO", "abc")))).toBe(
+		await writeSession("aabbccdd00112233", makeRecord());
+		expect(fs.existsSync(path.dirname(sessionJsonPath("aabbccdd00112233", "abc")))).toBe(
 			true,
 		);
 	});
 
 	it("uses write-temp + rename (no partial files visible)", async () => {
 		const rec = makeRecord();
-		await writeSession("REPO", rec);
-		const dir = path.dirname(sessionJsonPath("REPO", "abc"));
+		await writeSession("aabbccdd00112233", rec);
+		const dir = path.dirname(sessionJsonPath("aabbccdd00112233", "abc"));
 		const stragglers = fs.readdirSync(dir).filter((n) => n.endsWith(".tmp"));
 		expect(stragglers).toEqual([]);
 	});
 
 	it("readSession returns null when absent", async () => {
-		expect(await readSession("REPO", "missing")).toBeNull();
+		expect(await readSession("aabbccdd00112233", "missing")).toBeNull();
 	});
 });

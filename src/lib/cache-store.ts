@@ -9,7 +9,27 @@ import type { RepoCache } from "./models.js";
 
 const execAsync = promisify(exec);
 
+const HASHED_REPO_KEY_RE = /^[0-9a-f]{16}$/;
+const RESERVED_LITERAL_KEYS = new Set(["global"]);
+
+export class RepoKeyError extends Error {}
+
+export function assertHashedRepoKey(repoKey: string): void {
+	if (typeof repoKey !== "string") {
+		throw new RepoKeyError(
+			`Invalid repoKey: expected string, got ${typeof repoKey}`,
+		);
+	}
+	if (RESERVED_LITERAL_KEYS.has(repoKey)) return;
+	if (!HASHED_REPO_KEY_RE.test(repoKey)) {
+		throw new RepoKeyError(
+			`Invalid repoKey ${JSON.stringify(repoKey)}: expected 16-hex hash from resolveRepoIdentity, or reserved literal "global". Hint: pass worktreePath to MCP tools and let the server derive the key.`,
+		);
+	}
+}
+
 export function getCacheDir(repoKey: string): string {
+	assertHashedRepoKey(repoKey);
 	const home =
 		process.env.AI_CORTEX_CACHE_HOME ??
 		path.join(os.homedir(), ".cache", "ai-cortex", "v1");

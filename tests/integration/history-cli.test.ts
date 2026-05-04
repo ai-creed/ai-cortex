@@ -14,6 +14,9 @@ const ROOT = path.resolve(
 const CLI = path.join(ROOT, "dist", "src", "cli.js");
 const FIXTURE = path.join(ROOT, "tests", "fixtures", "history", "sample.jsonl");
 
+// Valid 16-hex repo key required by assertHashedRepoKey
+const REPO = "b1c2d3e4f5a6b7c8";
+
 let home: string;
 
 beforeEach(() => {
@@ -56,14 +59,14 @@ describe("ai-cortex history CLI", () => {
 			"--transcript",
 			FIXTURE,
 			"--repo-key",
-			"REPO",
+			REPO,
 		]);
 		const sessJson = path.join(
 			home,
 			".cache",
 			"ai-cortex",
 			"v1",
-			"REPO",
+			REPO,
 			"history",
 			"sessions",
 			"test-sess",
@@ -81,9 +84,9 @@ describe("ai-cortex history CLI", () => {
 			"--transcript",
 			FIXTURE,
 			"--repo-key",
-			"REPO",
+			REPO,
 		]);
-		const out = run(["history", "list", "--repo-key", "REPO"]);
+		const out = run(["history", "list", "--repo-key", REPO]);
 		expect(out.stdout).toContain("test-sess");
 	});
 
@@ -106,14 +109,14 @@ describe("ai-cortex history CLI", () => {
 			"--cwd",
 			cwd,
 			"--repo-key",
-			"REPO",
+			REPO,
 		]);
 		const sessJson = path.join(
 			home,
 			".cache",
 			"ai-cortex",
 			"v1",
-			"REPO",
+			REPO,
 			"history",
 			"sessions",
 			"auto-sess",
@@ -132,7 +135,7 @@ describe("ai-cortex history CLI", () => {
 				"--cwd",
 				"/tmp/none",
 				"--repo-key",
-				"REPO",
+				REPO,
 			]),
 		).toThrow();
 	});

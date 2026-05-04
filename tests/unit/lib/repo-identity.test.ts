@@ -1,11 +1,14 @@
 // tests/unit/lib/repo-identity.test.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process");
 
 import { execFileSync } from "node:child_process";
 import { RepoIdentityError } from "../../../src/lib/models.js";
-import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
+import { resolveRepoIdentity, validateWorktreePath } from "../../../src/lib/repo-identity.js";
 
 const mockExec = vi.mocked(execFileSync);
 
@@ -58,5 +61,42 @@ describe("resolveRepoIdentity", () => {
 			throw err;
 		});
 		expect(() => resolveRepoIdentity("/any/path")).toThrow(RepoIdentityError);
+	});
+});
+
+describe("validateWorktreePath", () => {
+	let tmp: string;
+	beforeEach(() => {
+		tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vwp-"));
+	});
+
+	it("accepts an absolute existing directory", () => {
+		expect(() => validateWorktreePath(tmp)).not.toThrow();
+	});
+
+	it("rejects a relative path", () => {
+		expect(() => validateWorktreePath("relative/path")).toThrow(
+			/absolute/i,
+		);
+	});
+
+	it("rejects an empty string", () => {
+		expect(() => validateWorktreePath("")).toThrow(/non-empty/i);
+	});
+
+	it("rejects a missing path", () => {
+		const missing = path.join(tmp, "does-not-exist");
+		expect(() => validateWorktreePath(missing)).toThrow(/exist/i);
+	});
+
+	it("rejects a file (not a directory)", () => {
+		const file = path.join(tmp, "f.txt");
+		fs.writeFileSync(file, "x");
+		expect(() => validateWorktreePath(file)).toThrow(/directory/i);
+	});
+
+	it("rejects non-string input via runtime guard", () => {
+		expect(() => validateWorktreePath(undefined as unknown as string)).toThrow();
+		expect(() => validateWorktreePath(null as unknown as string)).toThrow();
 	});
 });

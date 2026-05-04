@@ -35,11 +35,11 @@ function sha(text: string): string {
 describe("writeChunkVectors + readChunkVectors", () => {
 	it("round-trips chunk vectors with id encoding", async () => {
 		const matrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0]);
-		await writeAllChunks("REPO", "abc", [
+		await writeAllChunks("aabbccdd00112233", "abc", [
 			{ id: 0, text: "a" },
 			{ id: 1, text: "b" },
 		]);
-		await writeChunkVectors("REPO", "abc", {
+		await writeChunkVectors("aabbccdd00112233", "abc", {
 			modelName: MODEL,
 			dim: DIM,
 			chunks: [
@@ -47,7 +47,7 @@ describe("writeChunkVectors + readChunkVectors", () => {
 				{ id: 1, text: "b", vector: vec([0, 1, 0, 0]) },
 			],
 		});
-		const read = await readChunkVectors("REPO", "abc", MODEL);
+		const read = await readChunkVectors("aabbccdd00112233", "abc", MODEL);
 		expect(read).not.toBeNull();
 		expect(read!.byChunkId.get(0)).toEqual(vec([1, 0, 0, 0]));
 		expect(read!.byChunkId.get(1)).toEqual(vec([0, 1, 0, 0]));
@@ -55,28 +55,28 @@ describe("writeChunkVectors + readChunkVectors", () => {
 	});
 
 	it("readChunkVectors returns null on model mismatch", async () => {
-		await writeAllChunks("REPO", "abc", [{ id: 0, text: "x" }]);
-		await writeChunkVectors("REPO", "abc", {
+		await writeAllChunks("aabbccdd00112233", "abc", [{ id: 0, text: "x" }]);
+		await writeChunkVectors("aabbccdd00112233", "abc", {
 			modelName: MODEL,
 			dim: DIM,
 			chunks: [{ id: 0, text: "x", vector: vec([1, 0, 0, 0]) }],
 		});
-		expect(await readChunkVectors("REPO", "abc", "OTHER_MODEL")).toBeNull();
+		expect(await readChunkVectors("aabbccdd00112233", "abc", "OTHER_MODEL")).toBeNull();
 	});
 
 	it("returns null when no vectors written", async () => {
-		expect(await readChunkVectors("REPO", "abc", MODEL)).toBeNull();
+		expect(await readChunkVectors("aabbccdd00112233", "abc", MODEL)).toBeNull();
 	});
 
 	it("encodes path as 'chunk:<id>' and hash as sha256(text)", async () => {
-		await writeChunkVectors("REPO", "abc", {
+		await writeChunkVectors("aabbccdd00112233", "abc", {
 			modelName: MODEL,
 			dim: DIM,
 			chunks: [{ id: 7, text: "hello", vector: vec([0, 0, 0, 1]) }],
 		});
 		const meta = JSON.parse(
 			fs.readFileSync(
-				path.join(sessionDir("REPO", "abc"), ".vectors.meta.json"),
+				path.join(sessionDir("aabbccdd00112233", "abc"), ".vectors.meta.json"),
 				"utf8",
 			),
 		);
@@ -87,16 +87,16 @@ describe("writeChunkVectors + readChunkVectors", () => {
 	});
 
 	it("returns null when all chunk texts have changed since embedding (stale vectors)", async () => {
-		await writeAllChunks("REPO", "abc", [{ id: 0, text: "original text" }]);
-		await writeChunkVectors("REPO", "abc", {
+		await writeAllChunks("aabbccdd00112233", "abc", [{ id: 0, text: "original text" }]);
+		await writeChunkVectors("aabbccdd00112233", "abc", {
 			modelName: MODEL,
 			dim: DIM,
 			chunks: [{ id: 0, text: "original text", vector: vec([1, 0, 0, 0]) }],
 		});
 		// Overwrite chunks with different text — vectors are now stale
-		await writeAllChunks("REPO", "abc", [
+		await writeAllChunks("aabbccdd00112233", "abc", [
 			{ id: 0, text: "completely different text" },
 		]);
-		expect(await readChunkVectors("REPO", "abc", MODEL)).toBeNull();
+		expect(await readChunkVectors("aabbccdd00112233", "abc", MODEL)).toBeNull();
 	});
 });

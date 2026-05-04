@@ -46,12 +46,12 @@ function makeSession(): SessionRecord {
 
 describe("searchSession (lexical)", () => {
 	it("matches user prompt by substring", async () => {
-		await writeSession("REPO", makeSession());
-		await writeAllChunks("REPO", "s1", [
+		await writeSession("aabbccdd00112233", makeSession());
+		await writeAllChunks("aabbccdd00112233", "s1", [
 			{ id: 0, text: "auth talk in detail" },
 		]);
 		const hits = await searchSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			query: "auth middleware",
 		});
@@ -59,9 +59,9 @@ describe("searchSession (lexical)", () => {
 	});
 
 	it("matches correction with high score (corrections weighted above prompts)", async () => {
-		await writeSession("REPO", makeSession());
+		await writeSession("aabbccdd00112233", makeSession());
 		const hits = await searchSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			query: "OTHER middleware",
 		});
@@ -74,9 +74,9 @@ describe("searchSession (lexical)", () => {
 	});
 
 	it("matches file path in evidence", async () => {
-		await writeSession("REPO", makeSession());
+		await writeSession("aabbccdd00112233", makeSession());
 		const hits = await searchSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			query: "src/auth.ts",
 		});
@@ -84,9 +84,9 @@ describe("searchSession (lexical)", () => {
 	});
 
 	it("matches summary text", async () => {
-		await writeSession("REPO", makeSession());
+		await writeSession("aabbccdd00112233", makeSession());
 		const hits = await searchSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			query: "refactor",
 		});
@@ -94,9 +94,9 @@ describe("searchSession (lexical)", () => {
 	});
 
 	it("returns empty array on no match", async () => {
-		await writeSession("REPO", makeSession());
+		await writeSession("aabbccdd00112233", makeSession());
 		const hits = await searchSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			query: "completely unrelated",
 		});

@@ -13,6 +13,36 @@ const ROOT = path.resolve(
 );
 const CLI = path.join(ROOT, "dist", "src", "cli.js");
 
+// Valid 16-hex repo keys required by assertHashedRepoKey (one per test scope).
+const RK = {
+	recall: "aa01bb02cc03dd04",
+	search: "aa02bb03cc04dd05",
+	record: "aa03bb04cc05dd06",
+	globalScope: "aa04bb05cc06dd07",
+	get: "aa05bb06cc07dd08",
+	getMissing: "aa06bb07cc08dd09",
+	listEmpty: "aa07bb08cc09dd10",
+	listItem: "aa08bb09cc0add11",
+	update: "aa09bb0acc0bdd12",
+	deprecate: "aa0abb0bcc0cdd13",
+	restore: "aa0bbb0ccc0ddd14",
+	merge: "aa0cbb0dcc0edd15",
+	trash: "aa0dbb0ecc0fdd16",
+	untrash: "aa0ebb0fcc10dd17",
+	purge: "aa0fbb10cc11dd18",
+	purgeYes: "aa10bb11cc12dd19",
+	link: "aa11bb12cc13dd1a",
+	linkNotype: "aa12bb13cc14dd1b",
+	unlink: "aa13bb14cc15dd1c",
+	pin: "aa14bb15cc16dd1d",
+	unpin: "aa15bb16cc17dd1e",
+	confirm: "aa16bb17cc18dd1f",
+	audit: "aa17bb18cc19dd20",
+	rebuild: "aa18bb19cc1add21",
+	reconcile: "aa19bb1acc1bdd22",
+	reconcileReport: "aa1abb1bcc1cdd23",
+};
+
 let cacheHome: string;
 
 beforeEach(() => {
@@ -46,7 +76,7 @@ describe("ai-cortex memory CLI", () => {
 			"any query",
 			"--json",
 			"--repo-key",
-			"test-recall",
+			RK.recall,
 		]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
@@ -60,7 +90,7 @@ describe("ai-cortex memory CLI", () => {
 			"any query",
 			"--json",
 			"--repo-key",
-			"test-search",
+			RK.search,
 		]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
@@ -86,7 +116,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-cli-record",
+			RK.record,
 		]);
 
 		expect(out.status).toBe(0);
@@ -110,7 +140,7 @@ describe("ai-cortex memory CLI", () => {
 			bodyFile,
 			"--global-scope",
 			"--repo-key",
-			"test-cli-global-scope",
+			RK.globalScope,
 		]);
 
 		expect(rec.status).toBe(0);
@@ -137,7 +167,7 @@ describe("ai-cortex memory CLI", () => {
 			"get",
 			id,
 			"--repo-key",
-			"test-cli-global-scope",
+			RK.globalScope,
 		]);
 		expect(projectGet.status).not.toBe(0);
 	});
@@ -154,7 +184,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-cli-record",
+			RK.record,
 		]);
 
 		expect(out.status).toBe(1);
@@ -174,12 +204,12 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-get",
+			RK.get,
 		]);
 		expect(rec.status).toBe(0);
 		const id = rec.stdout.trim();
 
-		const out = run(["memory", "get", id, "--json", "--repo-key", "test-get"]);
+		const out = run(["memory", "get", id, "--json", "--repo-key", RK.get]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
 		expect(parsed.frontmatter.id).toBe(id);
@@ -191,7 +221,7 @@ describe("ai-cortex memory CLI", () => {
 			"get",
 			"nonexistent-id",
 			"--repo-key",
-			"test-get-missing",
+			RK.getMissing,
 		]);
 		expect(out.status).toBe(1);
 	});
@@ -203,7 +233,7 @@ describe("ai-cortex memory CLI", () => {
 			"list",
 			"--json",
 			"--repo-key",
-			"test-list-empty",
+			RK.listEmpty,
 		]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
@@ -224,7 +254,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-list-item",
+			RK.listItem,
 		]);
 
 		const out = run([
@@ -232,7 +262,7 @@ describe("ai-cortex memory CLI", () => {
 			"list",
 			"--json",
 			"--repo-key",
-			"test-list-item",
+			RK.listItem,
 		]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
@@ -253,7 +283,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-update",
+			RK.update,
 		]);
 		const id = rec.stdout.trim();
 
@@ -266,7 +296,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"test",
 			"--repo-key",
-			"test-update",
+			RK.update,
 		]);
 		expect(upd.status).toBe(0);
 		expect(upd.stdout.trim()).toBe("ok");
@@ -277,7 +307,7 @@ describe("ai-cortex memory CLI", () => {
 			id,
 			"--json",
 			"--repo-key",
-			"test-update",
+			RK.update,
 		]);
 		const parsed = JSON.parse(got.stdout);
 		expect(parsed.frontmatter.title).toBe("New title");
@@ -297,7 +327,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-deprecate",
+			RK.deprecate,
 		]);
 		const id = rec.stdout.trim();
 
@@ -308,7 +338,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"replaced",
 			"--repo-key",
-			"test-deprecate",
+			RK.deprecate,
 		]);
 		expect(dep.status).toBe(0);
 
@@ -319,7 +349,7 @@ describe("ai-cortex memory CLI", () => {
 			"deprecated",
 			"--json",
 			"--repo-key",
-			"test-deprecate",
+			RK.deprecate,
 		]);
 		const items = JSON.parse(list.stdout);
 		expect(items.some((i: { id: string }) => i.id === id)).toBe(true);
@@ -339,7 +369,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-restore",
+			RK.restore,
 		]);
 		const id = rec.stdout.trim();
 
@@ -350,9 +380,9 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"temp",
 			"--repo-key",
-			"test-restore",
+			RK.restore,
 		]);
-		const res = run(["memory", "restore", id, "--repo-key", "test-restore"]);
+		const res = run(["memory", "restore", id, "--repo-key", RK.restore]);
 		expect(res.status).toBe(0);
 
 		const list = run([
@@ -362,7 +392,7 @@ describe("ai-cortex memory CLI", () => {
 			"active",
 			"--json",
 			"--repo-key",
-			"test-restore",
+			RK.restore,
 		]);
 		const items = JSON.parse(list.stdout);
 		expect(items.some((i: { id: string }) => i.id === id)).toBe(true);
@@ -387,7 +417,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b1,
 			"--repo-key",
-			"test-merge",
+			RK.merge,
 		]).stdout.trim();
 		const dst = run([
 			"memory",
@@ -399,7 +429,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b2,
 			"--repo-key",
-			"test-merge",
+			RK.merge,
 		]).stdout.trim();
 
 		const mg = run([
@@ -410,7 +440,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bm,
 			"--repo-key",
-			"test-merge",
+			RK.merge,
 		]);
 		expect(mg.status).toBe(0);
 
@@ -420,7 +450,7 @@ describe("ai-cortex memory CLI", () => {
 			src,
 			"--json",
 			"--repo-key",
-			"test-merge",
+			RK.merge,
 		]);
 		const parsed = JSON.parse(got.stdout);
 		expect(parsed.frontmatter.status).toBe("merged_into");
@@ -440,7 +470,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-trash",
+			RK.trash,
 		]);
 		const id = rec.stdout.trim();
 
@@ -451,7 +481,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"no longer needed",
 			"--repo-key",
-			"test-trash",
+			RK.trash,
 		]);
 		expect(tr.status).toBe(0);
 
@@ -462,7 +492,7 @@ describe("ai-cortex memory CLI", () => {
 			"trashed",
 			"--json",
 			"--repo-key",
-			"test-trash",
+			RK.trash,
 		]);
 		const items = JSON.parse(list.stdout);
 		expect(items.some((i: { id: string }) => i.id === id)).toBe(true);
@@ -482,7 +512,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-untrash",
+			RK.untrash,
 		]);
 		const id = rec.stdout.trim();
 
@@ -493,9 +523,9 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"temp",
 			"--repo-key",
-			"test-untrash",
+			RK.untrash,
 		]);
-		const ut = run(["memory", "untrash", id, "--repo-key", "test-untrash"]);
+		const ut = run(["memory", "untrash", id, "--repo-key", RK.untrash]);
 		expect(ut.status).toBe(0);
 
 		const list = run([
@@ -505,7 +535,7 @@ describe("ai-cortex memory CLI", () => {
 			"active",
 			"--json",
 			"--repo-key",
-			"test-untrash",
+			RK.untrash,
 		]);
 		const items = JSON.parse(list.stdout);
 		expect(items.some((i: { id: string }) => i.id === id)).toBe(true);
@@ -525,7 +555,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-purge",
+			RK.purge,
 		]);
 		const id = rec.stdout.trim();
 		run([
@@ -535,7 +565,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"prep",
 			"--repo-key",
-			"test-purge",
+			RK.purge,
 		]);
 
 		const pr = run([
@@ -545,7 +575,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"test",
 			"--repo-key",
-			"test-purge",
+			RK.purge,
 		]);
 		expect(pr.status).toBe(1);
 	});
@@ -563,7 +593,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-purge-yes",
+			RK.purgeYes,
 		]);
 		const id = rec.stdout.trim();
 		run([
@@ -573,7 +603,7 @@ describe("ai-cortex memory CLI", () => {
 			"--reason",
 			"prep",
 			"--repo-key",
-			"test-purge-yes",
+			RK.purgeYes,
 		]);
 
 		const pr = run([
@@ -584,7 +614,7 @@ describe("ai-cortex memory CLI", () => {
 			"test purge",
 			"--yes",
 			"--repo-key",
-			"test-purge-yes",
+			RK.purgeYes,
 		]);
 		expect(pr.status).toBe(0);
 	});
@@ -605,7 +635,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b1,
 			"--repo-key",
-			"test-link",
+			RK.link,
 		]).stdout.trim();
 		const dst = run([
 			"memory",
@@ -617,7 +647,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b2,
 			"--repo-key",
-			"test-link",
+			RK.link,
 		]).stdout.trim();
 
 		const lk = run([
@@ -628,7 +658,7 @@ describe("ai-cortex memory CLI", () => {
 			"--type",
 			"supports",
 			"--repo-key",
-			"test-link",
+			RK.link,
 		]);
 		expect(lk.status).toBe(0);
 	});
@@ -648,7 +678,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b1,
 			"--repo-key",
-			"test-link-notype",
+			RK.linkNotype,
 		]).stdout.trim();
 		const dst = run([
 			"memory",
@@ -660,7 +690,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b2,
 			"--repo-key",
-			"test-link-notype",
+			RK.linkNotype,
 		]).stdout.trim();
 
 		const lk = run([
@@ -669,7 +699,7 @@ describe("ai-cortex memory CLI", () => {
 			src,
 			dst,
 			"--repo-key",
-			"test-link-notype",
+			RK.linkNotype,
 		]);
 		expect(lk.status).toBe(1);
 	});
@@ -690,7 +720,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b1,
 			"--repo-key",
-			"test-unlink",
+			RK.unlink,
 		]).stdout.trim();
 		const dst = run([
 			"memory",
@@ -702,7 +732,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			b2,
 			"--repo-key",
-			"test-unlink",
+			RK.unlink,
 		]).stdout.trim();
 
 		run([
@@ -713,7 +743,7 @@ describe("ai-cortex memory CLI", () => {
 			"--type",
 			"supports",
 			"--repo-key",
-			"test-unlink",
+			RK.unlink,
 		]);
 		const ul = run([
 			"memory",
@@ -723,7 +753,7 @@ describe("ai-cortex memory CLI", () => {
 			"--type",
 			"supports",
 			"--repo-key",
-			"test-unlink",
+			RK.unlink,
 		]);
 		expect(ul.status).toBe(0);
 	});
@@ -742,11 +772,11 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-pin",
+			RK.pin,
 		]);
 		const id = rec.stdout.trim();
 
-		const pn = run(["memory", "pin", id, "--repo-key", "test-pin"]);
+		const pn = run(["memory", "pin", id, "--repo-key", RK.pin]);
 		expect(pn.status).toBe(0);
 	});
 
@@ -763,12 +793,12 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-unpin",
+			RK.unpin,
 		]);
 		const id = rec.stdout.trim();
 
-		run(["memory", "pin", id, "--repo-key", "test-unpin"]);
-		const up = run(["memory", "unpin", id, "--repo-key", "test-unpin"]);
+		run(["memory", "pin", id, "--repo-key", RK.unpin]);
+		const up = run(["memory", "unpin", id, "--repo-key", RK.unpin]);
 		expect(up.status).toBe(0);
 	});
 
@@ -789,11 +819,11 @@ describe("ai-cortex memory CLI", () => {
 			"--source",
 			"extracted",
 			"--repo-key",
-			"test-confirm",
+			RK.confirm,
 		]);
 		const id = rec.stdout.trim();
 
-		const cf = run(["memory", "confirm", id, "--repo-key", "test-confirm"]);
+		const cf = run(["memory", "confirm", id, "--repo-key", RK.confirm]);
 		expect(cf.status).toBe(0);
 	});
 
@@ -811,7 +841,7 @@ describe("ai-cortex memory CLI", () => {
 			"--body-file",
 			bodyFile,
 			"--repo-key",
-			"test-audit",
+			RK.audit,
 		]);
 		const id = rec.stdout.trim();
 
@@ -821,7 +851,7 @@ describe("ai-cortex memory CLI", () => {
 			id,
 			"--json",
 			"--repo-key",
-			"test-audit",
+			RK.audit,
 		]);
 		expect(au.status).toBe(0);
 		const rows = JSON.parse(au.stdout);
@@ -834,13 +864,13 @@ describe("ai-cortex memory CLI", () => {
 
 	// ─── Task 8.19 — memory rebuild-index ────────────────────────────────────
 	it("memory rebuild-index exits 0 for fresh repo", () => {
-		const out = run(["memory", "rebuild-index", "--repo-key", "test-rebuild"]);
+		const out = run(["memory", "rebuild-index", "--repo-key", RK.rebuild]);
 		expect(out.status).toBe(0);
 	});
 
 	// ─── Task 8.20 — memory reconcile ────────────────────────────────────────
 	it("memory reconcile exits 0 and prints ok", () => {
-		const out = run(["memory", "reconcile", "--repo-key", "test-reconcile"]);
+		const out = run(["memory", "reconcile", "--repo-key", RK.reconcile]);
 		expect(out.status).toBe(0);
 		expect(out.stdout).toContain("ok");
 	});
@@ -851,12 +881,38 @@ describe("ai-cortex memory CLI", () => {
 			"reconcile",
 			"--report",
 			"--repo-key",
-			"test-reconcile-report",
+			RK.reconcileReport,
 		]);
 		expect(out.status).toBe(0);
 		const parsed = JSON.parse(out.stdout);
 		expect(Array.isArray(parsed.reindexed)).toBe(true);
 		expect(Array.isArray(parsed.adopted)).toBe(true);
 		expect(Array.isArray(parsed.phantomsRemoved)).toBe(true);
+	});
+
+	// ─── Task 3.1 — --repo-key validation ───────────────────────────────────
+	it("rejects a non-hashed repo-key with a clear error (memory list)", () => {
+		const out = run(["memory", "list", "--repo-key", "Favro"]);
+		expect(out.status).not.toBe(0);
+		expect(out.stderr).toMatch(/Invalid repoKey|expected 16-hex/i);
+	});
+
+	it("rejects a non-hashed repo-key with a clear error (memory recall)", () => {
+		const out = run(["memory", "recall", "any query", "--repo-key", "Favro"]);
+		expect(out.status).not.toBe(0);
+		expect(out.stderr).toMatch(/Invalid repoKey|expected 16-hex/i);
+	});
+
+	it("rejects a non-hashed repo-key with a clear error (memory search)", () => {
+		const out = run(["memory", "search", "any query", "--repo-key", "Favro"]);
+		expect(out.status).not.toBe(0);
+		expect(out.stderr).toMatch(/Invalid repoKey|expected 16-hex/i);
+	});
+
+	it("accepts the reserved 'global' key without validation error", () => {
+		const out = run(["memory", "list", "--json", "--repo-key", "global"]);
+		expect(out.status).toBe(0);
+		const parsed = JSON.parse(out.stdout);
+		expect(Array.isArray(parsed)).toBe(true);
 	});
 });

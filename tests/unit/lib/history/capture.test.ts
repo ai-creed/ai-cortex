@@ -37,13 +37,13 @@ afterEach(() => {
 describe("captureSession", () => {
 	it("creates a session record from the fixture transcript", async () => {
 		const result = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		expect(result).toEqual({ status: "captured", turnsProcessed: 8 });
-		const rec = await readSession("REPO", "s1");
+		const rec = await readSession("aabbccdd00112233", "s1");
 		expect(rec).not.toBeNull();
 		expect(rec!.turnCount).toBe(8);
 		expect(rec!.lastProcessedTurn).toBe(7);
@@ -53,57 +53,57 @@ describe("captureSession", () => {
 
 	it("running twice on the same transcript is a no-op (idempotent)", async () => {
 		await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
-		const before = JSON.stringify(await readSession("REPO", "s1"));
+		const before = JSON.stringify(await readSession("aabbccdd00112233", "s1"));
 		const second = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		expect(second.status).toBe("up-to-date");
-		const after = JSON.stringify(await readSession("REPO", "s1"));
+		const after = JSON.stringify(await readSession("aabbccdd00112233", "s1"));
 		expect(after).toBe(before);
 	});
 
 	it("writes chunk text to chunks.jsonl", async () => {
 		await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
-		const chunks = await readAllChunks("REPO", "s1");
+		const chunks = await readAllChunks("aabbccdd00112233", "s1");
 		expect(chunks.length).toBeGreaterThan(0);
 	});
 
 	it("skips when lock is held by a live process", async () => {
-		await acquireLock("REPO", "s1");
+		await acquireLock("aabbccdd00112233", "s1");
 		const result = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		expect(result.status).toBe("skipped-locked");
-		expect(await listSessions("REPO")).toEqual([]);
+		expect(await listSessions("aabbccdd00112233")).toEqual([]);
 	});
 
 	it("returns 'disabled' status and writes nothing when history is disabled", async () => {
 		process.env.AI_CORTEX_HISTORY = "0";
 		try {
 			const result = await captureSession({
-				repoKey: "REPO",
+				repoKey: "aabbccdd00112233",
 				sessionId: "s1",
 				transcriptPath: FIXTURE,
 				embed: false,
 			});
 			expect(result.status).toBe("disabled");
-			expect(await listSessions("REPO")).toEqual([]);
+			expect(await listSessions("aabbccdd00112233")).toEqual([]);
 		} finally {
 			delete process.env.AI_CORTEX_HISTORY;
 		}
@@ -111,7 +111,7 @@ describe("captureSession", () => {
 
 	it("re-runs when chunks.jsonl is missing despite lastProcessedTurn match (crash-resume)", async () => {
 		await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
@@ -123,7 +123,7 @@ describe("captureSession", () => {
 				".cache",
 				"ai-cortex",
 				"v1",
-				"REPO",
+				"aabbccdd00112233",
 				"history",
 				"sessions",
 				"s1",
@@ -131,13 +131,13 @@ describe("captureSession", () => {
 			),
 		);
 		const second = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "s1",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		expect(second.status).toBe("captured"); // not "up-to-date" — completeness check forces re-run
-		expect((await readAllChunks("REPO", "s1")).length).toBeGreaterThan(0);
+		expect((await readAllChunks("aabbccdd00112233", "s1")).length).toBeGreaterThan(0);
 	});
 });
 
@@ -145,13 +145,13 @@ describe("captureSession with embed:true", () => {
 	// First call downloads ~23 MB model — give it room.
 	it("writes vector index for chunks", { timeout: 120_000 }, async () => {
 		const result = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "se",
 			transcriptPath: FIXTURE,
 			embed: true,
 		});
 		expect(result.status).toBe("captured");
-		const vecs = await readChunkVectors("REPO", "se", MODEL_NAME);
+		const vecs = await readChunkVectors("aabbccdd00112233", "se", MODEL_NAME);
 		expect(vecs).not.toBeNull();
 		expect(vecs!.byChunkId.size).toBeGreaterThan(0);
 		expect(vecs!.dim).toBe(384);

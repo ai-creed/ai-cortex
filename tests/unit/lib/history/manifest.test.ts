@@ -39,14 +39,14 @@ describe("appendManifestEntry", () => {
 			id: "sess-abc",
 			startedAt: "2026-04-29T10:00:00.000Z",
 		};
-		await appendManifestEntry("REPO1", entry);
+		await appendManifestEntry("1111111111111111", entry);
 
 		const manifestPath = path.join(
 			tmp,
 			".cache",
 			"ai-cortex",
 			"v1",
-			"REPO1",
+			"1111111111111111",
 			"history",
 			"manifest.jsonl",
 		);
@@ -66,15 +66,15 @@ describe("appendManifestEntry", () => {
 			startedAt: "2026-04-29T11:00:00.000Z",
 			endedAt: "2026-04-29T11:30:00.000Z",
 		};
-		await appendManifestEntry("REPO1", e1);
-		await appendManifestEntry("REPO1", e2);
+		await appendManifestEntry("1111111111111111", e1);
+		await appendManifestEntry("1111111111111111", e2);
 
 		const manifestPath = path.join(
 			tmp,
 			".cache",
 			"ai-cortex",
 			"v1",
-			"REPO1",
+			"1111111111111111",
 			"history",
 			"manifest.jsonl",
 		);
@@ -86,7 +86,7 @@ describe("appendManifestEntry", () => {
 
 describe("readManifest", () => {
 	it("returns empty array when manifest does not exist", async () => {
-		const entries = await readManifest("REPO_NONE");
+		const entries = await readManifest("eeeeeeeeeeeeeeee");
 		expect(entries).toEqual([]);
 	});
 
@@ -99,10 +99,10 @@ describe("readManifest", () => {
 			id: "s2",
 			startedAt: "2026-04-29T11:00:00.000Z",
 		};
-		await appendManifestEntry("REPO2", e1);
-		await appendManifestEntry("REPO2", e2);
+		await appendManifestEntry("2222222222222222", e1);
+		await appendManifestEntry("2222222222222222", e2);
 
-		const entries = await readManifest("REPO2");
+		const entries = await readManifest("2222222222222222");
 		expect(entries).toHaveLength(2);
 		expect(entries[0]).toEqual(e1);
 		expect(entries[1]).toEqual(e2);
@@ -118,10 +118,10 @@ describe("readManifest", () => {
 			startedAt: "2026-04-29T10:00:00.000Z",
 			endedAt: "2026-04-29T10:45:00.000Z",
 		};
-		await appendManifestEntry("REPO3", e1);
-		await appendManifestEntry("REPO3", e1Updated);
+		await appendManifestEntry("3333333333333333", e1);
+		await appendManifestEntry("3333333333333333", e1Updated);
 
-		const entries = await readManifest("REPO3");
+		const entries = await readManifest("3333333333333333");
 		expect(entries).toHaveLength(1);
 		expect(entries[0]).toEqual(e1Updated);
 	});
@@ -129,37 +129,37 @@ describe("readManifest", () => {
 
 describe("pruneManifest", () => {
 	it("removes entries whose IDs are not in activeSessions", async () => {
-		await appendManifestEntry("REPO4", {
+		await appendManifestEntry("4444444444444444", {
 			id: "keep-me",
 			startedAt: "2026-04-29T10:00:00.000Z",
 		});
-		await appendManifestEntry("REPO4", {
+		await appendManifestEntry("4444444444444444", {
 			id: "drop-me",
 			startedAt: "2026-04-29T11:00:00.000Z",
 		});
 
-		await pruneManifest("REPO4", new Set(["keep-me"]));
+		await pruneManifest("4444444444444444", new Set(["keep-me"]));
 
-		const entries = await readManifest("REPO4");
+		const entries = await readManifest("4444444444444444");
 		expect(entries).toHaveLength(1);
 		expect(entries[0]?.id).toBe("keep-me");
 	});
 
 	it("leaves manifest empty when activeSessions is empty", async () => {
-		await appendManifestEntry("REPO5", {
+		await appendManifestEntry("5555555555555555", {
 			id: "s1",
 			startedAt: "2026-04-29T10:00:00.000Z",
 		});
-		await pruneManifest("REPO5", new Set());
+		await pruneManifest("5555555555555555", new Set());
 
-		const entries = await readManifest("REPO5");
+		const entries = await readManifest("5555555555555555");
 		expect(entries).toHaveLength(0);
 	});
 
 	it("is a no-op when manifest does not exist", async () => {
 		// Should not throw
 		await expect(
-			pruneManifest("REPO_NONE", new Set(["s1"])),
+			pruneManifest("eeeeeeeeeeeeeeee", new Set(["s1"])),
 		).resolves.toBeUndefined();
 	});
 });
@@ -192,7 +192,7 @@ describe("searchHistory — session enumeration via manifest", () => {
 		vi.mocked(writeSession).mockResolvedValue(undefined);
 
 		// Populate manifest with one session
-		await appendManifestEntry("REPOSRCH", {
+		await appendManifestEntry("cccccccccccccccc", {
 			id: "sess-manifest",
 			startedAt: "2026-04-29T10:00:00.000Z",
 		});
@@ -202,7 +202,7 @@ describe("searchHistory — session enumeration via manifest", () => {
 		vi.mocked(listSessions).mockResolvedValue(["sess-fallback"]);
 
 		const result = await searchHistory({
-			repoKey: "REPOSRCH",
+			repoKey: "cccccccccccccccc",
 			cwd: "/tmp",
 			query: "task",
 			scope: "project",
@@ -217,7 +217,7 @@ describe("searchHistory — session enumeration via manifest", () => {
 		vi.mocked(listSessions).mockResolvedValue([]);
 
 		const result = await searchHistory({
-			repoKey: "REPO_NO_MANIFEST",
+			repoKey: "ffffffffffff0000",
 			cwd: "/tmp",
 			query: "task",
 			scope: "project",

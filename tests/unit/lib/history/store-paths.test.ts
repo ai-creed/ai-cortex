@@ -12,20 +12,20 @@ import {
 describe("store paths", () => {
 	it("historyDir uses getCacheDir + 'history'", () => {
 		vi.spyOn(os, "homedir").mockReturnValue("/home/u");
-		expect(historyDir("REPO")).toBe(
-			path.join("/home/u", ".cache", "ai-cortex", "v1", "REPO", "history"),
+		expect(historyDir("aabbccdd00112233")).toBe(
+			path.join("/home/u", ".cache", "ai-cortex", "v1", "aabbccdd00112233", "history"),
 		);
 	});
 
 	it("sessionDir is sessions/<id> under historyDir", () => {
 		vi.spyOn(os, "homedir").mockReturnValue("/home/u");
-		expect(sessionDir("REPO", "abc")).toBe(
+		expect(sessionDir("aabbccdd00112233", "abc")).toBe(
 			path.join(
 				"/home/u",
 				".cache",
 				"ai-cortex",
 				"v1",
-				"REPO",
+				"aabbccdd00112233",
 				"history",
 				"sessions",
 				"abc",
@@ -35,9 +35,9 @@ describe("store paths", () => {
 
 	it("sessionJsonPath, chunksJsonlPath, lockPath are session-relative", () => {
 		vi.spyOn(os, "homedir").mockReturnValue("/home/u");
-		const dir = sessionDir("REPO", "abc");
-		expect(sessionJsonPath("REPO", "abc")).toBe(path.join(dir, "session.json"));
-		expect(chunksJsonlPath("REPO", "abc")).toBe(path.join(dir, "chunks.jsonl"));
-		expect(lockPath("REPO", "abc")).toBe(path.join(dir, ".lock"));
+		const dir = sessionDir("aabbccdd00112233", "abc");
+		expect(sessionJsonPath("aabbccdd00112233", "abc")).toBe(path.join(dir, "session.json"));
+		expect(chunksJsonlPath("aabbccdd00112233", "abc")).toBe(path.join(dir, "chunks.jsonl"));
+		expect(lockPath("aabbccdd00112233", "abc")).toBe(path.join(dir, ".lock"));
 	});
 });

@@ -17,7 +17,7 @@ import {
 } from "../../../../src/lib/memory/lifecycle.js";
 
 let tmp: string;
-const repoKey = "ret-test";
+const repoKey = "72657474657374ff"; // 16-hex fixture
 
 beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-ret-"));
