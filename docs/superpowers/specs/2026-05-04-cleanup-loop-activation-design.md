@@ -121,9 +121,11 @@ Current copy:
 
 > After `recall_memory` returns a relevant hit, call `get_memory(id)` to actually use it — that's the cleanup-eligibility signal.
 
-Replace with copy that retains the "use what you recall" guidance without coupling it to cleanup eligibility:
+Replace with copy that retains the "use what you recall" guidance without coupling it to cleanup eligibility or claiming ranking effects that don't yet exist:
 
-> After `recall_memory` returns a relevant hit, call `get_memory(id)` to fetch the full record before applying the rule. `get_memory` records that the rule was actually consulted (used for ranking signal), separate from the cleanup queue.
+> After `recall_memory` returns a relevant hit, call `get_memory(id)` to fetch the full record before applying the rule. `get_memory` bumps an access counter and last-access timestamp; `recall_memory` is browse-only.
+
+Note: the ranker today scores on semantic similarity, scope match, status, confidence, and recency over `updated_at` (`src/lib/memory/retrieve.ts:323-328`). `get_count` and `last_accessed_at` are recorded but not yet consumed. The replacement copy reflects what the system actually does today; future work that wires these into ranking can update the wording in lockstep.
 
 #### 3b. `src/mcp/server.ts:582` — `get_memory` tool description
 
@@ -133,7 +135,7 @@ Current ends with:
 
 Replace with:
 
-> get_memory records that the rule was actually consulted (used for downstream ranking and access tracking), separate from the cleanup queue, while recall_memory is browse-only.
+> Calling get_memory bumps the memory's access counter and last-access timestamp; recall_memory is browse-only and does not.
 
 #### 3c. `src/mcp/server.ts:1286` — `list_memories_pending_rewrite` tool description
 
