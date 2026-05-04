@@ -22,18 +22,18 @@ afterEach(() => {
 
 describe("acquireLock / releaseLock", () => {
 	it("creates lock file on success", async () => {
-		const result = await acquireLock("REPO", "abc");
+		const result = await acquireLock("aabbccdd00112233", "abc");
 		expect(result.acquired).toBe(true);
-		expect(fs.existsSync(lockPath("REPO", "abc"))).toBe(true);
+		expect(fs.existsSync(lockPath("aabbccdd00112233", "abc"))).toBe(true);
 	});
 
 	it("returns acquired:false when lock already exists with live pid", async () => {
-		fs.mkdirSync(sessionDir("REPO", "abc"), { recursive: true });
+		fs.mkdirSync(sessionDir("aabbccdd00112233", "abc"), { recursive: true });
 		fs.writeFileSync(
-			lockPath("REPO", "abc"),
+			lockPath("aabbccdd00112233", "abc"),
 			JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
 		);
-		const result = await acquireLock("REPO", "abc");
+		const result = await acquireLock("aabbccdd00112233", "abc");
 		expect(result.acquired).toBe(false);
 		expect((result as Extract<typeof result, { acquired: false }>).reason).toBe(
 			"locked",
@@ -41,13 +41,13 @@ describe("acquireLock / releaseLock", () => {
 	});
 
 	it("steals lock when existing pid is dead", async () => {
-		fs.mkdirSync(sessionDir("REPO", "abc"), { recursive: true });
+		fs.mkdirSync(sessionDir("aabbccdd00112233", "abc"), { recursive: true });
 		const deadPid = 999999;
 		fs.writeFileSync(
-			lockPath("REPO", "abc"),
+			lockPath("aabbccdd00112233", "abc"),
 			JSON.stringify({ pid: deadPid, startedAt: new Date().toISOString() }),
 		);
-		const result = await acquireLock("REPO", "abc");
+		const result = await acquireLock("aabbccdd00112233", "abc");
 		expect(result.acquired).toBe(true);
 		expect(
 			(result as Extract<typeof result, { acquired: true }>).stoleFrom,
@@ -55,13 +55,13 @@ describe("acquireLock / releaseLock", () => {
 	});
 
 	it("steals lock when existing lock older than 10 minutes", async () => {
-		fs.mkdirSync(sessionDir("REPO", "abc"), { recursive: true });
+		fs.mkdirSync(sessionDir("aabbccdd00112233", "abc"), { recursive: true });
 		const eleven = new Date(Date.now() - 11 * 60_000).toISOString();
 		fs.writeFileSync(
-			lockPath("REPO", "abc"),
+			lockPath("aabbccdd00112233", "abc"),
 			JSON.stringify({ pid: process.pid, startedAt: eleven }),
 		);
-		const result = await acquireLock("REPO", "abc");
+		const result = await acquireLock("aabbccdd00112233", "abc");
 		expect(result.acquired).toBe(true);
 		expect(
 			(result as Extract<typeof result, { acquired: true }>).stoleFrom,
@@ -69,12 +69,12 @@ describe("acquireLock / releaseLock", () => {
 	});
 
 	it("releaseLock removes the lock file", async () => {
-		await acquireLock("REPO", "abc");
-		await releaseLock("REPO", "abc");
-		expect(fs.existsSync(lockPath("REPO", "abc"))).toBe(false);
+		await acquireLock("aabbccdd00112233", "abc");
+		await releaseLock("aabbccdd00112233", "abc");
+		expect(fs.existsSync(lockPath("aabbccdd00112233", "abc"))).toBe(false);
 	});
 
 	it("releaseLock is idempotent (no-op if absent)", async () => {
-		await expect(releaseLock("REPO", "abc")).resolves.not.toThrow();
+		await expect(releaseLock("aabbccdd00112233", "abc")).resolves.not.toThrow();
 	});
 });

@@ -46,10 +46,10 @@ function rec(id: string, prompt: string): SessionRecord {
 
 describe("searchHistory (scope)", () => {
 	it("scope=session uses sessionId override", async () => {
-		await writeSession("REPO", rec("a", "alpha here"));
-		await writeSession("REPO", rec("b", "beta here"));
+		await writeSession("aabbccdd00112233", rec("a", "alpha here"));
+		await writeSession("aabbccdd00112233", rec("b", "beta here"));
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/x",
 			query: "beta",
 			sessionId: "b",
@@ -61,10 +61,10 @@ describe("searchHistory (scope)", () => {
 
 	it("scope=session resolves current session via env var", async () => {
 		process.env.AI_CORTEX_SESSION_ID = "a";
-		await writeSession("REPO", rec("a", "alpha here"));
-		await writeSession("REPO", rec("b", "beta here"));
+		await writeSession("aabbccdd00112233", rec("a", "alpha here"));
+		await writeSession("aabbccdd00112233", rec("b", "beta here"));
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/x",
 			query: "alpha",
 			scope: "session",
@@ -75,10 +75,10 @@ describe("searchHistory (scope)", () => {
 
 	it("scope=session with empty hits auto-broadens to project", async () => {
 		process.env.AI_CORTEX_SESSION_ID = "a";
-		await writeSession("REPO", rec("a", "alpha here"));
-		await writeSession("REPO", rec("b", "beta in another session"));
+		await writeSession("aabbccdd00112233", rec("a", "alpha here"));
+		await writeSession("aabbccdd00112233", rec("b", "beta in another session"));
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/x",
 			query: "beta",
 			scope: "session",
@@ -88,9 +88,9 @@ describe("searchHistory (scope)", () => {
 	});
 
 	it("scope=session and detection fails returns error", async () => {
-		await writeSession("REPO", rec("a", "alpha"));
+		await writeSession("aabbccdd00112233", rec("a", "alpha"));
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/x",
 			query: "alpha",
 			scope: "session",
@@ -99,10 +99,10 @@ describe("searchHistory (scope)", () => {
 	});
 
 	it("scope=project searches all sessions, no broaden marker", async () => {
-		await writeSession("REPO", rec("a", "alpha"));
-		await writeSession("REPO", rec("b", "beta"));
+		await writeSession("aabbccdd00112233", rec("a", "alpha"));
+		await writeSession("aabbccdd00112233", rec("b", "beta"));
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/x",
 			query: "alpha",
 			scope: "project",

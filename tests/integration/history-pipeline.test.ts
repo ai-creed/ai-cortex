@@ -32,13 +32,13 @@ afterEach(() => {
 describe("history pipeline end-to-end", () => {
 	it("captures fixture, then search finds the user correction by lexical query", async () => {
 		await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "int-sess",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		const result = await searchHistory({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			cwd: "/tmp/anything",
 			query: "watch mode",
 			scope: "session",
@@ -49,13 +49,13 @@ describe("history pipeline end-to-end", () => {
 
 	it("running capture twice on same transcript is a no-op", async () => {
 		const first = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "int-sess",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		const second = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "int-sess",
 			transcriptPath: FIXTURE,
 			embed: false,
@@ -67,24 +67,24 @@ describe("history pipeline end-to-end", () => {
 
 describe("history concurrency", () => {
 	it("second concurrent capture skips when lock held", async () => {
-		const lockHandle = await acquireLock("REPO", "race-sess");
+		const lockHandle = await acquireLock("aabbccdd00112233", "race-sess");
 		expect(lockHandle.acquired).toBe(true);
 		const result = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "race-sess",
 			transcriptPath: FIXTURE,
 			embed: false,
 		});
 		expect(result.status).toBe("skipped-locked");
-		await releaseLock("REPO", "race-sess");
+		await releaseLock("aabbccdd00112233", "race-sess");
 	});
 
 	it("after lock released, subsequent capture succeeds", async () => {
-		const lockHandle = await acquireLock("REPO", "after-sess");
+		const lockHandle = await acquireLock("aabbccdd00112233", "after-sess");
 		expect(lockHandle.acquired).toBe(true);
-		await releaseLock("REPO", "after-sess");
+		await releaseLock("aabbccdd00112233", "after-sess");
 		const result = await captureSession({
-			repoKey: "REPO",
+			repoKey: "aabbccdd00112233",
 			sessionId: "after-sess",
 			transcriptPath: FIXTURE,
 			embed: false,

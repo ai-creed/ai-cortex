@@ -18,9 +18,12 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { exec } from "node:child_process";
 import {
+	assertHashedRepoKey,
 	buildRepoFingerprint,
+	getCacheDir,
 	isWorktreeDirty,
 	readCacheForWorktree,
+	RepoKeyError,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 
@@ -80,7 +83,7 @@ describe("writeCache + readCacheForWorktree", () => {
 
 	it("returns null when no cache file exists", async () => {
 		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
-		expect(await readCacheForWorktree("unknown", "key")).toBeNull();
+		expect(await readCacheForWorktree("0000000000000000", "eeff00112233aabb")).toBeNull();
 	});
 
 	it("returns null and warns to stderr on schema version mismatch", async () => {
@@ -116,5 +119,42 @@ describe("isWorktreeDirty", () => {
 	it("returns true when git status output contains tracked or untracked changes", async () => {
 		mockExecSuccess(" M src/main.ts\n?? newfile.ts\n");
 		expect(await isWorktreeDirty("/repo")).toBe(true);
+	});
+});
+
+describe("assertHashedRepoKey", () => {
+	it.each([
+		"0123456789abcdef",
+		"deadbeefcafebabe",
+		"ffffffffffffffff",
+		"global",
+	])("accepts %s", (k) => {
+		expect(() => assertHashedRepoKey(k)).not.toThrow();
+	});
+
+	it.each([
+		"",
+		"Favro",
+		"ai-cortex",
+		"fav-162958",
+		"0123456789ABCDEF", // uppercase
+		"0123456789abcde",  // 15
+		"0123456789abcdef0", // 17
+		"/abs/path",
+		"../traversal",
+		"global/",
+	])("rejects %s", (k) => {
+		expect(() => assertHashedRepoKey(k)).toThrow(RepoKeyError);
+	});
+});
+
+describe("getCacheDir invariant", () => {
+	it("throws RepoKeyError for invalid input", () => {
+		expect(() => getCacheDir("Favro")).toThrow(RepoKeyError);
+	});
+
+	it("returns a path for valid input", () => {
+		const dir = getCacheDir("0123456789abcdef");
+		expect(dir.endsWith("0123456789abcdef")).toBe(true);
 	});
 });
