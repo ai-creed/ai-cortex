@@ -15,6 +15,7 @@ import type {
 	SemanticSuggestResult,
 } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
+import { assertHashedRepoKey } from "./lib/cache-store.js";
 import { VERSION } from "./version.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -241,7 +242,14 @@ async function cliMemoryRecall(args: string[]): Promise<void> {
 			continue;
 		}
 		if (a === "--repo-key" && args[i + 1]) {
-			repoKey = args[++i];
+			const rk = args[++i];
+			try {
+				assertHashedRepoKey(rk);
+			} catch (err) {
+				process.stderr.write(`${(err as Error).message}\n`);
+				process.exit(1);
+			}
+			repoKey = rk;
 			continue;
 		}
 		if (a === "--scope-file" && args[i + 1]) {
@@ -350,7 +358,14 @@ async function cliMemorySearch(args: string[]): Promise<void> {
 			continue;
 		}
 		if (a === "--repo-key" && args[i + 1]) {
-			repoKey = args[++i];
+			const rk = args[++i];
+			try {
+				assertHashedRepoKey(rk);
+			} catch (err) {
+				process.stderr.write(`${(err as Error).message}\n`);
+				process.exit(1);
+			}
+			repoKey = rk;
 			continue;
 		}
 		if (!a.startsWith("--") && !query) {
@@ -399,6 +414,23 @@ async function resolveRepoKeyOrExit(cwd: string): Promise<string> {
 		);
 		process.exit(1);
 	}
+}
+
+async function resolveRepoKeyFromFlagOrCwd(
+	rest: string[],
+	cwd: string,
+): Promise<string> {
+	const override = flagValue(rest, "--repo-key");
+	if (override !== undefined) {
+		try {
+			assertHashedRepoKey(override);
+		} catch (err) {
+			process.stderr.write(`${(err as Error).message}\n`);
+			process.exit(1);
+		}
+		return override;
+	}
+	return resolveRepoKeyOrExit(cwd);
 }
 
 function escalationHint(r: FastSuggestResult): string {
@@ -657,7 +689,7 @@ async function main(): Promise<void> {
 						transcriptOverride ??
 						(sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					if (!sessionId || !transcript) {
 						process.stderr.write(
 							"usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n",
@@ -686,7 +718,7 @@ async function main(): Promise<void> {
 						await import("./lib/history/store.js");
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					for (const id of await listSessions(repoKey)) {
 						const rec = await readSession(repoKey, id);
 						process.stdout.write(
@@ -701,7 +733,7 @@ async function main(): Promise<void> {
 					const before = flagValue(rest, "--before");
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					if (!before) {
 						process.stderr.write(
 							"usage: history prune --before YYYY-MM-DD [--cwd <dir>] [--repo-key <key>]\n",
@@ -753,7 +785,7 @@ async function main(): Promise<void> {
 				case "bootstrap": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryBootstrap } =
 						await import("./lib/memory/cli/bootstrap.js");
 					const code = await runMemoryBootstrap(
@@ -774,7 +806,7 @@ async function main(): Promise<void> {
 				case "record": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryRecord } =
 						await import("./lib/memory/cli/record.js");
 					const subArgs = stripFlagPairs(rest, ["--cwd", "--repo-key"]);
@@ -785,7 +817,7 @@ async function main(): Promise<void> {
 				case "extract": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryExtract } =
 						await import("./lib/memory/cli/extract.js");
 					const code = await runMemoryExtract(
@@ -798,7 +830,7 @@ async function main(): Promise<void> {
 				case "extractor-log": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryExtractorLog } =
 						await import("./lib/memory/cli/extractor-log.js");
 					const code = await runMemoryExtractorLog(
@@ -811,7 +843,7 @@ async function main(): Promise<void> {
 				case "get": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryGet } = await import("./lib/memory/cli/get.js");
 					const code = await runMemoryGet(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -823,7 +855,7 @@ async function main(): Promise<void> {
 				case "list": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryList } = await import("./lib/memory/cli/list.js");
 					const code = await runMemoryList(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -835,7 +867,7 @@ async function main(): Promise<void> {
 				case "update": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryUpdate } =
 						await import("./lib/memory/cli/update.js");
 					const code = await runMemoryUpdate(
@@ -848,7 +880,7 @@ async function main(): Promise<void> {
 				case "deprecate": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryDeprecate } =
 						await import("./lib/memory/cli/deprecate.js");
 					const code = await runMemoryDeprecate(
@@ -861,7 +893,7 @@ async function main(): Promise<void> {
 				case "restore": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryRestore } =
 						await import("./lib/memory/cli/restore.js");
 					const code = await runMemoryRestore(
@@ -874,7 +906,7 @@ async function main(): Promise<void> {
 				case "merge": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryMerge } = await import("./lib/memory/cli/merge.js");
 					const code = await runMemoryMerge(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -886,7 +918,7 @@ async function main(): Promise<void> {
 				case "trash": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryTrash } = await import("./lib/memory/cli/trash.js");
 					const code = await runMemoryTrash(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -898,7 +930,7 @@ async function main(): Promise<void> {
 				case "untrash": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryUntrash } =
 						await import("./lib/memory/cli/untrash.js");
 					const code = await runMemoryUntrash(
@@ -911,7 +943,7 @@ async function main(): Promise<void> {
 				case "purge": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryPurge } = await import("./lib/memory/cli/purge.js");
 					const code = await runMemoryPurge(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -923,7 +955,7 @@ async function main(): Promise<void> {
 				case "link": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryLink } = await import("./lib/memory/cli/link.js");
 					const code = await runMemoryLink(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -935,7 +967,7 @@ async function main(): Promise<void> {
 				case "unlink": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryUnlink } =
 						await import("./lib/memory/cli/unlink.js");
 					const code = await runMemoryUnlink(
@@ -948,7 +980,7 @@ async function main(): Promise<void> {
 				case "pin": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryPin } = await import("./lib/memory/cli/pin.js");
 					const code = await runMemoryPin(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -960,7 +992,7 @@ async function main(): Promise<void> {
 				case "unpin": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryUnpin } = await import("./lib/memory/cli/pin.js");
 					const code = await runMemoryUnpin(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -972,7 +1004,7 @@ async function main(): Promise<void> {
 				case "confirm": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryConfirm } =
 						await import("./lib/memory/cli/confirm.js");
 					const code = await runMemoryConfirm(
@@ -985,7 +1017,7 @@ async function main(): Promise<void> {
 				case "audit": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryAudit } = await import("./lib/memory/cli/audit.js");
 					const code = await runMemoryAudit(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -997,7 +1029,7 @@ async function main(): Promise<void> {
 				case "rebuild-index": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryRebuildIndex } =
 						await import("./lib/memory/cli/rebuild.js");
 					const code = await runMemoryRebuildIndex(
@@ -1010,7 +1042,7 @@ async function main(): Promise<void> {
 				case "reconcile": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryReconcile } =
 						await import("./lib/memory/cli/reconcile.js");
 					const code = await runMemoryReconcile(
@@ -1023,7 +1055,7 @@ async function main(): Promise<void> {
 				case "sweep": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemorySweep } = await import("./lib/memory/cli/sweep.js");
 					const code = await runMemorySweep(
 						stripFlagPairs(rest, ["--cwd", "--repo-key"]),
@@ -1035,7 +1067,7 @@ async function main(): Promise<void> {
 				case "promote": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
-						flagValue(rest, "--repo-key") ?? (await resolveRepoKeyOrExit(cwd));
+						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
 					const { runMemoryPromote } =
 						await import("./lib/memory/cli/promote.js");
 					const code = await runMemoryPromote(
