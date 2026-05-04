@@ -86,7 +86,16 @@ SELECT COUNT(*) AS n FROM memories
 WHERE status = 'candidate' AND rewritten_at IS NULL
 ```
 
-When `n > 0`, the briefing inserts a section between the existing "Memory available" line and the "How to consult" section:
+When `n > 0`, the briefing inserts a "Pending review" section **after the active-type digest sections and immediately before "How to consult"**. Final section order in the rendered briefing:
+
+1. `## Memory available — N active, M candidates, K pinned` (summary line)
+2. `### <Type> (top N)` blocks — one per active type (existing)
+3. `## Pending review — N candidates eligible for cleanup` (NEW, conditional on `n > 0`)
+4. `### How to consult` (existing, with copy updates per §3 below)
+
+Rationale: "How to consult" governs the read path (recall); "Pending review" governs the write path (cleanup). Grouping both action-oriented sections at the end of the briefing keeps content listing (active types) contiguous and makes the action surfaces discoverable in one place.
+
+Section content (normative wording; implementation matches modulo trivial formatting):
 
 ```markdown
 ## Pending review — N candidates eligible for cleanup
@@ -100,11 +109,47 @@ Candidates are raw extracted bodies. Rewriting promotes them to `active` and pro
 Cleanup is opt-in. Candidates age out at 90d if untouched.
 ```
 
-When `n == 0`, the section is omitted entirely. The "How to consult" section, which targets recall-time behavior, stays unchanged and follows.
+When `n == 0`, the section is omitted entirely.
 
-The exact wording above is the design's normative wording; the implementation should match modulo trivial formatting.
+### 3. User-facing copy updates (in lockstep with the predicate change)
 
-### 3. Tests
+The current copy in three places explicitly tells agents that `get_memory` (and pin) is the cleanup-eligibility signal. After §1 drops that gating, those statements become false product claims. The implementation MUST update all three in the same change set:
+
+#### 3a. `src/lib/memory/briefing-digest.ts:84` — "How to consult" bullet
+
+Current copy:
+
+> After `recall_memory` returns a relevant hit, call `get_memory(id)` to actually use it — that's the cleanup-eligibility signal.
+
+Replace with copy that retains the "use what you recall" guidance without coupling it to cleanup eligibility:
+
+> After `recall_memory` returns a relevant hit, call `get_memory(id)` to fetch the full record before applying the rule. `get_memory` records that the rule was actually consulted (used for ranking signal), separate from the cleanup queue.
+
+#### 3b. `src/mcp/server.ts:582` — `get_memory` tool description
+
+Current ends with:
+
+> get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.
+
+Replace with:
+
+> get_memory records that the rule was actually consulted (used for downstream ranking and access tracking), separate from the cleanup queue, while recall_memory is browse-only.
+
+#### 3c. `src/mcp/server.ts:1286` — `list_memories_pending_rewrite` tool description
+
+Current opening:
+
+> List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory.
+
+Replace with:
+
+> List candidate memories eligible for cleanup. A candidate is eligible when it is `status=candidate` and has not yet been rewritten (`rewritten_at IS NULL`). Highest-confidence candidates are returned first.
+
+The remainder of that description (the `since` parameter doc and the subagent-dispatch workflow guidance) stays unchanged.
+
+These edits are NOT optional — without them, the product contract documented in agent-facing surfaces directly contradicts runtime behavior.
+
+### 4. Tests
 
 #### Predicate (extend `tests/unit/lib/memory/retrieve.test.ts`)
 
@@ -125,19 +170,30 @@ The existing `listMemoriesPendingRewrite` describe block should be extended with
 
 Both test files use the existing fixture pattern (vitest, `mkRepoKey` from `tests/helpers/memory-fixtures.ts`).
 
-### 4. Out of scope
+#### Copy regression guard (extend `tests/unit/mcp/memory-tools.test.ts` or equivalent)
+
+A small string-presence test asserting the stale phrasing is gone — catches a future revert that re-introduces the contradiction:
+
+- `get_memory` description does NOT contain `"counts toward cleanup eligibility"`.
+- `list_memories_pending_rewrite` description does NOT contain `"re-extracted at least once"` and does NOT contain `"accessed via get_memory"`.
+- The rendered briefing's "How to consult" block does NOT contain `"that's the cleanup-eligibility signal"`.
+
+These are negative-presence checks against the literal stale phrases; they don't lock in the new wording word-for-word, just prevent the old contract from creeping back.
+
+### 5. Out of scope
 
 - **Auto-trigger.** Pull-only stays. The server does not push cleanup signals into tool responses or the rehydrate briefing beyond the count + workflow hint.
-- **Tool-description nudges.** Adding "consider cleanup" lines to `recall_memory`, `get_memory`, etc. tool descriptions would compete with the briefing. The briefing-once pattern is the established discovery channel.
+- **NEW tool-description nudges.** Adding "consider cleanup" lines to tool descriptions that don't currently mention cleanup eligibility (e.g. `recall_memory`, `record_memory`) would compete with the briefing. The briefing-once pattern is the established discovery channel. Note: the §3 edits to existing descriptions that already make eligibility claims are corrections, not new nudges, and are in scope.
 - **Extractor confidence improvements.** Separate track. The predicate is intentionally orthogonal.
 - **Token budget enforcement.** Agent-side concern. The server reports counts; agents budget.
 - **Cleanup metrics / telemetry.** Out of scope; can be layered later if useful.
 - **Multi-pass orchestration.** The `since` parameter already supports incremental passes; agents implement the loop client-side.
 
-### 5. Reversibility
+### 6. Reversibility
 
 - Predicate change: one SQL string in one function. Single-commit revert.
-- Briefing addition: one section appended in one function. Single-commit revert.
+- Briefing addition: one section inserted before "How to consult" in one function. Single-commit revert.
+- Copy edits in three locations: text-only changes; revert is mechanical.
 - No schema changes, no migrations, no new persisted fields.
 
 ## Decision log
