@@ -136,3 +136,54 @@ export function deleteEmptyStore(dir: string): void {
 	}
 	fs.rmSync(dir, { recursive: true, force: true });
 }
+
+export class WalCheckpointIncompleteError extends Error {}
+
+export function checkpointAndVerify(dbPath: string): void {
+	if (!fs.existsSync(dbPath)) return;
+
+	let db = new Database(dbPath);
+	try {
+		db.pragma("busy_timeout = 0");
+		const r1 = db.pragma("wal_checkpoint(TRUNCATE)") as Array<{
+			busy: number;
+			log: number;
+			checkpointed: number;
+		}>;
+		if (r1[0]?.busy !== 0 || r1[0]?.log !== 0) {
+			throw new WalCheckpointIncompleteError(
+				`checkpoint incomplete (TRUNCATE) for ${dbPath}: ${JSON.stringify(r1[0])}`,
+			);
+		}
+	} finally {
+		db.close();
+	}
+
+	db = new Database(dbPath);
+	try {
+		db.pragma("busy_timeout = 0");
+		const r2 = db.pragma("wal_checkpoint(PASSIVE)") as Array<{
+			busy: number;
+			log: number;
+			checkpointed: number;
+		}>;
+		if (r2[0]?.log !== 0) {
+			throw new WalCheckpointIncompleteError(
+				`verification: frames remaining after checkpoint: ${JSON.stringify(r2[0])}`,
+			);
+		}
+	} finally {
+		db.close();
+	}
+
+	for (const sfx of ["-wal", "-shm"]) {
+		const sidecar = dbPath + sfx;
+		if (fs.existsSync(sidecar)) {
+			try {
+				fs.unlinkSync(sidecar);
+			} catch {
+				// best-effort; SQLite reopens may recreate them
+			}
+		}
+	}
+}

@@ -10,6 +10,7 @@ import {
 	discoverLiteralCandidates,
 	classifyStore,
 	deleteEmptyStore,
+	checkpointAndVerify,
 } from "../../../src/lib/cache-store-migrate.js";
 
 let tmp: string;
@@ -169,5 +170,47 @@ describe("deleteEmptyStore", () => {
 		makeDbWithRow(dir);
 		expect(() => deleteEmptyStore(dir)).toThrow(/not empty/i);
 		expect(fs.existsSync(dir)).toBe(true);
+	});
+});
+
+describe("checkpointAndVerify", () => {
+	it("folds WAL frames and removes -wal/-shm sidecars on success", () => {
+		const dir = path.join(tmp, "wal-clean");
+		fs.mkdirSync(dir, { recursive: true });
+		const dbPath = path.join(dir, "i.sqlite");
+		const db = new Database(dbPath);
+		db.pragma("journal_mode = WAL");
+		db.exec("CREATE TABLE t(x)");
+		db.prepare("INSERT INTO t(x) VALUES(?)").run(1);
+		db.close();
+
+		expect(() => checkpointAndVerify(dbPath)).not.toThrow();
+		expect(fs.existsSync(dbPath + "-wal")).toBe(false);
+		expect(fs.existsSync(dbPath + "-shm")).toBe(false);
+	});
+
+	it("throws when -wal frames remain after checkpoint (held by another reader)", () => {
+		const dir = path.join(tmp, "wal-held");
+		fs.mkdirSync(dir, { recursive: true });
+		const dbPath = path.join(dir, "i.sqlite");
+		const db = new Database(dbPath);
+		db.pragma("journal_mode = WAL");
+		db.exec("CREATE TABLE t(x)");
+		db.prepare("INSERT INTO t(x) VALUES(?)").run(1);
+
+		// Hold an open read transaction via an iterator to prevent checkpoint completion.
+		const reader = new Database(dbPath, { readonly: true });
+		const iter = reader.prepare("SELECT * FROM t").iterate();
+		iter.next(); // advance to open the implicit read transaction
+
+		try {
+			expect(() => checkpointAndVerify(dbPath)).toThrow(
+				/checkpoint incomplete|frames remaining/i,
+			);
+		} finally {
+			iter.return();
+			reader.close();
+			db.close();
+		}
 	});
 });
