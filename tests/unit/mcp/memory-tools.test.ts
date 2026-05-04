@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { createServer, resetReconciledKeys } from "../../../src/mcp/server.js";
+import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import {
 	openLifecycle,
 	createMemory,
@@ -12,10 +15,20 @@ import {
 } from "../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../src/lib/memory/retrieve.js";
 import { writeSession } from "../../../src/lib/history/store.js";
-import { mkRepoKey, cleanupRepo } from "../../helpers/memory-fixtures.js";
 
 let tmp: string;
+let repoRoot: string;
 let repoKey: string;
+
+function setUpGitRepo(base: string, name = "Repo"): string {
+	const root = path.join(base, "work", name);
+	fs.mkdirSync(root, { recursive: true });
+	execFileSync("git", ["-C", root, "init", "-b", "main"], { stdio: "ignore" });
+	execFileSync("git", ["-C", root, "config", "user.email", "t@t"], { stdio: "ignore" });
+	execFileSync("git", ["-C", root, "config", "user.name", "t"], { stdio: "ignore" });
+	execFileSync("git", ["-C", root, "commit", "--allow-empty", "-m", "i"], { stdio: "ignore" });
+	return root;
+}
 
 async function makeClient(): Promise<any> {
 	const server = createServer();
@@ -31,14 +44,15 @@ async function makeClient(): Promise<any> {
 }
 
 beforeEach(async () => {
-	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-mcp-mem-"));
+	tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "ai-cortex-mcp-mem-"));
 	process.env.AI_CORTEX_CACHE_HOME = tmp;
-	repoKey = "test-mcp-memory";
+	repoRoot = setUpGitRepo(tmp);
+	repoKey = resolveRepoIdentity(repoRoot).repoKey;
 	resetReconciledKeys();
 });
 afterEach(async () => {
 	delete process.env.AI_CORTEX_CACHE_HOME;
-	await fs.rm(tmp, { recursive: true, force: true });
+	await fsp.rm(tmp, { recursive: true, force: true });
 });
 
 describe("MCP memory read tools — registration", () => {
@@ -67,7 +81,7 @@ describe("MCP list_memories", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories",
-			arguments: { repoKey },
+			arguments: { worktreePath: repoRoot },
 		});
 		const text = (result.content[0] as any).text;
 		const parsed = JSON.parse(text);
@@ -92,7 +106,7 @@ describe("MCP list_memories", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories",
-			arguments: { repoKey },
+			arguments: { worktreePath: repoRoot },
 		});
 		const items = JSON.parse((result.content[0] as any).text);
 		expect(items.length).toBe(1);
@@ -105,7 +119,7 @@ describe("MCP search_memories", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "search_memories",
-			arguments: { repoKey, query: "nonexistent" },
+			arguments: { worktreePath: repoRoot, query: "nonexistent" },
 		});
 		const parsed = JSON.parse((result.content[0] as any).text);
 		expect(Array.isArray(parsed)).toBe(true);
@@ -131,7 +145,7 @@ describe("MCP get_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "get_memory",
-			arguments: { repoKey, id: id! },
+			arguments: { worktreePath: repoRoot, id: id! },
 		});
 		const parsed = JSON.parse((result.content[0] as any).text);
 		expect(parsed.frontmatter.id).toBe(id!);
@@ -141,7 +155,7 @@ describe("MCP get_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "get_memory",
-			arguments: { repoKey, id: "nonexistent-id" },
+			arguments: { worktreePath: repoRoot, id: "nonexistent-id" },
 		});
 		expect(result.isError).toBe(true);
 	});
@@ -166,7 +180,7 @@ describe("MCP audit_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "audit_memory",
-			arguments: { repoKey, id: id! },
+			arguments: { worktreePath: repoRoot, id: id! },
 		});
 		const rows = JSON.parse((result.content[0] as any).text);
 		expect(Array.isArray(rows)).toBe(true);
@@ -209,7 +223,7 @@ describe("MCP record_memory", () => {
 		const result = await client.callTool({
 			name: "record_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				type: "decision",
 				title: "MCP write test",
 				body: "## Decision\nuse MCP",
@@ -243,7 +257,7 @@ describe("MCP update_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "update_memory",
-			arguments: { repoKey, id: id!, title: "After", reason: "test" },
+			arguments: { worktreePath: repoRoot, id: id!, title: "After", reason: "test" },
 		});
 		expect(result.isError).toBeFalsy();
 	});
@@ -268,13 +282,13 @@ describe("MCP trash_memory + untrash_memory", () => {
 		const client = await makeClient();
 		const tr = await client.callTool({
 			name: "trash_memory",
-			arguments: { repoKey, id: id!, reason: "test" },
+			arguments: { worktreePath: repoRoot, id: id!, reason: "test" },
 		});
 		expect(tr.isError).toBeFalsy();
 
 		const ut = await client.callTool({
 			name: "untrash_memory",
-			arguments: { repoKey, id: id! },
+			arguments: { worktreePath: repoRoot, id: id! },
 		});
 		expect(ut.isError).toBeFalsy();
 	});
@@ -306,7 +320,7 @@ describe("MCP reconcile-on-first-call", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories",
-			arguments: { repoKey },
+			arguments: { worktreePath: repoRoot },
 		});
 		const items = JSON.parse((result.content[0] as any).text);
 		// After reconcile, the orphan .md is re-adopted and should appear
@@ -322,7 +336,7 @@ describe("MCP memory end-to-end lifecycle", () => {
 		const recResult = await client.callTool({
 			name: "record_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				type: "decision",
 				title: "E2E test decision",
 				body: "## Decision\nuse end-to-end tests",
@@ -340,7 +354,7 @@ describe("MCP memory end-to-end lifecycle", () => {
 		const updResult = await client.callTool({
 			name: "update_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				id,
 				title: "E2E test decision (updated)",
 				reason: "e2e update",
@@ -351,35 +365,35 @@ describe("MCP memory end-to-end lifecycle", () => {
 		// 3. Deprecate
 		const depResult = await client.callTool({
 			name: "deprecate_memory",
-			arguments: { repoKey, id, reason: "e2e deprecate" },
+			arguments: { worktreePath: repoRoot, id, reason: "e2e deprecate" },
 		});
 		expect(depResult.isError).toBeFalsy();
 
 		// 4. Restore (back to active)
 		const resResult = await client.callTool({
 			name: "restore_memory",
-			arguments: { repoKey, id },
+			arguments: { worktreePath: repoRoot, id },
 		});
 		expect(resResult.isError).toBeFalsy();
 
 		// 5. Trash
 		const trResult = await client.callTool({
 			name: "trash_memory",
-			arguments: { repoKey, id, reason: "e2e trash" },
+			arguments: { worktreePath: repoRoot, id, reason: "e2e trash" },
 		});
 		expect(trResult.isError).toBeFalsy();
 
 		// 6. Purge
 		const prResult = await client.callTool({
 			name: "purge_memory",
-			arguments: { repoKey, id, reason: "e2e purge" },
+			arguments: { worktreePath: repoRoot, id, reason: "e2e purge" },
 		});
 		expect(prResult.isError).toBeFalsy();
 
 		// 7. Audit trail shows all operations
 		const auditResult = await client.callTool({
 			name: "audit_memory",
-			arguments: { repoKey, id },
+			arguments: { worktreePath: repoRoot, id },
 		});
 		expect(auditResult.isError).toBeFalsy();
 		const rows = JSON.parse((auditResult.content[0] as any).text);
@@ -399,7 +413,7 @@ describe("MCP memory end-to-end lifecycle", () => {
 		const recResult = await client.callTool({
 			name: "record_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				type: "decision",
 				title: "Xenova model warm-up",
 				body: "## Rule\nThe Xenova transformer model needs warm-up time on first load.",
@@ -413,7 +427,7 @@ describe("MCP memory end-to-end lifecycle", () => {
 		// FTS search should find it
 		const searchResult = await client.callTool({
 			name: "search_memories",
-			arguments: { repoKey, query: "Xenova transformer", limit: 5 },
+			arguments: { worktreePath: repoRoot, query: "Xenova transformer", limit: 5 },
 		});
 		const hits = JSON.parse((searchResult.content[0] as any).text);
 		expect(hits.length).toBeGreaterThan(0);
@@ -427,7 +441,7 @@ describe("MCP record_memory with globalScope=true", () => {
     const result = await client.callTool({
       name: "record_memory",
       arguments: {
-        repoKey,
+        worktreePath: repoRoot,
         type: "gotcha",
         title: "global gotcha via MCP",
         body: "## Body\nglobal content",
@@ -465,8 +479,14 @@ describe("MCP record_memory with globalScope=true", () => {
 
 describe("MCP extract_session", () => {
 	it("extract_session tool runs the extractor and returns the manifest", async () => {
-		const extractRepoKey = await mkRepoKey("mcp-extract");
+		// Use a fresh separate git fixture for extract so we can seed writeSession with
+		// its repoKey independently of the main repoRoot fixture.
+		const extractTmp = fs.mkdtempSync(path.join(os.tmpdir(), "aicortex-extract-"));
+		const origCacheHome = process.env.AI_CORTEX_CACHE_HOME;
+		process.env.AI_CORTEX_CACHE_HOME = extractTmp;
 		try {
+			const extractRepoRoot = setUpGitRepo(extractTmp, "ExtractRepo");
+			const extractRepoKey = resolveRepoIdentity(extractRepoRoot).repoKey;
 			await writeSession(extractRepoKey, {
 				version: 2,
 				id: "s-1",
@@ -491,16 +511,18 @@ describe("MCP extract_session", () => {
 				},
 				chunks: [],
 			});
+			resetReconciledKeys();
 			const client = await makeClient();
 			const result = await client.callTool({
 				name: "extract_session",
-				arguments: { sessionId: "s-1", repoKey: extractRepoKey },
+				arguments: { sessionId: "s-1", worktreePath: extractRepoRoot },
 			});
 			expect(result.isError).toBeFalsy();
 			const manifest = JSON.parse((result.content[0] as any).text);
 			expect(manifest.candidatesCreated).toBe(1);
 		} finally {
-			await cleanupRepo(extractRepoKey);
+			process.env.AI_CORTEX_CACHE_HOME = origCacheHome;
+			fs.rmSync(extractTmp, { recursive: true, force: true });
 		}
 	});
 });
@@ -525,7 +547,7 @@ describe("MCP promote_to_global", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "promote_to_global",
-			arguments: { repoKey, id: id! },
+			arguments: { worktreePath: repoRoot, id: id! },
 		});
 		expect(result.isError).toBeFalsy();
 		const globalId = (result.content[0] as any).text.trim();
@@ -647,7 +669,7 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories_pending_rewrite",
-			arguments: { repoKey, limit: 10 },
+			arguments: { worktreePath: repoRoot, limit: 10 },
 		});
 		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
 		const returnedIds = items.map((i) => i.id).sort();
@@ -692,7 +714,7 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories_pending_rewrite",
-			arguments: { repoKey, since: "2026-01-01T00:00:00Z" },
+			arguments: { worktreePath: repoRoot, since: "2026-01-01T00:00:00Z" },
 		});
 		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
 		const ids = items.map((i) => i.id);
@@ -723,7 +745,7 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const client = await makeClient();
 		const result = await client.callTool({
 			name: "list_memories_pending_rewrite",
-			arguments: { repoKey, since: "2026-01-01T00:00:00Z" },
+			arguments: { worktreePath: repoRoot, since: "2026-01-01T00:00:00Z" },
 		});
 		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
 		const ids = items.map((i) => i.id);
@@ -749,7 +771,7 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const result = await client.callTool({
 			name: "rewrite_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				id,
 				title: "Clean rule",
 				body: "## Rule\nclean\n\n## Rationale\nbecause",
@@ -790,7 +812,7 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		const result = await client.callTool({
 			name: "rewrite_memory",
 			arguments: {
-				repoKey,
+				worktreePath: repoRoot,
 				id,
 				title: "y",
 				body: "## Rule\ny",

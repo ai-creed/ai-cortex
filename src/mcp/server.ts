@@ -139,13 +139,12 @@ async function maybeReconcile(repoKey: string): Promise<void> {
 	}
 }
 
-function withReconcile<P extends { repoKey: string }, R>(
-	handler: (p: P) => Promise<R>,
-): (p: P) => Promise<R> {
-	return async (p: P) => {
-		await maybeReconcile(p.repoKey);
-		return handler(p);
-	};
+async function withReconcileForRepoKey<R>(
+	repoKey: string,
+	fn: () => Promise<R>,
+): Promise<R> {
+	await maybeReconcile(repoKey);
+	return fn();
 }
 
 export async function withRepoIdentity<T>(
@@ -516,9 +515,7 @@ export function createServer(): McpServer {
 			description:
 				"Browse stored project knowledge by query. Use BEFORE non-trivial edits to unfamiliar files, when debugging recurring symptoms, or when the user references a past decision. Pass scope.files for file-specific context; pass source: 'all' to include cross-project patterns. NOTE: this is browse-only and does not signal usage. To actually consult and use a result, follow up with get_memory(id). The store contains decisions, gotchas, how-tos, and patterns extracted from prior sessions.",
 			inputSchema: {
-				repoKey: z
-					.string()
-					.describe("Project repo key (from rehydrate_project)"),
+				worktreePath: z.string(),
 				query: z.string().min(1),
 				limit: z.number().int().positive().max(50).optional(),
 				scopeFiles: z.array(z.string()).optional(),
@@ -529,48 +526,50 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"recall_memory",
-			(p) => ({ repoKey: p.repoKey, query: p.query }),
-			withReconcile(async (p) => {
-				const source = p.source ?? "all";
-				const opts = {
-					limit: p.limit,
-					scope: { files: p.scopeFiles, tags: p.scopeTags },
-					type: p.type ? [p.type] : undefined,
-				};
+			(p) => ({ worktreePath: p.worktreePath, query: p.query }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const source = p.source ?? "all";
+					const opts = {
+						limit: p.limit,
+						scope: { files: p.scopeFiles, tags: p.scopeTags },
+						type: p.type ? [p.type] : undefined,
+					};
 
-				let results;
+					let results;
 
-				if (source === "global") {
-					const rh = openRetrieve("global");
-					try {
-						results = await recallMemory(rh, p.query, opts);
-					} finally {
-						rh.close();
+					if (source === "global") {
+						const rh = openRetrieve("global");
+						try {
+							results = await recallMemory(rh, p.query, opts);
+						} finally {
+							rh.close();
+						}
+					} else if (source === "all") {
+						const projectRh = openRetrieve(repoKey);
+						const globalRh = openRetrieve("global");
+						try {
+							results = await recallMemoryCrossTier(projectRh, globalRh, p.query, opts);
+						} finally {
+							projectRh.close();
+							globalRh.close();
+						}
+					} else {
+						const rh = openRetrieve(repoKey);
+						try {
+							results = await recallMemory(rh, p.query, opts);
+						} finally {
+							rh.close();
+						}
 					}
-				} else if (source === "all") {
-					const projectRh = openRetrieve(p.repoKey);
-					const globalRh = openRetrieve("global");
-					try {
-						results = await recallMemoryCrossTier(projectRh, globalRh, p.query, opts);
-					} finally {
-						projectRh.close();
-						globalRh.close();
-					}
-				} else {
-					const rh = openRetrieve(p.repoKey);
-					try {
-						results = await recallMemory(rh, p.query, opts);
-					} finally {
-						rh.close();
-					}
-				}
 
-				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(results, null, 2) },
-					],
-				};
-			}),
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(results, null, 2) },
+						],
+					};
+				}),
+			),
 		),
 	);
 
@@ -580,26 +579,28 @@ export function createServer(): McpServer {
 			description:
 				"Fetch the full record for a memory by ID. Call this AFTER recall_memory returns a relevant hit and you intend to apply the rule, when the user references a memory by ID, or when verifying a rule before relying on it. get_memory is the 'I am using this' signal — it counts toward cleanup eligibility, while recall_memory does not.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"get_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const record = await getMemory(rh, p.id);
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(record, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const rh = openRetrieve(repoKey);
+					try {
+						const record = await getMemory(rh, p.id);
+						return {
+							content: [
+								{ type: "text" as const, text: JSON.stringify(record, null, 2) },
+							],
+						};
+					} finally {
+						rh.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -609,7 +610,7 @@ export function createServer(): McpServer {
 			description:
 				"List memories with optional filters by type, status, or file scope.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				type: z.array(z.string()).optional(),
 				status: z.array(z.string()).optional(),
 				scopeFile: z.string().optional(),
@@ -618,25 +619,27 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"list_memories",
-			(p) => ({ repoKey: p.repoKey }),
-			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const items = listMemories(rh, {
-						type: p.type,
-						status: p.status,
-						scopeFile: p.scopeFile,
-						limit: p.limit,
-					});
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(items, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const rh = openRetrieve(repoKey);
+					try {
+						const items = listMemories(rh, {
+							type: p.type,
+							status: p.status,
+							scopeFile: p.scopeFile,
+							limit: p.limit,
+						});
+						return {
+							content: [
+								{ type: "text" as const, text: JSON.stringify(items, null, 2) },
+							],
+						};
+					} finally {
+						rh.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -646,27 +649,29 @@ export function createServer(): McpServer {
 			description:
 				"Full-text search across memory bodies using FTS5. Returns ranked hits.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				query: z.string().min(1),
 				limit: z.number().int().positive().max(50).optional(),
 			},
 		},
 		logged(
 			"search_memories",
-			(p) => ({ repoKey: p.repoKey, query: p.query }),
-			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const hits = searchMemories(rh, p.query, p.limit);
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(hits, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, query: p.query }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const rh = openRetrieve(repoKey);
+					try {
+						const hits = searchMemories(rh, p.query, p.limit);
+						return {
+							content: [
+								{ type: "text" as const, text: JSON.stringify(hits, null, 2) },
+							],
+						};
+					} finally {
+						rh.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -675,26 +680,28 @@ export function createServer(): McpServer {
 		{
 			description: "Return the full audit trail for a memory ID.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"audit_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const rows = auditMemory(rh, p.id);
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const rh = openRetrieve(repoKey);
+					try {
+						const rows = auditMemory(rh, p.id);
+						return {
+							content: [
+								{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
+							],
+						};
+					} finally {
+						rh.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -706,7 +713,7 @@ export function createServer(): McpServer {
 			description:
 				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks).",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				type: z.string().min(1),
 				title: z.string().min(1),
 				body: z.string().min(1),
@@ -720,27 +727,29 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"record_memory",
-			(p) => ({ repoKey: p.repoKey, type: p.type, title: p.title }),
-			withReconcile(async (p) => {
-				if (p.globalScope) await maybeReconcile(GLOBAL_REPO_KEY);
-				const lc = p.globalScope
-					? await openGlobalLifecycle({ agentId: "mcp" })
-					: await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					const id = await createMemory(lc, {
-						type: p.type,
-						title: p.title,
-						body: p.body,
-						scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
-						source: p.source ?? "explicit",
-						confidence: p.confidence,
-						typeFields: p.typeFields,
-					});
-					return { content: [{ type: "text" as const, text: `${id}\n` }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, type: p.type, title: p.title }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					if (p.globalScope) await maybeReconcile(GLOBAL_REPO_KEY);
+					const lc = p.globalScope
+						? await openGlobalLifecycle({ agentId: "mcp" })
+						: await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						const id = await createMemory(lc, {
+							type: p.type,
+							title: p.title,
+							body: p.body,
+							scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
+							source: p.source ?? "explicit",
+							confidence: p.confidence,
+							typeFields: p.typeFields,
+						});
+						return { content: [{ type: "text" as const, text: `${id}\n` }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -749,7 +758,7 @@ export function createServer(): McpServer {
 		{
 			description: "Update the body, title, or metadata of an existing memory.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				body: z.string().optional(),
 				title: z.string().optional(),
@@ -758,20 +767,22 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"update_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await updateMemory(lc, p.id, {
-						body: p.body,
-						title: p.title,
-						reason: p.reason,
-					});
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await updateMemory(lc, p.id, {
+							body: p.body,
+							title: p.title,
+							reason: p.reason,
+						});
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -780,7 +791,7 @@ export function createServer(): McpServer {
 		{
 			description: "Update the file/tag scope of a memory.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				scopeFiles: z.array(z.string()),
 				scopeTags: z.array(z.string()),
@@ -788,19 +799,21 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"update_scope",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await updateScope(lc, p.id, {
-						files: p.scopeFiles,
-						tags: p.scopeTags,
-					});
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await updateScope(lc, p.id, {
+							files: p.scopeFiles,
+							tags: p.scopeTags,
+						});
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -810,23 +823,25 @@ export function createServer(): McpServer {
 			description:
 				"Deprecate a memory when its rule contradicts current code, conflicts with current user direction, or is otherwise no longer applicable. Deprecated memories are excluded from recall but preserved in audit. Use restore_memory to bring one back.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 			},
 		},
 		logged(
 			"deprecate_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await deprecateMemory(lc, p.id, p.reason);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await deprecateMemory(lc, p.id, p.reason);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -835,22 +850,24 @@ export function createServer(): McpServer {
 		{
 			description: "Restore a deprecated memory back to active.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"restore_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await restoreMemory(lc, p.id);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await restoreMemory(lc, p.id);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -860,7 +877,7 @@ export function createServer(): McpServer {
 			description:
 				"Merge src memory into dst. src becomes merged_into, dst receives the merged body.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				mergedBody: z.string().min(1),
@@ -868,16 +885,18 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"merge_memories",
-			(p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await mergeMemories(lc, p.srcId, p.dstId, p.mergedBody);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await mergeMemories(lc, p.srcId, p.dstId, p.mergedBody);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -886,23 +905,25 @@ export function createServer(): McpServer {
 		{
 			description: "Move a memory to trash. Recoverable via untrash_memory.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 			},
 		},
 		logged(
 			"trash_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await trashMemory(lc, p.id, p.reason);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await trashMemory(lc, p.id, p.reason);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -911,22 +932,24 @@ export function createServer(): McpServer {
 		{
 			description: "Restore a trashed memory back to active.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"untrash_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await untrashMemory(lc, p.id);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await untrashMemory(lc, p.id);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -936,7 +959,7 @@ export function createServer(): McpServer {
 			description:
 				"Permanently delete a trashed memory. Use redact=true for privacy-grade erasure.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				reason: z.string().min(1),
 				redact: z.boolean().optional(),
@@ -944,16 +967,18 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"purge_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await purgeMemory(lc, p.id, p.reason, { redact: p.redact });
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await purgeMemory(lc, p.id, p.reason, { redact: p.redact });
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -962,7 +987,7 @@ export function createServer(): McpServer {
 		{
 			description: "Create a typed edge between two memories.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
@@ -970,16 +995,18 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"link_memories",
-			(p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await linkMemories(lc, p.srcId, p.dstId, p.relType);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await linkMemories(lc, p.srcId, p.dstId, p.relType);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -988,7 +1015,7 @@ export function createServer(): McpServer {
 		{
 			description: "Remove a typed edge between two memories.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				srcId: z.string().min(1),
 				dstId: z.string().min(1),
 				relType: z.enum(["supports", "contradicts", "refines", "depends_on"]),
@@ -996,16 +1023,18 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"unlink_memories",
-			(p) => ({ repoKey: p.repoKey, srcId: p.srcId, dstId: p.dstId }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await unlinkMemories(lc, p.srcId, p.dstId, p.relType);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await unlinkMemories(lc, p.srcId, p.dstId, p.relType);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1014,23 +1043,25 @@ export function createServer(): McpServer {
 		{
 			description: "Pin a memory so it appears in every rehydration briefing.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				force: z.boolean().optional(),
 			},
 		},
 		logged(
 			"pin_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await pinMemory(lc, p.id, { force: p.force });
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await pinMemory(lc, p.id, { force: p.force });
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1039,22 +1070,24 @@ export function createServer(): McpServer {
 		{
 			description: "Remove the explicit pin from a memory.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"unpin_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await unpinMemory(lc, p.id);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await unpinMemory(lc, p.id);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1063,22 +1096,24 @@ export function createServer(): McpServer {
 		{
 			description: "Confirm a candidate memory, promoting it to active. Call when the user explicitly endorses a candidate, or when the agent has used the rule successfully and validated it produced the right outcome. Note that rewrite_memory also auto-promotes candidate→active as a side effect of cleanup.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"confirm_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await confirmMemory(lc, p.id);
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await confirmMemory(lc, p.id);
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1087,7 +1122,7 @@ export function createServer(): McpServer {
 		{
 			description: "Append a provenance entry to a memory's evidence trail.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				sessionId: z.string(),
 				turn: z.number().int(),
@@ -1101,20 +1136,22 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"add_evidence",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await addEvidence(lc, p.id, {
-						sessionId: p.sessionId,
-						turn: p.turn,
-						kind: p.kind,
-					});
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await addEvidence(lc, p.id, {
+							sessionId: p.sessionId,
+							turn: p.turn,
+							kind: p.kind,
+						});
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1124,20 +1161,22 @@ export function createServer(): McpServer {
 			description:
 				"Reconcile the in-memory index with .md files on disk. Handles orphan files, phantom rows, and body-hash drift.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 			},
 		},
 		logged(
 			"rebuild_index",
-			(p) => ({ repoKey: p.repoKey }),
-			withReconcile(async (p) => {
-				const report = await reconcileStore(p.repoKey, "mcp-rebuild");
-				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
-					],
-				};
-			}),
+			(p) => ({ worktreePath: p.worktreePath }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const report = await reconcileStore(repoKey, "mcp-rebuild");
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(report, null, 2) },
+						],
+					};
+				}),
+			),
 		),
 	);
 
@@ -1149,22 +1188,24 @@ export function createServer(): McpServer {
 			description:
 				"Sweep aging transitions: trash stale candidates/deprecated/merged_into memories and purge old trashed memories. Use dryRun=true to preview without applying changes.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				dryRun: z.boolean().optional(),
 			},
 		},
 		logged(
 			"sweep_aging",
-			(p) => ({ repoKey: p.repoKey }),
-			withReconcile(async (p) => {
-				const { sweepAging } = await import("../lib/memory/aging.js");
-				const report = await sweepAging(p.repoKey, { dryRun: p.dryRun });
-				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(report, null, 2) },
-					],
-				};
-			}),
+			(p) => ({ worktreePath: p.worktreePath }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const { sweepAging } = await import("../lib/memory/aging.js");
+					const report = await sweepAging(repoKey, { dryRun: p.dryRun });
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(report, null, 2) },
+						],
+					};
+				}),
+			),
 		),
 	);
 
@@ -1176,27 +1217,29 @@ export function createServer(): McpServer {
 			description:
 				"Promote a project memory to the global cross-project store. The original is marked merged_into; the global copy gets a promotedFrom backref. Use for universal patterns, language quirks, and tool gotchas that apply across multiple projects.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 			},
 		},
 		logged(
 			"promote_to_global",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				// withReconcile reconciles p.repoKey (project); explicitly reconcile
-				// the global store too since that's the second write target.
-				await maybeReconcile(GLOBAL_REPO_KEY);
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					const globalId = await promoteToGlobal(lc, p.id);
-					return {
-						content: [{ type: "text" as const, text: `${globalId}\n` }],
-					};
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					// withReconcileForRepoKey reconciles repoKey (project); explicitly reconcile
+					// the global store too since that's the second write target.
+					await maybeReconcile(GLOBAL_REPO_KEY);
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						const globalId = await promoteToGlobal(lc, p.id);
+						return {
+							content: [{ type: "text" as const, text: `${globalId}\n` }],
+						};
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1208,25 +1251,27 @@ export function createServer(): McpServer {
 			description:
 				"Run the auto-extractor on a captured session. Returns the manifest.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				sessionId: z.string().min(1),
 				allowReExtract: z.boolean().optional(),
 			},
 		},
 		logged(
 			"extract_session",
-			(p) => ({ repoKey: p.repoKey, sessionId: p.sessionId }),
-			withReconcile(async (p) => {
-				const { extractFromSession } = await import("../lib/memory/extract.js");
-				const manifest = await extractFromSession(p.repoKey, p.sessionId, {
-					allowReExtract: p.allowReExtract === true,
-				});
-				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
-					],
-				};
-			}),
+			(p) => ({ worktreePath: p.worktreePath, sessionId: p.sessionId }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const { extractFromSession } = await import("../lib/memory/extract.js");
+					const manifest = await extractFromSession(repoKey, p.sessionId, {
+						allowReExtract: p.allowReExtract === true,
+					});
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(manifest, null, 2) },
+						],
+					};
+				}),
+			),
 		),
 	);
 
@@ -1238,7 +1283,7 @@ export function createServer(): McpServer {
 			description:
 				"List candidate memories eligible for cleanup. A candidate is eligible when it has been re-extracted at least once AND is either pinned OR has been accessed via get_memory. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				limit: z.number().int().positive().max(100).optional(),
 				since: z
 					.string()
@@ -1250,23 +1295,25 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"list_memories_pending_rewrite",
-			(p) => ({ repoKey: p.repoKey }),
-			withReconcile(async (p) => {
-				const rh = openRetrieve(p.repoKey);
-				try {
-					const rows = listMemoriesPendingRewrite(rh, {
-						limit: p.limit,
-						since: p.since,
-					});
-					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
-						],
-					};
-				} finally {
-					rh.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const rh = openRetrieve(repoKey);
+					try {
+						const rows = listMemoriesPendingRewrite(rh, {
+							limit: p.limit,
+							since: p.since,
+						});
+						return {
+							content: [
+								{ type: "text" as const, text: JSON.stringify(rows, null, 2) },
+							],
+						};
+					} finally {
+						rh.close();
+					}
+				}),
+			),
 		),
 	);
 
@@ -1276,7 +1323,7 @@ export function createServer(): McpServer {
 			description:
 				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it).",
 			inputSchema: {
-				repoKey: z.string(),
+				worktreePath: z.string(),
 				id: z.string().min(1),
 				title: z.string().min(1),
 				body: z.string().min(1),
@@ -1288,23 +1335,25 @@ export function createServer(): McpServer {
 		},
 		logged(
 			"rewrite_memory",
-			(p) => ({ repoKey: p.repoKey, id: p.id }),
-			withReconcile(async (p) => {
-				const lc = await openLifecycle(p.repoKey, { agentId: "mcp" });
-				try {
-					await rewriteMemory(lc, p.id, {
-						title: p.title,
-						body: p.body,
-						scopeFiles: p.scopeFiles,
-						scopeTags: p.scopeTags,
-						type: p.type,
-						typeFields: p.typeFields,
-					});
-					return { content: [{ type: "text" as const, text: "ok\n" }] };
-				} finally {
-					lc.close();
-				}
-			}),
+			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
+					try {
+						await rewriteMemory(lc, p.id, {
+							title: p.title,
+							body: p.body,
+							scopeFiles: p.scopeFiles,
+							scopeTags: p.scopeTags,
+							type: p.type,
+							typeFields: p.typeFields,
+						});
+						return { content: [{ type: "text" as const, text: "ok\n" }] };
+					} finally {
+						lc.close();
+					}
+				}),
+			),
 		),
 	);
 
