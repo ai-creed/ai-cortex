@@ -17,6 +17,18 @@ const _require = createRequire(import.meta.url);
 
 vi.mock("../../../src/lib/index.js");
 vi.mock("node:fs");
+vi.mock("../../../src/lib/repo-identity.js", () => ({
+	validateWorktreePath: vi.fn(),
+	resolveRepoIdentity: vi.fn(() => ({
+		repoKey: "deadbeefdeadbeef",
+		worktreeKey: "cafecafecafecafe",
+		gitCommonDir: "/repo/.git",
+		worktreePath: "/repo",
+	})),
+}));
+vi.mock("../../../src/lib/cache-store-migrate.js", () => ({
+	runRepoKeyMigrationIfNeeded: vi.fn().mockResolvedValue(undefined),
+}));
 
 async function makeClient(): Promise<any> {
 	const server = createServer();

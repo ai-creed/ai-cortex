@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { withRepoIdentity } from "../../../src/mcp/server.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { withRepoIdentity, createServer } from "../../../src/mcp/server.js";
+import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 
 let tmp: string;
 let cacheHome: string;
@@ -61,6 +64,26 @@ describe("withRepoIdentity", () => {
 			fs.existsSync(
 				path.join(cacheHome, repoKey, ".migration-v1-complete"),
 			),
+		).toBe(true);
+	});
+});
+
+describe("rehydrate_project runs migration via withRepoIdentity", () => {
+	it("writes the migration sentinel on first call", async () => {
+		const server = createServer();
+		const [s, c] = InMemoryTransport.createLinkedPair();
+		await server.connect(s);
+		const client = new Client({ name: "t", version: "0.0.1" }, { capabilities: {} });
+		await client.connect(c);
+
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: repoRoot },
+		});
+
+		const { repoKey } = resolveRepoIdentity(repoRoot);
+		expect(
+			fs.existsSync(path.join(cacheHome, repoKey, ".migration-v1-complete")),
 		).toBe(true);
 	});
 });

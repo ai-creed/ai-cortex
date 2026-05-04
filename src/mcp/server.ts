@@ -274,18 +274,20 @@ export function createServer(): McpServer {
 		logged(
 			"rehydrate_project",
 			(p) => ({ path: p.path }),
-			async ({ path }) => {
-				const repoPath = path ?? process.cwd();
-				const result = await rehydrateRepo(repoPath);
-				const briefing = fs.readFileSync(result.briefingPath, "utf8");
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `<!-- cache: ${result.cacheStatus} -->\n${briefing}`,
-						},
-					],
-				};
+			async ({ path: p }) => {
+				const worktreePath = p ?? process.cwd();
+				return withRepoIdentity(worktreePath, async (_repoKey) => {
+					const result = await rehydrateRepo(worktreePath);
+					const briefing = fs.readFileSync(result.briefingPath, "utf8");
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `<!-- cache: ${result.cacheStatus} -->\n${briefing}`,
+							},
+						],
+					};
+				});
 			},
 		),
 	);
