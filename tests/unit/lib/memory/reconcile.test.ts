@@ -14,7 +14,7 @@ import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
 import type { MemoryRecord } from "../../../../src/lib/memory/types.js";
 
 let tmp: string;
-const repoKey = "recon-test";
+const repoKey = "7265636f6e746573"; // 16-hex fixture
 
 beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-recon-"));

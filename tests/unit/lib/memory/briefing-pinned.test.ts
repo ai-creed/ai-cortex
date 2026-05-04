@@ -15,7 +15,7 @@ let repoKey: string;
 beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-bp-"));
 	process.env.AI_CORTEX_CACHE_HOME = tmp;
-	repoKey = "test-briefing-pinned";
+	repoKey = "74627266706e6400"; // 16-hex fixture
 });
 afterEach(async () => {
 	delete process.env.AI_CORTEX_CACHE_HOME;

@@ -6,11 +6,11 @@ import crypto from "node:crypto";
 const tempRoots: Map<string, string> = new Map();
 
 export async function mkRepoKey(prefix: string): Promise<string> {
-	const id = `${prefix}-${crypto.randomBytes(4).toString("hex")}`;
-	const root = await fs.mkdtemp(path.join(os.tmpdir(), `aicortex-${id}-`));
+	const repoKey = crypto.randomBytes(8).toString("hex"); // 16-hex
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), `aicortex-${prefix}-`));
 	process.env.AI_CORTEX_CACHE_HOME = root;
-	tempRoots.set(id, root);
-	return id;
+	tempRoots.set(repoKey, root);
+	return repoKey;
 }
 
 export async function cleanupRepo(repoKey: string): Promise<void> {

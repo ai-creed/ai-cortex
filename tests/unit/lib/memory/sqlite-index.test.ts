@@ -6,7 +6,7 @@ import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
 import type { MemoryFrontmatter } from "../../../../src/lib/memory/types.js";
 
 let tmp: string;
-const repoKey = "testrepo";
+const repoKey = "7473747265706f00"; // 16-hex fixture
 
 beforeEach(async () => {
 	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-idx-"));

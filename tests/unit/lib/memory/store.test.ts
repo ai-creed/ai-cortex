@@ -15,7 +15,7 @@ import type { MemoryRecord } from "../../../../src/lib/memory/types.js";
 
 let originalCacheHome: string | undefined;
 let tmp: string;
-const repoKey = "testrepo";
+const repoKey = "7473746f72650000"; // 16-hex: "testrepo"-padded
 
 beforeEach(async () => {
 	originalCacheHome = process.env.AI_CORTEX_CACHE_HOME;
