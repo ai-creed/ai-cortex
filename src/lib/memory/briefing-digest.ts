@@ -73,6 +73,38 @@ export async function renderMemoryDigest(
 			lines.push("");
 		}
 
+		const pendingCount = (
+			db
+				.prepare(
+					`SELECT COUNT(*) AS n FROM memories
+					 WHERE status = 'candidate' AND rewritten_at IS NULL`,
+				)
+				.get() as { n: number }
+		).n;
+
+		if (pendingCount > 0) {
+			lines.push(`## Pending review — ${pendingCount} candidates eligible for cleanup`);
+			lines.push("");
+			lines.push(
+				"Candidates are raw extracted bodies. Rewriting promotes them to `active` and produces clean rule cards that recall can return without further interpretation.",
+			);
+			lines.push("");
+			lines.push(
+				"- `list_memories_pending_rewrite({worktreePath})` — fetch the queue (max 25 per call; pass `since` for incremental passes)",
+			);
+			lines.push(
+				"- dispatch a subagent with the result as context → have it rewrite each as a rule card (title + rule + when-applies) → call `rewrite_memory` per item to commit",
+			);
+			lines.push(
+				"- for items that turn out to not be rules (one-off directives, transcript fragments without a recurring pattern), call `deprecate_memory` instead",
+			);
+			lines.push("");
+			lines.push(
+				"Cleanup is opt-in. Candidates age out at 90d if untouched.",
+			);
+			lines.push("");
+		}
+
 		lines.push("### How to consult");
 		lines.push(
 			"- For work in `src/<area>`, call `recall_memory` with `scope.files` to filter to relevant memories.",

@@ -140,4 +140,95 @@ describe("renderMemoryDigest", () => {
 		expect(out!).toMatch(/get_memory/);
 		expect(out!).toMatch(/scope\.files|source:.*all/);
 	});
+
+	it("omits the Pending review section when no candidates are eligible", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, {
+				type: "decision",
+				title: "active rule",
+				body: "## Body\na",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+		} finally {
+			lc.close();
+		}
+		const out = await renderMemoryDigest(repoKey);
+		expect(out).not.toBeNull();
+		expect(out!).not.toContain("Pending review");
+	});
+
+	it("includes the Pending review section when at least one candidate is eligible", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, {
+				type: "decision",
+				title: "c1",
+				body: "## Body\n1",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			await createMemory(lc, {
+				type: "decision",
+				title: "c2",
+				body: "## Body\n2",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			const rewritten = await createMemory(lc, {
+				type: "decision",
+				title: "c3",
+				body: "## Body\n3",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET rewritten_at='2026-01-01T00:00:00Z' WHERE id=?",
+				)
+				.run(rewritten);
+		} finally {
+			lc.close();
+		}
+		const out = await renderMemoryDigest(repoKey);
+		expect(out).not.toBeNull();
+		expect(out!).toMatch(/## Pending review — 2 candidates eligible for cleanup/);
+		expect(out!).toContain("list_memories_pending_rewrite");
+		expect(out!).toContain("rewrite_memory");
+		expect(out!).toContain("deprecate_memory");
+	});
+
+	it("places Pending review after active-type sections and immediately before How to consult", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			await createMemory(lc, {
+				type: "decision",
+				title: "active rule",
+				body: "## Body\na",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			await createMemory(lc, {
+				type: "decision",
+				title: "raw candidate",
+				body: "## Body\nc",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const out = await renderMemoryDigest(repoKey);
+		expect(out).not.toBeNull();
+		const memAvailIdx = out!.indexOf("Memory available");
+		const decisionTypeIdx = out!.indexOf("### Decision");
+		const pendingIdx = out!.indexOf("## Pending review");
+		const howIdx = out!.indexOf("### How to consult");
+		expect(memAvailIdx).toBeGreaterThanOrEqual(0);
+		expect(decisionTypeIdx).toBeGreaterThan(memAvailIdx);
+		expect(pendingIdx).toBeGreaterThan(decisionTypeIdx);
+		expect(howIdx).toBeGreaterThan(pendingIdx);
+	});
 });
