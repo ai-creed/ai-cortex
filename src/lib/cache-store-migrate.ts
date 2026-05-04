@@ -187,3 +187,62 @@ export function checkpointAndVerify(dbPath: string): void {
 		}
 	}
 }
+
+// Move a directory atomically when possible (same fs); fall back to copy + parity
+// verification + delete on EXDEV. Verifies parity (file count + per-file size)
+// before unlinking the source so cross-device moves never lose data.
+export function safeMove(from: string, to: string): void {
+	if (fs.existsSync(to)) {
+		throw new Error(`safeMove: destination exists: ${to}`);
+	}
+	fs.mkdirSync(path.dirname(to), { recursive: true });
+	try {
+		fs.renameSync(from, to);
+		return;
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+	}
+	fs.cpSync(from, to, { recursive: true });
+	verifyCopyParity(from, to);
+	fs.rmSync(from, { recursive: true, force: true });
+}
+
+export function renameStore(from: string, to: string): void {
+	const dbPath = path.join(from, "memory", "index.sqlite");
+	if (fs.existsSync(dbPath)) {
+		checkpointAndVerify(dbPath);
+	}
+	safeMove(from, to);
+}
+
+function verifyCopyParity(from: string, to: string): void {
+	const fromFiles = listAllFiles(from);
+	const toFiles = listAllFiles(to);
+	if (fromFiles.length !== toFiles.length) {
+		throw new Error(
+			`copy parity failed: ${fromFiles.length} src files vs ${toFiles.length} dst files`,
+		);
+	}
+	for (const rel of fromFiles) {
+		const a = fs.statSync(path.join(from, rel)).size;
+		const b = fs.statSync(path.join(to, rel)).size;
+		if (a !== b) {
+			throw new Error(`copy parity failed: ${rel} size mismatch`);
+		}
+	}
+}
+
+function listAllFiles(root: string): string[] {
+	const out: string[] = [];
+	function walk(dir: string, rel: string): void {
+		for (const name of fs.readdirSync(dir)) {
+			const abs = path.join(dir, name);
+			const r = path.join(rel, name);
+			const st = fs.statSync(abs);
+			if (st.isDirectory()) walk(abs, r);
+			else out.push(r);
+		}
+	}
+	walk(root, "");
+	return out.sort();
+}
