@@ -258,6 +258,6 @@ Highlights:
 
 See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for the full list and workarounds.
 
-## Breaking Changes
+## Notable Changes
 
-**Breaking change (vNext — repo-key keying fix):** Memory MCP tools now require `worktreePath` (an absolute path inside the project's git worktree) in place of the prior `repoKey` argument. The server derives the canonical hashed `repoKey` from `worktreePath` via `resolveRepoIdentity`. Existing literal-name cache directories are auto-migrated on first call. CLI commands still accept `--repo-key` as an escape hatch but only accept 16-hex hashed keys (or the reserved literal `"global"`).
+**Repo-key keying fix (v0.5.3):** Memory MCP tools now take `worktreePath` (an absolute path inside the project's git worktree) instead of `repoKey`; the server derives the canonical hashed `repoKey` server-side via `resolveRepoIdentity`. MCP-driven agents pick this up automatically from the tool schemas. Existing literal-name cache directories are auto-migrated to the canonical hashed location on first call — no user action needed. CLI commands still accept `--repo-key` as an escape hatch, now restricted to 16-hex hashed keys or the reserved literal `"global"`.
