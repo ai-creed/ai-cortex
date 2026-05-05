@@ -10,6 +10,7 @@ import {
 	openRetrieve,
 	filterCandidates,
 	recallMemory,
+	listMemoriesPendingRewrite,
 } from "../../../../src/lib/memory/retrieve.js";
 import {
 	openLifecycle,
@@ -334,6 +335,247 @@ describe("recallMemory", () => {
 		try {
 			const results = await recallMemory(rh, "anything");
 			expect(results).toHaveLength(0);
+		} finally {
+			rh.close();
+		}
+	});
+});
+
+describe("listMemoriesPendingRewrite", () => {
+	it("returns a fresh candidate with no pin / get / re-extract signals", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let bareId: string;
+		try {
+			bareId = await createMemory(lc, {
+				type: "decision",
+				title: "bare",
+				body: "## Body\nbare",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const rows = listMemoriesPendingRewrite(rh, { limit: 10 });
+			expect(rows.map((r) => r.id)).toContain(bareId);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("excludes a candidate that has been rewritten", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let pendingId: string;
+		let rewrittenId: string;
+		try {
+			pendingId = await createMemory(lc, {
+				type: "decision",
+				title: "pending",
+				body: "## Body\np",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			rewrittenId = await createMemory(lc, {
+				type: "decision",
+				title: "rewritten",
+				body: "## Body\nr",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET rewritten_at='2026-01-01T00:00:00Z' WHERE id=?",
+				)
+				.run(rewrittenId);
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const ids = listMemoriesPendingRewrite(rh, { limit: 10 }).map((r) => r.id);
+			expect(ids).toContain(pendingId);
+			expect(ids).not.toContain(rewrittenId);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("excludes non-candidate statuses (active, deprecated, trashed, merged_into, purged_redacted)", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		const ids: string[] = [];
+		try {
+			const candidateId = await createMemory(lc, {
+				type: "decision",
+				title: "still candidate",
+				body: "## Body\nc",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			ids.push(candidateId);
+			const statuses = [
+				"active",
+				"deprecated",
+				"trashed",
+				"merged_into",
+				"purged_redacted",
+			];
+			for (const status of statuses) {
+				const id = await createMemory(lc, {
+					type: "decision",
+					title: `s-${status}`,
+					body: `## Body\n${status}`,
+					scope: { files: [], tags: [] },
+					source: "extracted",
+				});
+				lc.index
+					.rawDb()
+					.prepare("UPDATE memories SET status=? WHERE id=?")
+					.run(status, id);
+				ids.push(id);
+			}
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const returned = listMemoriesPendingRewrite(rh, { limit: 50 }).map(
+				(r) => r.id,
+			);
+			expect(returned).toEqual([ids[0]]);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("filters by `since` against updated_at OR last_accessed_at", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let oldId: string;
+		let recentId: string;
+		let accessedId: string;
+		try {
+			oldId = await createMemory(lc, {
+				type: "decision",
+				title: "old",
+				body: "## Body\nold",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			recentId = await createMemory(lc, {
+				type: "decision",
+				title: "recent",
+				body: "## Body\nr",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			accessedId = await createMemory(lc, {
+				type: "decision",
+				title: "old but accessed today",
+				body: "## Body\na",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET updated_at='2025-01-01T00:00:00Z', last_accessed_at='2025-01-01T00:00:00Z' WHERE id=?",
+				)
+				.run(oldId);
+			lc.index
+				.rawDb()
+				.prepare(
+					"UPDATE memories SET updated_at='2025-01-01T00:00:00Z' WHERE id=?",
+				)
+				.run(accessedId);
+			lc.index.bumpGetCount(accessedId);
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const ids = listMemoriesPendingRewrite(rh, {
+				since: "2026-01-01T00:00:00Z",
+				limit: 10,
+			}).map((r) => r.id);
+			expect(ids).toContain(recentId);
+			expect(ids).toContain(accessedId);
+			expect(ids).not.toContain(oldId);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("caps the returned page at the `limit` argument", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			for (let i = 0; i < 12; i++) {
+				await createMemory(lc, {
+					type: "decision",
+					title: `c${i}`,
+					body: `## Body\n${i}`,
+					scope: { files: [], tags: [] },
+					source: "extracted",
+				});
+			}
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const rows = listMemoriesPendingRewrite(rh, { limit: 5 });
+			expect(rows).toHaveLength(5);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("orders by confidence DESC within a returned page", async () => {
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		let lowId: string;
+		let midId: string;
+		let highId: string;
+		try {
+			lowId = await createMemory(lc, {
+				type: "decision",
+				title: "low",
+				body: "## Body\nl",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			midId = await createMemory(lc, {
+				type: "decision",
+				title: "mid",
+				body: "## Body\nm",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			highId = await createMemory(lc, {
+				type: "decision",
+				title: "high",
+				body: "## Body\nh",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			const db = lc.index.rawDb();
+			db.prepare("UPDATE memories SET confidence=0.30 WHERE id=?").run(lowId);
+			db.prepare("UPDATE memories SET confidence=0.60 WHERE id=?").run(midId);
+			db.prepare("UPDATE memories SET confidence=0.90 WHERE id=?").run(highId);
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const ordered = listMemoriesPendingRewrite(rh, { limit: 10 }).map(
+				(r) => r.id,
+			);
+			const idxHigh = ordered.indexOf(highId);
+			const idxMid = ordered.indexOf(midId);
+			const idxLow = ordered.indexOf(lowId);
+			expect(idxHigh).toBeGreaterThanOrEqual(0);
+			expect(idxHigh).toBeLessThan(idxMid);
+			expect(idxMid).toBeLessThan(idxLow);
 		} finally {
 			rh.close();
 		}

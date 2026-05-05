@@ -577,7 +577,7 @@ describe("MCP memory tool descriptions — opinionated guidance", () => {
 		const { tools } = await client.listTools();
 		const get = tools.find((t: { name: string }) => t.name === "get_memory");
 		expect(get?.description).toMatch(/use|apply/i);
-		expect(get?.description).toMatch(/cleanup|signal/i);
+		expect(get?.description).toMatch(/access counter|last-access|browse-only/i);
 	});
 
 	it("record_memory description names the trigger conditions", async () => {
@@ -621,11 +621,10 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		expect(rewrite?.description).toMatch(/promote|active/i);
 	});
 
-	it("list_memories_pending_rewrite returns only candidates passing the eligibility predicate", async () => {
+	it("list_memories_pending_rewrite returns all unrewritten candidates regardless of pin / get_count / re_extract_count", async () => {
 		const lc = await openLifecycle(repoKey, { agentId: "test" });
 		const ids: Record<string, string> = {};
 		try {
-			// (a) candidate, no signals — NOT eligible
 			ids.bare = await createMemory(lc, {
 				type: "decision",
 				title: "bare",
@@ -633,7 +632,6 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 				scope: { files: [], tags: [] },
 				source: "extracted",
 			});
-			// (b) candidate, re-extracted but no pin/get — NOT eligible
 			ids.reExtracted = await createMemory(lc, {
 				type: "decision",
 				title: "re-extracted only",
@@ -642,26 +640,22 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 				source: "extracted",
 			});
 			lc.index.bumpReExtract(ids.reExtracted);
-			// (c) candidate, re-extracted AND pinned — eligible
-			ids.eligibleByPin = await createMemory(lc, {
+			ids.pinned = await createMemory(lc, {
 				type: "decision",
-				title: "eligible by pin",
+				title: "pinned",
 				body: "## Body\np",
 				scope: { files: [], tags: [] },
 				source: "extracted",
 			});
-			lc.index.bumpReExtract(ids.eligibleByPin);
-			lc.index.rawDb().prepare("UPDATE memories SET pinned=1 WHERE id=?").run(ids.eligibleByPin);
-			// (d) candidate, re-extracted AND get_count > 0 — eligible
-			ids.eligibleByGet = await createMemory(lc, {
+			lc.index.rawDb().prepare("UPDATE memories SET pinned=1 WHERE id=?").run(ids.pinned);
+			ids.accessed = await createMemory(lc, {
 				type: "decision",
-				title: "eligible by get",
+				title: "accessed",
 				body: "## Body\ng",
 				scope: { files: [], tags: [] },
 				source: "extracted",
 			});
-			lc.index.bumpReExtract(ids.eligibleByGet);
-			lc.index.bumpGetCount(ids.eligibleByGet);
+			lc.index.bumpGetCount(ids.accessed);
 		} finally {
 			lc.close();
 		}
@@ -673,7 +667,9 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 		});
 		const items = JSON.parse((result.content[0] as any).text) as Array<{ id: string }>;
 		const returnedIds = items.map((i) => i.id).sort();
-		expect(returnedIds).toEqual([ids.eligibleByGet, ids.eligibleByPin].sort());
+		expect(returnedIds).toEqual(
+			[ids.bare, ids.reExtracted, ids.pinned, ids.accessed].sort(),
+		);
 	});
 
 	it("list_memories_pending_rewrite honors the `since` filter", async () => {
@@ -821,5 +817,26 @@ describe("MCP list_memories_pending_rewrite + rewrite_memory", () => {
 			},
 		});
 		expect(result.isError).toBe(true);
+	});
+});
+
+describe("MCP tool description regression guards", () => {
+	it("get_memory description no longer claims cleanup-eligibility coupling", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const get = tools.find((t: { name: string }) => t.name === "get_memory");
+		expect(get).toBeDefined();
+		expect(get!.description).not.toContain("counts toward cleanup eligibility");
+	});
+
+	it("list_memories_pending_rewrite description reflects the loosened predicate", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		const list = tools.find(
+			(t: { name: string }) => t.name === "list_memories_pending_rewrite",
+		);
+		expect(list).toBeDefined();
+		expect(list!.description).not.toContain("re-extracted at least once");
+		expect(list!.description).not.toContain("accessed via get_memory");
 	});
 });

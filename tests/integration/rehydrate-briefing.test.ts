@@ -76,4 +76,39 @@ describe("rehydration briefing — memory digest section", () => {
 		const md = fs.readFileSync(r.briefingPath, "utf8");
 		expect(md).not.toContain("Memory available");
 	});
+
+	it("surfaces freshly bootstrapped candidates in the rendered briefing's Pending review section", async () => {
+		// Resolve repoKey by triggering rehydrate once (no memories yet).
+		const r0 = await rehydrateRepo(repoPath, {});
+		const repoKey = r0.cache.repoKey;
+
+		// Simulate a bootstrap pass: 5 raw extracted candidates, none pinned,
+		// no get_count, no re_extract bumps. Under the OLD predicate the
+		// briefing would surface 0 in pending; the new predicate surfaces all 5.
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			for (let i = 0; i < 5; i++) {
+				await createMemory(lc, {
+					type: "decision",
+					title: `raw candidate ${i}`,
+					body: `## Body\nbody ${i}`,
+					scope: { files: [], tags: [] },
+					source: "extracted",
+				});
+			}
+		} finally {
+			lc.close();
+		}
+
+		// Re-rehydrate, read the actual on-disk briefing markdown.
+		const r1 = await rehydrateRepo(repoPath, {});
+		const md = fs.readFileSync(r1.briefingPath, "utf8");
+
+		expect(md).toMatch(/## Pending review — 5 candidates eligible for cleanup/);
+		expect(md).toContain("list_memories_pending_rewrite");
+		expect(md).toContain("rewrite_memory");
+		expect(md).toContain("deprecate_memory");
+		// Section ordering: Pending review appears before "How to consult".
+		expect(md.indexOf("## Pending review")).toBeLessThan(md.indexOf("How to consult"));
+	});
 });
