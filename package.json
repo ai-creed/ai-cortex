@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.5.3",
+	"version": "0.5.4",
 	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
 	"type": "module",
 	"license": "MIT",
