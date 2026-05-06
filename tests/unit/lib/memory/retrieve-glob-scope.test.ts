@@ -85,3 +85,28 @@ describe("filterCandidates SQL pre-filter — glob admission", () => {
 		}
 	});
 });
+
+import { recallMemory } from "../../../../src/lib/memory/retrieve.js";
+
+describe("recallMemory — scoring with glob-scoped memory", () => {
+	it("scores glob-scope hit at scopeMatch=1.0 when caller's literal path matches the glob", async () => {
+		const id = await seedActive(["MainApp/**/*card*"], "card rule");
+		const rh = openRetrieve(repoKey);
+		try {
+			const results = await recallMemory(rh, "card", {
+				scope: { files: ["MainApp/lib/cards/card.ts"], tags: [] },
+				limit: 10,
+			});
+			const hit = results.find((r) => r.id === id);
+			expect(hit).toBeDefined();
+			// scopeMatch=1.0 dominates over the unscoped 0.2 default; if the scoring
+			// fix didn't fire, the result would have scope contribution 0 and the
+			// hit might not appear at all.
+			// 0.3*1.0 + 0.1*1.0 + 0.05*1.0 + 0.05*1.0 ≈ 0.5; well above the
+			// unfixed 0.2 (unscoped default) — use 0.45 to avoid float-rounding edge.
+			expect(hit!.score).toBeGreaterThan(0.45);
+		} finally {
+			rh.close();
+		}
+	});
+});

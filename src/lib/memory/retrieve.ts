@@ -1,5 +1,6 @@
 import { openMemoryIndex, MemoryIndex } from "./index.js";
 import { readMemoryFile } from "./store.js";
+import { matchesScope } from "./scope-match.js";
 import type { MemoryRecord, AuditRow } from "./types.js";
 
 export type RetrieveHandle = {
@@ -322,7 +323,9 @@ export async function recallMemory(
 		let scopeMatch = 0.2;
 		if (scopeRows.length > 0) {
 			const fileHit = scopeRows.some(
-				(s) => s.kind === "file" && options.scope?.files?.includes(s.value),
+				(s) =>
+					s.kind === "file" &&
+					options.scope?.files?.some((f) => matchesScope(s.value, f)),
 			);
 			const tagHit = scopeRows.some(
 				(s) => s.kind === "tag" && options.scope?.tags?.includes(s.value),
