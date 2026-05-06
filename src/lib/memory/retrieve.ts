@@ -325,6 +325,8 @@ export async function recallMemory(
 			const fileHit = scopeRows.some(
 				(s) =>
 					s.kind === "file" &&
+					// matchesScope(storedPattern, callerPath): s.value may be a glob,
+					// the caller's path is always literal.
 					options.scope?.files?.some((f) => matchesScope(s.value, f)),
 			);
 			const tagHit = scopeRows.some(
