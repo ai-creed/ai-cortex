@@ -29,6 +29,20 @@ export type DeepSuggestItem = SuggestItem & {
 	trigramMatches?: { taskToken: string; matchedToken: string; sim: number }[];
 };
 
+export type RelatedMemory = {
+	id: string;
+	title: string;
+	track: "scoped" | "unscoped";
+	scope: {
+		files: string[];
+		tags: string[];
+	};
+	matchScores: {
+		task: number;
+		fileOverlap: string[];
+	};
+};
+
 type SuggestResultCommon = {
 	cacheStatus: "fresh" | "reindexed" | "stale";
 	durationMs: number;
@@ -39,6 +53,7 @@ type SuggestResultCommon = {
 export type FastSuggestResult = SuggestResultCommon & {
 	mode: "fast";
 	results: SuggestItem[];
+	relatedMemories?: RelatedMemory[];
 };
 
 export type DeepSuggestResult = SuggestResultCommon & {
@@ -47,6 +62,7 @@ export type DeepSuggestResult = SuggestResultCommon & {
 	poolSize: number;
 	contentScanTruncated?: boolean;
 	staleMixedEvidence?: boolean;
+	relatedMemories?: RelatedMemory[];
 };
 
 export type SemanticSuggestItem = SuggestItem;
@@ -55,6 +71,7 @@ export type SemanticSuggestResult = SuggestResultCommon & {
 	mode: "semantic";
 	results: SemanticSuggestItem[];
 	poolSize: number;
+	relatedMemories?: RelatedMemory[];
 };
 
 export type SuggestResult =
@@ -220,6 +237,20 @@ const DeepSuggestItemSchema = SuggestItemSchema.extend({
 		.optional(),
 });
 
+const RelatedMemorySchema = z.object({
+	id: z.string(),
+	title: z.string(),
+	track: z.enum(["scoped", "unscoped"]),
+	scope: z.object({
+		files: z.array(z.string()),
+		tags: z.array(z.string()),
+	}),
+	matchScores: z.object({
+		task: z.number(),
+		fileOverlap: z.array(z.string()),
+	}),
+});
+
 const SuggestResultCommonSchema = z.object({
 	cacheStatus: z.enum(["fresh", "reindexed", "stale"]),
 	durationMs: z.number(),
@@ -230,6 +261,7 @@ const SuggestResultCommonSchema = z.object({
 export const FastSuggestResultSchema = SuggestResultCommonSchema.extend({
 	mode: z.literal("fast"),
 	results: z.array(SuggestItemSchema),
+	relatedMemories: z.array(RelatedMemorySchema).optional(),
 });
 
 export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
@@ -238,10 +270,12 @@ export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
 	poolSize: z.number(),
 	contentScanTruncated: z.boolean().optional(),
 	staleMixedEvidence: z.boolean().optional(),
+	relatedMemories: z.array(RelatedMemorySchema).optional(),
 });
 
 export const SemanticSuggestResultSchema = SuggestResultCommonSchema.extend({
 	mode: z.literal("semantic"),
 	results: z.array(SuggestItemSchema),
 	poolSize: z.number(),
+	relatedMemories: z.array(RelatedMemorySchema).optional(),
 });
