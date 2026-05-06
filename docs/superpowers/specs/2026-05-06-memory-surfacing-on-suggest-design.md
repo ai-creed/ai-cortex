@@ -55,15 +55,18 @@ file ranker runs (fast | deep | semantic) → top-K file results
     ↓ yes
 [Layer 2 file window] include files where score ≥ 70% of top-1, capped at 3
     ↓
-memory matcher:
+memory matcher (cross-tier):
   · embed task once via MiniLM
       (semantic ranker already embedded — reuse that vector)
-  · candidate set = active memories where either:
-      (a) scoped track:   scopeFiles overlaps any window file (via glob match), OR
-      (b) unscoped track: memory has no scopeFiles
-  · for each candidate: cosine(taskVec, memoryVec) ≥ threshold
-        scoped track   → T_scoped   (looser)
-        unscoped track → T_unscoped (stricter)
+  · for each store in [project, global]:
+      · candidate set = active memories where either:
+          (a) scoped track:   scopeFiles overlaps any window file (via glob match), OR
+          (b) unscoped track: memory has no scopeFiles
+      · for each candidate: cosine(taskVec, memoryVec) ≥ threshold
+            scoped track   → T_scoped   (looser)
+            unscoped track → T_unscoped (stricter)
+  · merge: project-tier results get a small score boost (0.1) — same convention as
+      `recallMemoryCrossTier` in retrieve.ts:361
   · sort by cosine desc, tie-break getCount desc, id asc
   · cap at 3
     ↓
@@ -74,7 +77,9 @@ agent reads pointers, calls get_memory(id) on any rule it intends to apply
 
 ### 3.2 Wiring boundary
 
-The matcher is a pure library function in `src/lib/memory/surface.ts`. The `suggestRepo()` library API stays unchanged — it returns file results only. Memory surfacing is composed at the MCP boundary (`src/mcp/server.ts`) by calling `surface.matchMemories(...)` on the result before returning.
+The matcher is a pure library function in `src/lib/memory/surface.ts`. The `suggestRepo()` library API stays unchanged — it returns file results only. Memory surfacing is composed at the MCP boundary (`src/mcp/server.ts`) by calling `surface.matchMemoriesCrossTier(projectRh, globalRh, ...)` on the result before returning.
+
+The cross-tier signature mirrors the established `recallMemoryCrossTier(projectRh, globalRh, ...)` in `retrieve.ts:363` — same caller responsibility (open both `RetrieveHandle`s, close both in `finally`), same per-tier scoring with a small project-tier boost. This is required, not optional: global-tier memories live under a separate `repoKey = "global"` store (`src/lib/memory/lifecycle.ts:874`), so a project-only matcher would silently never see promoted global rules.
 
 Rationale:
 - Keeps the library API focused: callers who only want file ranking get exactly that.
@@ -94,36 +99,53 @@ Rationale:
 
 ```
 src/lib/memory/
-  scope-match.ts        ← NEW. Pure utility: matchesScope(pattern, paths) → boolean.
-                            Glob-only. Uses picomatch.
-  surface.ts            ← NEW. matchMemories(task, suggestResult, repoKey, opts)
-                            → RelatedMemory[]. Confidence gates, two-track filter,
-                            cosine, sort, cap.
-  retrieve.ts           ← MOD. Replace .includes(s.value) at line 317 with
-                            matchesScope(). Same semantic now spans recall_memory
-                            and the new surfacing path.
-
-src/mcp/
-  server.ts             ← MOD. After suggestRepo() returns, call
-                            surface.matchMemories(); attach to response.
-                            Update tool descriptions for the three suggest_files*
-                            tools to mention relatedMemories + get_memory pattern.
+  scope-match.ts        ← NEW. Pure utility: matchesScope(pattern, path) → boolean.
+                            Glob-only. Uses picomatch with per-pattern memoization.
+  surface.ts            ← NEW. matchMemories(rh, task, suggestResult, opts)
+                            → RelatedMemory[]. Per-store gates, two-track filter,
+                            cosine, sort.
+                            Plus matchMemoriesCrossTier(projectRh, globalRh, …)
+                            mirroring recallMemoryCrossTier — runs both stores,
+                            applies +0.1 project-tier boost, merges, caps at 3.
+  retrieve.ts           ← MOD. (a) Broaden filterCandidates() SQL pre-filter so
+                            glob-shaped scope rows survive stage 1 regardless
+                            of caller's literal paths. (b) Apply matchesScope()
+                            at the post-fetch JS filter and at scoring time
+                            (line 316–317). See §8 for full diff.
 
 src/lib/
+  suggest.ts            ← MOD. Add RelatedMemorySchema; extend
+                            FastSuggestResultSchema, DeepSuggestResultSchema,
+                            SemanticSuggestResultSchema with optional
+                            `relatedMemories: z.array(RelatedMemorySchema).optional()`.
+                            Required so MCP outputSchema validates structuredContent
+                            once server.ts attaches the field.
   suggest-ranker.ts          ← UNCHANGED.
   suggest-ranker-deep.ts     ← UNCHANGED.
   suggest-ranker-semantic.ts ← MOD. Expose the query embedding it already computed
                                  so surface.ts can reuse it (avoids redundant
                                  MiniLM call). Optional optimization.
 
+src/mcp/
+  server.ts             ← MOD. After suggestRepo() returns, open project +
+                            global RetrieveHandles, call
+                            surface.matchMemoriesCrossTier(); attach result to
+                            response. Update tool descriptions for the three
+                            suggest_files* tools to mention relatedMemories +
+                            get_memory pattern.
+
 tests/unit/lib/memory/
   scope-match.test.ts   ← NEW.
   surface.test.ts       ← NEW.
+tests/unit/lib/memory/
+  retrieve-glob-scope.test.ts ← NEW. Covers the filterCandidates broadening
+                                  and the line-316 in-memory glob check
+                                  together.
 tests/integration/
   suggest-with-memory-surface.test.ts ← NEW.
 ```
 
-**File count:** 3 new src + 3 modified src + 3 new test = 9 files. Exceeds the 3-file-per-task threshold. Implementation plan will decompose.
+**File count:** 3 new src + 4 modified src + 4 new test = 11 files. Exceeds the 3-file-per-task threshold. Implementation plan will decompose along the rollout phases in §11.
 
 ---
 
@@ -166,7 +188,7 @@ Rationale: a single threshold conflates "is the call worth running memory work f
 
 ### 6.1 Track selection
 
-For each `status === "active"` memory:
+For each `status === "active"` memory loaded from either store (project or global), the same routing applies — global memories are not auto-routed to unscoped. Most global memories happen to be cross-cutting and ship with empty `scopeFiles`, but ones with explicit scope go through the scoped track based on their actual data:
 
 ```
 if memory.scope.files.length === 0:
@@ -222,7 +244,7 @@ Cap value chosen for noise discipline. Three feels like "a few worth considering
 
 ## 7. Response shape
 
-### 7.1 Schema additions
+### 7.1 Wire format
 
 ```jsonc
 {
@@ -265,7 +287,51 @@ Cap value chosen for noise discipline. Three feels like "a few worth considering
 - Matcher returned zero entries → omit `relatedMemories` field entirely. Not `[]`.
 - Memory sidecar missing → same: omit. Indistinguishable on the wire from "no matches", which is correct: agent reasons about presence, not cause.
 
-### 7.3 Tool description tweaks
+### 7.3 Schema additions (`src/lib/suggest.ts`)
+
+Add a new Zod schema and extend the three result schemas:
+
+```ts
+const RelatedMemorySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  track: z.enum(["scoped", "unscoped"]),
+  scope: z.object({
+    files: z.array(z.string()),
+    tags: z.array(z.string()),
+  }),
+  matchScores: z.object({
+    task: z.number(),
+    fileOverlap: z.array(z.string()),
+  }),
+});
+
+export const FastSuggestResultSchema = SuggestResultCommonSchema.extend({
+  mode: z.literal("fast"),
+  results: z.array(SuggestItemSchema),
+  relatedMemories: z.array(RelatedMemorySchema).optional(),
+});
+
+export const DeepSuggestResultSchema = SuggestResultCommonSchema.extend({
+  mode: z.literal("deep"),
+  results: z.array(DeepSuggestItemSchema),
+  poolSize: z.number(),
+  contentScanTruncated: z.boolean().optional(),
+  staleMixedEvidence: z.boolean().optional(),
+  relatedMemories: z.array(RelatedMemorySchema).optional(),
+});
+
+export const SemanticSuggestResultSchema = SuggestResultCommonSchema.extend({
+  mode: z.literal("semantic"),
+  results: z.array(SuggestItemSchema),
+  poolSize: z.number(),
+  relatedMemories: z.array(RelatedMemorySchema).optional(),
+});
+```
+
+`relatedMemories` is `.optional()` to honor §7.2 (omit when empty). The MCP `outputSchema: DeepSuggestResultSchema.shape` registrations in `src/mcp/server.ts` (e.g. line 357) automatically pick up the new field — no further change needed at registration sites. `structuredContent: result` then validates regardless of whether the matcher attached anything.
+
+### 7.4 Tool description tweaks
 
 Append to the description of `suggest_files`, `suggest_files_deep`, `suggest_files_semantic`:
 
@@ -277,7 +343,44 @@ The closing clause carries the recall→get contract into the agent's tool-descr
 
 ## 8. `recall_memory` consistency fix
 
-The new `scope-match.ts` utility replaces the literal-equality logic at `src/lib/memory/retrieve.ts:317`:
+`recallMemory()` runs a two-stage pipeline. **Both stages currently use literal-string equality**, so memories with glob patterns in `scopeFiles` don't even survive the SQL pre-filter — they never reach the scoring path. Fixing only the scoring-time check (`retrieve.ts:316–317`) is insufficient.
+
+Both stages must change.
+
+### 8.1 Stage 1 — broaden the SQL pre-filter (`filterCandidates`, retrieve.ts:187–238)
+
+Today's behavior at line 213–217:
+
+```ts
+scopeClauses.push(
+  `EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id
+           AND s.kind='file' AND s.value IN (${files.map(() => "?").join(",")}))`,
+);
+params.push(...files);
+```
+
+This `s.value IN (?,?,...)` is a literal-string match against `memory_scope.value`. A row with `value = 'MainApp/**/*cardmultiselect*'` will not match a caller-supplied `'MainApp/lib/cards/multiselect.ts'` here.
+
+Replace with a clause that admits both literal hits **and** any glob-shaped row, regardless of the caller's input:
+
+```ts
+scopeClauses.push(
+  `EXISTS (
+     SELECT 1 FROM memory_scope s
+     WHERE s.memory_id = memories.id
+       AND s.kind = 'file'
+       AND (
+         s.value IN (${files.map(() => "?").join(",")})
+         OR s.value GLOB '*[][*?{]*'   -- pattern-shaped rows survive stage 1
+       )
+   )`,
+);
+params.push(...files);
+```
+
+The `GLOB '*[][*?{]*'` predicate (SQLite's GLOB operator, classes `[`, `]`, `*`, `?`, `{`) admits any row whose stored value contains a glob metacharacter. SQLite indexes `memory_scope(memory_id, kind, value)` (per existing schema); the GLOB scan is bounded to the `kind='file'` slice and only runs when `files.length > 0`. At realistic memory-store sizes (10²–10³ rows), this is sub-ms.
+
+### 8.2 Stage 2 — apply `matchesScope()` at scoring time (retrieve.ts:316–317)
 
 ```ts
 // before
@@ -293,9 +396,17 @@ const fileHit = scopeRows.some(
 );
 ```
 
-Note the argument order: stored value (the *pattern*) is the first arg to `matchesScope`; the candidate path the agent passed in is the second. Same direction as the surfacing matcher.
+This is the refinement step — glob-shaped rows that survived stage 1 are now filtered against the caller's actual paths via `matchesScope(pattern, path)`. Rows where the pattern doesn't match get scope-score 0 and fall away naturally.
 
-Effect: memories stored with glob patterns (e.g. `MainApp/**/*cardmultiselect*`) start matching the literal paths agents pass to `recall_memory(scope: { files: [...] })`. Pre-existing gap closes.
+Argument order: stored value (the *pattern*) is the first arg to `matchesScope`; the candidate path the caller passed in is the second. Same direction as the surfacing matcher.
+
+### 8.3 Why both stages
+
+Skipping stage 1 means glob-scoped memories never enter the candidate pool — the scoring fix at line 316 has nothing to fix. Skipping stage 2 means literal-only filtering at scoring time would still gate out globs even though stage 1 admits them. Both are necessary; neither is sufficient alone.
+
+### 8.4 Effect
+
+Memories stored with glob patterns (e.g. `MainApp/**/*cardmultiselect*`) start matching the literal paths callers pass to `recall_memory(scope: { files: [...] })`. The pre-existing gap closes for both `recall_memory` and the new surfacing path, which share the `scope-match.ts` utility.
 
 This change is intentionally bundled with the new feature: scope creep accepted because both surfaces would otherwise have divergent matching semantics, and the literal-only `recall_memory` behavior is a real bug independent of the surfacing work.
 
@@ -312,7 +423,9 @@ This change is intentionally bundled with the new feature: scope creep accepted 
 | Same memory surfaces across two calls in one session | No cross-call dedup. Agent decides per-call. Counter only moves on `get_memory`. |
 | No memories exist for the project                  | Matcher short-circuits; task is never embedded; ~zero overhead.                   |
 | Pinned memories                                    | No special treatment. Pin protects from aging, doesn't bias surfacing.            |
-| Global-tier memories                               | Included. They have no scopeFiles → unscoped track with strict threshold.         |
+| Global-tier memories                               | Loaded from a separate `repoKey="global"` store via `matchMemoriesCrossTier`. Routed through scoped/unscoped tracks based on their actual `scopeFiles`. Project-tier results get a +0.1 score boost on merge. |
+| Global memory store missing entirely               | Treat the global side as empty result; project-side surfacing proceeds normally. Logged at debug. Independent failure modes per tier. |
+| Both stores fail to open                           | Top-level try/catch around `matchMemoriesCrossTier`; field omitted; file response unchanged. |
 
 ### 9.1 Performance shape per call (when matcher runs)
 
@@ -383,9 +496,11 @@ Phases A and B can ship in successive minor releases. Phase C is post-ship calib
 - **Picomatch as direct dep vs transitive.** Verify current dependency tree; install as direct if not already pulled in.
 - **Should v2 add per-call confidence override?** Hold until real users push for it.
 - **Is the 70%-of-top-1 window a meaningful signal at fast-mode score scales?** Fast scores are unbounded and bunch differently. May need a per-ranker window strategy if bench reveals fast-mode produces too-narrow or too-wide windows.
+- **Stage-1 GLOB pre-filter cost at scale.** The `s.value GLOB '*[][*?{]*'` clause adds a sequential scan of the file-kind slice of `memory_scope` per `recall_memory` / surfacing call. At 10²–10³ rows this is sub-ms; at 10⁵+ it could matter. Consider adding a denormalized `is_glob` boolean column with an index if profiling shows it.
 
 ---
 
 ## 13. Changelog
 
 - **2026-05-06 v1**: initial draft.
+- **2026-05-06 v2**: addressed three review findings: (1) §8 rewritten — `recall_memory` glob fix now covers both the SQL stage-1 pre-filter and the stage-2 scoring check (the v1 spec only changed the latter, so glob-scoped memories were still pruned before reaching it); (2) §3.1 / §3.2 / §6.1 / §9 updated — matcher now opens both project and global memory stores via `matchMemoriesCrossTier`, mirroring the existing `recallMemoryCrossTier` pattern (the v1 spec referenced global-tier inclusion without describing how the matcher reads it); (3) §4 / §7.3 added — `src/lib/suggest.ts` listed as modified; `RelatedMemorySchema` and the three result-schema extensions documented (the v1 spec attached `relatedMemories` to the response without extending the Zod schemas that back the MCP `outputSchema`).
