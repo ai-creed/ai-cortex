@@ -57,7 +57,8 @@ file ranker runs (fast | deep | semantic) → top-K file results
     ↓
 memory matcher (cross-tier):
   · embed task once via MiniLM
-      (semantic ranker already embedded — reuse that vector)
+      (v1 always re-embeds, even on semantic-mode calls; reuse-from-ranker
+      optimization deferred — preserves the suggestRepo() boundary)
   · for each store in [project, global]:
       · candidate set = active memories where either:
           (a) scoped track:   scopeFiles overlaps any window file (via glob match), OR
@@ -466,12 +467,12 @@ This change is intentionally bundled with the new feature: scope creep accepted 
 | Step                                     | Cost                                                    |
 |------------------------------------------|---------------------------------------------------------|
 | Read memory vector sidecar               | ~5–10 ms                                                |
-| Embed task (one-shot)                    | ~10–30 ms (skipped for semantic ranker — already done)  |
+| Embed task (one-shot)                    | ~10–30 ms (always; v1 does not reuse the semantic ranker's embed) |
 | Track filter via `matchesScope`           | O(memories × window-files); <5 ms at 100s of memories  |
 | Cosine over candidates                   | Linear in candidates; <10 ms at 1k                      |
 | **Total added latency**                  | **~25–50 ms** typical; ≤80 ms at the upper bound        |
 
-For the semantic ranker, the task vector is reused — total added latency drops to ~15–30 ms.
+In v1 the matcher always re-embeds the task even on semantic-mode calls — the reuse-from-ranker optimization is deferred to keep `suggestRepo()` as the single library entry point (spec §3.2). Cost is uniform across modes: ~25–50 ms typical. If profiling later shows semantic latency matters, the deferred path is to add an opt-in `extras: { taskVec?: Float32Array }` out-param to `suggestRepo`.
 
 ---
 
@@ -539,3 +540,4 @@ Phases A and B can ship in successive minor releases. Phase C is post-ship calib
 - **2026-05-06 v1**: initial draft.
 - **2026-05-06 v2**: addressed three review findings: (1) §8 rewritten — `recall_memory` glob fix now covers both the SQL stage-1 pre-filter and the stage-2 scoring check (the v1 spec only changed the latter, so glob-scoped memories were still pruned before reaching it); (2) §3.1 / §3.2 / §6.1 / §9 updated — matcher now opens both project and global memory stores via `matchMemoriesCrossTier`, mirroring the existing `recallMemoryCrossTier` pattern (the v1 spec referenced global-tier inclusion without describing how the matcher reads it); (3) §4 / §7.3 added — `src/lib/suggest.ts` listed as modified; `RelatedMemorySchema` and the three result-schema extensions documented (the v1 spec attached `relatedMemories` to the response without extending the Zod schemas that back the MCP `outputSchema`).
 - **2026-05-06 v3**: addressed two further review findings: (4) §3.2 expanded — MCP wiring now explicitly mirrors `withReconcileForRepoKey(repoKey, …)` + `maybeReconcile(GLOBAL_REPO_KEY)` before opening `RetrieveHandle`s, matching every other memory-reading tool in `server.ts`. v2 omitted the reconcile step, so surfacing would have read pre-reconcile state (visible mismatch with `recall_memory` for memories recorded mid-session). (5) §6.2 / §9 updated — `matchesScope` now normalizes both inputs (`\\` → `/`, strip leading `./` or `/`) before comparing, mirroring `src/lib/suggest-ranker.ts:24–26`. v2 had a §10.1 test for Windows-path normalization but no implementation rule; picomatch is POSIX-style and would have failed the test.
+- **2026-05-06 v4**: spec text aligned with implementation-plan review findings: §3.1 + §9.1 — semantic-mode reuse of the ranker's task embedding is deferred for v1 (preserves the `suggestRepo()` library boundary called out in §3.2; cost is one extra ~10–30 ms embed per semantic call, within the latency envelope). The plan instead always re-embeds in `attachRelatedMemories`. No change to wire format or other contracts.
