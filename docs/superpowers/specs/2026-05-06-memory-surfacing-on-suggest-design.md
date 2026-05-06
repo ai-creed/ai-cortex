@@ -81,6 +81,36 @@ The matcher is a pure library function in `src/lib/memory/surface.ts`. The `sugg
 
 The cross-tier signature mirrors the established `recallMemoryCrossTier(projectRh, globalRh, ...)` in `retrieve.ts:363` — same caller responsibility (open both `RetrieveHandle`s, close both in `finally`), same per-tier scoring with a small project-tier boost. This is required, not optional: global-tier memories live under a separate `repoKey = "global"` store (`src/lib/memory/lifecycle.ts:874`), so a project-only matcher would silently never see promoted global rules.
 
+The MCP wiring **must reconcile both stores before opening handles**, mirroring every other memory-reading tool in `server.ts`:
+
+```ts
+// inside the suggest_files* tool handler, after suggestRepo() returns:
+return withReconcileForRepoKey(repoKey, async () => {
+  await maybeReconcile(GLOBAL_REPO_KEY);   // same pattern as line 735
+  const projectRh = openRetrieve(repoKey);
+  const globalRh = openRetrieve(GLOBAL_REPO_KEY);
+  try {
+    const related = await surface.matchMemoriesCrossTier(
+      projectRh, globalRh, task, suggestResult, /* opts */
+    );
+    return {
+      content: [...],
+      structuredContent: { ...suggestResult, ...(related.length && { relatedMemories: related }) },
+    };
+  } finally {
+    projectRh.close();
+    globalRh.close();
+  }
+});
+```
+
+The reconcile step is non-negotiable: skipping it means surfacing reads stale state that `recall_memory` would not — a memory just recorded in the current session could be invisible to surfacing while visible to recall, which is the exact kind of quiet inconsistency the recall→get model is meant to avoid.
+
+Rationale:
+- Keeps the library API focused: callers who only want file ranking get exactly that.
+- Honors the "MCP-only in v1" non-goal without a feature flag.
+- Future CLI/library exposure is a one-line wire-up at a different boundary.
+
 Rationale:
 - Keeps the library API focused: callers who only want file ranking get exactly that.
 - Honors the "MCP-only in v1" non-goal without a feature flag.
@@ -210,8 +240,9 @@ export function matchesScope(pattern: string, path: string): boolean;
 ```
 
 Implementation:
-- If the pattern contains none of `* ? [ {`, fall through to literal equality (`pattern === path`). Fast path; preserves backward-compat for memories stored with concrete paths.
-- Otherwise, compile via `picomatch(pattern, { dot: true })` and test against `path`. Compiled matcher is memoized per pattern within a single matcher run.
+- **Normalize both inputs first** — replace `\\` with `/`, then strip a leading `./` or `/`. Picomatch is POSIX-style and won't match Windows-backslash paths against `**` patterns; the `recall_memory` call site can also receive un-normalized paths from agents on Windows. Normalization mirrors the rule already used in `src/lib/suggest-ranker.ts:24–26`. (The two sites duplicate the same 2-line helper for now; extracting a shared `path-normalize.ts` is reasonable but deferred — out of scope for this PR to keep the diff focused.)
+- If the normalized pattern contains none of `* ? [ {`, fall through to literal equality (`normalizedPattern === normalizedPath`). Fast path; preserves backward-compat for memories stored with concrete paths.
+- Otherwise, compile via `picomatch(normalizedPattern, { dot: true })` and test against `normalizedPath`. Compiled matcher is memoized per (normalized) pattern within a single matcher run.
 - Wrap compilation in try/catch. On parse error, log a warning at debug level (`AI_CORTEX_DEBUG`-gated to avoid log spam in normal use), treat as non-matching, **never throw upward**.
 
 Picomatch is already a transitive dep (via `chokidar` if present, or installed directly if not). Verify and add as a direct dep if needed. Bundle size impact: ~30 KB.
@@ -426,6 +457,9 @@ This change is intentionally bundled with the new feature: scope creep accepted 
 | Global-tier memories                               | Loaded from a separate `repoKey="global"` store via `matchMemoriesCrossTier`. Routed through scoped/unscoped tracks based on their actual `scopeFiles`. Project-tier results get a +0.1 score boost on merge. |
 | Global memory store missing entirely               | Treat the global side as empty result; project-side surfacing proceeds normally. Logged at debug. Independent failure modes per tier. |
 | Both stores fail to open                           | Top-level try/catch around `matchMemoriesCrossTier`; field omitted; file response unchanged. |
+| Reconcile step throws (project or global)          | Wrapped in the surface-side try/catch. File response succeeds; `relatedMemories` field omitted; debug-log the failure. The reconcile call already exists in every other memory-reading tool; failure modes are well-trodden. |
+| Caller-supplied path is Windows-style (`a\b\c.ts`) | Normalized in `matchesScope` (backslash → slash, strip leading `./` or `/`). Test in §10.1 covers this. |
+| Stored pattern was authored on Windows (rare)      | Same normalization applied to the pattern arg before picomatch compilation. Fast path also re-checks normalized literal equality. |
 
 ### 9.1 Performance shape per call (when matcher runs)
 
@@ -504,3 +538,4 @@ Phases A and B can ship in successive minor releases. Phase C is post-ship calib
 
 - **2026-05-06 v1**: initial draft.
 - **2026-05-06 v2**: addressed three review findings: (1) §8 rewritten — `recall_memory` glob fix now covers both the SQL stage-1 pre-filter and the stage-2 scoring check (the v1 spec only changed the latter, so glob-scoped memories were still pruned before reaching it); (2) §3.1 / §3.2 / §6.1 / §9 updated — matcher now opens both project and global memory stores via `matchMemoriesCrossTier`, mirroring the existing `recallMemoryCrossTier` pattern (the v1 spec referenced global-tier inclusion without describing how the matcher reads it); (3) §4 / §7.3 added — `src/lib/suggest.ts` listed as modified; `RelatedMemorySchema` and the three result-schema extensions documented (the v1 spec attached `relatedMemories` to the response without extending the Zod schemas that back the MCP `outputSchema`).
+- **2026-05-06 v3**: addressed two further review findings: (4) §3.2 expanded — MCP wiring now explicitly mirrors `withReconcileForRepoKey(repoKey, …)` + `maybeReconcile(GLOBAL_REPO_KEY)` before opening `RetrieveHandle`s, matching every other memory-reading tool in `server.ts`. v2 omitted the reconcile step, so surfacing would have read pre-reconcile state (visible mismatch with `recall_memory` for memories recorded mid-session). (5) §6.2 / §9 updated — `matchesScope` now normalizes both inputs (`\\` → `/`, strip leading `./` or `/`) before comparing, mirroring `src/lib/suggest-ranker.ts:24–26`. v2 had a §10.1 test for Windows-path normalization but no implementation rule; picomatch is POSIX-style and would have failed the test.
