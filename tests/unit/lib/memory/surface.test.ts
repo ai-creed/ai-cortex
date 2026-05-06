@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openRetrieve } from "../../../../src/lib/memory/retrieve.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
-import { matchMemories, RANKER_CONFIDENCE_FLOORS } from "../../../../src/lib/memory/surface.js";
+import { matchMemories, matchMemoriesCrossTier, RANKER_CONFIDENCE_FLOORS } from "../../../../src/lib/memory/surface.js";
 
 // Deterministic embedder.
 let nextVec: Float32Array | null = null;
@@ -240,6 +240,102 @@ describe("matchMemories — vector missing", () => {
 			expect(got).toEqual([]);
 		} finally {
 			rh.close();
+		}
+	});
+});
+
+const PROJECT_BOOST = 0.1;
+const FINAL_CAP = 3;
+
+describe("matchMemoriesCrossTier", () => {
+	it("merges results from project + global with project boost", async () => {
+		const tv = fakeTaskVec();
+		const projectId = await seedActiveWithVector([], tv, "project rule");
+
+		// Seed a global-tier memory using the same fake vector.
+		setNextVec(tv);
+		const globalLc = await openLifecycle("global", { agentId: "test" });
+		let globalId: string;
+		try {
+			globalId = await createMemory(globalLc, {
+				type: "decision",
+				title: "global rule",
+				body: "body",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+		} finally {
+			globalLc.close();
+		}
+
+		const projectRh = openRetrieve(repoKey);
+		const globalRh = openRetrieve("global");
+		try {
+			const got = await matchMemoriesCrossTier(projectRh, globalRh, {
+				mode: "deep",
+				topResults: [{ path: "src/anything.ts", score: 30 }],
+				taskVec: tv,
+			});
+			expect(got.map((r) => r.id)).toContain(projectId);
+			expect(got.map((r) => r.id)).toContain(globalId);
+			// Project-tier memory ranks first due to +0.1 sort-key boost.
+			expect(got[0]!.id).toBe(projectId);
+			// Wire-format check: matchScores.task is the raw cosine ∈ [0, 1].
+			expect(got[0]!.matchScores.task).toBeLessThanOrEqual(1);
+			expect(got[0]!.matchScores.task).toBeGreaterThanOrEqual(0);
+		} finally {
+			projectRh.close();
+			globalRh.close();
+		}
+	});
+
+	it("caps the merged result at 3", async () => {
+		const tv = fakeTaskVec();
+		// Seed 5 unscoped project memories — all should match.
+		for (let i = 0; i < 5; i++) {
+			await seedActiveWithVector([], tv, `rule ${i}`);
+		}
+		const projectRh = openRetrieve(repoKey);
+		const globalRh = openRetrieve("global");
+		try {
+			const got = await matchMemoriesCrossTier(projectRh, globalRh, {
+				mode: "deep",
+				topResults: [{ path: "src/anything.ts", score: 30 }],
+				taskVec: tv,
+			});
+			expect(got.length).toBeLessThanOrEqual(FINAL_CAP);
+		} finally {
+			projectRh.close();
+			globalRh.close();
+		}
+	});
+
+	it("survives a global-store failure: returns project results", async () => {
+		const tv = fakeTaskVec();
+		const id = await seedActiveWithVector([], tv, "project rule");
+		const projectRh = openRetrieve(repoKey);
+		// Build a stub globalRh whose internal calls throw.
+		const brokenGlobalRh = {
+			repoKey: "global",
+			index: {
+				scopeRows: () => {
+					throw new Error("boom");
+				},
+				rawDb: () => {
+					throw new Error("boom");
+				},
+			},
+			close: () => {},
+		} as unknown as Parameters<typeof matchMemoriesCrossTier>[1];
+		try {
+			const got = await matchMemoriesCrossTier(projectRh, brokenGlobalRh, {
+				mode: "deep",
+				topResults: [{ path: "src/x.ts", score: 30 }],
+				taskVec: tv,
+			});
+			expect(got.map((r) => r.id)).toContain(id);
+		} finally {
+			projectRh.close();
 		}
 	});
 });

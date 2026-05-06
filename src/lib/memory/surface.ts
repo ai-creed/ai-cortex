@@ -141,3 +141,53 @@ export async function matchMemories(
 	// Strip _getCount; wire shape is RelatedMemory.
 	return ranked.map(({ _getCount: _ignored, ...rest }) => rest);
 }
+
+const PROJECT_BOOST = 0.1;
+const FINAL_CAP = 3;
+
+/**
+ * Cross-tier matcher mirroring recallMemoryCrossTier in retrieve.ts:363.
+ * Caller opens both RetrieveHandles; this function does NOT close them.
+ * Project-tier results get a small score boost on the *internal sort key* so
+ * that, all else equal, the project's own rules outrank global rules — but
+ * matchScores.task on the wire stays the raw cosine ∈ [0, 1] per the spec.
+ *
+ * Either store failing (throw during walk) is tolerated — the other side's
+ * results pass through. Only if both throw does the function return [].
+ */
+export async function matchMemoriesCrossTier(
+	projectRh: RetrieveHandle,
+	globalRh: RetrieveHandle,
+	opts: MatchOptions,
+): Promise<RelatedMemory[]> {
+	const safe = async (rh: RetrieveHandle): Promise<RelatedMemory[]> => {
+		try {
+			return await matchMemories(rh, opts);
+		} catch {
+			return [];
+		}
+	};
+
+	const [projectRaw, globalRaw] = await Promise.all([
+		safe(projectRh),
+		safe(globalRh),
+	]);
+
+	type WithSortKey = RelatedMemory & { _sortKey: number };
+	const projectKeyed: WithSortKey[] = projectRaw.map((r) => ({
+		...r,
+		_sortKey: r.matchScores.task + PROJECT_BOOST,
+	}));
+	const globalKeyed: WithSortKey[] = globalRaw.map((r) => ({
+		...r,
+		_sortKey: r.matchScores.task,
+	}));
+
+	const merged = [...projectKeyed, ...globalKeyed];
+	merged.sort((a, b) => {
+		if (b._sortKey !== a._sortKey) return b._sortKey - a._sortKey;
+		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	});
+
+	return merged.slice(0, FINAL_CAP).map(({ _sortKey: _ignored, ...rest }) => rest);
+}
