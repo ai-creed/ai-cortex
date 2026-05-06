@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`suggest_files*` MCP tools surface relevant memories.** When the file ranker is high-confidence and the project (or global) memory store contains rules whose scope matches the suggested files and whose body matches the task semantically, the response includes a `relatedMemories` array of pointers (`{ id, title, track, scope, matchScores }`). The agent calls `get_memory(id)` to commit to applying a rule — surfacing alone does not bump usage counters, preserving the recall→get separation. Two-track gating: scoped memories (with `scopeFiles`) require file-overlap × task-match; unscoped memories pass a stricter task-match threshold alone. Cross-tier merge: project-tier rules outrank global-tier on equal task-match via an internal sort key (wire-visible `matchScores.task` stays as the raw cosine ∈ [0, 1]).
+
+- **Glob patterns in memory `scopeFiles`.** Patterns like `MainApp/**/*card*` now match real paths in `recall_memory` and the new surfacing path. Previously the literal-only SQL pre-filter and scoring check silently rejected them. The fix spans both pipeline stages — broadened `filterCandidates` SQL admits any `s.value` containing `[`, `]`, `*`, `?`, or `{`; the post-fetch scoring uses the new `scope-match` utility (`matchesScope` and `createMatchCache`) to refine. Path normalization (`\\` → `/`, strip leading `./` or `/`) applies to both inputs, so Windows-style paths interoperate.
+
+- **`src/lib/memory/scope-match.ts`** — new utility module. Stateless `matchesScope(pattern, path)` for one-offs; `createMatchCache()` returns a memoized matcher for hot paths.
+
+- **`src/lib/memory/surface.ts`** — new module. `matchMemories(rh, opts)` per-store matcher; `matchMemoriesCrossTier(projectRh, globalRh, opts)` cross-tier wrapper mirroring `recallMemoryCrossTier`.
+
+### Changed
+
+- **`CandidateRow` (in `src/lib/memory/retrieve.ts`) gained a `getCount: number` field**, projected from the `memories.get_count` column. Used by `surface.ts` for a getCount tiebreak in result ordering. Pure additive — existing callers ignore the new field.
+
+- **MCP `suggest_files*` tool descriptions** include a clause directing the agent to call `get_memory(id)` on any surfaced rule it intends to apply.
+
+### Dependencies
+
+- Added direct dep `picomatch` and dev dep `@types/picomatch` (~30 KB bundle impact). Used by `scope-match.ts`.
+
+### Spec / design docs
+
+- `docs/superpowers/specs/2026-05-06-memory-surfacing-on-suggest-design.md` — design spec.
+
+---
+
 ## [0.5.2] — 2026-05-03
 
 Docs + adoption patch. Restores a Claude-Code-specific limitation note that was dropped during the README → KNOWN_LIMITATIONS extraction in 4c39c99, and teaches the prompt-guide block to preload tool schemas so memory rules become actionable from turn one.
