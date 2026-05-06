@@ -211,7 +211,15 @@ export function filterCandidates(
 		const scopeClauses: string[] = [];
 		if (files.length) {
 			scopeClauses.push(
-				`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value IN (${files.map(() => "?").join(",")}))`,
+				`EXISTS (
+					SELECT 1 FROM memory_scope s
+					WHERE s.memory_id = memories.id
+						AND s.kind = 'file'
+						AND (
+							s.value IN (${files.map(() => "?").join(",")})
+							OR s.value GLOB '*[][*?{]*'
+						)
+				)`,
 			);
 			params.push(...files);
 		}
