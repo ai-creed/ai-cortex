@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openRetrieve } from "../../../../src/lib/memory/retrieve.js";
+import { openRetrieve, getMemory } from "../../../../src/lib/memory/retrieve.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
 import { matchMemories, matchMemoriesCrossTier, RANKER_CONFIDENCE_FLOORS } from "../../../../src/lib/memory/surface.js";
 
@@ -336,6 +336,158 @@ describe("matchMemoriesCrossTier", () => {
 			expect(got.map((r) => r.id)).toContain(id);
 		} finally {
 			projectRh.close();
+		}
+	});
+});
+
+// ─── Additional cases: L1 gate (fast + semantic modes) ───────────────────────
+
+describe("matchMemories — confidence gate L1 (fast + semantic)", () => {
+	it("returns [] when top-1 score is below the fast floor", async () => {
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "fast",
+				topResults: [{ path: "src/foo.ts", score: RANKER_CONFIDENCE_FLOORS.fast - 1 }],
+				taskVec: fakeTaskVec(),
+			});
+			expect(got).toEqual([]);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("returns [] when top-1 score is below the semantic floor", async () => {
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "semantic",
+				topResults: [{ path: "src/foo.ts", score: RANKER_CONFIDENCE_FLOORS.semantic - 0.01 }],
+				taskVec: fakeTaskVec(),
+			});
+			expect(got).toEqual([]);
+		} finally {
+			rh.close();
+		}
+	});
+});
+
+// ─── Additional cases: L2 file window (cluster + cap) ────────────────────────
+
+describe("matchMemories — file window (L2) cluster + cap", () => {
+	it("uses all top-3 when scores cluster within 70% of top-1", async () => {
+		// Seed a scoped memory whose pattern only matches the 3rd-ranked file.
+		// If the window correctly includes top-3, the memory surfaces.
+		// If the window incorrectly drops to top-1, the memory is rejected.
+		const tv = fakeTaskVec();
+		const id = await seedActiveWithVector(["src/c.ts"], tv, "third-rank rule");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "deep",
+				topResults: [
+					{ path: "src/a.ts", score: 30 },
+					{ path: "src/b.ts", score: 28 }, // 28/30 = 93% — within 70% cutoff
+					{ path: "src/c.ts", score: 27 }, // 27/30 = 90% — within 70% cutoff
+				],
+				taskVec: tv,
+			});
+			expect(got.map((r) => r.id)).toContain(id);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("caps the window at 3 even when 4+ files are within 70% of top-1", async () => {
+		// Seed a memory whose pattern matches only the 4th-ranked file.
+		// If cap correctly limits to 3, the memory does NOT surface.
+		const tv = fakeTaskVec();
+		await seedActiveWithVector(["src/d.ts"], tv, "fourth-rank rule");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "deep",
+				topResults: [
+					{ path: "src/a.ts", score: 30 },
+					{ path: "src/b.ts", score: 29 },
+					{ path: "src/c.ts", score: 28 },
+					{ path: "src/d.ts", score: 27 }, // would be in 70% range, but cap-3 wins
+				],
+				taskVec: tv,
+			});
+			expect(got).toEqual([]);
+		} finally {
+			rh.close();
+		}
+	});
+});
+
+// ─── Status filter: candidate excluded ───────────────────────────────────────
+
+describe("matchMemories — status filter", () => {
+	it("excludes candidate-status memories from results", async () => {
+		const tv = fakeTaskVec();
+		setNextVec(tv);
+		const lc = await openLifecycle(repoKey, { agentId: "test" });
+		try {
+			// source: "extracted" produces a candidate-status memory; "explicit" produces active.
+			await createMemory(lc, {
+				type: "decision",
+				title: "candidate rule",
+				body: "body",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "deep",
+				topResults: [{ path: "src/foo.ts", score: 30 }],
+				taskVec: tv,
+			});
+			expect(got).toEqual([]);
+		} finally {
+			rh.close();
+		}
+	});
+});
+
+// ─── getCount tiebreak ────────────────────────────────────────────────────────
+
+describe("matchMemories — getCount tiebreak", () => {
+	it("orders ties by getCount desc when task scores match", async () => {
+		// Seed two memories with identical task scores. Bump idB's getCount via
+		// getMemory (which calls rh.index.bumpGetCount internally). The bumped
+		// memory should sort first despite alphabetic id ordering preferring idA.
+		const tv = fakeTaskVec();
+		const idA = await seedActiveWithVector([], tv, "alpha");
+		const idB = await seedActiveWithVector([], tv, "beta");
+
+		// Bump idB's getCount by calling getMemory once.
+		const rhBump = openRetrieve(repoKey);
+		try {
+			await getMemory(rhBump, idB);
+		} finally {
+			rhBump.close();
+		}
+
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = await matchMemories(rh, {
+				mode: "deep",
+				topResults: [{ path: "src/x.ts", score: 30 }],
+				taskVec: tv,
+			});
+			// idB should rank first because of higher getCount, even though
+			// alphabetic id ordering would prefer idA.
+			expect(got[0]!.id).toBe(idB);
+			// idA still appears somewhere in results.
+			expect(got.map((r) => r.id)).toContain(idA);
+		} finally {
+			rh.close();
 		}
 	});
 });
