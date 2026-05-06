@@ -183,6 +183,7 @@ export type CandidateRow = {
 	confidence: number;
 	bodyHash: string;
 	bodyExcerpt: string;
+	getCount: number; // NEW
 };
 
 export function filterCandidates(
@@ -238,7 +239,9 @@ export function filterCandidates(
 
 	params.push(opts.candidatePoolSize);
 	const sql = `
-		SELECT id, type, status, title, updated_at AS updatedAt, confidence, body_hash AS bodyHash, body_excerpt AS bodyExcerpt
+		SELECT id, type, status, title, updated_at AS updatedAt, confidence,
+		       body_hash AS bodyHash, body_excerpt AS bodyExcerpt,
+		       get_count AS getCount
 		FROM memories WHERE ${where.join(" AND ")} LIMIT ?
 	`;
 	return rh.index
