@@ -148,7 +148,7 @@ async function withReconcileForRepoKey<R>(
 	return fn();
 }
 
-async function attachRelatedMemories<R extends { mode: SuggestMode; results: { path: string; score: number }[]; relatedMemories?: unknown }>(
+export async function attachRelatedMemories<R extends { mode: SuggestMode; results: { path: string; score: number }[]; relatedMemories?: unknown }>(
 	result: R,
 	task: string,
 	repoKey: string,
