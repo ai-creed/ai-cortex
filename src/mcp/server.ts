@@ -156,15 +156,18 @@ export async function attachRelatedMemories<R extends { mode: SuggestMode; resul
 	const top = result.results.map((r) => ({ path: r.path, score: r.score }));
 	if (top.length === 0) return result;
 
-	// v1: always re-embed task here. Reusing the semantic ranker's
-	// embedding is deferred (preserves the suggestRepo() library boundary).
-	const provider = await getProvider();
-	const [taskVec] = await provider.embed([task]);
-	if (!taskVec) return result;
-
 	let projectRh: ReturnType<typeof openRetrieve> | null = null;
 	let globalRh: ReturnType<typeof openRetrieve> | null = null;
 	try {
+		// v1: always re-embed task here. Reusing the semantic ranker's
+		// embedding is deferred (preserves the suggestRepo() library boundary).
+		// getProvider() can throw ModelLoadError; provider.embed() can throw
+		// EmbeddingInferenceError — both must be inside the try so a model
+		// failure never blocks the file response (spec §3.3.2).
+		const provider = await getProvider();
+		const [taskVec] = await provider.embed([task]);
+		if (!taskVec) return result;
+
 		await maybeReconcile(GLOBAL_REPO_KEY);
 		projectRh = openRetrieve(repoKey);
 		globalRh = openRetrieve(GLOBAL_REPO_KEY);
