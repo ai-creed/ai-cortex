@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,20 +15,20 @@ vi.mock("../../../../src/lib/embed-provider.js", () => ({
 
 let tmp: string;
 
-beforeEach(() => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-glob-scope-"));
-	vi.spyOn(os, "homedir").mockReturnValue(tmp);
+beforeEach(async () => {
+	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ai-cortex-glob-scope-"));
+	process.env.AI_CORTEX_CACHE_HOME = tmp;
 });
 
-afterEach(() => {
-	fs.rmSync(tmp, { recursive: true, force: true });
-	vi.restoreAllMocks();
+afterEach(async () => {
+	delete process.env.AI_CORTEX_CACHE_HOME;
+	await fs.rm(tmp, { recursive: true, force: true });
 });
 
 const repoKey = "0123456789abcdef";
 
 async function seedActive(scopeFiles: string[], title = "rule"): Promise<string> {
-	const lc = await openLifecycle(repoKey);
+	const lc = await openLifecycle(repoKey, { agentId: "test" });
 	try {
 		return await createMemory(lc, {
 			type: "decision",
@@ -71,7 +71,7 @@ describe("filterCandidates SQL pre-filter — glob admission", () => {
 		}
 	});
 
-	it("does not admit unscoped memory when scope filter is set", async () => {
+	it("admits unscoped memory even when caller passes a scope filter", async () => {
 		const id = await seedActive([]);
 		const rh = openRetrieve(repoKey);
 		try {
