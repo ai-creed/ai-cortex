@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.6] — 2026-05-07
+
+### Tests
+
+- **Hermetic embed-provider mock at suite level.** Wires a default `vi.mock` of `src/lib/embed-provider.js` via `vitest.config.ts` `setupFiles`, replacing the real `Xenova/all-MiniLM-L6-v2` download with a deterministic char-trigram-hash embedder. v0.5.5's publish CI flaked on a HuggingFace CDN hiccup that corrupted the model file; the WASM fallback then hit a Node worker URL incompatibility. The new mock removes network from the test suite entirely. Per-file `vi.mock` (e.g. surface.test.ts) overrides where finer control is needed; `embed-provider.test.ts` `vi.unmock`s to exercise the real provider against its own `@xenova/transformers` mock. Two tests with real-model-calibrated cosine thresholds adjusted to the mock's scale; `producePatternCandidates` gained an opts-level `patternCosine` override (production default 0.7 unchanged).
+
+---
+
 ## [0.5.5] — 2026-05-07
 
 ### Added
