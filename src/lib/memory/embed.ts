@@ -73,6 +73,40 @@ export async function readMemoryVector(
 	};
 }
 
+/**
+ * Open the memory vector sidecar once and return a per-memory lookup function.
+ * Callers performing many lookups (e.g., the surfacing matcher) should prefer
+ * this over repeated readMemoryVector() calls — the index is loaded a single
+ * time, and lookups are O(1) Map hits instead of full re-reads.
+ *
+ * Returns null if the sidecar is missing or unreadable. The lookup returns
+ * null for memories not present in the sidecar (e.g., recorded but not yet
+ * embedded).
+ */
+export async function openMemoryVectorIndex(
+	repoKey: string,
+): Promise<((memoryId: string) => MemoryVector | null) | null> {
+	const dir = memoryRootDir(repoKey);
+	const idx = await readVectorIndex(dir, MODEL_NAME);
+	if (!idx) return null;
+	const indexByEntryPath = new Map<string, number>();
+	for (let i = 0; i < idx.meta.entries.length; i++) {
+		indexByEntryPath.set(idx.meta.entries[i]!.path, i);
+	}
+	return (memoryId: string) => {
+		const target = entryPathFor(memoryId);
+		const i = indexByEntryPath.get(target);
+		if (i === undefined) return null;
+		const vec = idx.matrix.slice(i * idx.meta.dim, (i + 1) * idx.meta.dim);
+		return {
+			memoryId,
+			vector: vec,
+			dim: idx.meta.dim,
+			bodyHash: idx.meta.entries[i]!.hash,
+		};
+	};
+}
+
 export async function deleteMemoryVector(
 	repoKey: string,
 	memoryId: string,

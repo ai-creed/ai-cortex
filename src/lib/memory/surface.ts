@@ -1,7 +1,7 @@
 // src/lib/memory/surface.ts
 import type { RetrieveHandle } from "./retrieve.js";
 import { filterCandidates } from "./retrieve.js";
-import { readMemoryVector } from "./embed.js";
+import { openMemoryVectorIndex } from "./embed.js";
 import { createMatchCache } from "./scope-match.js";
 import type { RelatedMemory } from "../suggest.js";
 
@@ -57,16 +57,20 @@ function fileWindow(top: RankedFile[]): string[] {
 	return passing.slice(0, FILE_WINDOW_CAP).map((r) => r.path);
 }
 
+// Internal shape carrying _getCount for tiebreaking across merge operations.
+type RankedInternal = RelatedMemory & { _getCount: number };
+
 /**
- * Per-store matcher. Walks active memories in the given store, applies
- * confidence gates, scoped/unscoped routing with glob-aware overlap, cosine
- * threshold, sorts (with getCount tiebreak), and returns the wire-shape array.
- * The cross-tier wrapper applies the final cap.
+ * Internal per-store matcher. Walks active memories, applies confidence gates,
+ * scoped/unscoped routing with glob-aware overlap, cosine threshold, sorts
+ * (with getCount tiebreak), and returns the internal shape (with _getCount).
+ * The public matchMemories strips _getCount; the cross-tier wrapper uses this
+ * directly so _getCount survives the merge sort.
  */
-export async function matchMemories(
+async function matchMemoriesInternal(
 	rh: RetrieveHandle,
 	opts: MatchOptions,
-): Promise<RelatedMemory[]> {
+): Promise<RankedInternal[]> {
 	if (opts.topResults.length === 0) return [];
 	if (!passesConfidenceGate(opts.mode, opts.topResults[0]!.score)) return [];
 
@@ -76,13 +80,20 @@ export async function matchMemories(
 	const scopedThreshold = opts.scopedThreshold ?? TASK_MATCH_THRESHOLDS.scoped;
 	const unscopedThreshold = opts.unscopedThreshold ?? TASK_MATCH_THRESHOLDS.unscoped;
 
+	let lookupVector: Awaited<ReturnType<typeof openMemoryVectorIndex>> = null;
+	try {
+		lookupVector = await openMemoryVectorIndex(rh.repoKey);
+	} catch {
+		return []; // sidecar corruption; the matcher returns no surfacing
+	}
+	if (!lookupVector) return []; // no sidecar yet
+
 	const candidates = filterCandidates(rh, {
 		includeStatus: ["active"],
 		candidatePoolSize: MEMORY_POOL_SIZE,
 	});
 
 	const matcher = createMatchCache();
-	type RankedInternal = RelatedMemory & { _getCount: number };
 	const ranked: RankedInternal[] = [];
 
 	for (const c of candidates) {
@@ -108,12 +119,7 @@ export async function matchMemories(
 			track = "scoped";
 		}
 
-		let v;
-		try {
-			v = await readMemoryVector(rh.repoKey, c.id);
-		} catch {
-			continue;
-		}
+		const v = lookupVector(c.id);
 		if (!v) continue;
 
 		const taskScore = cosine(opts.taskVec, v.vector);
@@ -138,6 +144,20 @@ export async function matchMemories(
 		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 	});
 
+	return ranked;
+}
+
+/**
+ * Per-store matcher. Walks active memories in the given store, applies
+ * confidence gates, scoped/unscoped routing with glob-aware overlap, cosine
+ * threshold, sorts (with getCount tiebreak), and returns the wire-shape array.
+ * The cross-tier wrapper applies the final cap.
+ */
+export async function matchMemories(
+	rh: RetrieveHandle,
+	opts: MatchOptions,
+): Promise<RelatedMemory[]> {
+	const ranked = await matchMemoriesInternal(rh, opts);
 	// Strip _getCount; wire shape is RelatedMemory.
 	return ranked.map(({ _getCount: _ignored, ...rest }) => rest);
 }
@@ -160,9 +180,9 @@ export async function matchMemoriesCrossTier(
 	globalRh: RetrieveHandle,
 	opts: MatchOptions,
 ): Promise<RelatedMemory[]> {
-	const safe = async (rh: RetrieveHandle): Promise<RelatedMemory[]> => {
+	const safe = async (rh: RetrieveHandle): Promise<RankedInternal[]> => {
 		try {
-			return await matchMemories(rh, opts);
+			return await matchMemoriesInternal(rh, opts);
 		} catch {
 			return [];
 		}
@@ -173,7 +193,7 @@ export async function matchMemoriesCrossTier(
 		safe(globalRh),
 	]);
 
-	type WithSortKey = RelatedMemory & { _sortKey: number };
+	type WithSortKey = RankedInternal & { _sortKey: number };
 	const projectKeyed: WithSortKey[] = projectRaw.map((r) => ({
 		...r,
 		_sortKey: r.matchScores.task + PROJECT_BOOST,
@@ -186,8 +206,12 @@ export async function matchMemoriesCrossTier(
 	const merged = [...projectKeyed, ...globalKeyed];
 	merged.sort((a, b) => {
 		if (b._sortKey !== a._sortKey) return b._sortKey - a._sortKey;
+		if (b._getCount !== a._getCount) return b._getCount - a._getCount;
 		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 	});
 
-	return merged.slice(0, FINAL_CAP).map(({ _sortKey: _ignored, ...rest }) => rest);
+	// Strip both internal fields before returning the wire shape.
+	return merged
+		.slice(0, FINAL_CAP)
+		.map(({ _sortKey: _ignoredSort, _getCount: _ignoredCount, ...rest }) => rest);
 }

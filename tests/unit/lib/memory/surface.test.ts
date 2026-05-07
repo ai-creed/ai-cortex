@@ -338,6 +338,40 @@ describe("matchMemoriesCrossTier", () => {
 			projectRh.close();
 		}
 	});
+
+	it("preserves getCount tiebreak across cross-tier merge", async () => {
+		const tv = fakeTaskVec();
+		// Two project memories with identical task scores. After cross-tier merge,
+		// the one with higher getCount should rank first — even though the per-tier
+		// boost makes their _sortKey identical.
+		const idA = await seedActiveWithVector([], tv, "alpha");
+		const idB = await seedActiveWithVector([], tv, "beta");
+
+		// Bump idB's getCount twice via getMemory.
+		const rh1 = openRetrieve(repoKey);
+		try {
+			await getMemory(rh1, idB);
+			await getMemory(rh1, idB);
+		} finally {
+			rh1.close();
+		}
+
+		const projectRh = openRetrieve(repoKey);
+		const globalRh = openRetrieve("global");
+		try {
+			const got = await matchMemoriesCrossTier(projectRh, globalRh, {
+				mode: "deep",
+				topResults: [{ path: "src/x.ts", score: 30 }],
+				taskVec: tv,
+			});
+			// idB ranks first because of higher getCount, even though both have
+			// identical _sortKey (same project boost) and idA < idB alphabetically.
+			expect(got[0]!.id).toBe(idB);
+		} finally {
+			projectRh.close();
+			globalRh.close();
+		}
+	});
 });
 
 // ─── Additional cases: L1 gate (fast + semantic modes) ───────────────────────
