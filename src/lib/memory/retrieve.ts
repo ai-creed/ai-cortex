@@ -1,5 +1,6 @@
 import { openMemoryIndex, MemoryIndex } from "./index.js";
 import { readMemoryFile } from "./store.js";
+import { matchesScope } from "./scope-match.js";
 import type { MemoryRecord, AuditRow } from "./types.js";
 
 export type RetrieveHandle = {
@@ -182,6 +183,7 @@ export type CandidateRow = {
 	confidence: number;
 	bodyHash: string;
 	bodyExcerpt: string;
+	getCount: number; // NEW
 };
 
 export function filterCandidates(
@@ -211,7 +213,15 @@ export function filterCandidates(
 		const scopeClauses: string[] = [];
 		if (files.length) {
 			scopeClauses.push(
-				`EXISTS (SELECT 1 FROM memory_scope s WHERE s.memory_id=memories.id AND s.kind='file' AND s.value IN (${files.map(() => "?").join(",")}))`,
+				`EXISTS (
+					SELECT 1 FROM memory_scope s
+					WHERE s.memory_id = memories.id
+						AND s.kind = 'file'
+						AND (
+							s.value IN (${files.map(() => "?").join(",")})
+							OR s.value GLOB '*[][*?{]*'
+						)
+				)`,
 			);
 			params.push(...files);
 		}
@@ -229,7 +239,9 @@ export function filterCandidates(
 
 	params.push(opts.candidatePoolSize);
 	const sql = `
-		SELECT id, type, status, title, updated_at AS updatedAt, confidence, body_hash AS bodyHash, body_excerpt AS bodyExcerpt
+		SELECT id, type, status, title, updated_at AS updatedAt, confidence,
+		       body_hash AS bodyHash, body_excerpt AS bodyExcerpt,
+		       get_count AS getCount
 		FROM memories WHERE ${where.join(" AND ")} LIMIT ?
 	`;
 	return rh.index
@@ -314,7 +326,11 @@ export async function recallMemory(
 		let scopeMatch = 0.2;
 		if (scopeRows.length > 0) {
 			const fileHit = scopeRows.some(
-				(s) => s.kind === "file" && options.scope?.files?.includes(s.value),
+				(s) =>
+					s.kind === "file" &&
+					// matchesScope(storedPattern, callerPath): s.value may be a glob,
+					// the caller's path is always literal.
+					options.scope?.files?.some((f) => matchesScope(s.value, f)),
 			);
 			const tagHit = scopeRows.some(
 				(s) => s.kind === "tag" && options.scope?.tags?.includes(s.value),

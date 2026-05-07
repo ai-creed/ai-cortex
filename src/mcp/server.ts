@@ -61,6 +61,7 @@ import {
 	rewriteMemory,
 } from "../lib/memory/lifecycle.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
+import { matchMemoriesCrossTier, type SuggestMode } from "../lib/memory/surface.js";
 
 function logCall(
 	tool: string,
@@ -145,6 +146,44 @@ async function withReconcileForRepoKey<R>(
 ): Promise<R> {
 	await maybeReconcile(repoKey);
 	return fn();
+}
+
+export async function attachRelatedMemories<R extends { mode: SuggestMode; results: { path: string; score: number }[]; relatedMemories?: unknown }>(
+	result: R,
+	task: string,
+	repoKey: string,
+): Promise<R> {
+	const top = result.results.map((r) => ({ path: r.path, score: r.score }));
+	if (top.length === 0) return result;
+
+	let projectRh: ReturnType<typeof openRetrieve> | null = null;
+	let globalRh: ReturnType<typeof openRetrieve> | null = null;
+	try {
+		// v1: always re-embed task here. Reusing the semantic ranker's
+		// embedding is deferred (preserves the suggestRepo() library boundary).
+		// getProvider() can throw ModelLoadError; provider.embed() can throw
+		// EmbeddingInferenceError — both must be inside the try so a model
+		// failure never blocks the file response (spec §3.3.2).
+		const provider = await getProvider();
+		const [taskVec] = await provider.embed([task]);
+		if (!taskVec) return result;
+
+		await maybeReconcile(GLOBAL_REPO_KEY);
+		projectRh = openRetrieve(repoKey);
+		globalRh = openRetrieve(GLOBAL_REPO_KEY);
+		const related = await matchMemoriesCrossTier(projectRh, globalRh, {
+			mode: result.mode,
+			topResults: top,
+			taskVec,
+		});
+		if (related.length === 0) return result;
+		return { ...result, relatedMemories: related };
+	} catch {
+		return result; // never block the file response on memory failure
+	} finally {
+		projectRh?.close();
+		globalRh?.close();
+	}
 }
 
 export async function withRepoIdentity<T>(
@@ -301,7 +340,8 @@ export function createServer(): McpServer {
 				"using path tokens, function names, import/call graph, trigram fuzzy " +
 				"match, and content scan. Fall back to Grep/Glob only for: exact-string " +
 				"lookup of a known symbol, verifying edits, or when `suggest_files` " +
-				"returns nothing useful. For explicit poolSize, use `suggest_files_deep`.",
+				"returns nothing useful. For explicit poolSize, use `suggest_files_deep`. " +
+				"When the result is high-confidence and matching memories exist, the response also includes a `relatedMemories` array of pointers. Call `get_memory(id)` on any rule you intend to apply — surfacing alone does not count as use.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),
@@ -317,22 +357,26 @@ export function createServer(): McpServer {
 			(p) => ({ task: p.task, path: p.path }),
 			async ({ task, path, from, limit, stale, verbose }) => {
 				const repoPath = path ?? process.cwd();
-				const result = await suggestRepo(repoPath, task, {
-					from,
-					limit,
-					stale,
-					verbose,
-					mode: "deep",
+				const { repoKey } = resolveRepoIdentity(repoPath);
+				return withReconcileForRepoKey(repoKey, async () => {
+					const result = await suggestRepo(repoPath, task, {
+						from,
+						limit,
+						stale,
+						verbose,
+						mode: "deep",
+					});
+					if (result.mode !== "deep") {
+						throw new Error(
+							"suggestRepo returned non-deep result for suggest_files",
+						);
+					}
+					const enriched = await attachRelatedMemories(result, task, repoKey);
+					return {
+						content: [{ type: "text" as const, text: renderDeepText(enriched) }],
+						structuredContent: enriched,
+					};
 				});
-				if (result.mode !== "deep") {
-					throw new Error(
-						"suggestRepo returned non-deep result for suggest_files",
-					);
-				}
-				return {
-					content: [{ type: "text" as const, text: renderDeepText(result) }],
-					structuredContent: result,
-				};
 			},
 		),
 	);
@@ -344,7 +388,8 @@ export function createServer(): McpServer {
 				"Explicit deep search with pool size control. Same deep ranking as " +
 				"suggest_files but accepts an additional poolSize parameter. Use when " +
 				"you need to tune the candidate pool (e.g. larger pool for broad " +
-				"queries on big repos).",
+				"queries on big repos). " +
+				"When the result is high-confidence and matching memories exist, the response also includes a `relatedMemories` array of pointers. Call `get_memory(id)` on any rule you intend to apply — surfacing alone does not count as use.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),
@@ -361,23 +406,27 @@ export function createServer(): McpServer {
 			(p) => ({ task: p.task, path: p.path, poolSize: p.poolSize }),
 			async ({ task, path, from, limit, stale, poolSize, verbose }) => {
 				const repoPath = path ?? process.cwd();
-				const result = await suggestRepo(repoPath, task, {
-					from,
-					limit,
-					stale,
-					poolSize,
-					verbose,
-					mode: "deep",
+				const { repoKey } = resolveRepoIdentity(repoPath);
+				return withReconcileForRepoKey(repoKey, async () => {
+					const result = await suggestRepo(repoPath, task, {
+						from,
+						limit,
+						stale,
+						poolSize,
+						verbose,
+						mode: "deep",
+					});
+					if (result.mode !== "deep") {
+						throw new Error(
+							"suggestRepo returned non-deep result for suggest_files_deep",
+						);
+					}
+					const enriched = await attachRelatedMemories(result, task, repoKey);
+					return {
+						content: [{ type: "text" as const, text: renderDeepText(enriched) }],
+						structuredContent: enriched,
+					};
 				});
-				if (result.mode !== "deep") {
-					throw new Error(
-						"suggestRepo returned non-deep result for suggest_files_deep",
-					);
-				}
-				return {
-					content: [{ type: "text" as const, text: renderDeepText(result) }],
-					structuredContent: result,
-				};
 			},
 		),
 	);
@@ -389,7 +438,8 @@ export function createServer(): McpServer {
 				"Rank files by semantic similarity when the task is conceptual or " +
 				"fuzzy and keyword/graph ranking (`suggest_files`) returns nothing " +
 				"useful. Uses sentence embeddings (Xenova/all-MiniLM-L6-v2, 384-dim). " +
-				"First call downloads ~23 MB model; subsequent calls are fast.",
+				"First call downloads ~23 MB model; subsequent calls are fast. " +
+				"When the result is high-confidence and matching memories exist, the response also includes a `relatedMemories` array of pointers. Call `get_memory(id)` on any rule you intend to apply — surfacing alone does not count as use.",
 			inputSchema: {
 				task: z.string().min(1, "task must not be blank"),
 				path: z.string().optional(),
@@ -403,22 +453,26 @@ export function createServer(): McpServer {
 			(p) => ({ task: p.task, path: p.path }),
 			async ({ task, path, limit, stale }) => {
 				const repoPath = path ?? process.cwd();
-				const result = await suggestRepo(repoPath, task, {
-					limit,
-					stale,
-					mode: "semantic",
+				const { repoKey } = resolveRepoIdentity(repoPath);
+				return withReconcileForRepoKey(repoKey, async () => {
+					const result = await suggestRepo(repoPath, task, {
+						limit,
+						stale,
+						mode: "semantic",
+					});
+					if (result.mode !== "semantic") {
+						throw new Error(
+							"suggestRepo returned non-semantic result for suggest_files_semantic",
+						);
+					}
+					const enriched = await attachRelatedMemories(result, task, repoKey);
+					return {
+						content: [
+							{ type: "text" as const, text: renderSemanticText(enriched) },
+						],
+						structuredContent: enriched,
+					};
 				});
-				if (result.mode !== "semantic") {
-					throw new Error(
-						"suggestRepo returned non-semantic result for suggest_files_semantic",
-					);
-				}
-				return {
-					content: [
-						{ type: "text" as const, text: renderSemanticText(result) },
-					],
-					structuredContent: result,
-				};
 			},
 		),
 	);
