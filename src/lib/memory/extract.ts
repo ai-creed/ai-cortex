@@ -561,7 +561,9 @@ export async function producePatternCandidates(
 	repoKey: string,
 	thisSessionId: string,
 	thisSession: SessionRecord,
+	opts: { patternCosine?: number } = {},
 ): Promise<ProducedCandidate[]> {
+	const patternCosine = opts.patternCosine ?? PATTERN_PROMPT_COSINE;
 	const targetFiles = new Set(
 		thisSession.evidence.filePaths.map((f) => f.path),
 	);
@@ -592,7 +594,7 @@ export async function producePatternCandidates(
 		const prompts = rec.evidence.userPrompts.map((p) => p.text).join(" ");
 		if (prompts.length === 0) continue;
 		const [vec] = await provider.embed([prompts]);
-		if (cosine(targetVec!, vec!) >= PATTERN_PROMPT_COSINE) similarCount++;
+		if (cosine(targetVec!, vec!) >= patternCosine) similarCount++;
 	}
 	if (similarCount + 1 < PATTERN_MIN_SESSIONS) return [];
 

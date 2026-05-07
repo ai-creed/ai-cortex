@@ -7,5 +7,6 @@ export default defineConfig({
 			"**/dist/**",
 			"benchmarks/eval/fixtures/**",
 		],
+		setupFiles: ["./tests/helpers/mock-embed-provider.ts"],
 	},
 });

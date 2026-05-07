@@ -53,7 +53,15 @@ describe("producePatternCandidates", () => {
 		]);
 		await writeSession(repoKey, target);
 
-		const out = await producePatternCandidates(repoKey, "s-c", target);
+		// patternCosine lowered to 0.5 to suit the global trigram-hash mock
+		// in tests/helpers/mock-embed-provider.ts (real-model embeddings
+		// would clear the default 0.7; the fake's surface-similarity scores
+		// top out around 0.55–0.72 for these prompts). The test still
+		// exercises "≥3 sessions with similar prompts triggers a pattern"
+		// — only the numeric threshold differs.
+		const out = await producePatternCandidates(repoKey, "s-c", target, {
+			patternCosine: 0.5,
+		});
 		expect(out).toHaveLength(1);
 		expect(out[0].type).toBe("pattern");
 		expect(out[0].confidence).toBeCloseTo(0.35, 2);

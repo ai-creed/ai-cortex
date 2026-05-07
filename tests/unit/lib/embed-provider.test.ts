@@ -2,6 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EMBEDDING_DIM, MODEL_NAME } from "../../../src/lib/embed-provider.js";
 
+// Opt out of the global embed-provider mock declared in
+// tests/helpers/mock-embed-provider.ts — this test exercises the real
+// provider against a mocked @xenova/transformers below.
+vi.unmock("../../../src/lib/embed-provider.js");
+
 // We mock @xenova/transformers so we don't download ~23MB during unit tests
 vi.mock("@xenova/transformers", () => {
 	const mockPipeline = vi.fn();

@@ -33,7 +33,13 @@ describe("extract — findDedupTarget", () => {
 			body: "Create endpoints take POST not GET.",
 			tags: ["http"],
 		};
-		const hit = await findDedupTarget(lc, candidate, { dedupCosine: 0.7 });
+		// dedupCosine lowered to 0.6 to suit the global trigram-hash mock
+		// in tests/helpers/mock-embed-provider.ts (real-model embeddings
+		// would clear the default 0.85; the fake produces ~0.65 for these
+		// strings). The test still exercises "similar text + tag overlap
+		// → dedup hits"; the dissimilar-text test below stays at the
+		// default and exercises the negative case.
+		const hit = await findDedupTarget(lc, candidate, { dedupCosine: 0.6 });
 		expect(hit).toBe(existingId);
 		lc.close();
 	});
