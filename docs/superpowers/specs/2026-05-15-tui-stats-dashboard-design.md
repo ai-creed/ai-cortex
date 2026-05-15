@@ -140,7 +140,11 @@ SQLite has no native percentile. The reader pulls `dur_ms` sorted for each tool 
 
 ### Recall→get ratio
 
-Defined as `count(get_memory calls) / sum(result_count of recall_memory calls)` within the window. Approximate but useful as a trend signal.
+**v1 definition** — `count(tool='get_memory') / count(tool='recall_memory')` within the window. Both counts are read directly from `tool_calls`; no handler change required.
+
+This is a coarser approximation than the originally-considered `count(get) / sum(result_count of recall)` formula. The finer formula needs `result_count` on every `recall_memory` row, which requires extending the `recall_memory` handler (`src/mcp/server.ts:622`) to expose its match array via `structuredContent`. That handler change is **out of scope for v1** and is deferred to a follow-up; when it lands, the reader will switch to the finer ratio.
+
+Empty state: ratio is `0` when there are zero recall calls in the window. The Memory widget renders the value as a percentage.
 
 ## TUI app
 
