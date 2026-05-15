@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("openSink", () => {
-	it("creates the stats dir, events.sqlite, schema v1, and expected columns", () => {
+	it("creates the stats dir, events.sqlite, schema v2, and expected columns", () => {
 		const sink = openSink(padded);
 		try {
 			expect(fs.existsSync(statsDir(padded))).toBe(true);
@@ -36,7 +36,7 @@ describe("openSink", () => {
 			const version = sink.db.pragma("user_version", {
 				simple: true,
 			}) as number;
-			expect(version).toBe(1);
+			expect(version).toBe(2);
 
 			const cols = sink.db
 				.prepare("PRAGMA table_info(tool_calls)")
@@ -53,7 +53,57 @@ describe("openSink", () => {
 				"result_count",
 				"query_len",
 				"meta",
+				"synthetic",
 			]);
+		} finally {
+			sink.close();
+		}
+	});
+
+	it("migrates a v1 database to v2 by adding the synthetic column", () => {
+		// Hand-craft a v1 database matching the original schema.
+		fs.mkdirSync(statsDir(padded), { recursive: true });
+		const dbPath = statsDbPath(padded);
+		const v1 = new Database(dbPath);
+		v1.exec(`
+			CREATE TABLE tool_calls (
+			  ts            INTEGER NOT NULL,
+			  tool          TEXT    NOT NULL,
+			  dur_ms        INTEGER NOT NULL,
+			  status        TEXT    NOT NULL,
+			  err_class     TEXT,
+			  err_code      TEXT,
+			  cache_status  TEXT,
+			  mode          TEXT,
+			  result_count  INTEGER,
+			  query_len     INTEGER,
+			  meta          TEXT
+			);
+		`);
+		v1.prepare(
+			"INSERT INTO tool_calls (ts, tool, dur_ms, status) VALUES (?, ?, ?, ?)",
+		).run(Date.now(), "legacy_tool", 7, "ok");
+		v1.pragma("user_version = 1");
+		v1.close();
+
+		const sink = openSink(padded);
+		try {
+			const version = sink.db.pragma("user_version", {
+				simple: true,
+			}) as number;
+			expect(version).toBe(2);
+
+			const cols = sink.db
+				.prepare("PRAGMA table_info(tool_calls)")
+				.all() as Array<{ name: string }>;
+			expect(cols.map((c) => c.name)).toContain("synthetic");
+
+			// Existing v1 rows preserved with synthetic = 0 by DEFAULT.
+			const row = sink.db
+				.prepare("SELECT tool, synthetic FROM tool_calls WHERE tool='legacy_tool'")
+				.get() as { tool: string; synthetic: number };
+			expect(row.tool).toBe("legacy_tool");
+			expect(row.synthetic).toBe(0);
 		} finally {
 			sink.close();
 		}

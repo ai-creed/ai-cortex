@@ -23,6 +23,12 @@ export type StatsEvent = {
 	status: ToolStatus;
 	err_class?: string | null;
 	err_code?: string | null;
+	/**
+	 * 1 = row synthesized from session-history (no live timing). 0 = live MCP call.
+	 * When omitted, sink writes 0. Synthetic rows are excluded from latency
+	 * percentiles but counted in volume queries.
+	 */
+	synthetic?: 0 | 1;
 } & StatsResultFields &
 	StatsParamFields;
 
