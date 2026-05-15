@@ -8,8 +8,10 @@
 		"noEmit": false,
 		"outDir": "dist",
 		"rootDir": ".",
-		"types": ["node"]
+		"types": ["node"],
+		"jsx": "react",
+		"esModuleInterop": true
 	},
-	"include": ["src/**/*.ts", "tests/**/*.ts"],
+	"include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"],
 	"exclude": ["tests/fixtures"]
 }
