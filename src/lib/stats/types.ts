@@ -1,8 +1,8 @@
 // src/lib/stats/types.ts
 
-export type ToolStatus = "ok" | "err";
+export type ToolStatus = "ok" | "error";
 
-export type CacheStatus = "fresh" | "stale" | "miss";
+export type CacheStatus = "fresh" | "stale" | "miss" | "reindexed";
 
 export type SuggestMode = "fast" | "deep" | "semantic";
 

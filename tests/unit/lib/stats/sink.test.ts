@@ -121,7 +121,7 @@ describe("writeEvent", () => {
 				ts: 1_700_000_000_002,
 				tool: "suggest_files",
 				dur_ms: 1,
-				status: "err",
+				status: "error",
 				err_class: "path /tmp/foo with spaces",
 			});
 			const row = sink.db

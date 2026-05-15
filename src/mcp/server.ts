@@ -62,6 +62,10 @@ import {
 } from "../lib/memory/lifecycle.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
 import { matchMemoriesCrossTier, type SuggestMode } from "../lib/memory/surface.js";
+import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js";
+import { getSink } from "../lib/stats/registry.js";
+import { writeEvent } from "../lib/stats/sink.js";
+import { errClassOf } from "../lib/stats/sanitize.js";
 
 function logCall(
 	tool: string,
@@ -84,34 +88,103 @@ function logCall(
 	process.stderr.write(parts.join(" ") + "\n");
 }
 
-function logged<P, R>(
+type SafeWriteArgs<P, R> = {
+	params: P;
+	tool: string;
+	ts: number;
+	dur_ms: number;
+	resolveRepoKey: (p: P) => string | null;
+	extractStatsParams: (p: P) => StatsParamFields | null;
+} & (
+	| { status: "ok"; result: R; extractResult: (r: R) => StatsResultFields | null }
+	| { status: "error"; err: unknown }
+);
+
+function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
+	setImmediate(() => {
+		try {
+			const repoKey = args.resolveRepoKey(args.params);
+			if (!repoKey) return;
+			const sParams = args.extractStatsParams(args.params) ?? {};
+			const sResult =
+				args.status === "ok" ? (args.extractResult(args.result) ?? {}) : {};
+			writeEvent(getSink(repoKey), {
+				ts: args.ts,
+				tool: args.tool,
+				dur_ms: args.dur_ms,
+				status: args.status,
+				...(args.status === "error" ? { err_class: errClassOf(args.err) } : {}),
+				...sParams,
+				...sResult,
+			});
+		} catch (e) {
+			process.stderr.write(
+				`[ai-cortex] stats sink failed: ${e instanceof Error ? e.message : String(e)}\n`,
+			);
+		}
+	});
+}
+
+export function logged<P, R>(
 	tool: string,
 	extractMeta: (params: P) => Record<string, unknown>,
+	extractStatsParams: (params: P) => StatsParamFields | null,
+	resolveRepoKey: (params: P) => string | null,
+	extractResult: (result: R) => StatsResultFields | null,
 	handler: (params: P) => Promise<R>,
 ): (params: P) => Promise<R> {
 	return async (params: P) => {
 		const t0 = performance.now();
 		try {
 			const result = await handler(params);
-			logCall(
+			const durMs = Math.round(performance.now() - t0);
+			logCall(tool, extractMeta(params), durMs, "ok");
+			scheduleSinkWrite<P, R>({
+				params,
 				tool,
-				extractMeta(params),
-				Math.round(performance.now() - t0),
-				"ok",
-			);
+				ts: Date.now(),
+				dur_ms: durMs,
+				resolveRepoKey,
+				extractStatsParams,
+				status: "ok",
+				result,
+				extractResult,
+			});
 			return result;
 		} catch (err) {
-			logCall(
+			const durMs = Math.round(performance.now() - t0);
+			logCall(tool, extractMeta(params), durMs, "error", err);
+			scheduleSinkWrite<P, R>({
+				params,
 				tool,
-				extractMeta(params),
-				Math.round(performance.now() - t0),
-				"error",
+				ts: Date.now(),
+				dur_ms: durMs,
+				resolveRepoKey,
+				extractStatsParams,
+				status: "error",
 				err,
-			);
+			});
 			throw err;
 		}
 	};
 }
+
+function rkFromPath<P extends { path?: string }>(p: P): string | null {
+	try {
+		return resolveRepoIdentity(p.path ?? process.cwd()).repoKey;
+	} catch {
+		return null;
+	}
+}
+function rkFromWorktree<P extends { worktreePath: string }>(p: P): string | null {
+	try {
+		return resolveRepoIdentity(p.worktreePath).repoKey;
+	} catch {
+		return null;
+	}
+}
+const NO_STATS_PARAMS = (): null => null;
+const NO_STATS_RESULT = (): null => null;
 
 let noticeSent = false;
 export function resetFirstCallNoticeForTest(): void {
@@ -313,6 +386,9 @@ export function createServer(): McpServer {
 		logged(
 			"rehydrate_project",
 			(p) => ({ path: p.path }),
+			NO_STATS_PARAMS,
+			rkFromPath,
+			NO_STATS_RESULT,
 			async ({ path: p }) => {
 				const worktreePath = p ?? process.cwd();
 				return withRepoIdentity(worktreePath, async (_repoKey) => {
@@ -355,6 +431,13 @@ export function createServer(): McpServer {
 		logged(
 			"suggest_files",
 			(p) => ({ task: p.task, path: p.path }),
+			(p) => ({ query_len: p.task.length }),
+			rkFromPath,
+			(r: { structuredContent: DeepSuggestResult }) => ({
+				cache_status: r.structuredContent.cacheStatus,
+				mode: r.structuredContent.mode,
+				result_count: r.structuredContent.results.length,
+			}),
 			async ({ task, path, from, limit, stale, verbose }) => {
 				const repoPath = path ?? process.cwd();
 				const { repoKey } = resolveRepoIdentity(repoPath);
@@ -404,6 +487,13 @@ export function createServer(): McpServer {
 		logged(
 			"suggest_files_deep",
 			(p) => ({ task: p.task, path: p.path, poolSize: p.poolSize }),
+			(p) => ({ query_len: p.task.length }),
+			rkFromPath,
+			(r: { structuredContent: DeepSuggestResult }) => ({
+				cache_status: r.structuredContent.cacheStatus,
+				mode: r.structuredContent.mode,
+				result_count: r.structuredContent.results.length,
+			}),
 			async ({ task, path, from, limit, stale, poolSize, verbose }) => {
 				const repoPath = path ?? process.cwd();
 				const { repoKey } = resolveRepoIdentity(repoPath);
@@ -451,6 +541,13 @@ export function createServer(): McpServer {
 		logged(
 			"suggest_files_semantic",
 			(p) => ({ task: p.task, path: p.path }),
+			(p) => ({ query_len: p.task.length }),
+			rkFromPath,
+			(r: { structuredContent: SemanticSuggestResult }) => ({
+				cache_status: r.structuredContent.cacheStatus,
+				mode: r.structuredContent.mode,
+				result_count: r.structuredContent.results.length,
+			}),
 			async ({ task, path, limit, stale }) => {
 				const repoPath = path ?? process.cwd();
 				const { repoKey } = resolveRepoIdentity(repoPath);
@@ -484,6 +581,9 @@ export function createServer(): McpServer {
 		logged(
 			"index_project",
 			(p) => ({ path: p.path }),
+			NO_STATS_PARAMS,
+			rkFromPath,
+			NO_STATS_RESULT,
 			async ({ path }) => {
 				const repoPath = path ?? process.cwd();
 				const cache = await indexRepo(repoPath);
@@ -515,6 +615,9 @@ export function createServer(): McpServer {
 		logged(
 			"blast_radius",
 			(p) => ({ qualifiedName: p.qualifiedName, file: p.file, path: p.path }),
+			NO_STATS_PARAMS,
+			rkFromPath,
+			NO_STATS_RESULT,
 			async ({ qualifiedName, file, path, maxHops, stale }) => {
 				const repoPath = path ?? process.cwd();
 				const { cache } = await rehydrateRepo(repoPath, { stale });
@@ -559,6 +662,9 @@ export function createServer(): McpServer {
 				scope: p.scope,
 				sessionId: p.sessionId,
 			}),
+			(p: SearchHistoryArgs) => ({ query_len: p.query?.length ?? 0 }),
+			rkFromPath,
+			NO_STATS_RESULT,
 			handleSearchHistory,
 		),
 	);
@@ -583,6 +689,9 @@ export function createServer(): McpServer {
 		logged(
 			"recall_memory",
 			(p) => ({ worktreePath: p.worktreePath, query: p.query }),
+			(p) => ({ query_len: p.query.length }),
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const source = p.source ?? "all";
@@ -642,6 +751,9 @@ export function createServer(): McpServer {
 		logged(
 			"get_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const rh = openRetrieve(repoKey);
@@ -676,6 +788,9 @@ export function createServer(): McpServer {
 		logged(
 			"list_memories",
 			(p) => ({ worktreePath: p.worktreePath }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const rh = openRetrieve(repoKey);
@@ -713,6 +828,9 @@ export function createServer(): McpServer {
 		logged(
 			"search_memories",
 			(p) => ({ worktreePath: p.worktreePath, query: p.query }),
+			(p) => ({ query_len: p.query.length }),
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const rh = openRetrieve(repoKey);
@@ -743,6 +861,9 @@ export function createServer(): McpServer {
 		logged(
 			"audit_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const rh = openRetrieve(repoKey);
@@ -784,6 +905,9 @@ export function createServer(): McpServer {
 		logged(
 			"record_memory",
 			(p) => ({ worktreePath: p.worktreePath, type: p.type, title: p.title }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					if (p.globalScope) await maybeReconcile(GLOBAL_REPO_KEY);
@@ -824,6 +948,9 @@ export function createServer(): McpServer {
 		logged(
 			"update_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -856,6 +983,9 @@ export function createServer(): McpServer {
 		logged(
 			"update_scope",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -887,6 +1017,9 @@ export function createServer(): McpServer {
 		logged(
 			"deprecate_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -913,6 +1046,9 @@ export function createServer(): McpServer {
 		logged(
 			"restore_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -942,6 +1078,9 @@ export function createServer(): McpServer {
 		logged(
 			"merge_memories",
 			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -969,6 +1108,9 @@ export function createServer(): McpServer {
 		logged(
 			"trash_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -995,6 +1137,9 @@ export function createServer(): McpServer {
 		logged(
 			"untrash_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1024,6 +1169,9 @@ export function createServer(): McpServer {
 		logged(
 			"purge_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1052,6 +1200,9 @@ export function createServer(): McpServer {
 		logged(
 			"link_memories",
 			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1080,6 +1231,9 @@ export function createServer(): McpServer {
 		logged(
 			"unlink_memories",
 			(p) => ({ worktreePath: p.worktreePath, srcId: p.srcId, dstId: p.dstId }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1107,6 +1261,9 @@ export function createServer(): McpServer {
 		logged(
 			"pin_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1133,6 +1290,9 @@ export function createServer(): McpServer {
 		logged(
 			"unpin_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1159,6 +1319,9 @@ export function createServer(): McpServer {
 		logged(
 			"confirm_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1193,6 +1356,9 @@ export function createServer(): McpServer {
 		logged(
 			"add_evidence",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
@@ -1223,6 +1389,9 @@ export function createServer(): McpServer {
 		logged(
 			"rebuild_index",
 			(p) => ({ worktreePath: p.worktreePath }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const report = await reconcileStore(repoKey, "mcp-rebuild");
@@ -1251,6 +1420,9 @@ export function createServer(): McpServer {
 		logged(
 			"sweep_aging",
 			(p) => ({ worktreePath: p.worktreePath }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const { sweepAging } = await import("../lib/memory/aging.js");
@@ -1280,6 +1452,9 @@ export function createServer(): McpServer {
 		logged(
 			"promote_to_global",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					// withReconcileForRepoKey reconciles repoKey (project); explicitly reconcile
@@ -1315,6 +1490,9 @@ export function createServer(): McpServer {
 		logged(
 			"extract_session",
 			(p) => ({ worktreePath: p.worktreePath, sessionId: p.sessionId }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const { extractFromSession } = await import("../lib/memory/extract.js");
@@ -1352,6 +1530,9 @@ export function createServer(): McpServer {
 		logged(
 			"list_memories_pending_rewrite",
 			(p) => ({ worktreePath: p.worktreePath }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const rh = openRetrieve(repoKey);
@@ -1392,6 +1573,9 @@ export function createServer(): McpServer {
 		logged(
 			"rewrite_memory",
 			(p) => ({ worktreePath: p.worktreePath, id: p.id }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const lc = await openLifecycle(repoKey, { agentId: "mcp" });
