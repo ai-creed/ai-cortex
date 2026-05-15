@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_tc_ts      ON tool_calls(ts);
 CREATE INDEX IF NOT EXISTS idx_tc_tool_ts ON tool_calls(tool, ts);
 `;
 const SCHEMA_VERSION = 1;
+const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 export type StatsSink = { db: DB; insert: Statement; close: () => void };
 
@@ -34,6 +35,9 @@ export function openSink(repoKey: string): StatsSink {
 	db.exec(SCHEMA_SQL);
 	const v = db.pragma("user_version", { simple: true }) as number;
 	if (v !== SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
+	db.prepare("DELETE FROM tool_calls WHERE ts < ?").run(
+		Date.now() - RETENTION_MS,
+	);
 	const insert = db.prepare(`
     INSERT INTO tool_calls
     (ts, tool, dur_ms, status, err_class, err_code, cache_status, mode, result_count, query_len, meta)
