@@ -176,7 +176,7 @@ const TOOL_NAMES = Object.keys(TOOL_ARGS);
 const TOLERATE_HANDLER_THROW = new Set(["extract_session"]);
 
 describe.each(TOOL_NAMES)("%s contract", (toolName) => {
-	it(`requires worktreePath — replacing it with repoKey errors with Zod 'Required'`, async () => {
+	it("requires worktreePath — replacing it with repoKey errors with Zod 'Required'", async () => {
 		const client = await makeClient();
 		const valid = await TOOL_ARGS[toolName](repoRoot, client);
 		const { worktreePath: _wp, ...rest } = valid;
@@ -197,7 +197,7 @@ describe.each(TOOL_NAMES)("%s contract", (toolName) => {
 		expect(text).toMatch(/worktreePath|Required/i);
 	});
 
-	it(`writes/reads under <sha16>/, never a literal-name dir`, async () => {
+	it("writes/reads under <sha16>/, never a literal-name dir", async () => {
 		const client = await makeClient();
 		const { repoKey } = resolveRepoIdentity(repoRoot);
 		const args = await TOOL_ARGS[toolName](repoRoot, client);

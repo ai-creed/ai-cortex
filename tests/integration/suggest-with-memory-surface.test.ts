@@ -48,7 +48,7 @@ function initFixtureRepo(repoPath: string): void {
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(
 		path.join(dir, "card.ts"),
-		`// card component\nexport function getCard(id: string) { return { id }; }\n`,
+		"// card component\nexport function getCard(id: string) { return { id }; }\n",
 	);
 	execFileSync("git", ["init", "-q"], { cwd: repoPath });
 	execFileSync("git", ["-C", repoPath, "config", "user.email", "t@t"]);

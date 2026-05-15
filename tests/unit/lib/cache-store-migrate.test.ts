@@ -113,7 +113,7 @@ function makeStore(dir: string): void {
 function makeDbWithRow(dir: string): void {
 	makeStore(dir);
 	const db = new Database(path.join(dir, "memory", "index.sqlite"));
-	db.exec(`CREATE TABLE memories (id TEXT PRIMARY KEY)`);
+	db.exec("CREATE TABLE memories (id TEXT PRIMARY KEY)");
 	db.prepare("INSERT INTO memories(id) VALUES (?)").run("m1");
 	db.close();
 }
@@ -127,7 +127,7 @@ describe("classifyStore", () => {
 		const dir = path.join(tmp, "empty-schema");
 		makeStore(dir);
 		const db = new Database(path.join(dir, "memory", "index.sqlite"));
-		db.exec(`CREATE TABLE memories (id TEXT PRIMARY KEY)`);
+		db.exec("CREATE TABLE memories (id TEXT PRIMARY KEY)");
 		db.close();
 		expect(classifyStore(dir)).toBe("empty");
 	});

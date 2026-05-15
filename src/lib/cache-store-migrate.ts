@@ -442,23 +442,23 @@ function renderConflictReport(args: {
 }): string {
 	const counts = readStoreCounts(args.quarantineDir);
 	return [
-		`# Quarantined cache directory`,
-		``,
+		"# Quarantined cache directory",
+		"",
 		`Literal key: \`${args.literalKey}\``,
 		`Canonical hashed dir: \`${args.canonicalDir}\``,
 		`Quarantined at: \`${args.quarantineDir}\``,
-		``,
-		`## Summary at quarantine time`,
-		``,
+		"",
+		"## Summary at quarantine time",
+		"",
 		`- memories: ${counts.memories}`,
 		`- history sessions: ${counts.sessions}`,
 		`- extractor runs: ${counts.extractorRuns}`,
-		``,
-		`This directory was kept intact in case its contents are still needed.`,
-		`Both literal and canonical stores were populated when migration ran;`,
-		`row-level merging is not implemented in v1, so the literal store was`,
-		`moved here to leave the canonical store unchanged.`,
-		``,
+		"",
+		"This directory was kept intact in case its contents are still needed.",
+		"Both literal and canonical stores were populated when migration ran;",
+		"row-level merging is not implemented in v1, so the literal store was",
+		"moved here to leave the canonical store unchanged.",
+		"",
 	].join("\n");
 }
 

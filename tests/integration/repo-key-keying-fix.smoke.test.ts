@@ -41,7 +41,7 @@ describe("smoke: split-brain converges on first MCP call", () => {
 		fs.mkdirSync(path.join(literal, "memory"), { recursive: true });
 		const db = new Database(path.join(literal, "memory", "index.sqlite"));
 		db.pragma("journal_mode = WAL");
-		db.exec(`CREATE TABLE memories (id TEXT PRIMARY KEY, type TEXT, status TEXT, title TEXT, version INT, created_at TEXT, updated_at TEXT, source TEXT, confidence REAL, pinned INT, body_hash TEXT, body_excerpt TEXT, get_count INT DEFAULT 0, last_accessed_at TEXT, re_extract_count INT DEFAULT 0, rewritten_at TEXT)`);
+		db.exec("CREATE TABLE memories (id TEXT PRIMARY KEY, type TEXT, status TEXT, title TEXT, version INT, created_at TEXT, updated_at TEXT, source TEXT, confidence REAL, pinned INT, body_hash TEXT, body_excerpt TEXT, get_count INT DEFAULT 0, last_accessed_at TEXT, re_extract_count INT DEFAULT 0, rewritten_at TEXT)");
 		db.prepare("INSERT INTO memories(id, type, status, title, version, created_at, updated_at, source, confidence, pinned, body_hash, body_excerpt) VALUES('m1','decision','candidate','t',1,'now','now','manual',0.9,0,'h','b')").run();
 		db.close();
 

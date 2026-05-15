@@ -46,6 +46,7 @@ ai-cortex memory promote <id>                   # Project → global tier
 
 # Server & meta
 ai-cortex mcp                                   # Start MCP server (stdio)
+ai-cortex stats [--window 7d] [--once]          # TUI dashboard: latency, cache hits, memory, storage
 ai-cortex --version | -v                        # Print version
 ai-cortex --help    | -h                        # Command list
 ```
@@ -184,6 +185,19 @@ ai-cortex memory list --status active --json   # all active memories
 ### Full reference
 
 See [MEMORY_LAYER.md](./MEMORY_LAYER.md) for the full memory-layer guide — mental model, core loop (observe → capture → distill → retrieve → inject → evolve), common flows, storage layout, architectural decisions, and limitations.
+
+## Inspecting performance
+
+ai-cortex records per-call latency, cache hits, error class, and result counts for every MCP tool invocation to `~/.cache/ai-cortex/v1/<repoKey>/stats/events.sqlite`. The `ai-cortex stats` TUI reads those rows and renders a live dashboard: per-project tool call volume, p50/p95 latency, cache mix, memory health (active / pending / pinned / recall→get ratio), and storage footprint. Drill into a project for per-tool latency, top tools, memory tab, and per-subdirectory storage breakdown.
+
+```bash
+ai-cortex stats                          # open TUI on the default 7d window
+ai-cortex stats --window 1h              # 1h | 24h | 7d (default) | 30d
+ai-cortex stats --project <repoKey>      # boot directly into a project's detail view
+ai-cortex stats --once                   # render one frame and exit (for piping / smoke tests)
+```
+
+**Privacy.** Only lengths, counts, and identifiers are recorded — no query text, no memory bodies, no file paths. Rows older than 90 days are pruned on store open. Stats live entirely under `~/.cache/ai-cortex/` and never leave the machine.
 
 ## Library API
 

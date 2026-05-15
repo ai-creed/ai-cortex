@@ -35,7 +35,7 @@ function buildBlock(): string {
 	return [
 		`<!-- ai-cortex:memory-rule:start ${PROMPT_GUIDE_VERSION} -->`,
 		MEMORY_GUIDE_TEXT,
-		`<!-- ai-cortex:memory-rule:end -->`,
+		"<!-- ai-cortex:memory-rule:end -->",
 	].join("\n");
 }
 

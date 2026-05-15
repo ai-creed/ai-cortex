@@ -307,3 +307,31 @@ tests/
   unit/tui/...                 (ink-testing-library specs per component)
   integration/stats-cli.test.ts
 ```
+
+## Backfill from history
+
+Repos that pre-date the live stats sink have no `tool_calls` rows even
+though they have rich session-history data. `ai-cortex stats backfill`
+synthesizes rows from `<repoKey>/history/sessions/*/session.json` so the
+TUI shows real volume on first launch.
+
+- **Source**: `session.evidence.toolCalls[]` (already captured by the
+  history hook). Each entry has `{ turn, name, args }` — no per-call
+  timestamp or duration. The synthetic row uses `ts = session.startedAt`
+  and `dur_ms = 0`.
+- **Filter**: `src/lib/stats/tool-names.ts` exports the 33-name allowlist
+  of ai-cortex MCP tools (kept in lockstep with `src/mcp/server.ts` by a
+  unit test). The history layer logs Claude Code's own tool calls too
+  (Read/Edit/Bash/exec_command/...) so the allowlist is mandatory.
+- **Synthetic flag**: schema v2 adds `tool_calls.synthetic INTEGER NOT
+  NULL DEFAULT 0`. Backfilled rows store `synthetic = 1`; live MCP calls
+  through `logged()` keep the default `0`. Reader queries that compute
+  `dur_ms` percentiles (`aggregate`, `latencyPerTool`, `aggregateAcross`)
+  add `AND synthetic = 0` so backfilled zeros never poison latency.
+  Volume queries (`topTools`, `toolCounts`, the count/error sums in
+  `aggregate`) count both — that's the whole point.
+- **Idempotency**: `backfillRepo` deletes every existing `synthetic = 1`
+  row before re-inserting. Live rows are never touched, so re-running
+  backfill is always safe and never duplicates.
+- **CLI**: `ai-cortex stats backfill` walks every repoKey-shaped cache
+  subdir, prints one summary line per repo plus a totals footer.
