@@ -60,21 +60,31 @@ This keeps the writer testable against a mock store, the reader testable against
 
 The current `logged()` helper (`src/mcp/server.ts:87`) only receives `tool`, `extractMeta(params)`, and `handler(params)`. It cannot see the result and cannot reliably attribute a call to a repo (most handlers, e.g. `suggest_files` at `src/mcp/server.ts:358` and `index_project` at `src/mcp/server.ts:487`, resolve identity inside the handler).
 
-`logged()` is extended to a five-argument form:
+`logged()` is extended to a six-argument form:
 
 ```ts
 logged<P, R>(
   tool: string,
-  extractMeta:     (p: P) => Record<string, unknown>,
-  resolveRepoKey:  (p: P) => string | null,
-  extractResult:   (r: R) => StatsResultFields | null,
-  handler:         (p: P) => Promise<R>,
+  extractMeta:          (p: P) => Record<string, unknown>,         // stderr only
+  extractStatsParams:   (p: P) => StatsParamFields | null,         // sink only
+  resolveRepoKey:       (p: P) => string | null,                   // sink only
+  extractResult:        (r: R) => StatsResultFields | null,        // sink only
+  handler:              (p: P) => Promise<R>,
 ): (p: P) => Promise<R>
+
+type StatsParamFields  = { query_len?: number };                   // length only — never the text
+type StatsResultFields = { cache_status?: 'fresh'|'reindexed'|'stale';
+                           mode?: 'fast'|'deep'|'semantic';
+                           result_count?: number };
 ```
 
-- `resolveRepoKey(params)` runs **before** the handler. It typically calls `resolveRepoIdentity(params.path ?? process.cwd()).repoKey`. Tools with no notion of a repo (e.g. future global utilities) return `null`. If the resolver throws (invalid path), the resulting row is **dropped from stats** (still logged to stderr via the existing `logCall`); the original handler error semantics are unchanged.
-- `extractResult(result)` runs on success and may populate `cache_status`, `mode`, `result_count`. On error, it is not called; those columns stay `NULL`.
+- `extractMeta(params)` is **stderr-only**. It keeps its current behavior of returning short-form params (`task`, `query`, `path`, `id`, `title` — see `src/mcp/server.ts:357,585,786`) for the human-readable `logCall` line. The sink **never** reads from it.
+- `extractStatsParams(params)` is **sink-only** and returns a strictly typed shape. The sink writes only known length/count fields from it. Any call site that wants to emit `query_len` (e.g. `recall_memory`, `suggest_files`) computes it here as `p.query?.length` / `p.task?.length`. Anything not in the typed shape is a type error.
+- `resolveRepoKey(params)` runs **before** the handler. Typically `resolveRepoIdentity(params.path ?? process.cwd()).repoKey`, or `sha16(gitCommonDirOf(params.worktreePath))` for memory tools. Tools with no notion of a repo return `null`. If the resolver throws (invalid path), the row is **dropped from stats** (still logged to stderr via the existing `logCall`); the original handler error semantics are unchanged.
+- `extractResult(result)` runs on success and may populate `cache_status`, `mode`, `result_count`. On error it is not called; those columns stay `NULL`.
 - `null` from `resolveRepoKey` drops the row from stats — there is no `_global` bucket in v1. Add one only if a real tool needs it (YAGNI).
+
+A dedicated unit test asserts the sink does not import or call `extractMeta`. Type-level: `StatsParamFields` is a closed object type with optional numeric fields only; adding string fields requires a type change + a sanitizer pass.
 
 This keeps the routing contract explicit at every tool registration site rather than implicit and inconsistent.
 
@@ -227,7 +237,8 @@ TDD per project preference. Layered coverage:
 |---|---|---|
 | Sink writer | schema migrate, insert, 90d prune, error swallow | unit, tmpdir SQLite |
 | Err/meta sanitizer | rejects free-form strings; `err_class`/`err_code` constrained to safe charset | unit |
-| `logged()` wrapper | sink throw does not affect MCP response; `extractResult` invoked on success only; `resolveRepoKey` null drops the row from stats but preserves original handler error | unit, mock sink + mock resolver |
+| `logged()` wrapper | sink throw does not affect MCP response; `extractResult` invoked on success only; `resolveRepoKey` null drops the row from stats but preserves original handler error; sink never invokes `extractMeta` | unit, mock sink + mock resolver |
+| Stats-param isolation | `StatsParamFields` is the only param source the sink reads; raw `task`/`query`/`path`/`id`/`title` from `extractMeta` never appear in `events.sqlite` | unit, schema + writer mock |
 | Reader queries | aggregate, percentiles, top tools, recall→get, top-accessed | unit, fixture SQLite |
 | Cross-project walk | missing repos, mid-session drop | unit, tmp cache root |
 | Storage cache | 10s TTL, recompute after expiry | unit, fake clock |
