@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.6.0 — 2026-05-15
+
+- feat(stats): new `ai-cortex stats` TUI for inspecting per-call latency, cache hit rates, memory effectiveness, and storage footprint across projects
+- feat(stats): per-repo events.sqlite under `~/.cache/ai-cortex/v1/<repoKey>/stats/`
+- breaking(internal): the `logged()` MCP wrapper signature changed from 3 to 6 args; external consumers using `logged()` directly must update their call sites
+
+---
+
 ## [0.5.6] — 2026-05-07
 
 ### Tests
