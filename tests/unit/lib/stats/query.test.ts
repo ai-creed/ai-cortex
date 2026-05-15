@@ -300,7 +300,7 @@ describe("memoryHealthAcross", () => {
 		] as const) {
 			const db = new Database(indexDbPath(rk));
 			db.exec(
-				`CREATE TABLE memories (id TEXT, status TEXT, pinned INTEGER, get_count INTEGER, last_accessed_at TEXT);`,
+				"CREATE TABLE memories (id TEXT, status TEXT, pinned INTEGER, get_count INTEGER, last_accessed_at TEXT);",
 			);
 			const ins = db.prepare("INSERT INTO memories VALUES (?, ?, ?, ?, ?)");
 			for (const m of mems) ins.run(...m);

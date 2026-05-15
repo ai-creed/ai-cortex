@@ -117,7 +117,7 @@ export function latencyPerTool(
 		const since = Date.now() - WINDOW_MS[window];
 		const tools = (
 			db
-				.prepare(`SELECT DISTINCT tool FROM tool_calls WHERE ts > ?`)
+				.prepare("SELECT DISTINCT tool FROM tool_calls WHERE ts > ?")
 				.all(since) as Array<{ tool: string }>
 		).map((r) => r.tool);
 		const out: Record<string, LatencyStats> = {};
@@ -125,7 +125,7 @@ export function latencyPerTool(
 			const durs = (
 				db
 					.prepare(
-						`SELECT dur_ms FROM tool_calls WHERE tool=? AND ts>? ORDER BY dur_ms`,
+						"SELECT dur_ms FROM tool_calls WHERE tool=? AND ts>? ORDER BY dur_ms",
 					)
 					.all(tool, since) as Array<{ dur_ms: number }>
 			).map((r) => r.dur_ms);

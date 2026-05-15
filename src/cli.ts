@@ -1081,7 +1081,7 @@ async function main(): Promise<void> {
 				case "install-prompt-guide": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const { runMemoryInstallPromptGuide } = await import(
-						"./lib/memory/cli/install-prompt-guide.js"
+						"./lib/memory/cli/install-prompt-guide.js",
 					);
 					const code = await runMemoryInstallPromptGuide(
 						stripFlagPairs(rest, ["--cwd"]),
@@ -1093,7 +1093,7 @@ async function main(): Promise<void> {
 				case "uninstall-prompt-guide": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const { runMemoryUninstallPromptGuide } = await import(
-						"./lib/memory/cli/install-prompt-guide.js"
+						"./lib/memory/cli/install-prompt-guide.js",
 					);
 					const code = await runMemoryUninstallPromptGuide(
 						stripFlagPairs(rest, ["--cwd"]),

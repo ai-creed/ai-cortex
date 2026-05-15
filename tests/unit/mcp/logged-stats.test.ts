@@ -61,7 +61,7 @@ describe("logged() with stats hooks", () => {
 
 	it("writes an error row with err_class on throw", async () => {
 		class MyErr extends Error {}
-		const handler = logged<{}, never>(
+		const handler = logged<Record<string, never>, never>(
 			"tool_x",
 			() => ({}),
 			() => null,
@@ -71,7 +71,7 @@ describe("logged() with stats hooks", () => {
 				throw new MyErr("path /tmp/secret");
 			},
 		);
-		await expect(handler({})).rejects.toThrow();
+		await expect(handler({} as Record<string, never>)).rejects.toThrow();
 		await flushSink();
 		const rows = readRows();
 		expect(rows).toHaveLength(1);
@@ -85,7 +85,7 @@ describe("logged() with stats hooks", () => {
 	});
 
 	it("drops the row when resolveRepoKey returns null but still runs the handler", async () => {
-		const handler = logged<{}, { ok: true }>(
+		const handler = logged<Record<string, never>, { ok: true }>(
 			"global_tool",
 			() => ({}),
 			() => null,
@@ -93,14 +93,14 @@ describe("logged() with stats hooks", () => {
 			() => null,
 			async () => ({ ok: true }),
 		);
-		const result = await handler({});
+		const result = await handler({} as Record<string, never>);
 		await flushSink();
 		expect(result).toEqual({ ok: true });
 		expect(fs.existsSync(statsDbPath(repoKey))).toBe(false);
 	});
 
 	it("drops the row but preserves handler error when resolveRepoKey throws", async () => {
-		const handler = logged<{}, never>(
+		const handler = logged<Record<string, never>, never>(
 			"bad_resolve",
 			() => ({}),
 			() => null,
@@ -112,6 +112,6 @@ describe("logged() with stats hooks", () => {
 				throw new Error("handler should still run");
 			},
 		);
-		await expect(handler({})).rejects.toThrow("handler should still run");
+		await expect(handler({} as Record<string, never>)).rejects.toThrow("handler should still run");
 	});
 });

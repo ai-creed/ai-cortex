@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import { App } from "../../../src/tui/App.js";
+import { App, type AppProps } from "../../../src/tui/App.js";
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -28,7 +28,7 @@ const fakeRead = () => ({
 describe("App", () => {
 	it("renders Overview by default and shows last-error footer hint", async () => {
 		const { lastFrame } = render(
-			<App read={fakeRead as any} initialWindow="7d" once={true} />,
+			<App read={fakeRead as AppProps["read"]} initialWindow="7d" once={true} />,
 		);
 		await flush();
 		const frame = strip(lastFrame());
@@ -39,7 +39,7 @@ describe("App", () => {
 	it("guards against terminals smaller than 80x24", () => {
 		const { lastFrame } = render(
 			<App
-				read={fakeRead as any}
+				read={fakeRead as AppProps["read"]}
 				initialWindow="7d"
 				once={true}
 				termSize={{ cols: 40, rows: 10 }}

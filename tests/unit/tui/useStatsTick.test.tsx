@@ -29,14 +29,14 @@ describe("useStatsTick", () => {
 	});
 
 	it("skips a tick if previous call still pending", async () => {
-		let resolves: Array<() => void> = [];
+		const resolves: Array<() => void> = [];
 		const fn = vi.fn(
 			() =>
 				new Promise<number>((r) => {
 					resolves.push(() => r(resolves.length));
 				}),
 		);
-		render(<Probe fn={fn as any} />);
+		render(<Probe fn={fn as unknown as () => number} />);
 		await Promise.resolve();
 		await vi.advanceTimersByTimeAsync(100);
 		await vi.advanceTimersByTimeAsync(100);
