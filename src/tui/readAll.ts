@@ -18,7 +18,7 @@ import {
 import type { StatsWindow } from "../lib/stats/types.js";
 
 export type Snapshot = {
-	projects: Array<{ repoKey: string; calls: number }>;
+	projects: Array<{ repoKey: string; name: string | null; calls: number }>;
 	/** Cross-project aggregate when focus is null, focused project's aggregate when focus is set. */
 	aggregate: Aggregate;
 	/** Same focus rule as `aggregate`. */
@@ -42,7 +42,8 @@ export function readAll(
 	const repoKeys = listProjects();
 	const projects = repoKeys.map((rk) => {
 		const a = aggregate(rk, window);
-		return { repoKey: rk, calls: a.total };
+		const m = cacheMeta(rk);
+		return { repoKey: rk, name: m.name, calls: a.total };
 	});
 
 	const isOverview = focus === null;
@@ -70,7 +71,7 @@ export function readAll(
 		latencyPerTool: isOverview ? {} : latencyPerTool(focus, window),
 		topTools: isOverview ? [] : topTools(focus, window, 10),
 		meta: isOverview
-			? { indexedAt: null, fingerprint: null, fileCount: null }
+			? { indexedAt: null, fingerprint: null, fileCount: null, name: null }
 			: cacheMeta(focus),
 		recallGetRatio,
 	};

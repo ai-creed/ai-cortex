@@ -39,6 +39,7 @@ const detail = {
 		indexedAt: "2026-05-15T01:00:00.000Z",
 		fingerprint: "abc1234",
 		fileCount: 348,
+		name: "ai-cortex",
 	},
 };
 

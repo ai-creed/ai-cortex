@@ -197,21 +197,30 @@ describe("storageFootprint", () => {
 });
 
 describe("listProjects", () => {
-	it("returns every repoKey with a stats/ subdir", async () => {
+	it("returns every cache subdir whose name is a 16-hex repoKey", async () => {
+		// Three legit projects with different ai-cortex content shapes.
 		await fsp.mkdir(path.join(tmp, "aaaaaaaaaaaaaaaa", "stats"), {
 			recursive: true,
 		});
-		await fsp.mkdir(path.join(tmp, "bbbbbbbbbbbbbbbb", "stats"), {
+		await fsp.mkdir(path.join(tmp, "bbbbbbbbbbbbbbbb", "memory"), {
 			recursive: true,
 		});
-		await fsp.mkdir(path.join(tmp, "no-stats", "memory"), {
-			recursive: true,
-		});
-		const projects = listProjects();
-		expect(projects).toEqual(
-			expect.arrayContaining(["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]),
+		await fsp.mkdir(path.join(tmp, "cccccccccccccccc"), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, "cccccccccccccccc", "worktree.json"),
+			"{}",
 		);
-		expect(projects).not.toContain("no-stats");
+		// Non-repoKey-shaped dir — should be filtered out (test pollution guard).
+		await fsp.mkdir(path.join(tmp, "not-a-repo-key", "stats"), {
+			recursive: true,
+		});
+
+		const projects = listProjects();
+		expect(projects).toEqual([
+			"aaaaaaaaaaaaaaaa",
+			"bbbbbbbbbbbbbbbb",
+			"cccccccccccccccc",
+		]);
 	});
 
 	it("returns empty array when cache root missing", () => {
@@ -237,12 +246,14 @@ describe("cacheMeta", () => {
 				indexedAt: "2026-05-15T01:00:00.000Z",
 				fingerprint: "newer-sha",
 				files: [{}, {}, {}],
+				packageMeta: { name: "ai-cortex" },
 			}),
 		);
 		expect(cacheMeta(repoKey)).toEqual({
 			indexedAt: "2026-05-15T01:00:00.000Z",
 			fingerprint: "newer-sha",
 			fileCount: 3,
+			name: "ai-cortex",
 		});
 	});
 
@@ -251,7 +262,18 @@ describe("cacheMeta", () => {
 			indexedAt: null,
 			fingerprint: null,
 			fileCount: null,
+			name: null,
 		});
+	});
+
+	it("returns null name when packageMeta is missing from the JSON", async () => {
+		const rk = "646464".padEnd(16, "0");
+		await fsp.mkdir(path.join(tmp, rk), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, rk, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({ indexedAt: "2026-05-15T00:00:00.000Z" }),
+		);
+		expect(cacheMeta(rk).name).toBeNull();
 	});
 });
 

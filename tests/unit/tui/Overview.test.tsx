@@ -13,8 +13,8 @@ describe("Overview", () => {
 			<Overview
 				window="7d"
 				projects={[
-					{ repoKey: "ai-cortex", calls: 1247 },
-					{ repoKey: "ai-whisper", calls: 842 },
+					{ repoKey: "ai-cortex", name: "ai-cortex", calls: 1247 },
+					{ repoKey: "ai-whisper", name: "ai-whisper", calls: 842 },
 				]}
 				aggregate={{
 					total: 2089,

@@ -266,6 +266,14 @@ export type CacheMeta = {
 	indexedAt: string | null;
 	fingerprint: string | null;
 	fileCount: number | null;
+	name: string | null;
+};
+
+const EMPTY_CACHE_META: CacheMeta = {
+	indexedAt: null,
+	fingerprint: null,
+	fileCount: null,
+	name: null,
 };
 
 export function cacheMeta(repoKey: string): CacheMeta {
@@ -274,16 +282,12 @@ export function cacheMeta(repoKey: string): CacheMeta {
 	try {
 		entries = fs.readdirSync(dir, { withFileTypes: true });
 	} catch {
-		return { indexedAt: null, fingerprint: null, fileCount: null };
+		return { ...EMPTY_CACHE_META };
 	}
 	const jsons = entries.filter(
 		(e) => e.isFile() && e.name.endsWith(".json"),
 	);
-	let best: CacheMeta = {
-		indexedAt: null,
-		fingerprint: null,
-		fileCount: null,
-	};
+	let best: CacheMeta = { ...EMPTY_CACHE_META };
 	for (const e of jsons) {
 		try {
 			const raw = fs.readFileSync(path.join(dir, e.name), "utf8");
@@ -291,6 +295,7 @@ export function cacheMeta(repoKey: string): CacheMeta {
 				indexedAt?: string;
 				fingerprint?: string;
 				files?: unknown[];
+				packageMeta?: { name?: string };
 			};
 			if (
 				!best.indexedAt ||
@@ -300,6 +305,7 @@ export function cacheMeta(repoKey: string): CacheMeta {
 					indexedAt: data.indexedAt ?? null,
 					fingerprint: data.fingerprint ?? null,
 					fileCount: Array.isArray(data.files) ? data.files.length : null,
+					name: data.packageMeta?.name ?? null,
 				};
 			}
 		} catch {
@@ -309,6 +315,13 @@ export function cacheMeta(repoKey: string): CacheMeta {
 	return best;
 }
 
+const REPO_KEY_RE = /^[0-9a-f]{16}$/;
+
+// Bootstrap-friendly: any cache subdir with a hashed repoKey name counts as a
+// project. We don't require a stats/ subdir — that gets created lazily on the
+// first MCP call after this branch lands, so older repos with cache JSON or
+// memory data but no recent activity still show up (with zero calls in the
+// window until they tick).
 export function listProjects(): string[] {
 	const root = cacheRoot();
 	let entries: fs.Dirent[];
@@ -318,9 +331,7 @@ export function listProjects(): string[] {
 		return [];
 	}
 	return entries
-		.filter(
-			(e) => e.isDirectory() && fs.existsSync(path.join(root, e.name, "stats")),
-		)
+		.filter((e) => e.isDirectory() && REPO_KEY_RE.test(e.name))
 		.map((e) => e.name)
 		.sort();
 }

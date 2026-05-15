@@ -106,7 +106,16 @@ function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
 	// the user's real ~/.cache/ai-cortex/v1/ tree with empty stats/ dirs every
 	// time an MCP-exercising test runs without its own cache override.
 	if (process.env.VITEST && !process.env.AI_CORTEX_CACHE_HOME) return;
+
+	// Snapshot the cache home at schedule time. setImmediate defers the write
+	// past test boundaries — by the time the callback fires, afterEach may
+	// have restored AI_CORTEX_CACHE_HOME, causing getSink to write to the
+	// real cache instead of the test tmpdir. If the env doesn't match what we
+	// saw at schedule time, the test boundary has passed and we drop the row.
+	const cacheHomeAtSchedule = process.env.AI_CORTEX_CACHE_HOME;
+
 	setImmediate(() => {
+		if (process.env.AI_CORTEX_CACHE_HOME !== cacheHomeAtSchedule) return;
 		try {
 			const repoKey = args.resolveRepoKey(args.params);
 			if (!repoKey) return;

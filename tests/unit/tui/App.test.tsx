@@ -9,7 +9,7 @@ const strip = (s: string | undefined): string => (s ?? "").replace(ANSI, "");
 const flush = () => new Promise((r) => setTimeout(r, 50));
 
 const fakeRead = () => ({
-	projects: [{ repoKey: "ai-cortex", calls: 5 }],
+	projects: [{ repoKey: "ai-cortex", name: "ai-cortex", calls: 5 }],
 	aggregate: {
 		total: 5,
 		errs: 0,
@@ -21,7 +21,7 @@ const fakeRead = () => ({
 	storage: { "ai-cortex": 100 },
 	latencyPerTool: {},
 	topTools: [{ tool: "suggest_files", n: 5, errs: 0 }],
-	meta: { indexedAt: null, fingerprint: null, fileCount: null },
+	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
 	recallGetRatio: 0,
 });
 
