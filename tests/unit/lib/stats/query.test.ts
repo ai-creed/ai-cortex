@@ -337,6 +337,114 @@ describe("memoryHealthAcross", () => {
 	});
 });
 
+describe("synthetic rows", () => {
+	it("aggregate.total counts both, p50/p95 reflect only real rows", () => {
+		const now = Date.now();
+		// 100 real (1..100) + 100 synthetic with dur_ms intentionally extreme
+		// so the percentile diverges if they leak into latency math.
+		const real = Array.from({ length: 100 }, (_, i) => ({
+			ts: now,
+			tool: "x",
+			dur_ms: i + 1,
+			status: "ok" as const,
+		}));
+		const synth = Array.from({ length: 100 }, () => ({
+			ts: now,
+			tool: "x",
+			dur_ms: 999_999,
+			status: "ok" as const,
+			synthetic: 1 as const,
+		}));
+		seed([...real, ...synth]);
+		const a = aggregate(repoKey, "7d");
+		expect(a.total).toBe(200);
+		// Synthetic rows ignored — percentile math is over the 100 real durs.
+		expect(a.p50).toBe(50);
+		expect(a.p95).toBe(95);
+	});
+
+	it("topTools and toolCounts count both real and synthetic", () => {
+		const now = Date.now();
+		seed([
+			{ ts: now, tool: "a", dur_ms: 1, status: "ok" },
+			{
+				ts: now,
+				tool: "a",
+				dur_ms: 0,
+				status: "ok",
+				synthetic: 1,
+			},
+			{
+				ts: now,
+				tool: "b",
+				dur_ms: 0,
+				status: "ok",
+				synthetic: 1,
+			},
+		]);
+		const tops = topTools(repoKey, "7d", 10);
+		expect(tops).toEqual([
+			{ tool: "a", n: 2, errs: 0 },
+			{ tool: "b", n: 1, errs: 0 },
+		]);
+		const counts = toolCounts([repoKey], "7d");
+		expect(counts.a).toBe(2);
+		expect(counts.b).toBe(1);
+	});
+
+	it("latencyPerTool samples reflect only real rows", () => {
+		const now = Date.now();
+		const real = Array.from({ length: 50 }, (_, i) => ({
+			ts: now,
+			tool: "a",
+			dur_ms: i + 1,
+			status: "ok" as const,
+		}));
+		const synth = Array.from({ length: 50 }, () => ({
+			ts: now,
+			tool: "a",
+			dur_ms: 999_999,
+			status: "ok" as const,
+			synthetic: 1 as const,
+		}));
+		seed([...real, ...synth]);
+		const r = latencyPerTool(repoKey, "7d");
+		expect(r.a.samples).toBe(50);
+		expect(r.a.p50).toBe(25);
+		expect(r.a.p95).toBe(47);
+	});
+
+	it("aggregateAcross excludes synthetic from percentile pool", () => {
+		const rkA = "67".repeat(8);
+		const rkB = "68".repeat(8);
+		const now = Date.now();
+		const sa = openSink(rkA);
+		const sb = openSink(rkB);
+		for (let i = 1; i <= 50; i++)
+			writeEvent(sa, { ts: now, tool: "x", dur_ms: i, status: "ok" });
+		for (let i = 51; i <= 100; i++)
+			writeEvent(sb, { ts: now, tool: "x", dur_ms: i, status: "ok" });
+		// Pollute with synthetic rows in both repos.
+		for (let i = 0; i < 200; i++) {
+			writeEvent(sa, {
+				ts: now,
+				tool: "x",
+				dur_ms: 999_999,
+				status: "ok",
+				synthetic: 1,
+			});
+		}
+		sa.close();
+		sb.close();
+		const agg = aggregateAcross([rkA, rkB], "7d");
+		// 50 + 50 real + 200 synthetic
+		expect(agg.total).toBe(300);
+		// Percentiles computed over the 100 real rows only.
+		expect(agg.p50).toBe(50);
+		expect(agg.p95).toBe(95);
+	});
+});
+
 describe("toolCounts", () => {
 	it("returns per-tool call counts pooled across repos", () => {
 		const rkA = "65".repeat(8);

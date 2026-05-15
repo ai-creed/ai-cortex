@@ -61,7 +61,9 @@ export function aggregate(repoKey: string, window: StatsWindow): Aggregate {
 		};
 		const durs = (
 			db
-				.prepare("SELECT dur_ms FROM tool_calls WHERE ts > ? ORDER BY dur_ms")
+				.prepare(
+					"SELECT dur_ms FROM tool_calls WHERE ts > ? AND synthetic = 0 ORDER BY dur_ms",
+				)
 				.all(since) as Array<{ dur_ms: number }>
 		).map((r) => r.dur_ms);
 		return {
@@ -125,7 +127,7 @@ export function latencyPerTool(
 			const durs = (
 				db
 					.prepare(
-						"SELECT dur_ms FROM tool_calls WHERE tool=? AND ts>? ORDER BY dur_ms",
+						"SELECT dur_ms FROM tool_calls WHERE tool=? AND ts>? AND synthetic = 0 ORDER BY dur_ms",
 					)
 					.all(tool, since) as Array<{ dur_ms: number }>
 			).map((r) => r.dur_ms);
@@ -379,7 +381,9 @@ export function aggregateAcross(
 			cache.reindexed += row.reindexed ?? 0;
 			cache.stale += row.stale ?? 0;
 			for (const r of db
-				.prepare("SELECT dur_ms FROM tool_calls WHERE ts > ?")
+				.prepare(
+					"SELECT dur_ms FROM tool_calls WHERE ts > ? AND synthetic = 0",
+				)
 				.iterate(since)) {
 				durs.push((r as { dur_ms: number }).dur_ms);
 			}
