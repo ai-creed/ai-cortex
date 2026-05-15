@@ -244,7 +244,6 @@ describe("matchMemories — vector missing", () => {
 	});
 });
 
-const PROJECT_BOOST = 0.1;
 const FINAL_CAP = 3;
 
 describe("matchMemoriesCrossTier", () => {
@@ -344,7 +343,7 @@ describe("matchMemoriesCrossTier", () => {
 		// Two project memories with identical task scores. After cross-tier merge,
 		// the one with higher getCount should rank first — even though the per-tier
 		// boost makes their _sortKey identical.
-		const idA = await seedActiveWithVector([], tv, "alpha");
+		const _idA = await seedActiveWithVector([], tv, "alpha");
 		const idB = await seedActiveWithVector([], tv, "beta");
 
 		// Bump idB's getCount twice via getMemory.

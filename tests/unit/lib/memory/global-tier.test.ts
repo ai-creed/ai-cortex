@@ -9,7 +9,6 @@ import {
 } from "../../../../src/lib/memory/lifecycle.js";
 import {
   openRetrieve,
-  recallMemory,
   recallMemoryCrossTier,
 } from "../../../../src/lib/memory/retrieve.js";
 

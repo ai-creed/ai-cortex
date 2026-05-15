@@ -113,7 +113,7 @@ describe("install-prompt-guide", () => {
 	});
 
 	it("upgrades older version blocks in place", async () => {
-		const existing = `# Project\n\n<!-- ai-cortex:memory-rule:start v0 -->\nOld content here.\n<!-- ai-cortex:memory-rule:end -->\n`;
+		const existing = "# Project\n\n<!-- ai-cortex:memory-rule:start v0 -->\nOld content here.\n<!-- ai-cortex:memory-rule:end -->\n";
 		fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
 		fs.writeFileSync(path.join(home, ".claude", "CLAUDE.md"), existing);
 

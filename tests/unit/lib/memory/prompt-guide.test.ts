@@ -42,7 +42,7 @@ describe("applyInstall", () => {
 	});
 
 	it("replaces older version blocks in place", () => {
-		const olderBlock = `<!-- ai-cortex:memory-rule:start v0 -->\nold guidance\n<!-- ai-cortex:memory-rule:end -->`;
+		const olderBlock = "<!-- ai-cortex:memory-rule:start v0 -->\nold guidance\n<!-- ai-cortex:memory-rule:end -->";
 		const before = `# Project\n\n${olderBlock}\n`;
 		const after = applyInstall(before);
 		expect(after).not.toContain("old guidance");
@@ -51,7 +51,7 @@ describe("applyInstall", () => {
 	});
 
 	it("preserves content before and after the replaced block", () => {
-		const before = `# Project\n\n<!-- ai-cortex:memory-rule:start v0 -->\nold\n<!-- ai-cortex:memory-rule:end -->\n\n## More content\n`;
+		const before = "# Project\n\n<!-- ai-cortex:memory-rule:start v0 -->\nold\n<!-- ai-cortex:memory-rule:end -->\n\n## More content\n";
 		const after = applyInstall(before);
 		expect(after.startsWith("# Project\n")).toBe(true);
 		expect(after).toContain("## More content");
@@ -92,7 +92,7 @@ describe("extractGuideVersion", () => {
 	});
 
 	it("detects older version markers", () => {
-		const v0 = `<!-- ai-cortex:memory-rule:start v0 -->\nold\n<!-- ai-cortex:memory-rule:end -->`;
+		const v0 = "<!-- ai-cortex:memory-rule:start v0 -->\nold\n<!-- ai-cortex:memory-rule:end -->";
 		expect(extractGuideVersion(v0)).toBe("v0");
 	});
 });

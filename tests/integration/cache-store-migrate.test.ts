@@ -65,8 +65,8 @@ describe("renameStore EXDEV fallback", () => {
 		makePopulated(literal);
 
 		const spy = vi.spyOn(fs, "renameSync").mockImplementation(((
-			from: fs.PathLike,
-			to: fs.PathLike,
+			_from: fs.PathLike,
+			_to: fs.PathLike,
 		) => {
 			const err: NodeJS.ErrnoException = new Error(
 				"cross-device link not permitted",
@@ -137,7 +137,7 @@ describe("quarantineStore", () => {
 		makePopulated(hashed);
 
 		const renameSpy = vi.spyOn(fs, "renameSync").mockImplementation(((
-			from: fs.PathLike,
+			_from: fs.PathLike,
 			_to: fs.PathLike,
 		) => {
 			const err: NodeJS.ErrnoException = new Error("cross-device");
