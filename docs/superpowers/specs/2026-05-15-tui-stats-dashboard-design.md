@@ -20,6 +20,7 @@ We want a TUI that an engineer can leave open while working in another session, 
 ## Non-goals
 
 - Export to CSV/JSON, filter-by-tool UI, side-by-side window comparison, alerts/thresholds, web-renderable view. Deferred to a later iteration.
+- Top suggested files widget. Would require a separate sanitized file-path stats table and an explicit privacy review; the schema and Suggest tab in v1 deliberately omit it.
 - Backfilling historical stats from prior stderr output (it's gone).
 - Cross-host aggregation. The dashboard reads only the local `~/.cache/ai-cortex/` tree.
 
@@ -51,7 +52,31 @@ This keeps the writer testable against a mock store, the reader testable against
 
 ### Path
 
-`~/.cache/ai-cortex/v1/<repoKey>/stats/events.sqlite` — one DB per repo, resolved via the existing `withRepoIdentity` wrapper. The cross-project view is N parallel reads.
+`~/.cache/ai-cortex/v1/<repoKey>/stats/events.sqlite` — one DB per repo. The cross-project view is N parallel reads.
+
+`repoKey` is obtained via the new sink contract described in **Sink routing** below — it is **not** the existing `withRepoIdentity` wrapper, which most handlers don't go through.
+
+### Sink routing
+
+The current `logged()` helper (`src/mcp/server.ts:87`) only receives `tool`, `extractMeta(params)`, and `handler(params)`. It cannot see the result and cannot reliably attribute a call to a repo (most handlers, e.g. `suggest_files` at `src/mcp/server.ts:358` and `index_project` at `src/mcp/server.ts:487`, resolve identity inside the handler).
+
+`logged()` is extended to a five-argument form:
+
+```ts
+logged<P, R>(
+  tool: string,
+  extractMeta:     (p: P) => Record<string, unknown>,
+  resolveRepoKey:  (p: P) => string | null,
+  extractResult:   (r: R) => StatsResultFields | null,
+  handler:         (p: P) => Promise<R>,
+): (p: P) => Promise<R>
+```
+
+- `resolveRepoKey(params)` runs **before** the handler. It typically calls `resolveRepoIdentity(params.path ?? process.cwd()).repoKey`. Tools with no notion of a repo (e.g. future global utilities) return `null`. If the resolver throws (invalid path), the resulting row is **dropped from stats** (still logged to stderr via the existing `logCall`); the original handler error semantics are unchanged.
+- `extractResult(result)` runs on success and may populate `cache_status`, `mode`, `result_count`. On error, it is not called; those columns stay `NULL`.
+- `null` from `resolveRepoKey` drops the row from stats — there is no `_global` bucket in v1. Add one only if a real tool needs it (YAGNI).
+
+This keeps the routing contract explicit at every tool registration site rather than implicit and inconsistent.
 
 ### Schema (v1)
 
@@ -64,12 +89,13 @@ CREATE TABLE tool_calls (
   tool          TEXT    NOT NULL,   -- e.g. 'suggest_files', 'recall_memory'
   dur_ms        INTEGER NOT NULL,
   status        TEXT    NOT NULL,   -- 'ok' | 'error'
-  err           TEXT,               -- short message when status='error'
+  err_class     TEXT,               -- error constructor name only (e.g. 'WorktreePathError'), never the message
+  err_code      TEXT,               -- short fixed-vocabulary code if the error type carries one, else null
   cache_status  TEXT,               -- 'fresh' | 'reindexed' | 'stale' | null
   mode          TEXT,               -- 'fast' | 'deep' | 'semantic' | null
   result_count  INTEGER,            -- files/memories returned, nullable
   query_len     INTEGER,            -- length of query string, never the text
-  meta          TEXT                -- JSON escape hatch for future fields
+  meta          TEXT                -- JSON escape hatch for future fields; must be sanitizer-checked
 );
 
 CREATE INDEX idx_tc_ts      ON tool_calls(ts);
@@ -80,6 +106,7 @@ CREATE INDEX idx_tc_tool_ts ON tool_calls(tool, ts);
 
 - WAL mode (matches `memory/index.sqlite`).
 - One cached prepared `INSERT` statement, no transaction wrapping.
+- On success: `logged()` invokes `extractResult(result)` after the handler resolves; the returned `cache_status` / `mode` / `result_count` fields are passed through to the sink. `extractResult` is **not** called on the error path; those columns stay `NULL`.
 - Sink errors logged to stderr and swallowed. The MCP response is unaffected.
 - On open: `DELETE FROM tool_calls WHERE ts < (now - 90d)`. WAL auto-checkpoints; no explicit vacuum.
 
@@ -137,7 +164,7 @@ Ink + `ink-spinner`. Custom `<Sparkline>` (~30 LOC, unicode-block bars) and `<To
 - Tabs: Tools · Memory · Suggest · Storage.
 - Tools tab: per-tool p50/p95 with sparkline, volume table, error log, cache-status mix.
 - Memory tab: counts, recall→get rate, top-accessed memories, audit churn (7d), pending-review summary.
-- Suggest tab: fast/deep/semantic split, top suggested files, empty-result rate.
+- Suggest tab: fast/deep/semantic split, empty-result rate (`result_count = 0` ratio), p50/p95 per mode. **Does not show top suggested files** — file paths are user/repo content (e.g. branch-named directories, secret-bearing filenames) and the schema does not persist them. Re-adding this widget would require an explicit privacy-allowed file-path table with its own sanitizer.
 - Storage tab: cache size, last reindex, sqlite + vector index growth, fingerprint state.
 
 ### Components
@@ -187,7 +214,8 @@ Add `ai-cortex stats` to `src/cli.ts`. Boots the Ink app, no positional args. Fl
 ## Privacy + retention
 
 - No query text or memory body persisted. Only lengths, counts, IDs.
-- Error messages are class/text from the handler — never user input.
+- **Error attribution is class-only.** Errors from existing handlers can embed user-controlled content in their messages (e.g. `WorktreePathError` includes the path at `src/lib/repo-identity.ts:35`; `RepoIdentityError` includes the input at `src/lib/repo-identity.ts:64`; `getMemory` echoes the requested id at `src/lib/memory/retrieve.ts:28`). The sink therefore stores only `err.constructor.name` in `err_class`, plus an optional short `err_code` for known error types. `err.message` is **never** persisted. A dedicated unit test asserts the sink rejects any column value containing characters outside a small safe set for `err_class` / `err_code` (alphanumeric + `_`/`-`).
+- `meta` is reserved for future structured fields. Any code writing to `meta` must pass a sanitizer that rejects free-form strings; this is enforced by a dedicated unit test.
 - 90d retention with prune on each sink open.
 - All state remains under `~/.cache/ai-cortex/v1/`. Nothing written into target repos.
 
@@ -198,7 +226,8 @@ TDD per project preference. Layered coverage:
 | Layer | Coverage | Mechanism |
 |---|---|---|
 | Sink writer | schema migrate, insert, 90d prune, error swallow | unit, tmpdir SQLite |
-| `logged()` wrapper | sink throw does not affect MCP response | unit, mock sink |
+| Err/meta sanitizer | rejects free-form strings; `err_class`/`err_code` constrained to safe charset | unit |
+| `logged()` wrapper | sink throw does not affect MCP response; `extractResult` invoked on success only; `resolveRepoKey` null drops the row from stats but preserves original handler error | unit, mock sink + mock resolver |
 | Reader queries | aggregate, percentiles, top tools, recall→get, top-accessed | unit, fixture SQLite |
 | Cross-project walk | missing repos, mid-session drop | unit, tmp cache root |
 | Storage cache | 10s TTL, recompute after expiry | unit, fake clock |
@@ -212,7 +241,7 @@ TDD per project preference. Layered coverage:
 - Version bump: minor (`v0.6.0`).
 - New deps: `ink`, `ink-spinner`.
 - Sink ships unflagged. Cost is one tiny insert per MCP call.
-- Migration: sink lazily creates `stats.sqlite` on first MCP call per repo. Existing repos start collecting from then on.
+- Migration: sink lazily creates `stats/events.sqlite` on first MCP call per repo. Existing repos start collecting from then on.
 - Docs: README "Inspecting performance" section, CHANGELOG entry, privacy/storage paragraph updated with the new file path.
 
 ## Risks + mitigations
