@@ -37,6 +37,7 @@ Commands:
   suggest <task> [path] [options]  Suggest relevant files for a task
   mcp                              Start the MCP server (stdio)
   stats [--window 7d] [--once]     Open the TUI stats dashboard
+  stats backfill                   Synthesize stats rows from session history
   history <subcommand>             Manage session history capture
   memory <subcommand>              Manage the memory store
   help, --help, -h                 Show this help
@@ -1111,6 +1112,27 @@ async function main(): Promise<void> {
 			}
 			process.exit(0);
 		} else if (command === "stats") {
+			const sub = args[0];
+			if (sub === "backfill") {
+				const { backfillAll } = await import("./lib/stats/backfill.js");
+				const { cacheMeta } = await import("./lib/stats/query.js");
+				const results = backfillAll();
+				let totalSessions = 0;
+				let totalRows = 0;
+				for (const r of results) {
+					const name =
+						cacheMeta(r.repoKey).name ?? r.repoKey.slice(0, 14);
+					process.stdout.write(
+						`${name} (${r.repoKey}): ${r.sessionsScanned} sessions, ${r.rowsInserted} rows inserted, ${r.skipped.nonCortex} non-cortex skipped\n`,
+					);
+					totalSessions += r.sessionsScanned;
+					totalRows += r.rowsInserted;
+				}
+				process.stdout.write(
+					`Total: ${results.length} repos, ${totalSessions} sessions, ${totalRows} rows inserted\n`,
+				);
+				return;
+			}
 			const window = (flagValue(args, "--window") ?? "7d") as
 				| "1h"
 				| "24h"
