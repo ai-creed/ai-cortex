@@ -76,3 +76,64 @@ export function aggregate(repoKey: string, window: StatsWindow): Aggregate {
 		db.close();
 	}
 }
+
+export type ToolStat = { tool: string; n: number; errs: number };
+
+export function topTools(
+	repoKey: string,
+	window: StatsWindow,
+	limit: number,
+): ToolStat[] {
+	const db = openRO(repoKey);
+	if (!db) return [];
+	try {
+		const since = Date.now() - WINDOW_MS[window];
+		return db
+			.prepare(
+				`SELECT tool, count(*) AS n, sum(status='error') AS errs
+				   FROM tool_calls WHERE ts > ?
+				   GROUP BY tool
+				   ORDER BY n DESC
+				   LIMIT ?`,
+			)
+			.all(since, limit) as ToolStat[];
+	} finally {
+		db.close();
+	}
+}
+
+export type LatencyStats = { p50: number; p95: number; samples: number };
+
+export function latencyPerTool(
+	repoKey: string,
+	window: StatsWindow,
+): Record<string, LatencyStats> {
+	const db = openRO(repoKey);
+	if (!db) return {};
+	try {
+		const since = Date.now() - WINDOW_MS[window];
+		const tools = (
+			db
+				.prepare(`SELECT DISTINCT tool FROM tool_calls WHERE ts > ?`)
+				.all(since) as Array<{ tool: string }>
+		).map((r) => r.tool);
+		const out: Record<string, LatencyStats> = {};
+		for (const tool of tools) {
+			const durs = (
+				db
+					.prepare(
+						`SELECT dur_ms FROM tool_calls WHERE tool=? AND ts>? ORDER BY dur_ms`,
+					)
+					.all(tool, since) as Array<{ dur_ms: number }>
+			).map((r) => r.dur_ms);
+			out[tool] = {
+				p50: percentile(durs, 50),
+				p95: percentile(durs, 95),
+				samples: durs.length,
+			};
+		}
+		return out;
+	} finally {
+		db.close();
+	}
+}

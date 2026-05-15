@@ -5,7 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { openSink, writeEvent } from "../../../../src/lib/stats/sink.js";
 import { closeAllSinks } from "../../../../src/lib/stats/registry.js";
-import { aggregate } from "../../../../src/lib/stats/query.js";
+import {
+	aggregate,
+	topTools,
+	latencyPerTool,
+} from "../../../../src/lib/stats/query.js";
 
 const repoKey = "71756572790000aa";
 let tmp: string;
@@ -82,5 +86,37 @@ describe("aggregate", () => {
 		]);
 		const a = aggregate(repoKey, "7d");
 		expect(a.total).toBe(1);
+	});
+});
+
+describe("topTools", () => {
+	it("returns tools sorted by call count desc, with errs", () => {
+		const now = Date.now();
+		seed([
+			{ ts: now, tool: "a", dur_ms: 1, status: "ok" },
+			{ ts: now, tool: "a", dur_ms: 1, status: "ok" },
+			{ ts: now, tool: "b", dur_ms: 1, status: "error" },
+		]);
+		expect(topTools(repoKey, "7d", 10)).toEqual([
+			{ tool: "a", n: 2, errs: 0 },
+			{ tool: "b", n: 1, errs: 1 },
+		]);
+	});
+});
+
+describe("latencyPerTool", () => {
+	it("returns p50/p95/samples per tool", () => {
+		const now = Date.now();
+		const rows = Array.from({ length: 50 }, (_, i) => ({
+			ts: now,
+			tool: "a",
+			dur_ms: i + 1,
+			status: "ok" as const,
+		}));
+		seed(rows);
+		const r = latencyPerTool(repoKey, "7d");
+		expect(r.a.samples).toBe(50);
+		expect(r.a.p50).toBe(25);
+		expect(r.a.p95).toBe(47);
 	});
 });
