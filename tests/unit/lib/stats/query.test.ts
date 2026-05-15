@@ -9,7 +9,11 @@ import {
 	aggregate,
 	topTools,
 	latencyPerTool,
+	memoryHealth,
 } from "../../../../src/lib/stats/query.js";
+import Database from "better-sqlite3";
+import { indexDbPath } from "../../../../src/lib/memory/paths.js";
+import fsp from "node:fs/promises";
 
 const repoKey = "71756572790000aa";
 let tmp: string;
@@ -118,5 +122,42 @@ describe("latencyPerTool", () => {
 		expect(r.a.samples).toBe(50);
 		expect(r.a.p50).toBe(25);
 		expect(r.a.p95).toBe(47);
+	});
+});
+
+describe("memoryHealth", () => {
+	it("returns counts and top-accessed from memory/index.sqlite", async () => {
+		// Bootstrap the memory index by importing schema directly.
+		await fsp.mkdir(path.dirname(indexDbPath(repoKey)), { recursive: true });
+		const db = new Database(indexDbPath(repoKey));
+		db.exec(`
+			CREATE TABLE memories (id TEXT, status TEXT, pinned INTEGER, get_count INTEGER, last_accessed_at TEXT);
+			INSERT INTO memories VALUES ('a','active',1,5,'2026-05-15');
+			INSERT INTO memories VALUES ('b','active',0,12,'2026-05-15');
+			INSERT INTO memories VALUES ('c','candidate',0,0,null);
+			INSERT INTO memories VALUES ('d','deprecated',0,0,null);
+		`);
+		db.close();
+
+		const m = memoryHealth(repoKey);
+		expect(m.active).toBe(2);
+		expect(m.candidate).toBe(1);
+		expect(m.pinned).toBe(1);
+		expect(m.topAccessed[0]).toEqual({
+			id: "b",
+			get_count: 12,
+			last_accessed_at: "2026-05-15",
+		});
+	});
+
+	it("returns zeros when memory db missing", () => {
+		const m = memoryHealth("ffffffffffffffff");
+		expect(m).toEqual({
+			active: 0,
+			candidate: 0,
+			pinned: 0,
+			deprecated: 0,
+			topAccessed: [],
+		});
 	});
 });

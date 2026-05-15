@@ -3,6 +3,7 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { Database as DB } from "better-sqlite3";
 import { statsDbPath } from "./paths.js";
+import { indexDbPath } from "../memory/paths.js";
 import { WINDOW_MS, type StatsWindow } from "./types.js";
 
 function openRO(repoKey: string): DB | null {
@@ -133,6 +134,66 @@ export function latencyPerTool(
 			};
 		}
 		return out;
+	} finally {
+		db.close();
+	}
+}
+
+export type TopMemory = {
+	id: string;
+	get_count: number;
+	last_accessed_at: string | null;
+};
+
+export type MemoryHealth = {
+	active: number;
+	candidate: number;
+	pinned: number;
+	deprecated: number;
+	topAccessed: TopMemory[];
+};
+
+export function memoryHealth(repoKey: string): MemoryHealth {
+	const p = indexDbPath(repoKey);
+	const empty: MemoryHealth = {
+		active: 0,
+		candidate: 0,
+		pinned: 0,
+		deprecated: 0,
+		topAccessed: [],
+	};
+	if (!fs.existsSync(p)) return empty;
+	const db = new Database(p, { readonly: true });
+	try {
+		const counts = db
+			.prepare(
+				`SELECT
+				  sum(status='active') AS active,
+				  sum(status='candidate') AS candidate,
+				  sum(pinned=1) AS pinned,
+				  sum(status='deprecated') AS deprecated
+				FROM memories`,
+			)
+			.get() as {
+			active: number | null;
+			candidate: number | null;
+			pinned: number | null;
+			deprecated: number | null;
+		};
+		const top = db
+			.prepare(
+				`SELECT id, get_count, last_accessed_at
+				   FROM memories WHERE status='active'
+				   ORDER BY get_count DESC, id ASC LIMIT 5`,
+			)
+			.all() as TopMemory[];
+		return {
+			active: counts.active ?? 0,
+			candidate: counts.candidate ?? 0,
+			pinned: counts.pinned ?? 0,
+			deprecated: counts.deprecated ?? 0,
+			topAccessed: top,
+		};
 	} finally {
 		db.close();
 	}
