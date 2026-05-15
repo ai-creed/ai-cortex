@@ -262,6 +262,53 @@ export function storageFootprint(): Record<string, number> {
 	return out;
 }
 
+export type CacheMeta = {
+	indexedAt: string | null;
+	fingerprint: string | null;
+	fileCount: number | null;
+};
+
+export function cacheMeta(repoKey: string): CacheMeta {
+	const dir = path.join(cacheRoot(), repoKey);
+	let entries: fs.Dirent[] = [];
+	try {
+		entries = fs.readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return { indexedAt: null, fingerprint: null, fileCount: null };
+	}
+	const jsons = entries.filter(
+		(e) => e.isFile() && e.name.endsWith(".json"),
+	);
+	let best: CacheMeta = {
+		indexedAt: null,
+		fingerprint: null,
+		fileCount: null,
+	};
+	for (const e of jsons) {
+		try {
+			const raw = fs.readFileSync(path.join(dir, e.name), "utf8");
+			const data = JSON.parse(raw) as {
+				indexedAt?: string;
+				fingerprint?: string;
+				files?: unknown[];
+			};
+			if (
+				!best.indexedAt ||
+				(data.indexedAt && data.indexedAt > best.indexedAt)
+			) {
+				best = {
+					indexedAt: data.indexedAt ?? null,
+					fingerprint: data.fingerprint ?? null,
+					fileCount: Array.isArray(data.files) ? data.files.length : null,
+				};
+			}
+		} catch {
+			/* malformed JSON — skip */
+		}
+	}
+	return best;
+}
+
 export function listProjects(): string[] {
 	const root = cacheRoot();
 	let entries: fs.Dirent[];

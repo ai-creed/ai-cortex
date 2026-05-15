@@ -13,6 +13,7 @@ import {
 	storageFootprint,
 	_resetStorageCacheForTest,
 	listProjects,
+	cacheMeta,
 } from "../../../../src/lib/stats/query.js";
 import Database from "better-sqlite3";
 import { indexDbPath } from "../../../../src/lib/memory/paths.js";
@@ -213,5 +214,40 @@ describe("listProjects", () => {
 	it("returns empty array when cache root missing", () => {
 		process.env.AI_CORTEX_CACHE_HOME = path.join(tmp, "does-not-exist");
 		expect(listProjects()).toEqual([]);
+	});
+});
+
+describe("cacheMeta", () => {
+	it("returns indexedAt + fingerprint from the most-recent worktree JSON", async () => {
+		await fsp.mkdir(path.join(tmp, repoKey), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-14T00:00:00.000Z",
+				fingerprint: "older-sha",
+				files: [],
+			}),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "bbbbbbbbbbbbbbbb.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-15T01:00:00.000Z",
+				fingerprint: "newer-sha",
+				files: [{}, {}, {}],
+			}),
+		);
+		expect(cacheMeta(repoKey)).toEqual({
+			indexedAt: "2026-05-15T01:00:00.000Z",
+			fingerprint: "newer-sha",
+			fileCount: 3,
+		});
+	});
+
+	it("returns null fields when no worktree JSON exists", () => {
+		expect(cacheMeta("ffffffffffffffff")).toEqual({
+			indexedAt: null,
+			fingerprint: null,
+			fileCount: null,
+		});
 	});
 });
