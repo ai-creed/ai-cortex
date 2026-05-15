@@ -15,18 +15,23 @@ export type OverviewProps = {
 	selected: number;
 	onSelect: (i: number) => void;
 	onEnter: (repoKey: string) => void;
+	interactive?: boolean;
 };
 
 export function Overview(p: OverviewProps): JSX.Element {
-	useInput((input, key) => {
-		if (input === "j" || key.downArrow) {
-			p.onSelect(Math.min(p.projects.length - 1, p.selected + 1));
-		} else if (input === "k" || key.upArrow) {
-			p.onSelect(Math.max(0, p.selected - 1));
-		} else if (key.return && p.projects[p.selected]) {
-			p.onEnter(p.projects[p.selected].repoKey);
-		}
-	});
+	const interactive = p.interactive !== false;
+	useInput(
+		(input, key) => {
+			if (input === "j" || key.downArrow) {
+				p.onSelect(Math.min(p.projects.length - 1, p.selected + 1));
+			} else if (input === "k" || key.upArrow) {
+				p.onSelect(Math.max(0, p.selected - 1));
+			} else if (key.return && p.projects[p.selected]) {
+				p.onEnter(p.projects[p.selected].repoKey);
+			}
+		},
+		{ isActive: interactive },
+	);
 
 	return (
 		<Box flexDirection="column">

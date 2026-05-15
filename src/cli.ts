@@ -36,6 +36,7 @@ Commands:
   rehydrate [path] [--stale]       Refresh and load cached index
   suggest <task> [path] [options]  Suggest relevant files for a task
   mcp                              Start the MCP server (stdio)
+  stats [--window 7d] [--once]     Open the TUI stats dashboard
   history <subcommand>             Manage session history capture
   memory <subcommand>              Manage the memory store
   help, --help, -h                 Show this help
@@ -1109,6 +1110,20 @@ async function main(): Promise<void> {
 				}
 			}
 			process.exit(0);
+		} else if (command === "stats") {
+			const window = (flagValue(args, "--window") ?? "7d") as
+				| "1h"
+				| "24h"
+				| "7d"
+				| "30d";
+			if (!["1h", "24h", "7d", "30d"].includes(window)) {
+				process.stderr.write(`bad --window: ${window}\n`);
+				process.exit(2);
+			}
+			const project = flagValue(args, "--project") ?? null;
+			const once = args.includes("--once");
+			const { bootStats } = await import("./tui/index.js");
+			bootStats({ window, project, once });
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
 			process.exit(1);

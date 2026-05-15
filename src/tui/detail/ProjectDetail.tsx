@@ -28,17 +28,22 @@ type Tab = (typeof TABS)[number];
 export function ProjectDetail({
 	detail,
 	onBack,
+	interactive = true,
 }: {
 	detail: Detail;
 	onBack: () => void;
+	interactive?: boolean;
 }): JSX.Element {
 	const [tab, setTab] = useState<Tab>("Tools");
-	useInput((input, key) => {
-		if (key.escape) return onBack();
-		const i = "1234".indexOf(input);
-		if (i >= 0) setTab(TABS[i]);
-		if (key.tab) setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length]);
-	});
+	useInput(
+		(input, key) => {
+			if (key.escape) return onBack();
+			const i = "1234".indexOf(input);
+			if (i >= 0) setTab(TABS[i]);
+			if (key.tab) setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length]);
+		},
+		{ isActive: interactive },
+	);
 	return (
 		<Box flexDirection="column">
 			<Text bold>

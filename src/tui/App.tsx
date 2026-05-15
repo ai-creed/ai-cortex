@@ -42,15 +42,18 @@ export function App({
 		}
 	}, once ? 60_000 : 1500);
 
-	useInput((input) => {
-		if (input === "q") exit();
-		if (input === "r") refresh();
-		if (input === "w") {
-			const order: StatsWindow[] = ["1h", "24h", "7d", "30d"];
-			const i = order.indexOf(window);
-			setWindow(order[(i + 1) % order.length]);
-		}
-	});
+	useInput(
+		(input) => {
+			if (input === "q") exit();
+			if (input === "r") refresh();
+			if (input === "w") {
+				const order: StatsWindow[] = ["1h", "24h", "7d", "30d"];
+				const i = order.indexOf(window);
+				setWindow(order[(i + 1) % order.length]);
+			}
+		},
+		{ isActive: !once },
+	);
 
 	if (termSize.cols < MIN_COLS || termSize.rows < MIN_ROWS) {
 		return <Text>Terminal too small — need {MIN_COLS}×{MIN_ROWS}.</Text>;
@@ -73,7 +76,11 @@ export function App({
 	return (
 		<Box flexDirection="column">
 			{detail ? (
-				<ProjectDetail detail={detail} onBack={() => setFocus(null)} />
+				<ProjectDetail
+					detail={detail}
+					onBack={() => setFocus(null)}
+					interactive={!once}
+				/>
 			) : (
 				<Overview
 					window={window}
@@ -85,6 +92,7 @@ export function App({
 					selected={selected}
 					onSelect={setSelected}
 					onEnter={(rk) => setFocus(rk)}
+					interactive={!once}
 				/>
 			)}
 			<KeyBar
