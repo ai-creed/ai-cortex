@@ -324,3 +324,109 @@ export function listProjects(): string[] {
 		.map((e) => e.name)
 		.sort();
 }
+
+export function aggregateAcross(
+	repoKeys: string[],
+	window: StatsWindow,
+): Aggregate {
+	const empty: Aggregate = {
+		total: 0,
+		errs: 0,
+		p50: 0,
+		p95: 0,
+		cache_status: { fresh: 0, reindexed: 0, stale: 0 },
+	};
+	if (repoKeys.length === 0) return empty;
+	const since = Date.now() - WINDOW_MS[window];
+	let total = 0;
+	let errs = 0;
+	const cache = { fresh: 0, reindexed: 0, stale: 0 };
+	const durs: number[] = [];
+	for (const rk of repoKeys) {
+		const db = openRO(rk);
+		if (!db) continue;
+		try {
+			const row = db
+				.prepare(
+					`SELECT count(*) AS n,
+					        sum(status='error') AS errs,
+					        sum(cache_status='fresh') AS fresh,
+					        sum(cache_status='reindexed') AS reindexed,
+					        sum(cache_status='stale') AS stale
+					   FROM tool_calls WHERE ts > ?`,
+				)
+				.get(since) as {
+				n: number | null;
+				errs: number | null;
+				fresh: number | null;
+				reindexed: number | null;
+				stale: number | null;
+			};
+			total += row.n ?? 0;
+			errs += row.errs ?? 0;
+			cache.fresh += row.fresh ?? 0;
+			cache.reindexed += row.reindexed ?? 0;
+			cache.stale += row.stale ?? 0;
+			for (const r of db
+				.prepare("SELECT dur_ms FROM tool_calls WHERE ts > ?")
+				.iterate(since)) {
+				durs.push((r as { dur_ms: number }).dur_ms);
+			}
+		} finally {
+			db.close();
+		}
+	}
+	durs.sort((a, b) => a - b);
+	return {
+		total,
+		errs,
+		p50: percentile(durs, 50),
+		p95: percentile(durs, 95),
+		cache_status: cache,
+	};
+}
+
+export function memoryHealthAcross(repoKeys: string[]): MemoryHealth {
+	const merged: MemoryHealth = {
+		active: 0,
+		candidate: 0,
+		pinned: 0,
+		deprecated: 0,
+		topAccessed: [],
+	};
+	for (const rk of repoKeys) {
+		const m = memoryHealth(rk);
+		merged.active += m.active;
+		merged.candidate += m.candidate;
+		merged.pinned += m.pinned;
+		merged.deprecated += m.deprecated;
+		merged.topAccessed.push(...m.topAccessed);
+	}
+	merged.topAccessed.sort((a, b) => b.get_count - a.get_count);
+	merged.topAccessed = merged.topAccessed.slice(0, 5);
+	return merged;
+}
+
+export function toolCounts(
+	repoKeys: string[],
+	window: StatsWindow,
+): Record<string, number> {
+	const out: Record<string, number> = {};
+	const since = Date.now() - WINDOW_MS[window];
+	for (const rk of repoKeys) {
+		const db = openRO(rk);
+		if (!db) continue;
+		try {
+			for (const row of db
+				.prepare(
+					"SELECT tool, count(*) AS n FROM tool_calls WHERE ts > ? GROUP BY tool",
+				)
+				.all(since) as Array<{ tool: string; n: number }>) {
+				out[row.tool] = (out[row.tool] ?? 0) + row.n;
+			}
+		} finally {
+			db.close();
+		}
+	}
+	return out;
+}

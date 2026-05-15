@@ -14,6 +14,9 @@ import {
 	_resetStorageCacheForTest,
 	listProjects,
 	cacheMeta,
+	aggregateAcross,
+	memoryHealthAcross,
+	toolCounts,
 } from "../../../../src/lib/stats/query.js";
 import Database from "better-sqlite3";
 import { indexDbPath } from "../../../../src/lib/memory/paths.js";
@@ -249,5 +252,84 @@ describe("cacheMeta", () => {
 			fingerprint: null,
 			fileCount: null,
 		});
+	});
+});
+
+describe("aggregateAcross", () => {
+	it("pools dur_ms and counts across multiple repos", () => {
+		const rkA = "61".repeat(8);
+		const rkB = "62".repeat(8);
+		const now = Date.now();
+		const sa = openSink(rkA);
+		const sb = openSink(rkB);
+		for (let i = 1; i <= 50; i++)
+			writeEvent(sa, { ts: now, tool: "x", dur_ms: i, status: "ok" });
+		for (let i = 51; i <= 100; i++)
+			writeEvent(sb, { ts: now, tool: "x", dur_ms: i, status: "ok" });
+		sa.close();
+		sb.close();
+
+		const agg = aggregateAcross([rkA, rkB], "7d");
+		expect(agg.total).toBe(100);
+		expect(agg.p50).toBe(50);
+		expect(agg.p95).toBe(95);
+	});
+
+	it("returns zeros when input is empty", () => {
+		const agg = aggregateAcross([], "7d");
+		expect(agg.total).toBe(0);
+		expect(agg.p50).toBe(0);
+	});
+});
+
+describe("memoryHealthAcross", () => {
+	it("sums counts across repos and unions top-accessed (sorted, capped)", async () => {
+		const rkA = "63".repeat(8);
+		const rkB = "64".repeat(8);
+		await fsp.mkdir(path.dirname(indexDbPath(rkA)), { recursive: true });
+		await fsp.mkdir(path.dirname(indexDbPath(rkB)), { recursive: true });
+		for (const [rk, mems] of [
+			[
+				rkA,
+				[
+					["a1", "active", 0, 10, "2026-05-15"],
+					["a2", "candidate", 0, 0, null],
+				],
+			],
+			[rkB, [["b1", "active", 1, 20, "2026-05-15"]]],
+		] as const) {
+			const db = new Database(indexDbPath(rk));
+			db.exec(
+				`CREATE TABLE memories (id TEXT, status TEXT, pinned INTEGER, get_count INTEGER, last_accessed_at TEXT);`,
+			);
+			const ins = db.prepare("INSERT INTO memories VALUES (?, ?, ?, ?, ?)");
+			for (const m of mems) ins.run(...m);
+			db.close();
+		}
+		const m = memoryHealthAcross([rkA, rkB]);
+		expect(m.active).toBe(2);
+		expect(m.candidate).toBe(1);
+		expect(m.pinned).toBe(1);
+		expect(m.topAccessed[0].id).toBe("b1");
+		expect(m.topAccessed[1].id).toBe("a1");
+	});
+});
+
+describe("toolCounts", () => {
+	it("returns per-tool call counts pooled across repos", () => {
+		const rkA = "65".repeat(8);
+		const rkB = "66".repeat(8);
+		const now = Date.now();
+		const sa = openSink(rkA);
+		const sb = openSink(rkB);
+		writeEvent(sa, { ts: now, tool: "recall_memory", dur_ms: 1, status: "ok" });
+		writeEvent(sa, { ts: now, tool: "recall_memory", dur_ms: 1, status: "ok" });
+		writeEvent(sb, { ts: now, tool: "recall_memory", dur_ms: 1, status: "ok" });
+		writeEvent(sb, { ts: now, tool: "get_memory", dur_ms: 1, status: "ok" });
+		sa.close();
+		sb.close();
+		const counts = toolCounts([rkA, rkB], "7d");
+		expect(counts.recall_memory).toBe(3);
+		expect(counts.get_memory).toBe(1);
 	});
 });
