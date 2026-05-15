@@ -261,3 +261,19 @@ export function storageFootprint(): Record<string, number> {
 	storageCache = { at: now, data: out };
 	return out;
 }
+
+export function listProjects(): string[] {
+	const root = cacheRoot();
+	let entries: fs.Dirent[];
+	try {
+		entries = fs.readdirSync(root, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	return entries
+		.filter(
+			(e) => e.isDirectory() && fs.existsSync(path.join(root, e.name, "stats")),
+		)
+		.map((e) => e.name)
+		.sort();
+}

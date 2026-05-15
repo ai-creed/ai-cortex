@@ -12,6 +12,7 @@ import {
 	memoryHealth,
 	storageFootprint,
 	_resetStorageCacheForTest,
+	listProjects,
 } from "../../../../src/lib/stats/query.js";
 import Database from "better-sqlite3";
 import { indexDbPath } from "../../../../src/lib/memory/paths.js";
@@ -188,5 +189,29 @@ describe("storageFootprint", () => {
 		const s2 = storageFootprint();
 		// Cached — still old value
 		expect(s2[repoKey]).toBe(s1[repoKey]);
+	});
+});
+
+describe("listProjects", () => {
+	it("returns every repoKey with a stats/ subdir", async () => {
+		await fsp.mkdir(path.join(tmp, "aaaaaaaaaaaaaaaa", "stats"), {
+			recursive: true,
+		});
+		await fsp.mkdir(path.join(tmp, "bbbbbbbbbbbbbbbb", "stats"), {
+			recursive: true,
+		});
+		await fsp.mkdir(path.join(tmp, "no-stats", "memory"), {
+			recursive: true,
+		});
+		const projects = listProjects();
+		expect(projects).toEqual(
+			expect.arrayContaining(["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]),
+		);
+		expect(projects).not.toContain("no-stats");
+	});
+
+	it("returns empty array when cache root missing", () => {
+		process.env.AI_CORTEX_CACHE_HOME = path.join(tmp, "does-not-exist");
+		expect(listProjects()).toEqual([]);
 	});
 });
