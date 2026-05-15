@@ -101,6 +101,11 @@ type SafeWriteArgs<P, R> = {
 );
 
 function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
+	// Under vitest, only write to the sink when a test has explicitly opted in
+	// by setting AI_CORTEX_CACHE_HOME. This prevents the suite from polluting
+	// the user's real ~/.cache/ai-cortex/v1/ tree with empty stats/ dirs every
+	// time an MCP-exercising test runs without its own cache override.
+	if (process.env.VITEST && !process.env.AI_CORTEX_CACHE_HOME) return;
 	setImmediate(() => {
 		try {
 			const repoKey = args.resolveRepoKey(args.params);
