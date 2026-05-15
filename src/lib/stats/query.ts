@@ -1,5 +1,7 @@
 // src/lib/stats/query.ts
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import Database from "better-sqlite3";
 import type { Database as DB } from "better-sqlite3";
 import { statsDbPath } from "./paths.js";
@@ -197,4 +199,65 @@ export function memoryHealth(repoKey: string): MemoryHealth {
 	} finally {
 		db.close();
 	}
+}
+
+const STORAGE_TTL_MS = 10_000;
+let storageCache: { at: number; data: Record<string, number> } | null = null;
+
+export function _resetStorageCacheForTest(): void {
+	storageCache = null;
+}
+
+function cacheRoot(): string {
+	return (
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1")
+	);
+}
+
+function dirSize(dir: string): number {
+	let total = 0;
+	const stack = [dir];
+	while (stack.length) {
+		const cur = stack.pop()!;
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(cur, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const e of entries) {
+			const p = path.join(cur, e.name);
+			if (e.isDirectory()) stack.push(p);
+			else {
+				try {
+					total += fs.statSync(p).size;
+				} catch {
+					/* race: file disappeared */
+				}
+			}
+		}
+	}
+	return total;
+}
+
+export function storageFootprint(): Record<string, number> {
+	const now = Date.now();
+	if (storageCache && now - storageCache.at < STORAGE_TTL_MS) {
+		return storageCache.data;
+	}
+	const root = cacheRoot();
+	const out: Record<string, number> = {};
+	let entries: fs.Dirent[] = [];
+	try {
+		entries = fs.readdirSync(root, { withFileTypes: true });
+	} catch {
+		// No cache root yet.
+	}
+	for (const e of entries) {
+		if (!e.isDirectory()) continue;
+		out[e.name] = dirSize(path.join(root, e.name));
+	}
+	storageCache = { at: now, data: out };
+	return out;
 }

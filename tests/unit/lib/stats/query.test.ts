@@ -10,6 +10,8 @@ import {
 	topTools,
 	latencyPerTool,
 	memoryHealth,
+	storageFootprint,
+	_resetStorageCacheForTest,
 } from "../../../../src/lib/stats/query.js";
 import Database from "better-sqlite3";
 import { indexDbPath } from "../../../../src/lib/memory/paths.js";
@@ -159,5 +161,32 @@ describe("memoryHealth", () => {
 			deprecated: 0,
 			topAccessed: [],
 		});
+	});
+});
+
+describe("storageFootprint", () => {
+	it("returns bytes per repo dir", async () => {
+		// Seed a tiny file under repoKey's stats dir.
+		await fsp.mkdir(path.join(tmp, repoKey, "stats"), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "stats", "events.sqlite"),
+			"x".repeat(100),
+		);
+		_resetStorageCacheForTest();
+		const s = storageFootprint();
+		expect(s[repoKey]).toBeGreaterThanOrEqual(100);
+	});
+
+	it("caches result for 10s", async () => {
+		_resetStorageCacheForTest();
+		const s1 = storageFootprint();
+		await fsp.mkdir(path.join(tmp, repoKey, "stats"), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "stats", "extra.bin"),
+			"y".repeat(500),
+		);
+		const s2 = storageFootprint();
+		// Cached — still old value
+		expect(s2[repoKey]).toBe(s1[repoKey]);
 	});
 });
