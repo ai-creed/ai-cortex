@@ -6,6 +6,7 @@ export default defineConfig({
 			"**/node_modules/**",
 			"**/dist/**",
 			"benchmarks/eval/fixtures/**",
+			".worktrees/**",
 		],
 		setupFiles: ["./tests/helpers/mock-embed-provider.ts"],
 	},

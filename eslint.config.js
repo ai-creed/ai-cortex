@@ -10,6 +10,7 @@ export default tseslint.config(
 			"node_modules/**",
 			"tests/fixtures/**",
 			"benchmarks/fixtures/synthetic/repo/**",
+			".worktrees/**",
 		],
 	},
 	js.configs.recommended,
