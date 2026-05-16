@@ -4,6 +4,7 @@ import type { StatsWindow } from "../../lib/stats/types.js";
 import type { Aggregate, MemoryHealth } from "../../lib/stats/query.js";
 import { ProjectList, type ProjectRow } from "./ProjectList.js";
 import { AggregatePanels } from "./AggregatePanels.js";
+import { THEME } from "../theme.js";
 
 export type OverviewProps = {
 	window: StatsWindow;
@@ -33,7 +34,9 @@ export function Overview(p: OverviewProps): JSX.Element {
 
 	return (
 		<Box flexDirection="column">
-			<Text bold>ai-cortex stats — overview · {p.window}</Text>
+			<Text bold color={THEME.accent}>
+				ai-cortex stats — overview · {p.window}
+			</Text>
 			<Box>
 				<ProjectList projects={p.projects} selected={p.selected} />
 				<Box marginLeft={2}>

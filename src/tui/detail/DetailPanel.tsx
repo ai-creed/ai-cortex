@@ -11,6 +11,7 @@ import { ToolsTab } from "./ToolsTab.js";
 import { MemoryTab } from "./MemoryTab.js";
 import { SuggestTab } from "./SuggestTab.js";
 import { StorageTab } from "./StorageTab.js";
+import { THEME } from "../theme.js";
 
 export type Detail = {
 	repoKey: string;
@@ -49,9 +50,18 @@ export function DetailPanel({
 	const name = detail.meta.name ?? detail.repoKey.slice(0, 14);
 	return (
 		<Box flexDirection="column">
-			<Text>── {name} ──────────────────</Text>
+			<Text color={THEME.accent}>── {name} ──────────────────</Text>
 			<Text>
-				{TABS.map((t) => (t === tab ? `[ ${t}* ]` : `[ ${t} ]`)).join(" ")}
+				{TABS.map((t, i) => (
+					<React.Fragment key={t}>
+						{i > 0 ? " " : ""}
+						{t === tab ? (
+							<Text color={THEME.accent}>[ {t}* ]</Text>
+						) : (
+							<Text>[ {t} ]</Text>
+						)}
+					</React.Fragment>
+				))}
 			</Text>
 			<Box marginTop={1}>
 				{tab === "Tools" && (
