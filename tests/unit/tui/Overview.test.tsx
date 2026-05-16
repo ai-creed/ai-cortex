@@ -29,7 +29,6 @@ describe("Overview", () => {
 				recallGetRatio={0.73}
 				selected={0}
 				onSelect={() => {}}
-				onEnter={() => {}}
 			/>,
 		);
 		const frame = strip(lastFrame());
@@ -58,7 +57,6 @@ describe("Overview", () => {
 				recallGetRatio={0}
 				selected={0}
 				onSelect={() => {}}
-				onEnter={() => {}}
 			/>,
 		);
 		expect(strip(lastFrame())).toContain("No calls in this window yet");
