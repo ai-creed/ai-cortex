@@ -15,6 +15,7 @@ export function StorageTab({
 	if (bytes === 0 && !meta.indexedAt) return <Text>No storage data yet.</Text>;
 	return (
 		<Box flexDirection="column">
+			<Text bold>{meta.name ?? repoKey.slice(0, 14)}</Text>
 			<Text>cache size:  {(bytes / 1_000_000).toFixed(1)} MB</Text>
 			<Text>indexed at:  {meta.indexedAt ?? "—"}</Text>
 			<Text>fingerprint: {meta.fingerprint ?? "—"}</Text>

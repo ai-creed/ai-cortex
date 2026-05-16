@@ -10,6 +10,7 @@ const flush = () => new Promise((r) => setTimeout(r, 50));
 
 const fakeRead = () => ({
 	projects: [{ repoKey: "ai-cortex", name: "ai-cortex", calls: 5 }],
+	projectNames: { "ai-cortex": "ai-cortex" },
 	aggregate: {
 		total: 5,
 		errs: 0,

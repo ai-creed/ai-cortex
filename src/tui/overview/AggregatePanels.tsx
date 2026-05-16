@@ -6,16 +6,26 @@ function mb(bytes: number): string {
 	return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
+function storageLabel(
+	repoKey: string,
+	projectNames: Record<string, string | null>,
+): string {
+	const raw = projectNames[repoKey] ?? repoKey.slice(0, 14);
+	return raw.length > 14 ? raw.slice(0, 13) + "…" : raw.padEnd(14);
+}
+
 export function AggregatePanels({
 	aggregate,
 	memory,
 	storage,
 	recallGetRatio,
+	projectNames,
 }: {
 	aggregate: Aggregate;
 	memory: MemoryHealth;
 	storage: Record<string, number>;
 	recallGetRatio: number;
+	projectNames: Record<string, string | null>;
 }): JSX.Element {
 	const totalCache =
 		aggregate.cache_status.fresh +
@@ -61,7 +71,7 @@ export function AggregatePanels({
 				<Box borderStyle="single" paddingX={1} flexDirection="column" width={36}>
 					<Text bold>Storage</Text>
 					{topStorage.map(([k, v]) => (
-						<Text key={k}>{k.slice(0, 14).padEnd(14)} {mb(v)}</Text>
+						<Text key={k}>{storageLabel(k, projectNames)} {mb(v)}</Text>
 					))}
 				</Box>
 			</Box>

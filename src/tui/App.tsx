@@ -88,6 +88,7 @@ export function App({
 					aggregate={snap.aggregate}
 					memory={snap.memory}
 					storage={snap.storage}
+					projectNames={snap.projectNames}
 					recallGetRatio={snap.recallGetRatio}
 					selected={selected}
 					onSelect={setSelected}

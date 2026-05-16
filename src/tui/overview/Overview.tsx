@@ -11,6 +11,7 @@ export type OverviewProps = {
 	aggregate: Aggregate;
 	memory: MemoryHealth;
 	storage: Record<string, number>;
+	projectNames: Record<string, string | null>;
 	recallGetRatio: number;
 	selected: number;
 	onSelect: (i: number) => void;
@@ -43,6 +44,7 @@ export function Overview(p: OverviewProps): JSX.Element {
 						aggregate={p.aggregate}
 						memory={p.memory}
 						storage={p.storage}
+						projectNames={p.projectNames}
 						recallGetRatio={p.recallGetRatio}
 					/>
 				</Box>
