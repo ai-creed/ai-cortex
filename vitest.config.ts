@@ -8,6 +8,9 @@ export default defineConfig({
 			"benchmarks/eval/fixtures/**",
 			".worktrees/**",
 		],
-		setupFiles: ["./tests/helpers/mock-embed-provider.ts"],
+		setupFiles: [
+			"./tests/helpers/isolate-cache-home.ts",
+			"./tests/helpers/mock-embed-provider.ts",
+		],
 	},
 });

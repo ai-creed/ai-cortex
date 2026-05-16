@@ -1,7 +1,7 @@
 import React from "react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import { ProjectDetail } from "../../../src/tui/detail/ProjectDetail.js";
+import { DetailPanel } from "../../../src/tui/detail/DetailPanel.js";
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -43,18 +43,17 @@ const detail = {
 	},
 };
 
-describe("ProjectDetail", () => {
-	it("starts on the Tools tab", () => {
-		const { lastFrame } = render(<ProjectDetail detail={detail} onBack={() => {}} />);
+describe("DetailPanel", () => {
+	it("starts on the Tools tab and shows the project name header", () => {
+		const { lastFrame } = render(<DetailPanel detail={detail} />);
 		const frame = strip(lastFrame());
 		expect(frame).toMatch(/Tools\*/);
+		expect(frame).toContain("ai-cortex");
 		expect(frame).toContain("suggest_files");
 	});
 
 	it("switches to Memory tab on '2'", async () => {
-		const { stdin, lastFrame } = render(
-			<ProjectDetail detail={detail} onBack={() => {}} />,
-		);
+		const { stdin, lastFrame } = render(<DetailPanel detail={detail} />);
 		stdin.write("2");
 		await flush();
 		const frame = strip(lastFrame());
@@ -62,11 +61,15 @@ describe("ProjectDetail", () => {
 		expect(frame).toContain("mem-a");
 	});
 
-	it("calls onBack on Esc", async () => {
-		const onBack = vi.fn();
-		const { stdin } = render(<ProjectDetail detail={detail} onBack={onBack} />);
-		stdin.write("\x1b");
+	it("cycles tabs on Tab", async () => {
+		const { stdin, lastFrame } = render(<DetailPanel detail={detail} />);
+		stdin.write("\t");
 		await flush();
-		expect(onBack).toHaveBeenCalled();
+		expect(strip(lastFrame())).toMatch(/Memory\*/);
+	});
+
+	it("shows an empty-state hint when detail is null", () => {
+		const { lastFrame } = render(<DetailPanel detail={null} />);
+		expect(strip(lastFrame())).toContain("Select a project");
 	});
 });

@@ -11,6 +11,7 @@ import { ToolsTab } from "./ToolsTab.js";
 import { MemoryTab } from "./MemoryTab.js";
 import { SuggestTab } from "./SuggestTab.js";
 import { StorageTab } from "./StorageTab.js";
+import { THEME } from "../theme.js";
 
 export type Detail = {
 	repoKey: string;
@@ -25,32 +26,42 @@ export type Detail = {
 const TABS = ["Tools", "Memory", "Suggest", "Storage"] as const;
 type Tab = (typeof TABS)[number];
 
-export function ProjectDetail({
+export function DetailPanel({
 	detail,
-	onBack,
 	interactive = true,
 }: {
-	detail: Detail;
-	onBack: () => void;
+	detail: Detail | null;
 	interactive?: boolean;
 }): JSX.Element {
 	const [tab, setTab] = useState<Tab>("Tools");
 	useInput(
 		(input, key) => {
-			if (key.escape) return onBack();
 			const i = "1234".indexOf(input);
 			if (i >= 0) setTab(TABS[i]);
 			if (key.tab) setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length]);
 		},
 		{ isActive: interactive },
 	);
+
+	if (!detail) {
+		return <Text dimColor>Select a project (j/k)</Text>;
+	}
+
+	const name = detail.meta.name ?? detail.repoKey.slice(0, 14);
 	return (
 		<Box flexDirection="column">
-			<Text bold>
-				ai-cortex stats — {detail.repoKey}
-			</Text>
+			<Text color={THEME.accent}>── {name} ──────────────────</Text>
 			<Text>
-				{TABS.map((t) => (t === tab ? `[ ${t}* ]` : `[ ${t} ]`)).join(" ")}
+				{TABS.map((t, i) => (
+					<React.Fragment key={t}>
+						{i > 0 ? " " : ""}
+						{t === tab ? (
+							<Text color={THEME.accent}>[ {t}* ]</Text>
+						) : (
+							<Text>[ {t} ]</Text>
+						)}
+					</React.Fragment>
+				))}
 			</Text>
 			<Box marginTop={1}>
 				{tab === "Tools" && (

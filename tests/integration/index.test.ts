@@ -12,6 +12,17 @@ import {
 } from "../../src/lib/index.js";
 import { SCHEMA_VERSION } from "../../src/lib/models.js";
 
+// Mirrors getCacheDir()'s home resolution so cache-file tampering tests read
+// the file from wherever indexRepo actually wrote it. The global vitest setup
+// pins AI_CORTEX_CACHE_HOME to a session tmpdir; the homedir fallback only
+// applies when that env var is unset.
+function resolvedCacheDir(repoKey: string): string {
+	const home =
+		process.env.AI_CORTEX_CACHE_HOME ??
+		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
+	return path.join(home, repoKey);
+}
+
 let tmpDir: string;
 
 beforeAll(() => {
@@ -334,13 +345,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		const cache = await indexRepo(tmpDir);
 
 		// Tamper with persisted cache to set fingerprint to nonexistent SHA
-		const cacheDir = path.join(
-			os.homedir(),
-			".cache",
-			"ai-cortex",
-			"v1",
-			cache.repoKey,
-		);
+		const cacheDir = resolvedCacheDir(cache.repoKey);
 		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
 		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
 		raw.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
@@ -413,13 +418,7 @@ describe("incremental refresh (real disk + real git)", () => {
 		const cache = await indexRepo(tmpDir);
 
 		// Tamper with cache file to simulate v1 schema
-		const cacheDir = path.join(
-			os.homedir(),
-			".cache",
-			"ai-cortex",
-			"v1",
-			cache.repoKey,
-		);
+		const cacheDir = resolvedCacheDir(cache.repoKey);
 		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
 		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
 		raw.schemaVersion = "1";

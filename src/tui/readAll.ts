@@ -19,6 +19,8 @@ import type { StatsWindow } from "../lib/stats/types.js";
 
 export type Snapshot = {
 	projects: Array<{ repoKey: string; name: string | null; calls: number }>;
+	/** repoKey → display name (null when packageMeta is missing). */
+	projectNames: Record<string, string | null>;
 	/** Cross-project aggregate when focus is null, focused project's aggregate when focus is set. */
 	aggregate: Aggregate;
 	/** Same focus rule as `aggregate`. */
@@ -63,8 +65,13 @@ export function readAll(
 		counts.recall_memory ?? 0,
 	);
 
+	const projectNames = Object.fromEntries(
+		projects.map((p) => [p.repoKey, p.name]),
+	);
+
 	return {
 		projects,
+		projectNames,
 		aggregate: agg,
 		memory: mem,
 		storage: storageFootprint(),

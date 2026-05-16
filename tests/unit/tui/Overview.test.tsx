@@ -25,10 +25,10 @@ describe("Overview", () => {
 				}}
 				memory={{ active: 247, candidate: 62, pinned: 1, deprecated: 4, topAccessed: [] }}
 				storage={{ "ai-cortex": 18_000_000, "ai-whisper": 11_000_000 }}
+				projectNames={{ "ai-cortex": "ai-cortex", "ai-whisper": "ai-whisper" }}
 				recallGetRatio={0.73}
 				selected={0}
 				onSelect={() => {}}
-				onEnter={() => {}}
 			/>,
 		);
 		const frame = strip(lastFrame());
@@ -53,10 +53,10 @@ describe("Overview", () => {
 				}}
 				memory={{ active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [] }}
 				storage={{}}
+				projectNames={{}}
 				recallGetRatio={0}
 				selected={0}
 				onSelect={() => {}}
-				onEnter={() => {}}
 			/>,
 		);
 		expect(strip(lastFrame())).toContain("No calls in this window yet");

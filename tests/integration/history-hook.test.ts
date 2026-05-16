@@ -34,7 +34,16 @@ function runCli(
 	} = {},
 ): string {
 	return execFileSync("node", [CLI, ...args], {
-		env: { ...process.env, HOME: home, ...(opts.extraEnv ?? {}) },
+		// The parent inherits AI_CORTEX_CACHE_HOME (session tmpdir) from the
+		// global vitest setup; that would override the child's HOME and send
+		// writes outside this test's `home`. Pin it to home/.cache/... so the
+		// cache layout these tests assert on still resolves correctly.
+		env: {
+			...process.env,
+			HOME: home,
+			AI_CORTEX_CACHE_HOME: path.join(home, ".cache", "ai-cortex", "v1"),
+			...(opts.extraEnv ?? {}),
+		},
 		cwd: opts.cwd,
 		encoding: "utf8",
 		...(opts.input !== undefined ? { input: opts.input } : {}),

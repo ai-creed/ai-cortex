@@ -21,14 +21,28 @@ import { HISTORY_SCHEMA_VERSION } from "../../../../src/lib/history/types.js";
 import type { SessionRecord } from "../../../../src/lib/history/types.js";
 
 let tmp: string;
+let savedCacheHome: string | undefined;
 
 beforeEach(() => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-manifest-test-"));
 	vi.spyOn(os, "homedir").mockReturnValue(tmp);
+	// The global vitest setup pins AI_CORTEX_CACHE_HOME to a session-shared
+	// tmpdir; this file computes tmp/.cache/ai-cortex/v1/... paths directly,
+	// so pin the cache home to this test's tmp to keep that layout valid.
+	savedCacheHome = process.env.AI_CORTEX_CACHE_HOME;
+	process.env.AI_CORTEX_CACHE_HOME = path.join(
+		tmp,
+		".cache",
+		"ai-cortex",
+		"v1",
+	);
 	vi.clearAllMocks();
 });
 
 afterEach(() => {
+	if (savedCacheHome !== undefined)
+		process.env.AI_CORTEX_CACHE_HOME = savedCacheHome;
+	else delete process.env.AI_CORTEX_CACHE_HOME;
 	fs.rmSync(tmp, { recursive: true, force: true });
 	vi.restoreAllMocks();
 });
