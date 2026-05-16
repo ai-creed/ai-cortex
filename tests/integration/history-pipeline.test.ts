@@ -17,14 +17,24 @@ const FIXTURE = path.join(
 );
 
 let tmp: string;
+let savedCacheHome: string | undefined;
 
 beforeEach(() => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-int-"));
 	vi.spyOn(os, "homedir").mockReturnValue(tmp);
+	// The global vitest setup pins AI_CORTEX_CACHE_HOME to a session-shared
+	// tmpdir; this file reuses hardcoded repo/session keys across tests, so
+	// without a per-test cache home an earlier capture would make a later
+	// test's first capture report "up-to-date". Pin to this test's tmp.
+	savedCacheHome = process.env.AI_CORTEX_CACHE_HOME;
+	process.env.AI_CORTEX_CACHE_HOME = tmp;
 	process.env.AI_CORTEX_SESSION_ID = "int-sess";
 });
 
 afterEach(() => {
+	if (savedCacheHome !== undefined)
+		process.env.AI_CORTEX_CACHE_HOME = savedCacheHome;
+	else delete process.env.AI_CORTEX_CACHE_HOME;
 	fs.rmSync(tmp, { recursive: true, force: true });
 	delete process.env.AI_CORTEX_SESSION_ID;
 });

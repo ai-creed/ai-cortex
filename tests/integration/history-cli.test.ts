@@ -29,7 +29,16 @@ afterEach(() => {
 
 function run(args: string[]): { stdout: string; stderr: string } {
 	const out = execFileSync("node", [CLI, ...args], {
-		env: { ...process.env, HOME: home, AI_CORTEX_HISTORY: "1" },
+		// The parent inherits AI_CORTEX_CACHE_HOME (session tmpdir) from the
+		// global vitest setup; that would override the child's HOME and send
+		// writes outside this test's `home`. Pin it to home/.cache/... so the
+		// cache layout these tests assert on still resolves correctly.
+		env: {
+			...process.env,
+			HOME: home,
+			AI_CORTEX_HISTORY: "1",
+			AI_CORTEX_CACHE_HOME: path.join(home, ".cache", "ai-cortex", "v1"),
+		},
 		encoding: "utf8",
 	});
 	return { stdout: out, stderr: "" };

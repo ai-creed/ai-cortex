@@ -16,13 +16,23 @@ import { HISTORY_SCHEMA_VERSION } from "../../../../src/lib/history/types.js";
 import type { SessionRecord } from "../../../../src/lib/history/types.js";
 
 let tmp: string;
+let savedCacheHome: string | undefined;
 
 beforeEach(() => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-history-listprune-"));
 	vi.spyOn(os, "homedir").mockReturnValue(tmp);
+	// The global vitest setup pins AI_CORTEX_CACHE_HOME to a session-shared
+	// tmpdir; this file reuses hardcoded repo/session keys, so without a
+	// per-test cache home prior tests' writes would leak in. Pin to this
+	// test's tmp.
+	savedCacheHome = process.env.AI_CORTEX_CACHE_HOME;
+	process.env.AI_CORTEX_CACHE_HOME = tmp;
 });
 
 afterEach(() => {
+	if (savedCacheHome !== undefined)
+		process.env.AI_CORTEX_CACHE_HOME = savedCacheHome;
+	else delete process.env.AI_CORTEX_CACHE_HOME;
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
 

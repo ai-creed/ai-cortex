@@ -45,7 +45,22 @@ describe("rehydrate CLI", () => {
 		expect(lines[0]).toMatch(
 			/^rehydrated cli-test-repo \((reindexed|fresh|stale), \d+ files, \d+ docs\)$/,
 		);
-		expect(lines[1]).toMatch(/^\s+briefing: ~\//);
+		// The CLI tilde-collapses the briefing path only when it lives under
+		// os.homedir(). The global vitest setup pins AI_CORTEX_CACHE_HOME to a
+		// session tmpdir (inherited by the spawned child), so the briefing is
+		// under that tmpdir and stays absolute. Assert relative to the active
+		// cache home rather than a hardcoded ~/ so the format check still holds
+		// without weakening it. If the env var were unset it'd collapse to ~/.
+		const cacheHome = process.env.AI_CORTEX_CACHE_HOME;
+		if (cacheHome) {
+			expect(lines[1]).toMatch(
+				new RegExp(
+					`^\\s+briefing: ${cacheHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/.+\\.md$`,
+				),
+			);
+		} else {
+			expect(lines[1]).toMatch(/^\s+briefing: ~\/.+\.md$/);
+		}
 	});
 
 	it("--json outputs valid JSON with required fields", () => {
