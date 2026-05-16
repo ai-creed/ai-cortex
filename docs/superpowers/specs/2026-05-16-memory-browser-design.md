@@ -36,6 +36,8 @@ The stats TUI's Memory tab is counts-only (`active 0  candidate 10  pinned 0  de
 
 `App` gains a `view: "dashboard" | "memory-browser"` state plus the highlighted project's `repoKey`. Dashboard renders as today. Entering the browser swaps the entire render tree to `<MemoryBrowser>`; `Esc` flips `view` back. This avoids nesting a full-screen feature inside the cramped bottom DetailPanel and gives the browser its own `useInput` (gated `isActive` to this view, consistent with the codebase pattern). Rejected alternatives: swap-inside-DetailPanel (fights panel size, tangled focus), separate Ink render (loses shared state, over-engineered).
 
+**Browser entry — tab-state ownership.** `DetailPanel` already owns its active tab in local `useState` and owns the `useInput` that handles `1-4` / `Tab` (`src/tui/detail/DetailPanel.tsx`). App therefore cannot know whether the Memory tab is active. Rather than lift tab state into App (which would couple App to DetailPanel's tab enum and rendering), `DetailPanel` gains an `onOpenMemoryBrowser?: (repoKey: string) => void` prop. Inside DetailPanel's existing `useInput`, when `key.return` and the internal `tab === "Memory"` and `detail` is non-null, it calls `onOpenMemoryBrowser(detail.repoKey)`. App passes a handler that sets `view="memory-browser"` with that repoKey. Tab state stays encapsulated in DetailPanel; App stays decoupled. (Considered and rejected: lifting `tab` into App — leaks an internal concern upward for no benefit.)
+
 ### Components (all new, under `src/tui/memory/`)
 
 - `<MemoryBrowser>` — owns the browser: calls the stateless readers on mount and on `r`, owns selection + body-scroll + body-memo state, owns `useInput`, renders the activity strip + list + body. `Esc` calls an `onExit` prop. Holds no DB/file handle.
@@ -83,8 +85,8 @@ Type → color:
 
 ## Data flow
 
-1. Dashboard, project highlighted (App tracks the highlighted `repoKey` via the existing selection ref). User presses `Tab` to the Memory tab, then `Enter`.
-2. App sets `view="memory-browser"` and passes `repoKey`.
+1. Dashboard, project highlighted (App tracks the highlighted `repoKey` via the existing selection ref). User presses `Tab` (or `2`) to the Memory tab, then `Enter`. DetailPanel's own `useInput` sees `key.return` while its internal `tab === "Memory"` and calls `onOpenMemoryBrowser(detail.repoKey)`.
+2. App's `onOpenMemoryBrowser` handler sets `view="memory-browser"` with that `repoKey`.
 3. `<MemoryBrowser>` mounts → calls the stateless readers `loadMemoryList(repoKey)` + `memoryActivity(repoKey, window)`. Each reader opens and closes its own read-only handle within the call; **no handle is held by the component**. The component stores the returned plain view models in React state.
 4. Initial selection = first selectable row (first non-header). `loadMemoryBody(repoKey, id)` (a stateless pure file read) fills the right pane; results memoized by id in component state for the session.
 5. `j` / `k` move the selection across rows, skipping group headers (wraps within the flattened list). `J` / `K` jump to the next / previous group header's first row. Selection change → `loadMemoryBody` (cache hit after first) → body re-renders, `bodyScroll` reset to 0.
@@ -134,7 +136,8 @@ Dashboard entry: `Tab` (or `2`) to Memory tab → `Enter`.
 | `<MemoryActivityStrip>` | two series render, totals, all-zero empty state | `ink-testing-library` |
 | `<MemoryBrowser>` | j/k skip headers, J/K group jump, Ctrl+d/u scroll + clamp, `r` reload keeps/clamps selection + clears body memo, Esc→exit (no handle to close), Enter no-op | `ink-testing-library` stdin |
 | `MemoryTab` rebuild | counts + 2 sparklines + top-accessed + legend; empty state | `ink-testing-library` |
-| App integration | Tab→Memory→Enter opens browser; Esc returns; `--once` never opens; min-size guard | `ink-testing-library` |
+| `DetailPanel` Enter wiring | `onOpenMemoryBrowser(repoKey)` fires only when internal `tab === "Memory"` and `detail` non-null; no-op on other tabs / null detail / when `interactive` is false | `ink-testing-library` stdin |
+| App integration | Tab→Memory→Enter opens browser (via the DetailPanel callback); Esc returns; `--once` never opens; min-size guard | `ink-testing-library` |
 | Reader/TUI boundary | no `src/tui/**` file imports `src/lib/memory/*` directly | source-scan unit (mirrors existing sink-isolation test) |
 
 ## Rollout
@@ -171,6 +174,7 @@ src/
       MemoryBodyView.tsx
       MemoryActivityStrip.tsx
     detail/
+      DetailPanel.tsx        (+ onOpenMemoryBrowser prop, Enter handling when tab==="Memory")
       MemoryTab.tsx          (rebuilt: counts + sparklines + top-accessed)
 tests/
   unit/lib/stats/memory-activity.test.ts
