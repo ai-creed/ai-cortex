@@ -103,6 +103,7 @@ export function App({
 				repoKey={browserRepoKey}
 				window={window}
 				interactive={!once}
+				termSize={termSize}
 				onExit={() => setBrowserRepoKey(null)}
 			/>
 		);

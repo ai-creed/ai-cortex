@@ -31,6 +31,7 @@ export type MemoryBrowserProps = {
 	onExit: () => void;
 	interactive?: boolean;
 	deps?: Deps;
+	termSize?: { cols: number; rows: number };
 };
 
 type SelRow = { id: string; groupIdx: number };
@@ -72,6 +73,10 @@ export function MemoryBrowser({
 	onExit,
 	interactive = true,
 	deps = DEFAULT_DEPS,
+	termSize = {
+		cols: process.stdout.columns ?? 80,
+		rows: process.stdout.rows ?? 24,
+	},
 }: MemoryBrowserProps): JSX.Element {
 	const [groups, setGroups] = useState<MemoryListGroups>(() =>
 		deps.loadMemoryList(repoKey),
@@ -147,6 +152,20 @@ export function MemoryBrowser({
 	const name = repoKey.slice(0, 14);
 	const empty = ids.length === 0 && !groups.error;
 
+	// Terminal-aware layout. Two side-by-side bordered boxes with a 1-col gap.
+	const sidebarBox = Math.min(
+		40,
+		Math.max(28, Math.floor(termSize.cols * 0.42)),
+	);
+	const bodyBox = Math.max(20, termSize.cols - sidebarBox - 1);
+	const listInner = sidebarBox - 2;
+	const bodyInner = bodyBox - 2;
+	// chrome: header(1) + activity strip(2) + footer(1) + 1-row safety = 5
+	const paneOuter = Math.max(8, termSize.rows - 5);
+	const viewportRows = paneOuter - 2; // list box borders
+	// body header is 3 lines (type, scope, divider); −1 for the `↓ more` line
+	const viewportLines = Math.max(3, paneOuter - 2 - 3 - 1);
+
 	return (
 		<Box flexDirection="column">
 			<Text color={THEME.accent}>
@@ -163,20 +182,22 @@ export function MemoryBrowser({
 					<Text dimColor>No memories for {name} yet.</Text>
 				</Box>
 			) : (
-				<Box marginTop={1}>
-					<Box width={34}>
+				<Box>
+					<Box width={sidebarBox}>
 						<MemoryList
 							groups={groups}
 							selectedId={selectedId}
-							viewportRows={16}
+							viewportRows={viewportRows}
+							width={listInner}
 						/>
 					</Box>
-					<Box marginLeft={2} flexGrow={1}>
+					<Box width={bodyBox} marginLeft={1}>
 						<MemoryBodyView
 							record={body?.record ?? null}
 							error={body?.error ?? null}
 							scroll={scroll}
-							viewportLines={16}
+							viewportLines={viewportLines}
+							width={bodyInner}
 						/>
 					</Box>
 				</Box>

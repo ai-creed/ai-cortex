@@ -6,6 +6,7 @@ const BLOCKS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 export type SparklineProps = {
 	values: number[];
 	width: number;
+	color?: string;
 };
 
 function bucket(values: number[], width: number): number[] {
@@ -21,8 +22,14 @@ function bucket(values: number[], width: number): number[] {
 	return out;
 }
 
-export function Sparkline({ values, width }: SparklineProps): JSX.Element {
-	if (values.length === 0) return <Text>{"·".repeat(width)}</Text>;
+export function Sparkline({ values, width, color }: SparklineProps): JSX.Element {
+	if (values.length === 0) {
+		return color === undefined ? (
+			<Text>{"·".repeat(width)}</Text>
+		) : (
+			<Text color={color}>{"·".repeat(width)}</Text>
+		);
+	}
 	const sampled = bucket(values, width);
 	const max = Math.max(...sampled);
 	const chars = sampled.map((v) => {
@@ -30,5 +37,10 @@ export function Sparkline({ values, width }: SparklineProps): JSX.Element {
 		const idx = Math.min(BLOCKS.length - 1, Math.floor((v / max) * BLOCKS.length));
 		return BLOCKS[idx];
 	});
-	return <Text>{chars.join("")}</Text>;
+	const joined = chars.join("");
+	return color === undefined ? (
+		<Text>{joined}</Text>
+	) : (
+		<Text color={color}>{joined}</Text>
+	);
 }
