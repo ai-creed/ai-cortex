@@ -461,14 +461,18 @@ export function memoryActivity(
 	window: StatsWindow,
 ): MemoryActivity {
 	const span = WINDOW_MS[window];
-	const sinceMs = Date.now() - span;
+	const nowMs = Date.now();
+	const sinceMs = nowMs - span;
 	const bucketMs = span / ACTIVITY_BUCKETS;
 	const recorded = new Array<number>(ACTIVITY_BUCKETS).fill(0);
 	const used = new Array<number>(ACTIVITY_BUCKETS).fill(0);
 
+	// Reject out-of-range timestamps entirely (no clamping): a future-dated
+	// row from clock skew or odd backfill must NOT be counted in the last
+	// bucket. The SQL queries also bound by nowMs as a first line of defense.
 	const bucketOf = (tsMs: number): number => {
 		const i = Math.floor((tsMs - sinceMs) / bucketMs);
-		return i < 0 ? -1 : i >= ACTIVITY_BUCKETS ? ACTIVITY_BUCKETS - 1 : i;
+		return i < 0 || i >= ACTIVITY_BUCKETS ? -1 : i;
 	};
 
 	// recorded — memory_audit (ts is ISO TEXT). indexDbPath() throws on a
@@ -484,11 +488,12 @@ export function memoryActivity(
 		try {
 			db = new Database(idxPath, { readonly: true });
 			const sinceIso = new Date(sinceMs).toISOString();
+			const nowIso = new Date(nowMs).toISOString();
 			const rows = db
 				.prepare(
-					"SELECT ts FROM memory_audit WHERE change_type='create' AND ts >= ?",
+					"SELECT ts FROM memory_audit WHERE change_type='create' AND ts >= ? AND ts < ?",
 				)
-				.all(sinceIso) as Array<{ ts: string }>;
+				.all(sinceIso, nowIso) as Array<{ ts: string }>;
 			for (const r of rows) {
 				const ms = Date.parse(r.ts);
 				if (Number.isNaN(ms)) continue;
@@ -516,9 +521,9 @@ export function memoryActivity(
 			db = new Database(evPath, { readonly: true });
 			const rows = db
 				.prepare(
-					"SELECT ts FROM tool_calls WHERE tool IN ('get_memory','recall_memory') AND ts > ?",
+					"SELECT ts FROM tool_calls WHERE tool IN ('get_memory','recall_memory') AND ts > ? AND ts <= ?",
 				)
-				.all(sinceMs) as Array<{ ts: number }>;
+				.all(sinceMs, nowMs) as Array<{ ts: number }>;
 			for (const r of rows) {
 				const b = bucketOf(r.ts);
 				if (b >= 0) used[b]++;

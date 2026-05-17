@@ -83,4 +83,28 @@ describe("memoryActivity", () => {
 		expect(a.recordedTotal).toBe(1);
 		expect(a.usedTotal).toBe(0);
 	});
+
+	it("excludes future-dated rows (clock skew / backfill) from both series", () => {
+		const now = Date.now();
+		// One legit in-window create + one future-dated create (2 days ahead).
+		seedAudit([
+			new Date(now - 3600_000).toISOString(),
+			new Date(now + 2 * 24 * 3600_000).toISOString(),
+		]);
+		const sink = openSink(repoKey);
+		writeEvent(sink, { ts: now - 1000, tool: "get_memory", dur_ms: 1, status: "ok" });
+		writeEvent(sink, {
+			ts: now + 2 * 24 * 3600_000,
+			tool: "recall_memory",
+			dur_ms: 1,
+			status: "ok",
+		});
+		sink.close();
+		const a = memoryActivity(repoKey, "7d");
+		// Future-dated rows are excluded entirely: without the upper bound +
+		// bucketOf reject, each total would be 2 (the future row clamped into
+		// the last bucket). The legit in-window row still counts.
+		expect(a.recordedTotal).toBe(1);
+		expect(a.usedTotal).toBe(1);
+	});
 });
