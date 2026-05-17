@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.7.0 — 2026-05-16
+
+- feat(tui): full-screen memory browser (status-grouped, colored type tags, scrollable body), reachable from the stats Memory tab
+- feat(tui): memory activity sparklines (recorded vs used) in the Memory tab and browser strip
+- feat(stats): read-only memory readers (loadMemoryList/loadMemoryBody/memoryActivity) — no schema change, no writes
+
+---
+
 ## v0.6.0 — 2026-05-15
 
 - feat(stats): new `ai-cortex stats` TUI for inspecting per-call latency, cache hit rates, memory effectiveness, and storage footprint across projects

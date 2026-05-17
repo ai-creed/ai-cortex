@@ -197,6 +197,8 @@ ai-cortex stats --project <repoKey>      # boot directly into a project's detail
 ai-cortex stats --once                   # render one frame and exit (for piping / smoke tests)
 ```
 
+**Browsing memories.** In `ai-cortex stats`, select a project, press `Tab`/`2` to the Memory tab, then `Enter` for a full-screen browser: memories grouped by status with colored type tags, a scrollable body pane, and `recorded`/`used` activity sparklines. Read-only. `Esc` returns.
+
 **Privacy.** Only lengths, counts, and identifiers are recorded — no query text, no memory bodies, no file paths. Rows older than 90 days are pruned on store open. Stats live entirely under `~/.cache/ai-cortex/` and never leave the machine.
 
 ## Library API
