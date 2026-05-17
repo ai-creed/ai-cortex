@@ -8,7 +8,25 @@ export type MemoryListProps = {
 	groups: MemoryListGroups;
 	selectedId: string | null;
 	viewportRows: number;
+	/** inner content width available for a row (sidebar box width − 2 borders). */
+	width: number;
 };
+
+const MARKER_W = 3;
+const TYPE_W = 13;
+
+// Hard-truncate to `w` columns, appending an ellipsis when it overflows.
+function clip(s: string, w: number): string {
+	if (w <= 0) return "";
+	if (s.length <= w) return s;
+	if (w === 1) return "…";
+	return s.slice(0, w - 1) + "…";
+}
+
+// Fit to exactly `w` columns: truncate when long, right-pad when short.
+function fit(s: string, w: number): string {
+	return clip(s, w).padEnd(Math.max(0, w));
+}
 
 type Line =
 	| { kind: "header"; status: string; count: number }
@@ -41,10 +59,16 @@ export function MemoryList({
 	groups,
 	selectedId,
 	viewportRows,
+	width,
 }: MemoryListProps): JSX.Element {
 	if (groups.error) {
-		return <Text color={THEME.err}>⚠ memory index unavailable</Text>;
+		return (
+			<Box flexDirection="column" borderStyle="single" borderColor={THEME.muted}>
+				<Text color={THEME.err}>⚠ memory index unavailable</Text>
+			</Box>
+		);
 	}
+	const titleW = Math.max(0, width - MARKER_W - TYPE_W - 1);
 	const lines = flatten(groups);
 	const selIdx = lines.findIndex(
 		(l) => l.kind === "row" && l.id === selectedId,
@@ -59,27 +83,36 @@ export function MemoryList({
 	}
 	const visible = lines.slice(start, start + viewportRows);
 	return (
-		<Box flexDirection="column">
+		<Box flexDirection="column" borderStyle="single" borderColor={THEME.muted}>
 			{visible.map((l, i) => {
 				if (l.kind === "header") {
 					return (
 						<Text key={`h${start + i}`} bold color={THEME.muted}>
-							{l.status.toUpperCase()} ({l.count})
+							{clip(`${l.status.toUpperCase()} (${l.count})`, width)}
 						</Text>
 					);
 				}
 				const sel = l.id === selectedId;
+				const marker = sel ? "▸  " : l.pinned ? "📌 " : "   ";
+				const tag = fit(`[${l.type}]`, TYPE_W);
+				const title = clip(l.title, titleW);
+				if (sel) {
+					// Pad the whole line to `width` so the highlight fills the row.
+					const line = (marker + tag + " " + title).padEnd(width);
+					return (
+						<Text
+							key={l.id}
+							backgroundColor={THEME.accent}
+							color="black"
+						>
+							{line}
+						</Text>
+					);
+				}
 				return (
-					<Text
-						key={l.id}
-						backgroundColor={sel ? THEME.accent : undefined}
-						color={sel ? "black" : undefined}
-					>
-						{l.pinned ? "📌 " : "  "}
-						<Text color={sel ? "black" : typeColor(l.type)}>
-							[{l.type}]
-						</Text>{" "}
-						{l.title}
+					<Text key={l.id}>
+						{marker}
+						<Text color={typeColor(l.type)}>{tag}</Text> {title}
 					</Text>
 				);
 			})}

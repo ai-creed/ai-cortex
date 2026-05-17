@@ -11,6 +11,8 @@ export type MemoryBodyViewProps = {
 	error: string | null;
 	scroll: number;
 	viewportLines: number;
+	/** inner content width of the body box (box width − 2 borders). */
+	width: number;
 };
 
 export function MemoryBodyView({
@@ -18,12 +20,21 @@ export function MemoryBodyView({
 	error,
 	scroll,
 	viewportLines,
+	width,
 }: MemoryBodyViewProps): JSX.Element {
 	if (error) {
-		return <Text color={THEME.err}>⚠ {error}</Text>;
+		return (
+			<Box flexDirection="column" borderStyle="single" borderColor={THEME.muted}>
+				<Text color={THEME.err}>⚠ {error}</Text>
+			</Box>
+		);
 	}
 	if (!record) {
-		return <Text dimColor>No memory selected</Text>;
+		return (
+			<Box flexDirection="column" borderStyle="single" borderColor={THEME.muted}>
+				<Text dimColor>No memory selected</Text>
+			</Box>
+		);
 	}
 	const fm = record.frontmatter;
 	const scopeBits = [
@@ -38,13 +49,13 @@ export function MemoryBodyView({
 	const window = bodyLines.slice(clamped, clamped + viewportLines);
 	const hasMore = clamped + viewportLines < bodyLines.length;
 	return (
-		<Box flexDirection="column">
+		<Box flexDirection="column" borderStyle="single" borderColor={THEME.muted}>
 			<Text>
 				<Text color={typeColor(fm.type)}>{fm.type}</Text> · {fm.status}
 				{fm.pinned ? " · pinned" : ""} · {updated}
 			</Text>
 			<Text color={THEME.muted}>scope: {scopeStr}</Text>
-			<Text color={THEME.muted}>─────────────────────────────</Text>
+			<Text color={THEME.muted}>{"─".repeat(Math.max(0, width))}</Text>
 			{window.map((ln, i) => (
 				<Text key={clamped + i}>{ln}</Text>
 			))}

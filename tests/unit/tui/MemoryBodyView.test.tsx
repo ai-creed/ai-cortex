@@ -35,7 +35,7 @@ const rec = {
 describe("MemoryBodyView", () => {
 	it("renders the metadata header fields", () => {
 		const { lastFrame } = render(
-			<MemoryBodyView record={rec} error={null} scroll={0} viewportLines={10} />,
+			<MemoryBodyView record={rec} error={null} scroll={0} viewportLines={10} width={40} />,
 		);
 		const f = strip(lastFrame());
 		expect(f).toContain("decision");
@@ -47,28 +47,28 @@ describe("MemoryBodyView", () => {
 
 	it("shows ↓ more when the body overflows the viewport", () => {
 		const { lastFrame } = render(
-			<MemoryBodyView record={rec} error={null} scroll={0} viewportLines={5} />,
+			<MemoryBodyView record={rec} error={null} scroll={0} viewportLines={5} width={40} />,
 		);
 		expect(strip(lastFrame())).toContain("↓ more");
 	});
 
 	it("scrolls — later lines visible at a scroll offset", () => {
 		const { lastFrame } = render(
-			<MemoryBodyView record={rec} error={null} scroll={30} viewportLines={5} />,
+			<MemoryBodyView record={rec} error={null} scroll={30} viewportLines={5} width={40} />,
 		);
 		expect(strip(lastFrame())).toContain("line 31");
 	});
 
 	it("renders the error state", () => {
 		const { lastFrame } = render(
-			<MemoryBodyView record={null} error="body unavailable (a)" scroll={0} viewportLines={5} />,
+			<MemoryBodyView record={null} error="body unavailable (a)" scroll={0} viewportLines={5} width={40} />,
 		);
 		expect(strip(lastFrame())).toContain("⚠ body unavailable (a)");
 	});
 
 	it("renders an empty hint when no record and no error", () => {
 		const { lastFrame } = render(
-			<MemoryBodyView record={null} error={null} scroll={0} viewportLines={5} />,
+			<MemoryBodyView record={null} error={null} scroll={0} viewportLines={5} width={40} />,
 		);
 		expect(strip(lastFrame())).toContain("No memory selected");
 	});
