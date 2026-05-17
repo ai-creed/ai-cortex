@@ -445,3 +445,96 @@ export function toolCounts(
 	}
 	return out;
 }
+
+export type MemoryActivity = {
+	recorded: number[];
+	used: number[];
+	recordedTotal: number;
+	usedTotal: number;
+	buckets: number;
+};
+
+const ACTIVITY_BUCKETS = 30;
+
+export function memoryActivity(
+	repoKey: string,
+	window: StatsWindow,
+): MemoryActivity {
+	const span = WINDOW_MS[window];
+	const sinceMs = Date.now() - span;
+	const bucketMs = span / ACTIVITY_BUCKETS;
+	const recorded = new Array<number>(ACTIVITY_BUCKETS).fill(0);
+	const used = new Array<number>(ACTIVITY_BUCKETS).fill(0);
+
+	const bucketOf = (tsMs: number): number => {
+		const i = Math.floor((tsMs - sinceMs) / bucketMs);
+		return i < 0 ? -1 : i >= ACTIVITY_BUCKETS ? ACTIVITY_BUCKETS - 1 : i;
+	};
+
+	// recorded — memory_audit (ts is ISO TEXT). indexDbPath() throws on a
+	// non-hashed repoKey; guard it so the series is just all-zero.
+	let idxPath: string | null = null;
+	try {
+		idxPath = indexDbPath(repoKey);
+	} catch {
+		idxPath = null;
+	}
+	if (idxPath && fs.existsSync(idxPath)) {
+		let db: Database.Database | null = null;
+		try {
+			db = new Database(idxPath, { readonly: true });
+			const sinceIso = new Date(sinceMs).toISOString();
+			const rows = db
+				.prepare(
+					"SELECT ts FROM memory_audit WHERE change_type='create' AND ts >= ?",
+				)
+				.all(sinceIso) as Array<{ ts: string }>;
+			for (const r of rows) {
+				const ms = Date.parse(r.ts);
+				if (Number.isNaN(ms)) continue;
+				const b = bucketOf(ms);
+				if (b >= 0) recorded[b]++;
+			}
+		} catch {
+			/* leave recorded all-zero */
+		} finally {
+			db?.close();
+		}
+	}
+
+	// used — stats events (ts is INTEGER ms). statsDbPath() also throws on a
+	// non-hashed repoKey; same guard.
+	let evPath: string | null = null;
+	try {
+		evPath = statsDbPath(repoKey);
+	} catch {
+		evPath = null;
+	}
+	if (evPath && fs.existsSync(evPath)) {
+		let db: Database.Database | null = null;
+		try {
+			db = new Database(evPath, { readonly: true });
+			const rows = db
+				.prepare(
+					"SELECT ts FROM tool_calls WHERE tool IN ('get_memory','recall_memory') AND ts > ?",
+				)
+				.all(sinceMs) as Array<{ ts: number }>;
+			for (const r of rows) {
+				const b = bucketOf(r.ts);
+				if (b >= 0) used[b]++;
+			}
+		} catch {
+			/* leave used all-zero */
+		} finally {
+			db?.close();
+		}
+	}
+
+	return {
+		recorded,
+		used,
+		recordedTotal: recorded.reduce((a, b) => a + b, 0),
+		usedTotal: used.reduce((a, b) => a + b, 0),
+		buckets: ACTIVITY_BUCKETS,
+	};
+}

@@ -5,6 +5,7 @@ import { useStatsTick } from "./hooks/useStatsTick.js";
 import { Overview } from "./overview/Overview.js";
 import { DetailPanel, type Detail } from "./detail/DetailPanel.js";
 import { KeyBar } from "./components/KeyBar.js";
+import { MemoryBrowser } from "./memory/MemoryBrowser.js";
 import { readAll, type Snapshot } from "./readAll.js";
 
 const MIN_COLS = 80;
@@ -31,6 +32,7 @@ export function App({
 	const [window, setWindow] = useState<StatsWindow>(initialWindow);
 	const [selected, setSelected] = useState(0);
 	const [lastErr, setLastErr] = useState<string | null>(null);
+	const [browserRepoKey, setBrowserRepoKey] = useState<string | null>(null);
 	const selectedRef = useRef(0);
 	selectedRef.current = selected;
 	const initialProjectRef = useRef(initialProject);
@@ -88,11 +90,22 @@ export function App({
 				setWindow(order[(i + 1) % order.length]);
 			}
 		},
-		{ isActive: !once },
+		{ isActive: !once && browserRepoKey === null },
 	);
 
 	if (termSize.cols < MIN_COLS || termSize.rows < MIN_ROWS) {
 		return <Text>Terminal too small — need {MIN_COLS}×{MIN_ROWS}.</Text>;
+	}
+
+	if (browserRepoKey !== null) {
+		return (
+			<MemoryBrowser
+				repoKey={browserRepoKey}
+				window={window}
+				interactive={!once}
+				onExit={() => setBrowserRepoKey(null)}
+			/>
+		);
 	}
 
 	if (!snap) return <Text>Loading…</Text>;
@@ -112,7 +125,14 @@ export function App({
 				interactive={!once}
 			/>
 			<Box marginTop={1}>
-				<DetailPanel detail={snap.det} interactive={!once} />
+				<DetailPanel
+					detail={snap.det}
+					interactive={!once && browserRepoKey === null}
+					window={window}
+					onOpenMemoryBrowser={
+						once ? undefined : (rk) => setBrowserRepoKey(rk)
+					}
+				/>
 			</Box>
 			<KeyBar
 				hints={[

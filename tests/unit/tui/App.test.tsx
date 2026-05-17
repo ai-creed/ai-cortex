@@ -100,3 +100,31 @@ describe("App", () => {
 		expect(strip(lastFrame())).toContain("Terminal too small");
 	});
 });
+
+describe("App memory-browser view", () => {
+	it("Tab→Memory→Enter opens the browser; Esc returns", async () => {
+		const { stdin, lastFrame } = render(
+			<App read={makeRead() as AppProps["read"]} initialWindow="7d" />,
+		);
+		await flush();
+		// move to a project with data is already default selected[0]
+		stdin.write("\t"); // DetailPanel: Tools → Memory? Tab cycles within DetailPanel
+		// The DetailPanel owns tab; press '2' to go straight to Memory:
+		stdin.write("2");
+		await flush();
+		stdin.write("\r"); // Enter on Memory tab
+		await flush();
+		expect(strip(lastFrame())).toContain("memory browser");
+		stdin.write("\x1b"); // Esc
+		await flush();
+		expect(strip(lastFrame())).not.toContain("memory browser");
+	});
+
+	it("--once never opens the browser (no input handling)", async () => {
+		const { lastFrame } = render(
+			<App read={makeRead() as AppProps["read"]} initialWindow="7d" once={true} />,
+		);
+		await flush();
+		expect(strip(lastFrame())).not.toContain("memory browser");
+	});
+});
