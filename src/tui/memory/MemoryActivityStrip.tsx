@@ -21,12 +21,12 @@ export function MemoryActivityStrip({
 		<Box flexDirection="column">
 			<Box>
 				<Text color={THEME.ok}>rec </Text>
-				<Sparkline values={recorded} width={16} />
+				<Sparkline values={recorded} width={16} color={THEME.ok} />
 				<Text> {recordedTotal}</Text>
 			</Box>
 			<Box>
 				<Text color={THEME.accent}>use </Text>
-				<Sparkline values={used} width={16} />
+				<Sparkline values={used} width={16} color={THEME.accent} />
 				<Text> {usedTotal}</Text>
 			</Box>
 		</Box>

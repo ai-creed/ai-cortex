@@ -36,12 +36,12 @@ export function MemoryTab({
 			</Text>
 			<Box marginTop={1}>
 				<Text color={THEME.ok}>recorded </Text>
-				<Sparkline values={act.recorded} width={30} />
+				<Sparkline values={act.recorded} width={30} color={THEME.ok} />
 				<Text> {act.recordedTotal}</Text>
 			</Box>
 			<Box>
 				<Text color={THEME.accent}>used     </Text>
-				<Sparkline values={act.used} width={30} />
+				<Sparkline values={act.used} width={30} color={THEME.accent} />
 				<Text> {act.usedTotal}</Text>
 			</Box>
 			<Box marginTop={1}>
