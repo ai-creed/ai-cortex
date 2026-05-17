@@ -128,6 +128,7 @@ export function App({
 				<DetailPanel
 					detail={snap.det}
 					interactive={!once && browserRepoKey === null}
+					window={window}
 					onOpenMemoryBrowser={
 						once ? undefined : (rk) => setBrowserRepoKey(rk)
 					}

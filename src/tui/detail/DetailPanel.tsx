@@ -11,6 +11,7 @@ import { ToolsTab } from "./ToolsTab.js";
 import { MemoryTab } from "./MemoryTab.js";
 import { SuggestTab } from "./SuggestTab.js";
 import { StorageTab } from "./StorageTab.js";
+import type { StatsWindow } from "../../lib/stats/types.js";
 import { THEME } from "../theme.js";
 
 export type Detail = {
@@ -29,10 +30,12 @@ type Tab = (typeof TABS)[number];
 export function DetailPanel({
 	detail,
 	interactive = true,
+	window: windowProp = "7d",
 	onOpenMemoryBrowser,
 }: {
 	detail: Detail | null;
 	interactive?: boolean;
+	window?: StatsWindow;
 	onOpenMemoryBrowser?: (repoKey: string) => void;
 }): JSX.Element {
 	const [tab, setTab] = useState<Tab>("Tools");
@@ -82,7 +85,13 @@ export function DetailPanel({
 						topTools={detail.topTools}
 					/>
 				)}
-				{tab === "Memory" && <MemoryTab memory={detail.memory} />}
+				{tab === "Memory" && (
+					<MemoryTab
+						memory={detail.memory}
+						repoKey={detail.repoKey}
+						window={windowProp}
+					/>
+				)}
 				{tab === "Suggest" && <SuggestTab aggregate={detail.aggregate} />}
 				{tab === "Storage" && (
 					<StorageTab
