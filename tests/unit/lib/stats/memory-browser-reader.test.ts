@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { indexDbPath, memoriesDir } from "../../../../src/lib/memory/paths.js";
-import { loadMemoryList } from "../../../../src/lib/stats/memory-browser.js";
+import {
+	loadMemoryList,
+	loadMemoryBody,
+} from "../../../../src/lib/stats/memory-browser.js";
+import { memoryFilePath } from "../../../../src/lib/memory/paths.js";
 
 const repoKey = "6d656d62726f7773"; // 16 hex
 let originalCacheHome: string | undefined;
@@ -25,7 +29,7 @@ function seedIndex(rows: Array<[string, string, string, string, number, string]>
 	fs.mkdirSync(path.dirname(indexDbPath(repoKey)), { recursive: true });
 	const db = new Database(indexDbPath(repoKey));
 	db.exec(
-		`CREATE TABLE memories (id TEXT PRIMARY KEY, type TEXT, status TEXT, title TEXT, pinned INTEGER, updated_at TEXT);`,
+		"CREATE TABLE memories (id TEXT PRIMARY KEY, type TEXT, status TEXT, title TEXT, pinned INTEGER, updated_at TEXT);",
 	);
 	const ins = db.prepare(
 		"INSERT INTO memories (id,type,status,title,pinned,updated_at) VALUES (?,?,?,?,?,?)",
@@ -85,5 +89,72 @@ describe("loadMemoryList", () => {
 		const g = loadMemoryList(repoKey);
 		expect(g.error).toMatch(/.+/);
 		expect(g.groups.every((x) => x.count === 0)).toBe(true);
+	});
+});
+
+describe("loadMemoryBody", () => {
+	function writeMemoryMd(id: string) {
+		const dir = path.dirname(memoryFilePath(repoKey, id, "memories"));
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(
+			memoryFilePath(repoKey, id, "memories"),
+			[
+				"---",
+				`id: ${id}`,
+				"type: decision",
+				"status: active",
+				"title: Sample",
+				"version: 1",
+				'createdAt: "2026-05-10T00:00:00.000Z"',
+				'updatedAt: "2026-05-10T00:00:00.000Z"',
+				"source: explicit",
+				"confidence: 1",
+				"pinned: false",
+				"scope:",
+				"  files: []",
+				"  tags: []",
+				"provenance: []",
+				"supersedes: []",
+				"mergedInto: null",
+				"deprecationReason: null",
+				"promotedFrom: []",
+				"rewrittenAt: null",
+				"---",
+				"The memory body text.",
+			].join("\n"),
+		);
+	}
+
+	it("returns frontmatter + body via pure file read", async () => {
+		writeMemoryMd("m1");
+		const r = await loadMemoryBody(repoKey, "m1");
+		expect(r.error).toBeNull();
+		expect(r.record?.frontmatter.id).toBe("m1");
+		expect(r.record?.body).toContain("The memory body text.");
+	});
+
+	it("does not touch the index (get_count/last_accessed_at unchanged)", async () => {
+		fs.mkdirSync(path.dirname(indexDbPath(repoKey)), { recursive: true });
+		const db = new Database(indexDbPath(repoKey));
+		db.exec(
+			`CREATE TABLE memories (id TEXT PRIMARY KEY, get_count INTEGER, last_accessed_at TEXT);
+			 INSERT INTO memories VALUES ('m1', 0, NULL);`,
+		);
+		db.close();
+		writeMemoryMd("m1");
+		await loadMemoryBody(repoKey, "m1");
+		const ro = new Database(indexDbPath(repoKey), { readonly: true });
+		const row = ro
+			.prepare("SELECT get_count, last_accessed_at FROM memories WHERE id='m1'")
+			.get() as { get_count: number; last_accessed_at: string | null };
+		ro.close();
+		expect(row.get_count).toBe(0);
+		expect(row.last_accessed_at).toBeNull();
+	});
+
+	it("returns a typed error for a missing .md (no throw)", async () => {
+		const r = await loadMemoryBody(repoKey, "does-not-exist");
+		expect(r.record).toBeNull();
+		expect(r.error).toMatch(/.+/);
 	});
 });
