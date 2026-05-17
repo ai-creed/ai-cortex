@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { DetailPanel } from "../../../src/tui/detail/DetailPanel.js";
 
@@ -71,5 +71,41 @@ describe("DetailPanel", () => {
 	it("shows an empty-state hint when detail is null", () => {
 		const { lastFrame } = render(<DetailPanel detail={null} />);
 		expect(strip(lastFrame())).toContain("Select a project");
+	});
+});
+
+describe("DetailPanel onOpenMemoryBrowser", () => {
+	it("fires with repoKey when Enter pressed on the Memory tab", async () => {
+		const onOpen = vi.fn();
+		const { stdin } = render(
+			<DetailPanel detail={detail} onOpenMemoryBrowser={onOpen} />,
+		);
+		stdin.write("2"); // switch to Memory tab
+		await flush();
+		stdin.write("\r"); // Enter
+		await flush();
+		expect(onOpen).toHaveBeenCalledWith(detail.repoKey);
+	});
+
+	it("does not fire on non-Memory tabs", async () => {
+		const onOpen = vi.fn();
+		const { stdin } = render(
+			<DetailPanel detail={detail} onOpenMemoryBrowser={onOpen} />,
+		);
+		stdin.write("\r"); // Enter on Tools (default)
+		await flush();
+		expect(onOpen).not.toHaveBeenCalled();
+	});
+
+	it("does not fire when detail is null", async () => {
+		const onOpen = vi.fn();
+		const { stdin } = render(
+			<DetailPanel detail={null} onOpenMemoryBrowser={onOpen} />,
+		);
+		stdin.write("2");
+		await flush();
+		stdin.write("\r");
+		await flush();
+		expect(onOpen).not.toHaveBeenCalled();
 	});
 });

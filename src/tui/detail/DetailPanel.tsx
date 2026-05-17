@@ -29,13 +29,24 @@ type Tab = (typeof TABS)[number];
 export function DetailPanel({
 	detail,
 	interactive = true,
+	onOpenMemoryBrowser,
 }: {
 	detail: Detail | null;
 	interactive?: boolean;
+	onOpenMemoryBrowser?: (repoKey: string) => void;
 }): JSX.Element {
 	const [tab, setTab] = useState<Tab>("Tools");
 	useInput(
 		(input, key) => {
+			if (
+				key.return &&
+				tab === "Memory" &&
+				detail &&
+				onOpenMemoryBrowser
+			) {
+				onOpenMemoryBrowser(detail.repoKey);
+				return;
+			}
 			const i = "1234".indexOf(input);
 			if (i >= 0) setTab(TABS[i]);
 			if (key.tab) setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length]);
