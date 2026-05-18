@@ -91,7 +91,8 @@ export type AuditChangeType =
 	| "link_remove"
 	| "pin"
 	| "unpin"
-	| "reconcile";
+	| "reconcile"
+	| "retype";
 
 export type AuditRow = {
 	memoryId: string;
