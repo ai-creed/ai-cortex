@@ -405,7 +405,15 @@ export function createServer(): McpServer {
 			NO_STATS_RESULT,
 			async ({ path: p }) => {
 				const worktreePath = p ?? process.cwd();
-				return withRepoIdentity(worktreePath, async (_repoKey) => {
+				return withRepoIdentity(worktreePath, async (repoKey) => {
+					// One-shot legacy capture triage: runs after the repo-key
+					// migration + registry seed-merge (both inside
+					// withRepoIdentity), before rehydrate. Sentinel-guarded →
+					// once per repo on the first rehydrate_project after upgrade.
+					const { runCaptureTriageIfNeeded } = await import(
+						"../lib/memory/capture-triage.js",
+					);
+					await runCaptureTriageIfNeeded(repoKey);
 					const result = await rehydrateRepo(worktreePath);
 					const briefing = fs.readFileSync(result.briefingPath, "utf8");
 					return {
