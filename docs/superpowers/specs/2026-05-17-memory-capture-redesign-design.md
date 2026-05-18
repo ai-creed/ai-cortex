@@ -22,7 +22,7 @@ Conclusion: the gate must be a **structural noise-killer, not a positive classif
 1. Stop flooding `candidate` with transcript turns: a structural gate that drops ~88% of turns with near-zero loss of genuine memories.
 2. Make the durability judgment an explicit, well-affordanced agent (LLM) step over a small surviving set.
 3. Triage the existing legacy backlog through the same pipeline — no blind deletion.
-4. No new network dependency, no new status enum, reuse existing lifecycle (`confirm`/`deprecate`/`rewrite`).
+4. No new network dependency, no new status enum, reuse existing lifecycle (`confirm`/`deprecate`/`rewrite`). One additive registry seed type (`capture`) — not a status, not a schema change.
 
 ## Non-goals
 
@@ -49,7 +49,7 @@ session transcript (evidence layer)
 └──────────────────────────────────────────────┘
         │ survivors
         ▼
-  create status:"candidate" source:"extracted"      ← unchanged lifecycle
+  create status:"candidate" source:"extracted" type:"capture"  ← unchanged lifecycle
   body = raw user turn + assistant snippet + provenance
   (signalScore is NOT stored — recomputed from body at query time)
   (confidence-based promotion DISABLED for extracted)
@@ -83,7 +83,13 @@ Rewrite `src/lib/memory/extract.ts`. The `produce*` extractors stop being positi
 7. **Question** — `?` within the first 200 chars AND no standing-directive lexeme (`always|never|by default|from now on|prefer .{0,40} over|as a rule`).
 8. **Filler** — trimmed body < 25 chars.
 
-A turn that passes all 8 is **created** as `status:"candidate"`, `source:"extracted"`, body = raw user turn + next-assistant snippet + provenance `{sessionId, turn}`. There is **no positive-signal requirement to be created** — positive classification was proven lossy; the agent is the durability judge.
+A turn that passes all 8 is **created** as `status:"candidate"`, `source:"extracted"`, `type:"capture"`, body = raw user turn + next-assistant snippet + provenance `{sessionId, turn}`. There is **no positive-signal requirement to be created** — positive classification was proven lossy; the agent is the durability judge.
+
+**Provisional type `capture`.** `createMemory` validates `type` against the type registry and throws on an unknown type (`lifecycle.ts:141`), so a survivor needs a valid type — but the gate deliberately does not classify (regex type-guessing was half the original noise problem: every imperative → `decision`). Resolution: add one built-in seed type `capture` to the type registry, meaning "extracted, not yet judged or categorized." It has no required `bodySections`/`typeFields` (any raw body is valid).
+
+**Required: a real registry-seed migration.** `ensureRegistry` today only writes `SEED` when `types.json` is *absent* (`registry.ts:56`); existing repos (every project with a memory store) keep their old file and would never gain `capture` → `createMemory(type:"capture")` would throw `unregistered type: capture`. So this feature must add an idempotent seed-merge: on registry load/ensure, if the persisted `version < REGISTRY_VERSION`, merge any missing `builtIn` seed types from `SEED` into the persisted registry (union — never drop or overwrite user-defined types), set `version = REGISTRY_VERSION`, rewrite `types.json`. `REGISTRY_VERSION` bumps to `2`. This migration is a first-class deliverable, not a footnote, and is exercised by tests (old registry without `capture` → after load, `capture` present, user types intact, idempotent on re-run). The gate stamps every survivor `type:"capture"`. **Type categorization, like durability, is the agent's job at confirm**, not the gate's: the agent assigns the real type via `rewrite_memory(type, typeFields, body)`, which already validates against the registry and reshapes the body into that type's sections. Consequently, for a fresh extraction the terminal action is **almost always `rewrite_memory`** (it sets the real type *and* structures the body); `confirm_memory`-alone applies only in the rare case where the raw body is already a clean, correctly-typed statement (which a `capture` raw turn essentially never is).
+
+**Capture trust is governed by `status`, not the `type` tag.** A `capture`-typed memory is *always* `status:"candidate"` by construction — confirm/rewrite assigns the real type and flips `candidate→active` in the same operation, so there is never an `active` memory still typed `capture`. Recall/surface behavior is therefore **unchanged and needs no type-aware logic**: proactive surfacing on `suggest_files` is already `active`-only (`surface.ts` `includeStatus:["active"]`) so unjudged captures never appear there; explicit `recall_memory` already down-weights `candidate` to 0.5× vs `active` 1.0× (`retrieve.ts`) and is browse-only. `capture` is a **triage/browser label** (lets the pending-confirmation queue and memory browser cleanly separate "unreviewed" from real typed memories) — not a validity signal the agent reasons about. Explicitly **do not** add `type='capture'` filtering into recall: it would be a redundant second source of truth for trust; trust = `status`, full stop. The redesign already improves recall trust by shrinking the candidate pool ~8× (gate kills ~88%).
 
 `signalScore` (0–3): +1 standing-directive lexeme, +1 rationale connective (`because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|as .{0,30}(more|better|efficiently)|reads better`), +1 durable-correction shape (correction prefix + non-deictic code/convention object).
 
@@ -138,7 +144,9 @@ One-shot, idempotent, lazy on first rehydrate per repo after upgrade (mirrors `r
 | Layer | Coverage | Mechanism |
 |---|---|---|
 | Structural hard-rejects | Each of the 8 rules: a real-corpus noise sample (anonymized) is dropped; the ~12 verbatim keepers all survive | unit, table-driven |
-| Gate end-to-end | Fixture evidence layer → only survivors created; assert confidence/`re_extract_count` no longer bumps or promotes `source:"extracted"` | unit |
+| Gate end-to-end | Fixture evidence layer → only survivors created, each `type:"capture"` `status:"candidate"`; `createMemory` accepts `capture` (registry seed present); assert confidence/`re_extract_count` no longer bumps or promotes `source:"extracted"` | unit |
+| `capture` type + trust | `capture` is a valid registry type with no required sections; never surfaced by `surface.ts` (active-only); 0.5×-weighted in `recall_memory`; `rewrite_memory` reassigns `capture`→real type + promotes→active in one op; no `type='capture'` filter added to recall | unit (reuse surface/retrieve fixtures) |
+| Registry seed migration | persisted `types.json` at old version lacking `capture` → after load/ensure, `capture` present + `version==REGISTRY_VERSION`; user-defined types untouched; idempotent on re-run; brand-new repo seeded directly | unit |
 | `signalScore` | pure function of body, deterministic; recomputed at query time (asserted: no DB column / frontmatter field written); orders the queue; never gates creation | unit |
 | `review_pending_captures` | predicate selects only unconfirmed extracted candidates (excludes confirmed/deprecated); `context` fallback hierarchy exercised at each level (transcript-window / evidence-pair / body-only) incl. `context.kind` correctness; limit/order by recomputed `signalScore`; read-only (no get_count bump) | unit, fixture index + history (session present, transcript pruned, pre-v2 no-snippet, fully pruned) |
 | Confirm loop | `rewrite_memory` alone → active; `confirm_memory` alone → active; calling both on one id throws (asserted); `deprecate_memory` → rejected (reuse existing lifecycle tests) | unit |
@@ -159,6 +167,7 @@ One-shot, idempotent, lazy on first rehydrate per repo after upgrade (mirrors `r
 - **Legacy migration over-deprecates** → deprecate (not delete) keeps it auditable/recoverable; the regression fixture includes legacy-shaped keepers to bound this.
 - **Agent never runs the confirm loop** → captures simply remain `candidate` and age out at 90d via the existing cleanup loop; no unbounded growth (and far less volume now that the gate kills 88%).
 - **Confirm queue still too noisy for the agent** → `signalScore` ordering surfaces the most plausible first; `limit` bounds batch size; precision framing in the briefing sets the agent's bar.
+- **Ordering hazard: registry seed-merge must run before any `type:"capture"` write** — if the gate or legacy triage stamps `capture` before the registry migration has merged it, `createMemory`/`rewriteMemory` validation throws `unregistered type: capture`. Mitigation: the registry seed-merge runs at registry load/ensure (the path every memory write already funnels through `ensureRegistry`/`readRegistry`), so it is guaranteed to have applied before the first `capture` write in the same process; the legacy-triage integration test explicitly covers "old registry + extracted candidates → migrate registry first, then triage" ordering.
 
 ## Open questions
 
@@ -169,7 +178,8 @@ None at design freeze. Gate strategy (structural-only), LLM source (calling agen
 ```
 src/
   lib/memory/
-    extract.ts              (rewrite: structural gate; drop positive-classifier + extracted confidence-promotion; add signalScore)
+    extract.ts              (rewrite: structural gate; drop positive-classifier + extracted confidence-promotion; add signalScore; stamp type:"capture")
+    registry.ts             (+ "capture" built-in seed type; REGISTRY_VERSION→2; idempotent version<N seed-merge migration on load/ensure — union, preserves user types)
     capture-triage.ts       (new: one-shot legacy triage migration + sentinel)
     briefing-digest.ts      (+ "Captures pending confirmation" section)
   mcp/
