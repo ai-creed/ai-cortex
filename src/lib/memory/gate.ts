@@ -89,3 +89,15 @@ export function structuralReject(body: string): string | null {
 	for (const r of RULES) if (r.test(body)) return r.name;
 	return null;
 }
+
+const RATIONALE =
+	/\b(because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|reads better)\b|\bas .{0,30}(more|better|efficiently)\b/i;
+const CORRECTION_SHAPE = /^\s*(no,?\s|stop\b|don'?t\b|actually,|instead\b)/i;
+
+export function signalScore(body: string): number {
+	let s = 0;
+	if (STANDING_DIRECTIVE.test(body)) s += 1;
+	if (RATIONALE.test(body)) s += 1;
+	if (CORRECTION_SHAPE.test(body)) s += 1;
+	return Math.min(3, s);
+}
