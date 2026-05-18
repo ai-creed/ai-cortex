@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { produceDecisionCandidates } from "../../../../src/lib/memory/extract.js";
+import { produceCaptureCandidates } from "../../../../src/lib/memory/extract.js";
 import type { EvidenceLayer } from "../../../../src/lib/history/types.js";
+
+// Translated from the old positive-classifier contract: the extractor no
+// longer types prompts as "decision"/"gotcha"/"how-to" and no longer scores
+// confidence tiers. Every user turn that survives the structural gate becomes
+// a single `type:"capture"` candidate; the agent judges durability later.
 
 const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	toolCalls: [],
@@ -10,9 +15,9 @@ const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	...overrides,
 });
 
-describe("produceDecisionCandidates — confidence tiers", () => {
-	it("0.55: correction prefix + imperative + assistant ACK", () => {
-		const out = produceDecisionCandidates(
+describe("produceCaptureCandidates — structural survivors are capture-typed", () => {
+	it("emits one capture per structurally-clean turn (no decision typing)", () => {
+		const out = produceCaptureCandidates(
 			"s-1",
 			ev({
 				userPrompts: [
@@ -26,70 +31,38 @@ describe("produceDecisionCandidates — confidence tiers", () => {
 			}),
 		);
 		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.55, 2);
+		expect(out[0].type).toBe("capture");
+		expect(out[0].typeFields).toBeUndefined();
 	});
 
-	it("0.45: imperative + ACK, no correction prefix", () => {
-		const out = produceDecisionCandidates(
-			"s-2",
-			ev({
-				userPrompts: [
-					{
-						turn: 4,
-						text: "always use POST for create endpoints",
-						nextAssistantSnippet: "Understood — POST it is.",
-					},
-				],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.45, 2);
-	});
-
-	it("0.45: imperative + correction prefix, no ACK", () => {
-		const out = produceDecisionCandidates(
+	it("emits a capture even with no acknowledgement snippet", () => {
+		const out = produceCaptureCandidates(
 			"s-3",
 			ev({
 				userPrompts: [
 					{
 						turn: 4,
-						text: "actually, always use POST for create endpoints",
+						text: "always use POST for create endpoints, never GET",
 					},
 				],
 			}),
 		);
 		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.45, 2);
+		expect(out[0].type).toBe("capture");
 	});
 
-	it("0.35: bare imperative, no ACK, no correction prefix", () => {
-		const out = produceDecisionCandidates(
-			"s-4",
-			ev({
-				userPrompts: [
-					{
-						turn: 4,
-						text: "always use POST for create endpoints",
-					},
-				],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.35, 2);
-	});
-
-	it("ignores prompts without imperative cues", () => {
-		const out = produceDecisionCandidates(
+	it("rejects structurally-noisy turns (vague ack / process control)", () => {
+		const out = produceCaptureCandidates(
 			"s-5",
 			ev({
-				userPrompts: [{ turn: 4, text: "wait, hold on a sec" }],
+				userPrompts: [{ turn: 4, text: "ok" }],
 			}),
 		);
 		expect(out).toEqual([]);
 	});
 
 	it("derives tags and scope files from the prompt and surrounding evidence", () => {
-		const out = produceDecisionCandidates(
+		const out = produceCaptureCandidates(
 			"s-6",
 			ev({
 				userPrompts: [
@@ -108,20 +81,22 @@ describe("produceDecisionCandidates — confidence tiers", () => {
 	});
 
 	it("provenance kind reflects whether the prompt was a correction", () => {
-		const out = produceDecisionCandidates(
+		const out = produceCaptureCandidates(
 			"s-7",
 			ev({
 				userPrompts: [
 					{ turn: 1, text: "actually, always prefer pino over winston" },
-					{ turn: 2, text: "always use POST for create endpoints" },
+					{ turn: 2, text: "always use POST for create endpoints, never GET" },
 				],
 			}),
 		);
 		expect(out).toHaveLength(2);
-		const correctionEntry = out.find((c) =>
+		const correctionEntry = out.find((c: { title: string }) =>
 			c.title.startsWith("actually,"),
 		)!;
-		const plainEntry = out.find((c) => c.title.startsWith("always use POST"))!;
+		const plainEntry = out.find((c: { title: string }) =>
+			c.title.startsWith("always use POST"),
+		)!;
 		expect(correctionEntry.provenance[0].kind).toBe("user_correction");
 		expect(plainEntry.provenance[0].kind).toBe("user_prompt");
 	});

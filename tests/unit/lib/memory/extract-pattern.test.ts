@@ -1,79 +1,55 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { producePatternCandidates } from "../../../../src/lib/memory/extract.js";
-import type { SessionRecord } from "../../../../src/lib/history/types.js";
-import { writeSession } from "../../../../src/lib/history/store.js";
-import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
+import { describe, it, expect } from "vitest";
+import * as extract from "../../../../src/lib/memory/extract.js";
+import { produceCaptureCandidates } from "../../../../src/lib/memory/extract.js";
+import type { EvidenceLayer } from "../../../../src/lib/history/types.js";
 
-function mkSession(
-	id: string,
-	files: string[],
-	prompts: string[],
-): SessionRecord {
-	return {
-		version: 2,
-		id,
-		startedAt: "2026-04-01T00:00:00Z",
-		endedAt: "2026-04-01T01:00:00Z",
-		turnCount: 1,
-		lastProcessedTurn: 0,
-		hasSummary: true,
-		hasRaw: true,
-		rawDroppedAt: null,
-		transcriptPath: "/tmp/x",
-		summary: prompts.join(" "),
-		evidence: {
-			toolCalls: [],
-			filePaths: files.map((path, i) => ({ turn: i, path })),
-			userPrompts: prompts.map((text, i) => ({ turn: i, text })),
-			corrections: [],
-		},
-		chunks: [],
-	};
-}
+// Translated from the old cross-session pattern-classifier contract. The
+// structural-gate rewrite removed `producePatternCandidates` entirely: the
+// extractor no longer aggregates co-occurring file sets across sessions into a
+// `type:"pattern"` memory. Coverage is translated to the surviving behaviour —
+// the single capture producer is per-turn and never aggregates across
+// sessions.
 
-describe("producePatternCandidates", () => {
-	let repoKey: string;
-	beforeEach(async () => {
-		repoKey = await mkRepoKey("pattern");
-	});
-	afterEach(async () => {
-		await cleanupRepo(repoKey);
+const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
+	toolCalls: [],
+	filePaths: [],
+	userPrompts: [],
+	corrections: [],
+	...overrides,
+});
+
+describe("pattern producer removal", () => {
+	it("producePatternCandidates is no longer exported", () => {
+		expect(
+			(extract as Record<string, unknown>).producePatternCandidates,
+		).toBeUndefined();
 	});
 
-	it("emits a pattern when ≥3 sessions share a file set with similar prompts", async () => {
-		const files = ["src/cache-store.ts", "src/lib/memory/store.ts"];
-		const prompts = ["how do I add atomic write to the cache layer"];
-		await writeSession(repoKey, mkSession("s-a", files, prompts));
-		await writeSession(
-			repoKey,
-			mkSession("s-b", files, ["atomic writes for cache files"]),
+	it("capture producer is per-turn and does not aggregate cross-session co-occurrence", () => {
+		const files = [
+			{ turn: 1, path: "src/cache-store.ts" },
+			{ turn: 1, path: "src/lib/memory/store.ts" },
+		];
+		const out = produceCaptureCandidates(
+			"s-a",
+			ev({
+				userPrompts: [
+					{
+						turn: 1,
+						text: "always add an atomic write helper for the cache layer files",
+					},
+				],
+				filePaths: files,
+			}),
 		);
-		const target = mkSession("s-c", files, [
-			"atomic write helper for cache layer",
-		]);
-		await writeSession(repoKey, target);
-
-		// patternCosine lowered to 0.5 to suit the global trigram-hash mock
-		// in tests/helpers/mock-embed-provider.ts (real-model embeddings
-		// would clear the default 0.7; the fake's surface-similarity scores
-		// top out around 0.55–0.72 for these prompts). The test still
-		// exercises "≥3 sessions with similar prompts triggers a pattern"
-		// — only the numeric threshold differs.
-		const out = await producePatternCandidates(repoKey, "s-c", target, {
-			patternCosine: 0.5,
-		});
 		expect(out).toHaveLength(1);
-		expect(out[0].type).toBe("pattern");
-		expect(out[0].confidence).toBeCloseTo(0.35, 2);
-		expect(out[0].scopeFiles).toEqual(expect.arrayContaining(files));
-	});
-
-	it("emits nothing when only 2 sessions share the file set", async () => {
-		const files = ["src/x.ts", "src/y.ts"];
-		await writeSession(repoKey, mkSession("s-a", files, ["work on x"]));
-		const target = mkSession("s-b", files, ["work on x again"]);
-		await writeSession(repoKey, target);
-		const out = await producePatternCandidates(repoKey, "s-b", target);
-		expect(out).toEqual([]);
+		expect(out[0].type).toBe("capture");
+		expect(out[0].type).not.toBe("pattern");
+		expect(out[0].scopeFiles).toEqual(
+			expect.arrayContaining([
+				"src/cache-store.ts",
+				"src/lib/memory/store.ts",
+			]),
+		);
 	});
 });

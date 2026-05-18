@@ -105,9 +105,28 @@ describe("bootstrapFromHistory", () => {
 		expect(after).toBe(before);
 	});
 
-	it("respects --min-confidence", async () => {
-		await writeSession(repoKey, mkSession("s-1", "actually use foo"));
-		const r = await bootstrapFromHistory(repoKey, { minConfidence: 0.99 });
-		expect(r.candidatesCreated).toBe(0);
+	// Translated from the old confidence-floor contract. Post structural-gate
+	// rewrite, `minConfidence` is a documented no-op: extraction no longer
+	// applies a confidence floor — the structural gate (not a numeric
+	// threshold) suppresses noise. A structurally-clean turn is captured
+	// regardless of the passed minConfidence value; a structurally-noisy turn
+	// is rejected by the gate even with minConfidence at its floor.
+	it("minConfidence is a no-op — clean turns survive, the gate rejects noise", async () => {
+		await writeSession(
+			repoKey,
+			mkSession("s-1", "use the agnostic session id everywhere going forward"),
+		);
+		const clean = await bootstrapFromHistory(repoKey, {
+			minConfidence: 0.99,
+		});
+		expect(clean.candidatesCreated).toBe(1); // no-op: not suppressed
+
+		await cleanupRepo(repoKey);
+		repoKey = await mkRepoKey("bootstrap");
+		// Structurally-noisy turn (ends up as "actually, ok?" — a question /
+		// vague ack) is rejected by the gate even at the minConfidence floor.
+		await writeSession(repoKey, mkSession("s-2", "ok?"));
+		const noisy = await bootstrapFromHistory(repoKey, { minConfidence: 0 });
+		expect(noisy.candidatesCreated).toBe(0); // gate rejected, not the floor
 	});
 });

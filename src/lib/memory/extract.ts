@@ -1,24 +1,24 @@
 // src/lib/memory/extract.ts
 import fs from "node:fs/promises";
 import { extractorRunPath, extractorRunsDir } from "./paths.js";
-import {
-	openLifecycle,
-	createMemory,
-	addEvidence,
-	bumpConfidence,
-	bumpReExtract,
-} from "./lifecycle.js";
+import { openLifecycle, createMemory, addEvidence } from "./lifecycle.js";
 import type { LifecycleHandle } from "./lifecycle.js";
 import { getProvider } from "../embed-provider.js";
 import { readMemoryVector } from "./embed.js";
-import type { EvidenceLayer, SessionRecord } from "../history/types.js";
-import { listSessions, readSession } from "../history/store.js";
+import type { EvidenceLayer } from "../history/types.js";
+import { readSession } from "../history/store.js";
 import { isHarnessInjection } from "../history/compact.js";
+import { structuralReject } from "./gate.js";
 
 export const EXTRACTOR_MANIFEST_VERSION = 1;
 export const DEFAULT_DEDUP_COSINE = 0.85;
 
-export type ExtractCandidateType = "decision" | "gotcha" | "pattern" | "how-to";
+export type ExtractCandidateType =
+	| "capture"
+	| "decision"
+	| "gotcha"
+	| "pattern"
+	| "how-to";
 
 export type RejectedCandidate = {
 	type: ExtractCandidateType;
@@ -42,7 +42,13 @@ export type ExtractorManifest = {
 };
 
 export type ExtractOptions = {
-	minConfidence?: number; // default: 0.4
+	/**
+	 * @deprecated No-op since the structural-gate rewrite. Extraction no longer
+	 * applies a confidence floor — structural rejection happens in the gate and
+	 * the only remaining drop reason is dedup. Retained for call-site
+	 * compatibility; the value is ignored.
+	 */
+	minConfidence?: number;
 	dedupCosine?: number; // default: 0.85
 	allowReExtract?: boolean; // default: false (skip if manifest exists)
 };
@@ -88,7 +94,6 @@ export async function extractFromSession(
 	opts: ExtractOptions = {},
 ): Promise<ExtractResult> {
 	const allowReExtract = opts.allowReExtract ?? false;
-	const minConfidence = opts.minConfidence ?? 0.4;
 	const dedupCosine = opts.dedupCosine ?? DEFAULT_DEDUP_COSINE;
 
 	const session = await readSession(repoKey, sessionId);
@@ -133,42 +138,15 @@ export async function extractFromSession(
 	};
 
 	try {
-		const decisions = produceDecisionCandidates(sessionId, newEvidence);
-		const gotchas = produceGotchaCandidates(sessionId, newEvidence);
-		const howtos = produceHowToCandidates(sessionId, newEvidence);
-		const patterns = await producePatternCandidates(
-			repoKey,
-			sessionId,
-			session,
-		);
-		const all = [...decisions, ...gotchas, ...howtos, ...patterns];
+		// One pass over userPrompts: every turn that survives the structural
+		// gate becomes a `capture` candidate. The gate is reject-only — no
+		// positive classification; the agent judges durability downstream.
+		// Corrections are already represented within userPrompts in the
+		// evidence layer, so we do NOT iterate corrections separately
+		// (double-counting). The only remaining drop reason is dedup.
+		const all = produceCaptureCandidates(sessionId, newEvidence);
 
 		for (const cand of all) {
-			// Structural floor: when no boost fired (confidence still at BASE),
-			// require a non-trivial body. Catches throwaway prompts like "okay good"
-			// that match IMPERATIVE_RE / SYMPTOM_RE on a single stopword. Only
-			// applies at exactly BASE_CONFIDENCE so any boost (correction prefix,
-			// ack, workaround) lets short-but-strong feedback through.
-			if (
-				cand.confidence === BASE_CONFIDENCE &&
-				cand.body.trim().length < BASE_CONFIDENCE_MIN_BODY_CHARS
-			) {
-				manifest.rejectedCandidates.push({
-					type: cand.type,
-					reason: `base-confidence body too short (<${BASE_CONFIDENCE_MIN_BODY_CHARS} chars)`,
-					previewText: cand.title,
-				});
-				continue;
-			}
-			if (cand.confidence < minConfidence) {
-				manifest.rejectedCandidates.push({
-					type: cand.type,
-					reason: `below confidence floor ${minConfidence}`,
-					previewText: cand.title,
-				});
-				continue;
-			}
-
 			const dedupHit = await findDedupTarget(
 				lc,
 				{
@@ -180,24 +158,23 @@ export async function extractFromSession(
 				{ dedupCosine },
 			);
 			if (dedupHit) {
+				// Extracted-promotion is disabled: append provenance only.
+				// No bumpConfidence / bumpReExtract for extracted captures.
 				for (const p of cand.provenance) {
 					await addEvidence(lc, dedupHit, p);
 				}
-				await bumpConfidence(lc, dedupHit, 0.1, `re-extract from ${sessionId}`);
-				bumpReExtract(lc, dedupHit);
 				manifest.evidenceAppended += 1;
 				manifest.appendedToMemoryIds.push(dedupHit);
 				continue;
 			}
 
 			const id = await createMemory(lc, {
-				type: cand.type,
+				type: "capture",
 				title: cand.title,
 				body: cand.body,
 				scope: { files: cand.scopeFiles, tags: cand.tags },
 				source: "extracted",
 				confidence: cand.confidence,
-				typeFields: cand.typeFields,
 			});
 			for (const p of cand.provenance) {
 				await addEvidence(lc, id, p);
@@ -431,248 +408,50 @@ export function nearestFile(
 }
 
 // ---------------------------------------------------------------------------
-// Confidence model — see specs/2026-04-30-memory-schema-design.md
-// "Post-implementation finding (2026-05-01) — correction-prefix as boost".
-// Decision/gotcha extractors iterate over all userPrompts; correction-prefix
-// and assistant-ACK each contribute +0.10 above a 0.35 base. The default
-// minConfidence: 0.4 floor (applied in extractFromSession) rejects bare
-// matches that pick up neither boost.
+// Capture producer
+//
+// Reject-only structural gate, no positive classification. Every user turn in
+// `evidence.userPrompts` is a candidate-turn; survivors of `structuralReject`
+// become a single `capture` candidate. Corrections are already represented
+// within `userPrompts` in the evidence layer, so we iterate `userPrompts`
+// exactly once (iterating corrections too would double-count). The agent
+// judges durability downstream — confidence is a fixed placeholder and is no
+// longer used for gating.
 // ---------------------------------------------------------------------------
 
 const BASE_CONFIDENCE = 0.35;
-const SIGNAL_BOOST = 0.1;
-const BASE_CONFIDENCE_MIN_BODY_CHARS = 25;
 
-// Mirror of CORRECTION_RE in src/lib/history/compact.ts. Kept local to the
-// extractor so the boost is computed from the prompt text directly without a
-// reverse lookup against evidence.corrections.
+// Mirror of CORRECTION_RE in src/lib/history/compact.ts. Kept local so the
+// provenance kind is computed from the prompt text directly without a reverse
+// lookup against evidence.corrections.
 const CORRECTION_PREFIX_RE =
 	/^\s*(no|stop|don't|dont|wait|actually|instead|but)\b/i;
 
-// ---------------------------------------------------------------------------
-// Gotcha heuristic
-// ---------------------------------------------------------------------------
-
-const SYMPTOM_RE =
-	/\b(breaks?|broken|fails?|race|hangs?|wrong|bug|flaky|crash(es|ed)?|errors?)\b/i;
-const WORKAROUND_RE =
-	/\b(fix(:|es|ed)?|instead|workaround|use\s+\S+\s+instead|bypass|patch)\b/i;
-
-export function produceGotchaCandidates(
+export function produceCaptureCandidates(
 	sessionId: string,
 	evidence: EvidenceLayer,
 ): ProducedCandidate[] {
 	const out: ProducedCandidate[] = [];
 	for (const u of evidence.userPrompts) {
-		if (!SYMPTOM_RE.test(u.text)) continue;
-		const workaround =
-			u.nextAssistantSnippet !== undefined &&
-			WORKAROUND_RE.test(u.nextAssistantSnippet);
+		if (structuralReject(u.text) !== null) continue;
 		const correction = CORRECTION_PREFIX_RE.test(u.text);
-		const confidence =
-			BASE_CONFIDENCE +
-			(workaround ? SIGNAL_BOOST : 0) +
-			(correction ? SIGNAL_BOOST : 0);
-		const title = u.text.length <= 80 ? u.text : u.text.slice(0, 77) + "…";
-		const body = u.nextAssistantSnippet
-			? `**Symptom:** ${u.text}\n\n**Workaround:** ${u.nextAssistantSnippet}`
-			: `**Symptom:** ${u.text}`;
-		const file = nearestFile(evidence, u.turn);
-		out.push({
-			type: "gotcha",
-			title,
-			body,
-			scopeFiles: file ? [file] : [],
-			tags: extractTags(u.text),
-			confidence,
-			provenance: [
-				{
-					sessionId,
-					turn: u.turn,
-					kind: correction ? "user_correction" : "user_prompt",
-					excerpt: u.text.slice(0, 280),
-				},
-			],
-			typeFields: { severity: "warning" },
-		});
-	}
-	return out;
-}
-
-// ---------------------------------------------------------------------------
-// Decision heuristic
-// ---------------------------------------------------------------------------
-
-const IMPERATIVE_RE = /\b(must|always|never|should|don't|dont|prefer|avoid)\b/i;
-const ACK_RE =
-	/\b(got it|understood|will do|noted|sure thing|okay,? i('| wi)ll)\b/i;
-
-export function produceDecisionCandidates(
-	sessionId: string,
-	evidence: EvidenceLayer,
-): ProducedCandidate[] {
-	const out: ProducedCandidate[] = [];
-	for (const u of evidence.userPrompts) {
-		if (!IMPERATIVE_RE.test(u.text)) continue;
-		const ack =
-			u.nextAssistantSnippet !== undefined &&
-			ACK_RE.test(u.nextAssistantSnippet);
-		const correction = CORRECTION_PREFIX_RE.test(u.text);
-		const confidence =
-			BASE_CONFIDENCE +
-			(ack ? SIGNAL_BOOST : 0) +
-			(correction ? SIGNAL_BOOST : 0);
 		const title = u.text.length <= 80 ? u.text : u.text.slice(0, 77) + "…";
 		const body = u.nextAssistantSnippet
 			? `${u.text}\n\n_Acknowledged:_ ${u.nextAssistantSnippet}`
 			: u.text;
 		out.push({
-			type: "decision",
+			type: "capture",
 			title,
 			body,
 			scopeFiles: filesNearTurn(evidence, u.turn, 3),
 			tags: extractTags(u.text),
-			confidence,
+			confidence: BASE_CONFIDENCE,
 			provenance: [
 				{
 					sessionId,
 					turn: u.turn,
 					kind: correction ? "user_correction" : "user_prompt",
 					excerpt: u.text.slice(0, 280),
-				},
-			],
-		});
-	}
-	return out;
-}
-
-// ---------------------------------------------------------------------------
-// Pattern heuristic (cross-session co-occurrence)
-// ---------------------------------------------------------------------------
-
-const PATTERN_MIN_SESSIONS = 3;
-const PATTERN_PROMPT_COSINE = 0.7;
-
-function fileSetKey(paths: string[]): string {
-	return [...new Set(paths)].sort().join("|");
-}
-
-export async function producePatternCandidates(
-	repoKey: string,
-	thisSessionId: string,
-	thisSession: SessionRecord,
-	opts: { patternCosine?: number } = {},
-): Promise<ProducedCandidate[]> {
-	const patternCosine = opts.patternCosine ?? PATTERN_PROMPT_COSINE;
-	const targetFiles = new Set(
-		thisSession.evidence.filePaths.map((f) => f.path),
-	);
-	if (targetFiles.size === 0) return [];
-	const targetKey = fileSetKey([...targetFiles]);
-
-	const allIds = await listSessions(repoKey);
-	const matching: SessionRecord[] = [];
-	for (const id of allIds) {
-		if (id === thisSessionId) continue;
-		const rec = await readSession(repoKey, id);
-		if (!rec) continue;
-		const files = new Set(rec.evidence.filePaths.map((f) => f.path));
-		if (fileSetKey([...files]) === targetKey) matching.push(rec);
-	}
-	if (matching.length < PATTERN_MIN_SESSIONS - 1) return [];
-
-	// Cosine on userPrompts: average prompt embedding per session, then mean cosine to target.
-	const provider = await getProvider();
-	const targetPrompts = thisSession.evidence.userPrompts
-		.map((p) => p.text)
-		.join(" ");
-	if (targetPrompts.length === 0) return [];
-	const [targetVec] = await provider.embed([targetPrompts]);
-
-	let similarCount = 0;
-	for (const rec of matching) {
-		const prompts = rec.evidence.userPrompts.map((p) => p.text).join(" ");
-		if (prompts.length === 0) continue;
-		const [vec] = await provider.embed([prompts]);
-		if (cosine(targetVec!, vec!) >= patternCosine) similarCount++;
-	}
-	if (similarCount + 1 < PATTERN_MIN_SESSIONS) return [];
-
-	const files = [...targetFiles];
-	const summary =
-		thisSession.summary.length > 0 ? thisSession.summary : targetPrompts;
-	return [
-		{
-			type: "pattern",
-			title: `Recurring work on ${files[0]}${files.length > 1 ? ` and ${files.length - 1} others` : ""}`,
-			body: `**Where:** ${files.join(", ")}\n\n**Convention:** ${summary.slice(0, 400)}`,
-			scopeFiles: files,
-			tags: extractTags(targetPrompts),
-			confidence: 0.35,
-			provenance: [
-				{
-					sessionId: thisSessionId,
-					turn: 0,
-					kind: "summary",
-					excerpt: summary.slice(0, 280),
-				},
-			],
-		},
-	];
-}
-
-// ---------------------------------------------------------------------------
-// How-to heuristic
-// ---------------------------------------------------------------------------
-
-const HOW_TO_RE =
-	/^\s*(how (do|to|can) i|steps|process|procedure|what are the steps)\b/i;
-const NUMBERED_LIST_RE = /(^|\n)\s*1[.)]\s/;
-
-const HOW_TO_MIN_TOOLS = 3;
-
-export function produceHowToCandidates(
-	sessionId: string,
-	evidence: EvidenceLayer,
-): ProducedCandidate[] {
-	const out: ProducedCandidate[] = [];
-	for (const p of evidence.userPrompts) {
-		if (!HOW_TO_RE.test(p.text)) continue;
-		const sequential = evidence.toolCalls.filter((tc) => tc.turn > p.turn);
-		if (sequential.length < HOW_TO_MIN_TOOLS) continue;
-		const closingList =
-			p.nextAssistantSnippet !== undefined &&
-			NUMBERED_LIST_RE.test(p.nextAssistantSnippet);
-		const minTurn = sequential[0].turn;
-		const maxTurn = sequential[sequential.length - 1].turn;
-		const files = [
-			...new Set(
-				evidence.filePaths
-					.filter((f) => f.turn >= minTurn && f.turn <= maxTurn)
-					.map((f) => f.path),
-			),
-		];
-		const stepsBody = closingList
-			? p.nextAssistantSnippet!
-			: sequential
-					.map(
-						(tc, i) => `${i + 1}. ${tc.name}${tc.args ? ` — ${tc.args}` : ""}`,
-					)
-					.join("\n");
-		const title = p.text.length <= 80 ? p.text : p.text.slice(0, 77) + "…";
-		out.push({
-			type: "how-to",
-			title,
-			body: `**Goal:** ${p.text}\n\n**Steps:**\n${stepsBody}`,
-			scopeFiles: files,
-			tags: extractTags(p.text),
-			confidence: closingList ? 0.5 : 0.4,
-			provenance: [
-				{
-					sessionId,
-					turn: p.turn,
-					kind: "user_prompt",
-					excerpt: p.text.slice(0, 280),
 				},
 			],
 		});

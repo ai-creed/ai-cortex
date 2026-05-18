@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { produceGotchaCandidates } from "../../../../src/lib/memory/extract.js";
+import { produceCaptureCandidates } from "../../../../src/lib/memory/extract.js";
 import type { EvidenceLayer } from "../../../../src/lib/history/types.js";
+
+// Translated from the old gotcha-classifier contract: symptom/workaround
+// prompts are no longer typed "gotcha" and no longer carry a
+// `severity: "warning"` typeField. Structurally-clean turns become plain
+// `type:"capture"` candidates regardless of their semantic flavour.
 
 const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	toolCalls: [],
@@ -10,9 +15,9 @@ const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	...overrides,
 });
 
-describe("produceGotchaCandidates — confidence tiers", () => {
-	it("0.55: correction prefix + symptom + workaround", () => {
-		const out = produceGotchaCandidates(
+describe("produceCaptureCandidates — symptom prompts are capture-typed", () => {
+	it("emits a capture for a symptom+workaround turn (no gotcha typing/typeFields)", () => {
+		const out = produceCaptureCandidates(
 			"s-1",
 			ev({
 				userPrompts: [
@@ -27,59 +32,37 @@ describe("produceGotchaCandidates — confidence tiers", () => {
 			}),
 		);
 		expect(out).toHaveLength(1);
-		expect(out[0].type).toBe("gotcha");
-		expect(out[0].confidence).toBeCloseTo(0.55, 2);
+		expect(out[0].type).toBe("capture");
+		expect(out[0].typeFields).toBeUndefined();
 		expect(out[0].scopeFiles).toEqual(["src/adapters/python.ts"]);
-		expect(out[0].typeFields).toEqual({ severity: "warning" });
 	});
 
-	it("0.45: symptom + workaround, no correction prefix", () => {
-		const out = produceGotchaCandidates(
-			"s-2",
+	it("emits a capture for a bare symptom turn", () => {
+		const out = produceCaptureCandidates(
+			"s-4",
 			ev({
 				userPrompts: [
 					{
-						turn: 6,
-						text: "the build breaks on Linux because Parser isn't initialized",
-						nextAssistantSnippet:
-							"Fix: call Parser.init() once before parallel adapters.",
+						turn: 1,
+						text: "the integration test is flaky and hangs on CI runners",
 					},
 				],
 			}),
 		);
 		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.45, 2);
+		expect(out[0].type).toBe("capture");
 	});
 
-	it("0.45: symptom + correction prefix, no workaround", () => {
-		const out = produceGotchaCandidates(
-			"s-3",
-			ev({
-				userPrompts: [
-					{ turn: 1, text: "actually the test is flaky and hangs on CI" },
-				],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.45, 2);
-	});
-
-	it("0.35: bare symptom, no boost", () => {
-		const out = produceGotchaCandidates(
-			"s-4",
-			ev({
-				userPrompts: [{ turn: 1, text: "the test is flaky and hangs on CI" }],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].confidence).toBeCloseTo(0.35, 2);
-	});
-
-	it("ignores prompts without symptom cues", () => {
-		const out = produceGotchaCandidates(
+	it("rejects structurally-noisy turns even if they read like a symptom", () => {
+		const out = produceCaptureCandidates(
 			"s-5",
 			ev({
-				userPrompts: [{ turn: 1, text: "actually use a different name" }],
+				userPrompts: [
+					{
+						turn: 1,
+						text: "still the same. Uncaught TypeError: x is not a function at y",
+					},
+				],
 			}),
 		);
 		expect(out).toEqual([]);
