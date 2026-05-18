@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.8.0 — 2026-05-19
+
+- feat(memory): capture pipeline redesign — extractor is now a structural noise-killer (reject-only), survivors are unjudged `capture` candidates the agent confirms via `review_pending_captures` + `rewrite_memory`/`deprecate_memory`
+- feat(memory): reserved `capture` registry type + idempotent seed-merge migration (REGISTRY_VERSION 2)
+- feat(memory): `retypeCandidate` lifecycle primitive; `retype` AuditChangeType
+- fix(memory): disable confidence/re_extract promotion for extracted candidates (it rewarded re-ingested boilerplate)
+- chore(memory): one-shot legacy candidate triage on first rehydrate after upgrade (deprecates structural noise, retypes survivors to `capture`)
+
+---
+
 ## v0.7.0 — 2026-05-16
 
 - feat(tui): full-screen memory browser (status-grouped, colored type tags, scrollable body), reachable from the stats Memory tab
