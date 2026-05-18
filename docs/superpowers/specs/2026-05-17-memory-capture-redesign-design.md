@@ -63,7 +63,8 @@ legacy candidates ──► same GATE re-filter ──► structural noise: depr
 │ • rehydrate briefing: "Captures pending confirmation — N" (own section)   │
 │ • review_pending_captures({worktreePath,limit?,since?}) → batch +         │
 │   context: transcript-window | evidence-pair | body-only + signalScore    │
-│ • agent: rewrite_memory → confirm_memory (→active)  |  deprecate_memory    │
+│ • agent: rewrite_memory ALONE | confirm_memory ALONE (→active) |          │
+│          deprecate_memory (→rejected)   — exactly one per candidate        │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,7 +101,7 @@ Existing cosine dedup (`DEFAULT_DEDUP_COSINE 0.85`) is unchanged.
 - Returns a batch (default ≤15) ordered by `signalScore` desc then recency. Each item: `id`, provisional title, raw body, **`context`**, `signalScore`, source `{sessionId, turn}`.
 - `context` is resolved by a defined fallback hierarchy (a `SessionRecord` stores `evidence` + lossy `chunks` + a `transcriptPath`; raw surrounding turns exist only in `transcriptPath`, which may be absent/pruned — `rawDroppedAt` — even when the session record still exists):
   1. **`transcriptPath` readable** → parse a window of the source turn ± N turns (`{ kind: "transcript", turns: [...] }`).
-  2. **else the evidence pair** → `evidence.userPrompts[turn].text` + its `nextAssistantSnippet` (≤500 chars; present for v2 sessions) (`{ kind: "evidence", userTurn, assistantSnippet }`). This is the common case and is exactly what the gate itself saw.
+  2. **else the evidence pair** → find the `evidence.userPrompts` row where `u.turn === source.turn` (`turn` is a turn number, not an array index — match on the field, do not index), then use `u.text` + its `nextAssistantSnippet` (≤500 chars; present for v2 sessions) (`{ kind: "evidence", userTurn, assistantSnippet }`). This is the common case and is exactly what the gate itself saw.
   3. **else body-only** → `{ kind: "body-only" }` (legacy/pruned; the agent judges from the candidate body alone).
 - The item always carries `context.kind` so the agent knows the fidelity of what it's judging.
 - Read-only — it does not mutate; it never bumps `get_count`/`last_accessed_at` (mirrors the read-only-reader constraint used elsewhere).
@@ -140,7 +141,7 @@ One-shot, idempotent, lazy on first rehydrate per repo after upgrade (mirrors `r
 | Gate end-to-end | Fixture evidence layer → only survivors created; assert confidence/`re_extract_count` no longer bumps or promotes `source:"extracted"` | unit |
 | `signalScore` | pure function of body, deterministic; recomputed at query time (asserted: no DB column / frontmatter field written); orders the queue; never gates creation | unit |
 | `review_pending_captures` | predicate selects only unconfirmed extracted candidates (excludes confirmed/deprecated); `context` fallback hierarchy exercised at each level (transcript-window / evidence-pair / body-only) incl. `context.kind` correctness; limit/order by recomputed `signalScore`; read-only (no get_count bump) | unit, fixture index + history (session present, transcript pruned, pre-v2 no-snippet, fully pruned) |
-| Confirm loop | rewrite→confirm→active; deprecate→rejected (reuse existing lifecycle tests) | unit |
+| Confirm loop | `rewrite_memory` alone → active; `confirm_memory` alone → active; calling both on one id throws (asserted); `deprecate_memory` → rejected (reuse existing lifecycle tests) | unit |
 | Legacy triage migration | structural-noise→deprecated; keepers→candidate + in queue; idempotent re-run no-ops; sentinel honored; corrupt index aborts without sentinel | integration, tmpdir cache w/ seeded legacy candidates |
 | Briefing | "Captures pending confirmation — N" appears iff N>0, separate from cleanup section | unit (briefing-digest) |
 | Regression corpus | the 208-row taxonomy distilled to a checked-in anonymized fixture: assert the noise buckets are killed and the keeper set survives (precision/recall guardrail vs future rule drift) | unit |
