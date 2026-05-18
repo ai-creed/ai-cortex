@@ -296,6 +296,45 @@ export async function deprecateMemory(
 	});
 }
 
+export async function retypeCandidate(
+	lc: LifecycleHandle,
+	id: string,
+	newType: string,
+): Promise<void> {
+	const current = await loadCurrent(lc, id);
+	if (current.frontmatter.status !== "candidate") {
+		throw new Error(
+			`retypeCandidate only from candidate, not ${current.frontmatter.status}`,
+		);
+	}
+	// typeFields belong to the OLD type's namespace; clear at the boundary.
+	const validation = validateRegistration(lc.registry, {
+		type: newType,
+		typeFields: {},
+	});
+	if (!validation.ok) {
+		throw new Error(
+			`retypeCandidate: ${(validation as { ok: false; errors: string[] }).errors.join("; ")}`,
+		);
+	}
+	const next: MemoryRecord = {
+		frontmatter: {
+			...current.frontmatter,
+			version: current.frontmatter.version + 1,
+			updatedAt: new Date().toISOString(),
+			type: newType,
+			typeFields: {},
+		},
+		body: current.body,
+	};
+	await commit(lc, next, {
+		changeType: "retype",
+		prevBodyHash: lc.index.getMemory(id)!.body_hash,
+		prevBody: null,
+		reason: `retype ${current.frontmatter.type} → ${newType}`,
+	});
+}
+
 export async function restoreMemory(
 	lc: LifecycleHandle,
 	id: string,
