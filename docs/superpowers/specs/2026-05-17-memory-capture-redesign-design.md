@@ -51,7 +51,7 @@ session transcript (evidence layer)
         ▼
   create status:"candidate" source:"extracted"      ← unchanged lifecycle
   body = raw user turn + assistant snippet + provenance
-  signalScore = weak priority hint (NOT a gate)
+  (signalScore is NOT stored — recomputed from body at query time)
   (confidence-based promotion DISABLED for extracted)
         │
 legacy candidates ──► same GATE re-filter ──► structural noise: deprecate
@@ -62,12 +62,12 @@ legacy candidates ──► same GATE re-filter ──► structural noise: depr
 │ CONFIRM AFFORDANCE (agent = LLM, via MCP)                                 │
 │ • rehydrate briefing: "Captures pending confirmation — N" (own section)   │
 │ • review_pending_captures({worktreePath,limit?,since?}) → batch +         │
-│   transcript window (fresh) | body-only (legacy/pruned) + signalScore     │
+│   context: transcript-window | evidence-pair | body-only + signalScore    │
 │ • agent: rewrite_memory → confirm_memory (→active)  |  deprecate_memory    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-One gate, one queue, one lifecycle. Fresh and legacy converge; the only difference is fresh captures carry a transcript window, legacy usually do not (pruned history sessions).
+One gate, one queue, one lifecycle. Fresh and legacy converge; they differ only in `context` fidelity (fresh → transcript-window or evidence-pair; legacy → usually body-only, sessions pruned).
 
 ## Gate — structural noise-killer
 
@@ -84,7 +84,9 @@ Rewrite `src/lib/memory/extract.ts`. The `produce*` extractors stop being positi
 
 A turn that passes all 8 is **created** as `status:"candidate"`, `source:"extracted"`, body = raw user turn + next-assistant snippet + provenance `{sessionId, turn}`. There is **no positive-signal requirement to be created** — positive classification was proven lossy; the agent is the durability judge.
 
-`signalScore` (0–3): +1 standing-directive lexeme, +1 rationale connective (`because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|as .{0,30}(more|better|efficiently)|reads better`), +1 durable-correction shape (correction prefix + non-deictic code/convention object). Stored as metadata, used **only** to order the confirm queue. Never gates creation.
+`signalScore` (0–3): +1 standing-directive lexeme, +1 rationale connective (`because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|as .{0,30}(more|better|efficiently)|reads better`), +1 durable-correction shape (correction prefix + non-deictic code/convention object).
+
+**Not stored.** `signalScore` is a pure, deterministic function of the candidate body — `signalScore(body): 0..3` lives next to the gate and is **recomputed at query time** by `review_pending_captures` (which already reads each body). No SQLite column, no frontmatter field, no migration — this is what keeps "no schema change" true. Used **only** to order the confirm queue; never gates creation, never persisted.
 
 **Confidence-promotion disabled for extracted candidates.** `re_extract_count` and confidence no longer auto-bump or auto-promote `source:"extracted"` memories (it rewarded re-ingested boilerplate, evidenced by the v16–31 noise rows). Extracted candidates leave `candidate` only via the agent confirm/deprecate step. (Explicit, non-extracted memories are unaffected.)
 
@@ -95,11 +97,17 @@ Existing cosine dedup (`DEFAULT_DEDUP_COSINE 0.85`) is unchanged.
 "Pending confirmation" predicate: exactly `source='extracted' AND status='candidate'`. A confirmed memory is `active`; a rejected one is `deprecated`/`trashed` — both fall out of `status='candidate'` automatically, so no extra "acted-on" flag is needed. This population **intentionally overlaps** the existing aging-cleanup pending-rewrite queue (`status='candidate' AND rewritten_at IS NULL`): they are the same rows seen two ways. The capture-confirm flow is the **primary** action (review soon, while context is fresh); the 90d cleanup loop is the **backstop** for anything the agent never gets to. The new briefing section and the cleanup section may both reference a row until it is confirmed/deprecated — that is by design, not a conflict.
 
 **New read-only MCP tool** `review_pending_captures({ worktreePath, limit?, since? })`:
-- Returns a batch (default ≤15) ordered by `signalScore` desc then recency. Each item: `id`, provisional title, raw body, **transcript window** (the source user turn + N surrounding turns + the assistant response, reconstructed from the stored history session when present; `null`/body-only when the session was pruned), `signalScore`, source `{sessionId, turn}`.
+- Returns a batch (default ≤15) ordered by `signalScore` desc then recency. Each item: `id`, provisional title, raw body, **`context`**, `signalScore`, source `{sessionId, turn}`.
+- `context` is resolved by a defined fallback hierarchy (a `SessionRecord` stores `evidence` + lossy `chunks` + a `transcriptPath`; raw surrounding turns exist only in `transcriptPath`, which may be absent/pruned — `rawDroppedAt` — even when the session record still exists):
+  1. **`transcriptPath` readable** → parse a window of the source turn ± N turns (`{ kind: "transcript", turns: [...] }`).
+  2. **else the evidence pair** → `evidence.userPrompts[turn].text` + its `nextAssistantSnippet` (≤500 chars; present for v2 sessions) (`{ kind: "evidence", userTurn, assistantSnippet }`). This is the common case and is exactly what the gate itself saw.
+  3. **else body-only** → `{ kind: "body-only" }` (legacy/pruned; the agent judges from the candidate body alone).
+- The item always carries `context.kind` so the agent knows the fidelity of what it's judging.
 - Read-only — it does not mutate; it never bumps `get_count`/`last_accessed_at` (mirrors the read-only-reader constraint used elsewhere).
 
-**Agent decision loop** (existing lifecycle, no new code there):
-- Durable & generalizable → `rewrite_memory(id, …)` into a rule card, then `confirm_memory(id)` → `active`.
+**Agent decision loop** (existing lifecycle, no new code there). `rewriteMemory` and `confirmMemory` each **independently** promote a `candidate` to `active` (`rewriteMemory`: `status==='candidate' → 'active'`, confidence 1.0, `rewrittenAt` set; `confirmMemory`: throws unless still `candidate`). They are therefore **mutually exclusive — never call both on the same id** (the second throws "confirmMemory only from candidate, not active"). Exactly one terminal action per candidate:
+- Durable but the raw body needs reshaping into a rule card → `rewrite_memory(id, …)` **alone** (this promotes to `active`; do **not** also call `confirm_memory`).
+- Durable and the body is already a clean, generalizable statement as-is → `confirm_memory(id)` **alone** → `active`.
 - Not durable → `deprecate_memory(id, reason)` → rejected.
 - Unsure → leave it; ages out via the existing 90d cleanup loop.
 
@@ -113,14 +121,14 @@ One-shot, idempotent, lazy on first rehydrate per repo after upgrade (mirrors `r
 
 - Select all `source='extracted' AND status='candidate'`.
 - Run each body through the new structural gate. Structural-noise → `deprecateMemory(id, "legacy triage: structural noise")` (auditable, recoverable, ages out — not hard-deleted).
-- Survivors stay `candidate` and automatically satisfy the `review_pending_captures` predicate. Legacy survivors are body-only (pruned sessions) — the tool returns them with `transcriptWindow: null`; the agent judges from the body.
+- Survivors stay `candidate` and automatically satisfy the `review_pending_captures` predicate. Legacy survivors usually resolve to `context.kind: "body-only"` (sessions pruned); the agent judges from the body.
 - Completion sentinel prevents re-run / double-deprecation.
 - Expected on current data: ~180/208 auto-deprecated; ~25–30 surface for agent confirm; ~9–13 become `active`.
 
 ## Edge / error states
 
 - Empty evidence layer / no user turns → no candidates (unchanged).
-- History session pruned when `review_pending_captures` runs → item returned body-only, `transcriptWindow: null`; never an error.
+- History session pruned (or `transcriptPath` unreadable, or pre-v2 session with no `nextAssistantSnippet`) when `review_pending_captures` runs → `context` degrades down the hierarchy (transcript → evidence-pair → body-only); never an error.
 - Migration runs with a corrupt/locked index → migration aborts cleanly, sentinel NOT written (retried next rehydrate); never crashes rehydrate.
 - A turn matches both a hard-reject and would have high `signalScore` → hard-reject wins (structural rejects evaluated first; ordering is the point — see the "Ok, sound good … fold into agents.md" ordering-bug lesson: the trailing-clause case is handled by the agent on the rare survivor, not by trying to lexically rescue it in the gate).
 
@@ -130,8 +138,8 @@ One-shot, idempotent, lazy on first rehydrate per repo after upgrade (mirrors `r
 |---|---|---|
 | Structural hard-rejects | Each of the 8 rules: a real-corpus noise sample (anonymized) is dropped; the ~12 verbatim keepers all survive | unit, table-driven |
 | Gate end-to-end | Fixture evidence layer → only survivors created; assert confidence/`re_extract_count` no longer bumps or promotes `source:"extracted"` | unit |
-| `signalScore` | computed correctly; orders the queue; never gates creation | unit |
-| `review_pending_captures` | predicate selects only unconfirmed extracted candidates (excludes confirmed/deprecated/aging-cleanup); transcript window when session present, body-only when pruned; limit/order; read-only (no get_count bump) | unit, fixture index + history |
+| `signalScore` | pure function of body, deterministic; recomputed at query time (asserted: no DB column / frontmatter field written); orders the queue; never gates creation | unit |
+| `review_pending_captures` | predicate selects only unconfirmed extracted candidates (excludes confirmed/deprecated); `context` fallback hierarchy exercised at each level (transcript-window / evidence-pair / body-only) incl. `context.kind` correctness; limit/order by recomputed `signalScore`; read-only (no get_count bump) | unit, fixture index + history (session present, transcript pruned, pre-v2 no-snippet, fully pruned) |
 | Confirm loop | rewrite→confirm→active; deprecate→rejected (reuse existing lifecycle tests) | unit |
 | Legacy triage migration | structural-noise→deprecated; keepers→candidate + in queue; idempotent re-run no-ops; sentinel honored; corrupt index aborts without sentinel | integration, tmpdir cache w/ seeded legacy candidates |
 | Briefing | "Captures pending confirmation — N" appears iff N>0, separate from cleanup section | unit (briefing-digest) |
