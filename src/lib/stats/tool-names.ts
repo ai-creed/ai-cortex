@@ -6,7 +6,7 @@
 // Code's built-ins like Read/Edit/Bash) down to just ai-cortex MCP calls.
 //
 // Keep this in lockstep with server.tool(...) / server.registerTool(...)
-// call sites. Verify count: 33.
+// call sites. Verify count: 34.
 
 export const AI_CORTEX_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"rehydrate_project",
@@ -41,6 +41,7 @@ export const AI_CORTEX_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"promote_to_global",
 	"extract_session",
 	"list_memories_pending_rewrite",
+	"review_pending_captures",
 	"rewrite_memory",
 ]);
 
