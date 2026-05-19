@@ -229,4 +229,27 @@ describe("runSurfaceHook (integration)", () => {
 			"nosess rule",
 		);
 	});
+
+	it("emits a surface-events line when it surfaces", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "se rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		await run({
+			session_id: "se-sess", cwd: worktreePath,
+			tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		const { readSurfaceEvents } = await import(
+			"../../src/lib/stats/surface-events.js",
+		);
+		const evs = readSurfaceEvents(repoKey);
+		expect(evs.length).toBe(1);
+		expect(evs[0]!.session_id).toBe("se-sess");
+		expect(evs[0]!.count).toBeGreaterThan(0);
+	});
 });

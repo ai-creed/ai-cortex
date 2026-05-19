@@ -157,6 +157,22 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 			input.session_id ?? "_nosession",
 			perFile,
 		);
+		if (emit) {
+			try {
+				const { appendSurfaceEvent } = await import(
+					"../../stats/surface-events.js",
+				);
+				appendSurfaceEvent(repoKey, {
+					ts: Date.now(),
+					session_id:
+						typeof input.session_id === "string" ? input.session_id : null,
+					memoryIds: pointers.map((p) => p.id),
+					count: pointers.length,
+				});
+			} catch {
+				/* never block the edit on telemetry */
+			}
+		}
 		allow(stdout, emit ? buildContext(pointers) : undefined);
 		return 0;
 	} catch {
