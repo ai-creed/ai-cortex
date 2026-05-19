@@ -38,6 +38,7 @@ Commands:
   mcp                              Start the MCP server (stdio)
   stats [--window 7d] [--once]     Open the TUI stats dashboard
   stats backfill                   Synthesize stats rows from session history
+  stats sessions [--window 7d] [--json]   Per-session memory-adoption report
   history <subcommand>             Manage session history capture
   memory <subcommand>              Manage the memory store
   help, --help, -h                 Show this help
@@ -1135,6 +1136,27 @@ async function main(): Promise<void> {
 				}
 				process.stdout.write(
 					`Total: ${results.length} repos, ${totalSessions} sessions, ${totalRows} rows inserted\n`,
+				);
+				return;
+			}
+			if (sub === "sessions") {
+				const window = (flagValue(args, "--window") ?? "7d") as
+					| "1h"
+					| "24h"
+					| "7d"
+					| "30d";
+				if (!["1h", "24h", "7d", "30d"].includes(window)) {
+					process.stderr.write(`bad --window: ${window}\n`);
+					process.exit(2);
+				}
+				const json = args.includes("--json");
+				const cwd = flagValue(args, "--cwd") ?? process.cwd();
+				const repoKey = await resolveRepoKeyFromFlagOrCwd(args, cwd);
+				const { runStatsSessions } = await import(
+					"./lib/stats/cli/sessions.js",
+				);
+				runStatsSessions({ repoKey, window, json }, (t) =>
+					process.stdout.write(t),
 				);
 				return;
 			}
