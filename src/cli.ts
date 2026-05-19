@@ -854,6 +854,13 @@ async function main(): Promise<void> {
 					if (code !== 0) process.exit(code);
 					break;
 				}
+				case "surface-hook": {
+					const { runSurfaceHook } = await import(
+						"./lib/memory/cli/surface-hook.js"
+					);
+					await runSurfaceHook();
+					break;
+				}
 				case "list": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
