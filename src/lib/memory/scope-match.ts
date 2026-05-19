@@ -46,3 +46,22 @@ export function createMatchCache(): (pattern: string, path: string) => boolean {
 		return m(nx);
 	};
 }
+
+/**
+ * Deterministic specificity score for a stored scope pattern. Higher = more
+ * specific. Literal patterns (no glob chars) always outrank any glob. Among
+ * globs, a longer non-glob prefix is more specific. Used by edit-time
+ * surfacing so an exact-path rule is never displaced by a broad glob
+ * (spec §4.1). Pure; normalizes separators like the matchers above.
+ */
+export function patternSpecificity(pattern: string): number {
+	const np = normalizePath(pattern);
+	if (!GLOB_CHARS.test(np)) {
+		// Literal: dominant tier, tie-broken by length.
+		return 1_000_000 + np.length;
+	}
+	const firstGlob = np.search(GLOB_CHARS);
+	const doubleStars = (np.match(/\*\*/g) ?? []).length;
+	// Longer literal prefix → higher; each '**' broadens → penalty.
+	return firstGlob - doubleStars * 10;
+}
