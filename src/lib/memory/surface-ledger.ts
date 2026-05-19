@@ -25,9 +25,13 @@ export type LedgerResult = { emit: boolean };
 /**
  * Per-session dedup. Returns emit=true if ANY file's matched-memory set
  * differs from what was last surfaced this session, and persists the new
- * state for emitted files. All IO is best-effort: on any error the
- * function degrades to emit=true (never suppresses incorrectly, never
- * throws). Cache-only — no repo writes (spec §3.3, §7).
+ * state for emitted files. All IO (read/parse/write/prune) is best-effort:
+ * on any IO or parse error the function degrades to emit=true (never
+ * suppresses incorrectly, never throws on IO). It does NOT guard against a
+ * malformed `repoKey`: `getCacheDir` asserts a resolved 16-hex key, so
+ * callers must pass a key from `resolveRepoIdentity` (the surface-hook
+ * caller does, inside its own silent-allow try/catch — spec §8).
+ * Cache-only — no repo writes (spec §3.3, §7).
  */
 export function evaluateLedger(
 	repoKey: string,
