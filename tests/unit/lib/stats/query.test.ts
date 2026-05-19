@@ -275,6 +275,140 @@ describe("cacheMeta", () => {
 		);
 		expect(cacheMeta(rk).name).toBeNull();
 	});
+
+	it("prefers sidecar values over main JSON when sidecar is present", async () => {
+		await fsp.mkdir(path.join(tmp, repoKey), { recursive: true });
+		// Main JSON says "stale-sha"; sidecar says "fresh-sha". Sidecar wins.
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-10T00:00:00.000Z",
+				fingerprint: "stale-sha",
+				files: [{}, {}],
+				packageMeta: { name: "stale-name" },
+			}),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.meta.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-19T00:00:00.000Z",
+				fingerprint: "fresh-sha",
+				fileCount: 42,
+				name: "fresh-name",
+			}),
+		);
+		expect(cacheMeta(repoKey)).toEqual({
+			indexedAt: "2026-05-19T00:00:00.000Z",
+			fingerprint: "fresh-sha",
+			fileCount: 42,
+			name: "fresh-name",
+		});
+	});
+
+	it("lazy-writes a sidecar when missing", async () => {
+		await fsp.mkdir(path.join(tmp, repoKey), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-15T00:00:00.000Z",
+				fingerprint: "main-sha",
+				files: [{}, {}, {}, {}],
+				packageMeta: { name: "lazy-self-heal" },
+			}),
+		);
+
+		// First call: parses main, returns correct meta, and self-heals.
+		expect(cacheMeta(repoKey)).toEqual({
+			indexedAt: "2026-05-15T00:00:00.000Z",
+			fingerprint: "main-sha",
+			fileCount: 4,
+			name: "lazy-self-heal",
+		});
+
+		const sidecarPath = path.join(
+			tmp,
+			repoKey,
+			"aaaaaaaaaaaaaaaa.meta.json",
+		);
+		expect(fs.existsSync(sidecarPath)).toBe(true);
+		expect(JSON.parse(fs.readFileSync(sidecarPath, "utf8"))).toEqual({
+			indexedAt: "2026-05-15T00:00:00.000Z",
+			fingerprint: "main-sha",
+			fileCount: 4,
+			name: "lazy-self-heal",
+		});
+	});
+
+	it("falls back to main JSON when sidecar is corrupt", async () => {
+		await fsp.mkdir(path.join(tmp, repoKey), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-15T00:00:00.000Z",
+				fingerprint: "main-sha",
+				files: [{}],
+				packageMeta: { name: "fallback-name" },
+			}),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.meta.json"),
+			"{not-json",
+		);
+
+		expect(cacheMeta(repoKey)).toEqual({
+			indexedAt: "2026-05-15T00:00:00.000Z",
+			fingerprint: "main-sha",
+			fileCount: 1,
+			name: "fallback-name",
+		});
+
+		// Self-heal: corrupt sidecar overwritten with valid content.
+		const sidecarPath = path.join(
+			tmp,
+			repoKey,
+			"aaaaaaaaaaaaaaaa.meta.json",
+		);
+		expect(JSON.parse(fs.readFileSync(sidecarPath, "utf8")).fingerprint).toBe(
+			"main-sha",
+		);
+	});
+
+	it("selects newest indexedAt across multiple worktrees using sidecars", async () => {
+		await fsp.mkdir(path.join(tmp, repoKey), { recursive: true });
+		// Two worktrees, each with main + sidecar. Newer one wins.
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({ indexedAt: "2026-05-10T00:00:00.000Z", files: [] }),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "aaaaaaaaaaaaaaaa.meta.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-10T00:00:00.000Z",
+				fingerprint: "older",
+				fileCount: 0,
+				name: "older",
+			}),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "bbbbbbbbbbbbbbbb.json"),
+			JSON.stringify({ indexedAt: "2026-05-19T00:00:00.000Z", files: [] }),
+		);
+		await fsp.writeFile(
+			path.join(tmp, repoKey, "bbbbbbbbbbbbbbbb.meta.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-19T00:00:00.000Z",
+				fingerprint: "newer",
+				fileCount: 5,
+				name: "newer",
+			}),
+		);
+		expect(cacheMeta(repoKey)).toEqual({
+			indexedAt: "2026-05-19T00:00:00.000Z",
+			fingerprint: "newer",
+			fileCount: 5,
+			name: "newer",
+		});
+	});
 });
 
 describe("aggregateAcross", () => {

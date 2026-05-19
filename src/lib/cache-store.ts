@@ -40,6 +40,29 @@ export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 	return path.join(getCacheDir(repoKey), `${worktreeKey}.json`);
 }
 
+export function getCacheMetaFilePath(
+	repoKey: string,
+	worktreeKey: string,
+): string {
+	return path.join(getCacheDir(repoKey), `${worktreeKey}.meta.json`);
+}
+
+export type CacheMetaSidecar = {
+	indexedAt: string | null;
+	fingerprint: string | null;
+	fileCount: number | null;
+	name: string | null;
+};
+
+export function deriveCacheMeta(cache: RepoCache): CacheMetaSidecar {
+	return {
+		indexedAt: cache.indexedAt ?? null,
+		fingerprint: cache.fingerprint ?? null,
+		fileCount: Array.isArray(cache.files) ? cache.files.length : null,
+		name: cache.packageMeta?.name ?? null,
+	};
+}
+
 export async function buildRepoFingerprint(
 	worktreePath: string,
 ): Promise<string> {
@@ -62,6 +85,33 @@ export async function writeCache(cache: RepoCache): Promise<void> {
 	const filePath = getCacheFilePath(cache.repoKey, cache.worktreeKey);
 	const tmp = filePath + ".tmp";
 	await fs.promises.writeFile(tmp, JSON.stringify(cache, null, 2) + "\n");
+	await fs.promises.rename(tmp, filePath);
+
+	// Best-effort sidecar: dashboard reads this instead of the full cache JSON.
+	// Failure here must not propagate — main JSON is the source of truth.
+	try {
+		await writeCacheMetaSidecar(
+			cache.repoKey,
+			cache.worktreeKey,
+			deriveCacheMeta(cache),
+		);
+	} catch (err) {
+		process.stderr.write(
+			`ai-cortex: failed to write cache meta sidecar: ${
+				err instanceof Error ? err.message : String(err)
+			}\n`,
+		);
+	}
+}
+
+export async function writeCacheMetaSidecar(
+	repoKey: string,
+	worktreeKey: string,
+	meta: CacheMetaSidecar,
+): Promise<void> {
+	const filePath = getCacheMetaFilePath(repoKey, worktreeKey);
+	const tmp = filePath + ".tmp";
+	await fs.promises.writeFile(tmp, JSON.stringify(meta) + "\n");
 	await fs.promises.rename(tmp, filePath);
 }
 

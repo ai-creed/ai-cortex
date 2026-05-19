@@ -21,6 +21,7 @@ import {
 	assertHashedRepoKey,
 	buildRepoFingerprint,
 	getCacheDir,
+	getCacheMetaFilePath,
 	isWorktreeDirty,
 	readCacheForWorktree,
 	RepoKeyError,
@@ -100,6 +101,73 @@ describe("writeCache + readCacheForWorktree", () => {
 		expect(stderrSpy).toHaveBeenCalledWith(
 			expect.stringContaining("cache schema updated"),
 		);
+	});
+});
+
+describe("writeCache sidecar (*.meta.json)", () => {
+	it("emits a sidecar with the 4 derived fields", async () => {
+		const cache = makeCache({
+			indexedAt: "2026-05-19T08:17:21.370Z",
+			fingerprint: "deadbeef0000",
+			packageMeta: { name: "ai-cortex", version: "1.0.0", framework: null },
+			files: [
+				{ path: "a.ts", kind: "file", contentHash: "h1" } as any,
+				{ path: "b.ts", kind: "file", contentHash: "h2" } as any,
+				{ path: "c.ts", kind: "file", contentHash: "h3" } as any,
+			],
+		});
+		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
+
+		await writeCache(cache);
+
+		const sidecarPath = getCacheMetaFilePath(cache.repoKey, cache.worktreeKey);
+		const raw = fs.readFileSync(sidecarPath, "utf8");
+		expect(JSON.parse(raw)).toEqual({
+			indexedAt: "2026-05-19T08:17:21.370Z",
+			fingerprint: "deadbeef0000",
+			fileCount: 3,
+			name: "ai-cortex",
+		});
+	});
+
+	it("sidecar write failure does not throw or block main JSON", async () => {
+		const cache = makeCache();
+		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
+		const realWriteFile = fs.promises.writeFile;
+		const writeSpy = vi
+			.spyOn(fs.promises, "writeFile")
+			.mockImplementation(async (p: any, data: any, opts?: any) => {
+				if (typeof p === "string" && p.includes(".meta.json")) {
+					throw new Error("simulated sidecar write failure");
+				}
+				return realWriteFile(p, data, opts);
+			});
+		const stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
+
+		await expect(writeCache(cache)).resolves.toBeUndefined();
+
+		// main JSON is still readable
+		const result = await readCacheForWorktree(cache.repoKey, cache.worktreeKey);
+		expect(result).not.toBeNull();
+		expect(result?.fingerprint).toBe("abc123");
+
+		writeSpy.mockRestore();
+		stderrSpy.mockRestore();
+	});
+
+	it("emits sidecar with null name when packageMeta.name is missing", async () => {
+		const cache = makeCache({
+			packageMeta: { name: null as any, version: "0.0.0", framework: null },
+		});
+		vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
+
+		await writeCache(cache);
+
+		const sidecarPath = getCacheMetaFilePath(cache.repoKey, cache.worktreeKey);
+		const parsed = JSON.parse(fs.readFileSync(sidecarPath, "utf8"));
+		expect(parsed.name).toBeNull();
 	});
 });
 

@@ -278,6 +278,71 @@ const EMPTY_CACHE_META: CacheMeta = {
 	name: null,
 };
 
+const SIDECAR_SUFFIX = ".meta.json";
+
+function readSidecarSync(sidecarPath: string): CacheMeta | null {
+	let raw: string;
+	try {
+		raw = fs.readFileSync(sidecarPath, "utf8");
+	} catch {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(raw) as Partial<CacheMeta>;
+		if (parsed === null || typeof parsed !== "object") return null;
+		return {
+			indexedAt: typeof parsed.indexedAt === "string" ? parsed.indexedAt : null,
+			fingerprint:
+				typeof parsed.fingerprint === "string" ? parsed.fingerprint : null,
+			fileCount:
+				typeof parsed.fileCount === "number" ? parsed.fileCount : null,
+			name: typeof parsed.name === "string" ? parsed.name : null,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function writeSidecarSync(sidecarPath: string, meta: CacheMeta): void {
+	const tmp = sidecarPath + ".tmp";
+	try {
+		fs.writeFileSync(tmp, JSON.stringify(meta) + "\n");
+		fs.renameSync(tmp, sidecarPath);
+	} catch {
+		// Best-effort self-heal. Clean up tmp if rename failed.
+		try {
+			fs.unlinkSync(tmp);
+		} catch {
+			/* tmp may not exist */
+		}
+	}
+}
+
+function readFromMainJson(jsonPath: string): CacheMeta | null {
+	let raw: string;
+	try {
+		raw = fs.readFileSync(jsonPath, "utf8");
+	} catch {
+		return null;
+	}
+	try {
+		const data = JSON.parse(raw) as {
+			indexedAt?: string;
+			fingerprint?: string;
+			files?: unknown[];
+			packageMeta?: { name?: string };
+		};
+		return {
+			indexedAt: data.indexedAt ?? null,
+			fingerprint: data.fingerprint ?? null,
+			fileCount: Array.isArray(data.files) ? data.files.length : null,
+			name: data.packageMeta?.name ?? null,
+		};
+	} catch {
+		return null;
+	}
+}
+
 export function cacheMeta(repoKey: string): CacheMeta {
 	const dir = path.join(cacheRoot(), repoKey);
 	let entries: fs.Dirent[] = [];
@@ -286,32 +351,32 @@ export function cacheMeta(repoKey: string): CacheMeta {
 	} catch {
 		return { ...EMPTY_CACHE_META };
 	}
+	// Sidecars end in .meta.json which also matches .endsWith(".json").
+	// Skip them explicitly so the loop iterates only worktree manifests.
 	const jsons = entries.filter(
-		(e) => e.isFile() && e.name.endsWith(".json"),
+		(e) =>
+			e.isFile() &&
+			e.name.endsWith(".json") &&
+			!e.name.endsWith(SIDECAR_SUFFIX),
 	);
 	let best: CacheMeta = { ...EMPTY_CACHE_META };
 	for (const e of jsons) {
-		try {
-			const raw = fs.readFileSync(path.join(dir, e.name), "utf8");
-			const data = JSON.parse(raw) as {
-				indexedAt?: string;
-				fingerprint?: string;
-				files?: unknown[];
-				packageMeta?: { name?: string };
-			};
-			if (
-				!best.indexedAt ||
-				(data.indexedAt && data.indexedAt > best.indexedAt)
-			) {
-				best = {
-					indexedAt: data.indexedAt ?? null,
-					fingerprint: data.fingerprint ?? null,
-					fileCount: Array.isArray(data.files) ? data.files.length : null,
-					name: data.packageMeta?.name ?? null,
-				};
-			}
-		} catch {
-			/* malformed JSON — skip */
+		const jsonPath = path.join(dir, e.name);
+		const sidecarPath =
+			jsonPath.slice(0, -".json".length) + SIDECAR_SUFFIX;
+
+		let meta = readSidecarSync(sidecarPath);
+		if (!meta) {
+			meta = readFromMainJson(jsonPath);
+			if (meta) writeSidecarSync(sidecarPath, meta);
+		}
+		if (!meta) continue;
+
+		if (
+			!best.indexedAt ||
+			(meta.indexedAt && meta.indexedAt > best.indexedAt)
+		) {
+			best = meta;
 		}
 	}
 	return best;
