@@ -121,6 +121,8 @@ These are intentions. Order will shift with real-use signal.
 
 ### Phase 11 — Adoption telemetry
 
+**Status:** shipped (Phase 11) — `stats sessions` CLI + TUI Sessions tab. Coarse/window-level v1 per the design spec; precise surfaced-id and exact extract→cleanup cohorts deferred.
+
 The `logged()` middleware already captures every MCP tool call. Aggregate those traces into a per-session histogram so call rate is observable: which tools the agent actually invokes, the recall→get conversion rate, the extract→cleanup rate. Without this we're guessing whether the cardinal pattern works in practice. ~1 day of work.
 
 **Gate:** the user (and eventually anyone running ai-cortex) can answer "did the agent use memory this session?" with a number, not a feeling.

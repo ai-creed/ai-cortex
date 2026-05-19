@@ -113,9 +113,9 @@ Agents must read tool descriptions and act on them. Even with hardened opinionat
 
 This hook is **not** installed by `ai-cortex history install-hooks` — the harness behavior is Claude Code's, not ai-cortex's, and the nudge is user-side configuration.
 
-### No public adoption telemetry yet
+### Adoption telemetry
 
-The `logged()` middleware captures every MCP tool call locally, but there's no aggregator that turns that into a per-session histogram. So *"is the agent actually using the tools"* is currently observable only by `tail -f`-ing the MCP log. Phase 11 in the plan addresses this.
+Resolved (Phase 11). `ai-cortex stats sessions` (CLI, `--json`) and the stats dashboard **Sessions** tab report per-session memory adoption from `tool_calls` (now `session_id`-attributed) plus edit-time surfacings. Coverage is honest: events whose session id the harness didn't expose to the MCP process are bucketed `(unattributed)` and that share is shown alongside every number. Two refinements remain deliberately deferred (documented in the design spec): precise surfaced-id→`get_memory(id)` correlation (coarse session-level in v1) and exact extract→cleanup cohorts (window-level rate in v1).
 
 ---
 

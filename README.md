@@ -208,7 +208,7 @@ ai-cortex stats --once                   # render one frame and exit (for piping
 
 **Browsing memories.** In `ai-cortex stats`, select a project, press `Tab`/`2` to the Memory tab, then `Enter` for a full-screen browser: memories grouped by status with colored type tags, a scrollable body pane, and `recorded`/`used` activity sparklines. Read-only. `Esc` returns.
 
-**Privacy.** Only lengths, counts, and identifiers are recorded — no query text, no memory bodies, no file paths. Rows older than 90 days are pruned on store open. Stats live entirely under `~/.cache/ai-cortex/` and never leave the machine.
+**Privacy.** Only lengths, counts, and identifiers are recorded — no query text, no memory bodies, no file paths. Rows older than 90 days are pruned on store open. Stats live entirely under `~/.cache/ai-cortex/` and never leave the machine. Per-session adoption (`ai-cortex stats sessions` and the stats **Sessions** tab) additionally records a `session_id` (the harness's random session identifier) and surfaced memory ids — identifiers, not content; same local-only contract, never leaves the machine.
 
 ## Library API
 
