@@ -68,13 +68,13 @@ Access counters (`get_count`, `last_accessed_at`, `re_extract_count`, `rewritten
 
 Aging thresholds (90d for candidate→trashed, 180d for deprecated→trashed, etc.) are config-driven defaults, not adapted to per-memory or per-project signal. A memory with high `getCount` but stale `last_accessed_at` is treated the same as a never-touched candidate of the same age.
 
-### Edit-time surfacing: Claude-only, scopeFiles-only, timeout fail-open unverified
+### Edit-time surfacing: Claude-only, scopeFiles-only
 
-The v0.9.0 `PreToolUse` memory-surface hook (surfaces a file's project-scoped memories before an Edit/Write) has three bounded gaps:
+The v0.9.0 `PreToolUse` memory-surface hook (surfaces a file's project-scoped memories before an Edit/Write) has two bounded gaps (a third — Claude timeout fail-open — was an open risk, now verified resolved; see below):
 
 - **Claude Code only — Codex `PreToolUse` does not fire (verified `codex-cli 0.130.0`, 2026-05-19).** The Codex `apply_patch` parser is implemented and unit-tested, but its hook install is gated off. A capture attempt (stdin-dumping `~/.codex/config.toml` hook, two `codex exec` apply_patch runs, matchers `""` then `apply_patch`/`Write`/`Edit`/`Bash`/`.*`) captured **zero** `PreToolUse` invocations, while `UserPromptSubmit`/`Stop` fired normally — so on 0.130.0 Codex emits `PreToolUse` for neither `apply_patch` nor `Bash` (upstream openai/codex #20204, #21639). The blocker is upstream event emission, not payload shape; it cannot be validated until a Codex release emits `PreToolUse` for `apply_patch`. Gemini / Cline and other harnesses have no `PreToolUse` wiring; they degrade silently to the pull model.
 - **`scopeFiles` only.** The edit-time gate matches author-declared file scopes (literal/glob, no embedding/tag/semantic) — deliberate, precision-first. Tag-only and unscoped memories never surface at edit time; they still reach the agent via `recall_memory` / `get_memory` and the rehydration briefing.
-- **Timeout fail-open is unverified on Claude Code.** Whether a timed-out `PreToolUse` hook fails open (edit proceeds) or closed (edit blocked) is undocumented. Codex is source-confirmed fail-open. Mitigations: bounded work (no embedding / model load), an explicit 5s install timeout, and the hook always exits 0 / never emits `deny`. A fail-closed Claude harness remains an unverified risk; if observed it is a release blocker for the Claude path.
+- **Timeout fail-open — verified on Claude Code 2.1.144 (2026-05-19), undocumented upstream.** A timed-out `PreToolUse` hook fails *open* on Claude Code (the edit proceeds): probed with an isolated headless `claude -p` running a `PreToolUse` hook that sleeps 30s under `timeout:2` — the hook was killed yet the gated tool still ran. Matches Codex's source-confirmed fail-open. Not a risk anymore; the mitigations (bounded work, 5s install timeout, always exit 0 / never `deny`) stay as cheap version-proofing since the behavior is undocumented and could change — re-verify on major Claude Code upgrades.
 
 The hook never blocks an edit by its own logic (always-allow), writes no repo files (dedup state is cache-only), and is opt-out via `AI_CORTEX_SURFACE=0`.
 
