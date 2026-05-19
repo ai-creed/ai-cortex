@@ -68,6 +68,16 @@ Access counters (`get_count`, `last_accessed_at`, `re_extract_count`, `rewritten
 
 Aging thresholds (90d for candidate→trashed, 180d for deprecated→trashed, etc.) are config-driven defaults, not adapted to per-memory or per-project signal. A memory with high `getCount` but stale `last_accessed_at` is treated the same as a never-touched candidate of the same age.
 
+### Edit-time surfacing: Claude-only, scopeFiles-only, timeout fail-open unverified
+
+The v0.9.0 `PreToolUse` memory-surface hook (surfaces a file's project-scoped memories before an Edit/Write) has three bounded gaps:
+
+- **Claude Code only.** The Codex `apply_patch` equivalent is implemented and unit-tested, but its hook install is gated off pending a verified real Codex `PreToolUse` payload fixture — the assumption that the patch body arrives as `tool_input.command` is unconfirmed against a live Codex run. Gemini / Cline and other harnesses have no `PreToolUse` wiring; they degrade silently to the pull model.
+- **`scopeFiles` only.** The edit-time gate matches author-declared file scopes (literal/glob, no embedding/tag/semantic) — deliberate, precision-first. Tag-only and unscoped memories never surface at edit time; they still reach the agent via `recall_memory` / `get_memory` and the rehydration briefing.
+- **Timeout fail-open is unverified on Claude Code.** Whether a timed-out `PreToolUse` hook fails open (edit proceeds) or closed (edit blocked) is undocumented. Codex is source-confirmed fail-open. Mitigations: bounded work (no embedding / model load), an explicit 5s install timeout, and the hook always exits 0 / never emits `deny`. A fail-closed Claude harness remains an unverified risk; if observed it is a release blocker for the Claude path.
+
+The hook never blocks an edit by its own logic (always-allow), writes no repo files (dedup state is cache-only), and is opt-out via `AI_CORTEX_SURFACE=0`.
+
 ---
 
 ## Adoption / agent integration
@@ -78,8 +88,9 @@ Agents must read tool descriptions and act on them. Even with hardened opinionat
 
 - Briefing-phase memory digest (push-once awareness at session start)
 - `ai-cortex memory install-prompt-guide` (writes guidance to CLAUDE.md / AGENTS.md so the agent's system context teaches the recall→get pattern)
+- **Edit-time surface hook (v0.9.0, Claude Code)** — for the *edit path* specifically, a `PreToolUse` hook pushes the target file's scoped memories before the edit, so that path no longer depends on the agent remembering to call the tools (see *Memory layer › Edit-time surfacing*)
 
-…but ultimately the agent decides whether to call the tools. The pull-only architecture means low call rate is the worst case (memory layer dormant), not catastrophic context corruption.
+…but for non-edit consultation the agent still decides whether to call the tools. The pull-by-default architecture means low call rate is the worst case there (memory layer dormant), not catastrophic context corruption; the edit-time hook removes the "never queried" failure for file edits without that risk (precision-first, fail-open).
 
 **Claude Code specific: tool schemas are deferred-loaded.** In Claude Code, MCP tool schemas (including ai-cortex's) are not loaded into the agent's context up front — only the tool names appear, and the agent must call `ToolSearch` to fetch a schema before it can invoke the tool. Out of sight = out of mind: even when a memory rule applies, the agent may forget `record_memory` exists because its description isn't in context. Workaround: add a SessionStart hook to your `~/.claude/settings.json` that nudges the agent to preload the ai-cortex schemas via `ToolSearch` at session start, and tell it to prefer ai-cortex over `ls`/`grep`/`rg`. Example:
 

@@ -147,7 +147,7 @@ Recall returns ranked results using a two-stage filter (SQL scope + cosine + rec
 
 ### inject
 
-Three injection channels, all push-once at session start (not push-per-edit):
+Four injection channels — three are push-once at session start, the fourth pushes per-edit:
 
 1. **Rehydration briefing** — the markdown briefing produced by `ai-cortex rehydrate` includes a memory digest section: counts (active / candidates / pinned), top-5 active memories per type with title + scope + confidence, and a "How to consult" guidance block.
 
@@ -163,6 +163,8 @@ ai-cortex memory uninstall-prompt-guide                          # surgical remo
 ```
 
 The block is wrapped in versioned HTML-comment markers (`<!-- ai-cortex:memory-rule:start v1 -->`), so installs are idempotent and future revisions auto-replace older versions.
+
+4. **Edit-time surface hook** (v0.9.0, push-per-edit) — a `PreToolUse` hook (Claude Code; matcher `Edit|Write|MultiEdit`) injects pointers to the *target file's* project-scoped memories as non-blocking `additionalContext` before the edit runs. Deterministic `scopeFiles` match only (literal/glob, no embedding), ranked precision-first (specificity → getCount → recency), capped at 3, per-session dedup. Pointers only — no bodies; the agent still judges relevance and calls `get_memory` itself, so the use signal stays honest. Never blocks an edit (always-allow, fail-open); silent when nothing matches. Installed by `ai-cortex history install-hooks`; opt out with `AI_CORTEX_SURFACE=0`. The Codex `apply_patch` equivalent is built but gated off pending verification of the hook payload shape.
 
 ### evolve
 
@@ -287,15 +289,17 @@ ai-cortex memory reconcile                 # detect orphan files, phantom rows, 
 
 These are deliberate constraints, not yet-to-be-fixed limitations.
 
-### Pull-only injection
+### Pull by default, precision-first push at edit time
 
-The system surfaces awareness (briefing memory digest) but does not push memories into the agent's context per-edit. The agent decides per-task whether to consult memory. This is a deliberate tradeoff: irrelevant memories surfaced is worse than no memories at all, because they pollute the agent's reasoning. Only the agent — with knowledge of the current task and intent — can judge relevance.
+For general consultation the system is pull: it surfaces *awareness* (briefing memory digest, MCP tool guidance) and the agent decides per-task whether to `recall_memory` / `get_memory`. Irrelevant memories pushed into reasoning are worse than none, and only the agent — with the current task and intent — can judge relevance.
 
-This means low call rate is the worst case (memory layer is dormant), not catastrophic context corruption. The system degrades smoothly.
+As of v0.9.0 this is **superseded for the edit path only**: a `PreToolUse` hook pushes the target file's memories before an edit (see *inject* channel 4). It stays precision-first by construction — nothing is pushed unless a memory's author-declared `scopeFiles` deterministically matches the file being edited; it pushes *pointers*, not bodies; relevance is still the agent's call (`get_memory` remains the honest use signal). This is explicitly **not** the rejected "push N guessed-relevant memories on every edit": no scope match → silent, fail-open, `AI_CORTEX_SURFACE=0` disables it.
+
+Net: for non-edit consultation, low call rate is still the worst case (layer dormant, no context corruption — degrades smoothly); the edit path additionally removes the "agent forgot to ask" failure without sacrificing precision. Rationale is recorded as a decision memory (*edit-time push-via-hook supersedes the 2026-05-01 pull-only / no-hooks / push-rejected constraints*).
 
 ### Agent-agnostic via MCP
 
-The integration surface is MCP. No hooks (Claude Code-specific), no agent-specific config files (Cursor's `.cursor/rules`), no editor extensions. Any MCP-compliant agent — Claude Code, Codex, Cline, future agents — gets the same memory store. Tied to the *project*, not the *tool*.
+The integration surface is MCP. No agent-specific config files (Cursor's `.cursor/rules`), no editor extensions. Any MCP-compliant agent — Claude Code, Codex, Cline, future agents — gets the same memory store, tied to the *project*, not the *tool*. The v0.9.0 edit-time surface hook is the one deliberate exception: an *additive* push layer for harnesses that expose a `PreToolUse` hook (Claude Code today; Codex `apply_patch` pending). It does not change the store, the MCP surface, or behavior for agents without the hook — they keep the pull model unchanged — so the substrate stays agent-agnostic.
 
 ### No LLM in the substrate
 
@@ -348,6 +352,7 @@ Layered loader: defaults → user config → repo config. Located at `~/.cache/a
 | `AI_CORTEX_CACHE_HOME` | Override the cache root (default: `~/.cache/ai-cortex/`). Used by tests; rarely useful in production. |
 | `AI_CORTEX_NO_UPDATE_CHECK` | Disable the daily background update check. |
 | `AI_CORTEX_HISTORY` | Set to `0` to disable session capture even with hooks installed. |
+| `AI_CORTEX_SURFACE` | Set to `0` to disable the edit-time `PreToolUse` memory-surface hook (capture/history hooks unaffected). |
 
 ### Per-call flags
 
@@ -373,6 +378,9 @@ Scope is at file and tag granularity. A memory bound to a specific function or c
 
 ### Closed feedback loop is partially shipped
 The access counters (`getCount`, `lastAccessedAt`, `reExtractCount`, `rewrittenAt`) are in place and gate cleanup eligibility. But the full closed-loop reconciliation — "this memory was recalled in session S, did the agent's subsequent work violate it?" — is deferred. The data shape supports it; the analyzer doesn't exist yet.
+
+### Edit-time surfacing is Claude-only, scopeFiles-only, timeout fail-open unverified
+The v0.9.0 `PreToolUse` surface hook covers Claude Code only — the Codex `apply_patch` equivalent is built and unit-tested but its install is gated off pending a verified real Codex `PreToolUse` payload fixture (the patch-body-as-`tool_input.command` assumption is unconfirmed). The edit-time gate matches `scopeFiles` only (literal/glob, no tag/semantic) by design (precision-first); tag-only and unscoped memories never surface at edit time — they still reach the agent via pull. Claude Code's behavior when a `PreToolUse` hook exceeds its timeout (fail-open vs fail-closed) is undocumented; mitigated by bounded work + an explicit 5s install timeout + always-exit-0, but a fail-closed harness is an unverified risk. Detail in [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md).
 
 ### Cross-tier promotion is manual
 You decide which project memories deserve global scope. Auto-promotion is deferred until we have a clear signal for cross-project applicability.
