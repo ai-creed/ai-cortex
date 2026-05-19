@@ -16,10 +16,11 @@ beforeEach(async () => {
 });
 
 describe("ensureRegistry", () => {
-	it("creates types.json with the four built-in types when missing", async () => {
+	it("creates types.json with the built-in types when missing", async () => {
 		await ensureRegistry(tmp);
 		const reg = await readRegistry(tmp);
 		expect(Object.keys(reg.types).sort()).toEqual([
+			"capture",
 			"decision",
 			"gotcha",
 			"how-to",

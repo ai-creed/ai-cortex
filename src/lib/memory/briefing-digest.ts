@@ -105,6 +105,31 @@ export async function renderMemoryDigest(
 			lines.push("");
 		}
 
+		const captureCount = (
+			db
+				.prepare(
+					`SELECT COUNT(*) AS c FROM memories
+					 WHERE source='extracted' AND status='candidate'`,
+				)
+				.get() as { c: number }
+		).c;
+
+		if (captureCount > 0) {
+			lines.push(`## Captures pending confirmation — ${captureCount}`);
+			lines.push("");
+			lines.push(
+				"Freshly extracted, unjudged. Most are noise — keep only durable, generalizable rules.",
+			);
+			lines.push(
+				"- `review_pending_captures({worktreePath, limit?})` — batch + source context + signalScore order",
+			);
+			lines.push(
+				"- keep → `rewrite_memory(id,{type,...})` ALONE (assigns real type + promotes). Never `confirm_memory` on a `capture` row.",
+			);
+			lines.push("- reject → `deprecate_memory(id, reason)`");
+			lines.push("");
+		}
+
 		lines.push("### How to consult");
 		lines.push(
 			"- For work in `src/<area>`, call `recall_memory` with `scope.files` to filter to relevant memories.",

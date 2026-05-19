@@ -180,6 +180,8 @@ ai-cortex memory list --status active --json   # all active memories
 
 **Auto-extraction.** Every session captured via the history hooks runs the auto-extractor and produces `candidate` memories from session evidence (corrections + assistant acknowledgments). Re-extraction across sessions raises confidence; repeating signals climb the confidence ladder over time.
 
+**Capture confirmation.** ai-cortex extracts memory *captures* from sessions through a structural noise filter, then asks the agent to confirm. In a session: the rehydrate briefing shows `Captures pending confirmation — N`; call `review_pending_captures`, then for each keeper `rewrite_memory(id,{type,…})` (assigns its real type) or `deprecate_memory(id,reason)`. Unjudged captures carry `type:"capture"`, are never surfaced for application (status governs trust), and age out at 90d if unreviewed.
+
 **Adoption.** `ai-cortex memory install-prompt-guide` writes a versioned guidance block into `CLAUDE.md` and `AGENTS.md` so the agent's system context teaches the recall→get pattern from the start. Idempotent, surgically removable, supports both project and global scope.
 
 ### Full reference

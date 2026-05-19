@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { produceHowToCandidates } from "../../../../src/lib/memory/extract.js";
+import { produceCaptureCandidates } from "../../../../src/lib/memory/extract.js";
 import type { EvidenceLayer } from "../../../../src/lib/history/types.js";
+
+// Translated from the old how-to-classifier contract: "how do I…" prompts are
+// no longer typed "how-to" and no longer require ≥3 sequential tool calls. A
+// structurally-clean turn becomes a single `type:"capture"` candidate; a
+// structurally-noisy question is rejected by the gate.
 
 const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	toolCalls: [],
@@ -10,55 +15,30 @@ const ev = (overrides: Partial<EvidenceLayer> = {}): EvidenceLayer => ({
 	...overrides,
 });
 
-describe("produceHowToCandidates", () => {
-	it("emits a how-to when prompt regex matches AND ≥3 sequential tool calls follow", () => {
-		const out = produceHowToCandidates(
+describe("produceCaptureCandidates — directive turns are capture-typed", () => {
+	it("emits a capture for a structurally-clean standing directive", () => {
+		const out = produceCaptureCandidates(
 			"s-1",
-			ev({
-				userPrompts: [{ turn: 1, text: "how do I deploy this service" }],
-				toolCalls: [
-					{ turn: 2, name: "Bash", args: "docker build" },
-					{ turn: 3, name: "Bash", args: "docker push" },
-					{ turn: 4, name: "Bash", args: "kubectl apply" },
-				],
-				filePaths: [
-					{ turn: 2, path: "Dockerfile" },
-					{ turn: 4, path: "k8s.yaml" },
-				],
-			}),
-		);
-		expect(out).toHaveLength(1);
-		expect(out[0].type).toBe("how-to");
-		expect(out[0].confidence).toBeCloseTo(0.4, 2);
-		expect(out[0].scopeFiles).toEqual(["Dockerfile", "k8s.yaml"]);
-	});
-
-	it("bumps confidence when nextAssistantSnippet contains a numbered list", () => {
-		const out = produceHowToCandidates(
-			"s-2",
 			ev({
 				userPrompts: [
 					{
 						turn: 1,
-						text: "what are the steps to publish",
-						nextAssistantSnippet: "1. Build\n2. Tag\n3. Push",
+						text: "always deploy by building the docker image then pushing to the registry",
 					},
 				],
-				toolCalls: [
-					{ turn: 2, name: "Bash", args: "build" },
-					{ turn: 3, name: "Bash", args: "tag" },
-					{ turn: 4, name: "Bash", args: "push" },
-				],
+				filePaths: [{ turn: 1, path: "Dockerfile" }],
 			}),
 		);
-		expect(out[0].confidence).toBeCloseTo(0.5, 2);
+		expect(out).toHaveLength(1);
+		expect(out[0].type).toBe("capture");
+		expect(out[0].scopeFiles).toEqual(["Dockerfile"]);
 	});
 
-	it("ignores prompts that don't match the how-to regex", () => {
-		const out = produceHowToCandidates(
+	it("rejects a bare question turn (structural gate: question)", () => {
+		const out = produceCaptureCandidates(
 			"s-3",
 			ev({
-				userPrompts: [{ turn: 1, text: "tell me a joke" }],
+				userPrompts: [{ turn: 1, text: "how do I deploy this service?" }],
 				toolCalls: [
 					{ turn: 2, name: "Bash", args: "x" },
 					{ turn: 3, name: "Bash", args: "y" },
@@ -69,17 +49,19 @@ describe("produceHowToCandidates", () => {
 		expect(out).toEqual([]);
 	});
 
-	it("ignores how-to prompts followed by fewer than 3 tool calls", () => {
-		const out = produceHowToCandidates(
+	it("does not require tool calls to emit a capture", () => {
+		const out = produceCaptureCandidates(
 			"s-4",
 			ev({
-				userPrompts: [{ turn: 1, text: "how do i build the docker image" }],
-				toolCalls: [
-					{ turn: 2, name: "Bash", args: "x" },
-					{ turn: 3, name: "Bash", args: "y" },
+				userPrompts: [
+					{
+						turn: 1,
+						text: "never disable git hooks during a commit, even with --no-verify",
+					},
 				],
 			}),
 		);
-		expect(out).toEqual([]);
+		expect(out).toHaveLength(1);
+		expect(out[0].type).toBe("capture");
 	});
 });

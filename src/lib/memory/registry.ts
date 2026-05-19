@@ -23,7 +23,7 @@ export type TypeRegistry = {
 	types: Record<string, TypeSpec>;
 };
 
-export const REGISTRY_VERSION = 1;
+export const REGISTRY_VERSION = 2;
 
 const SEED: TypeRegistry = {
 	version: REGISTRY_VERSION,
@@ -46,8 +46,51 @@ const SEED: TypeRegistry = {
 			builtIn: true,
 			bodySections: ["Goal", "Steps", "Verification"],
 		},
+		capture: {
+			builtIn: true,
+		},
 	},
 };
+
+// Reserved built-in name. The seed-merge force-writes this spec even over a
+// same-named user entry, because the gate's createMemory(type:"capture",
+// body:<raw>) requires capture to accept any body.
+const RESERVED_FORCE = new Set(["capture"]);
+
+function mergeSeed(reg: TypeRegistry): { reg: TypeRegistry; changed: boolean } {
+	if (reg.version >= REGISTRY_VERSION) return { reg, changed: false };
+	const types = { ...reg.types };
+	for (const [name, spec] of Object.entries(SEED.types)) {
+		if (RESERVED_FORCE.has(name)) {
+			const prev = types[name];
+			if (!prev || JSON.stringify(prev) !== JSON.stringify(spec)) {
+				if (prev) {
+					process.stderr.write(
+						`[ai-cortex] registry: reserved type "${name}" overridden with built-in spec\n`,
+					);
+				}
+				types[name] = spec;
+			}
+			continue;
+		}
+		if (!types[name]) {
+			types[name] = spec;
+		}
+	}
+	return { reg: { version: REGISTRY_VERSION, types }, changed: true };
+}
+
+async function migrateRegistryFile(memoryRoot: string): Promise<void> {
+	const p = registryPath(memoryRoot);
+	let cur: TypeRegistry;
+	try {
+		cur = JSON.parse(await fs.readFile(p, "utf8")) as TypeRegistry;
+	} catch {
+		return; // no file yet — ensureRegistry's seed path handles it
+	}
+	const { reg, changed } = mergeSeed(cur);
+	if (changed) await fs.writeFile(p, JSON.stringify(reg, null, 2) + "\n");
+}
 
 function registryPath(memoryRoot: string): string {
 	return path.join(memoryRoot, "types.json");
@@ -58,6 +101,7 @@ export async function ensureRegistry(memoryRoot: string): Promise<void> {
 	const p = registryPath(memoryRoot);
 	try {
 		await fs.access(p);
+		await migrateRegistryFile(memoryRoot);
 		return;
 	} catch {
 		await fs.writeFile(p, JSON.stringify(SEED, null, 2) + "\n");
@@ -65,6 +109,7 @@ export async function ensureRegistry(memoryRoot: string): Promise<void> {
 }
 
 export async function readRegistry(memoryRoot: string): Promise<TypeRegistry> {
+	await migrateRegistryFile(memoryRoot);
 	const text = await fs.readFile(registryPath(memoryRoot), "utf8");
 	return JSON.parse(text) as TypeRegistry;
 }

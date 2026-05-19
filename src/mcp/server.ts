@@ -405,7 +405,15 @@ export function createServer(): McpServer {
 			NO_STATS_RESULT,
 			async ({ path: p }) => {
 				const worktreePath = p ?? process.cwd();
-				return withRepoIdentity(worktreePath, async (_repoKey) => {
+				return withRepoIdentity(worktreePath, async (repoKey) => {
+					// One-shot legacy capture triage: runs after the repo-key
+					// migration + registry seed-merge (both inside
+					// withRepoIdentity), before rehydrate. Sentinel-guarded →
+					// once per repo on the first rehydrate_project after upgrade.
+					const { runCaptureTriageIfNeeded } = await import(
+						"../lib/memory/capture-triage.js",
+					);
+					await runCaptureTriageIfNeeded(repoKey);
 					const result = await rehydrateRepo(worktreePath);
 					const briefing = fs.readFileSync(result.briefingPath, "utf8");
 					return {
@@ -1563,6 +1571,47 @@ export function createServer(): McpServer {
 					} finally {
 						rh.close();
 					}
+				}),
+			),
+		),
+	);
+
+	server.registerTool(
+		"review_pending_captures",
+		{
+			description:
+				"List extracted memory captures pending agent confirmation (source=extracted, status=candidate) with source context and a signalScore ordering hint. Read-only. For each: rewrite_memory(id,{type,...}) ALONE to keep (assigns the real type + promotes), or deprecate_memory(id,reason) to reject. Never call confirm_memory on a type:'capture' row.",
+			inputSchema: {
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
+				limit: z.number().int().positive().max(50).optional(),
+				since: z
+					.string()
+					.optional()
+					.describe(
+						"ISO timestamp; if provided, returns only captures with updated_at > since",
+					),
+			},
+		},
+		logged(
+			"review_pending_captures",
+			(p) => ({ worktreePath: p.worktreePath }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			NO_STATS_RESULT,
+			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
+				withReconcileForRepoKey(repoKey, async () => {
+					const { reviewPendingCaptures } = await import(
+						"../lib/memory/pending-captures.js",
+					);
+					const items = await reviewPendingCaptures(repoKey, {
+						limit: p.limit,
+						since: p.since,
+					});
+					return {
+						content: [
+							{ type: "text" as const, text: JSON.stringify(items, null, 2) },
+						],
+					};
 				}),
 			),
 		),
