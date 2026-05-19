@@ -39,9 +39,11 @@ export type StatsSink = {
 function migrate(db: DB): void {
 	let v = db.pragma("user_version", { simple: true }) as number;
 	const cols = () =>
-		(db.prepare("PRAGMA table_info(tool_calls)").all() as Array<{
-			name: string;
-		}>).map((c) => c.name);
+		(
+			db.prepare("PRAGMA table_info(tool_calls)").all() as Array<{
+				name: string;
+			}>
+		).map((c) => c.name);
 	if (v === 1) {
 		if (!cols().includes("synthetic")) {
 			db.exec(
@@ -58,6 +60,7 @@ function migrate(db: DB): void {
 		db.pragma("user_version = 3");
 		v = 3;
 	}
+	// Backstop: a user_version ahead of this code (downgrade) settles to the current version; column-detect keeps inserts safe regardless.
 	if (v !== SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
@@ -114,9 +117,7 @@ export function writeEvent(sink: StatsSink, ev: StatsEvent): void {
 			synthetic: ev.synthetic ?? 0,
 		};
 		sink.insert.run(
-			sink.hasSessionId
-				? { ...base, session_id: ev.session_id ?? null }
-				: base,
+			sink.hasSessionId ? { ...base, session_id: ev.session_id ?? null } : base,
 		);
 	} catch (err) {
 		process.stderr.write(
