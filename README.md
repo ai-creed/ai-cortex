@@ -157,7 +157,7 @@ ai-cortex history list            # list captured sessions for the current repo
 ai-cortex history off             # disable capture globally
 ```
 
-`install-hooks` edits `~/.claude/settings.json` (Claude Code SessionStart / Stop hooks) and `~/.codex/config.toml` (Codex equivalents) and creates timestamped `.bak.*` backups for any file it modifies. Captures land under `~/.cache/ai-cortex/<repo-key>/history/` and never write into the target repo. Search defaults to the current session and auto-broadens to the whole project when the current-session search returns nothing.
+`install-hooks` edits `~/.claude/settings.json` (Claude Code `PreCompact`/`SessionEnd` capture hooks, plus the `PreToolUse` memory-surface hook described below) and `~/.codex/config.toml` (Codex capture equivalents) and creates timestamped `.bak.*` backups for any file it modifies. Captures land under `~/.cache/ai-cortex/<repo-key>/history/` and never write into the target repo. Search defaults to the current session and auto-broadens to the whole project when the current-session search returns nothing.
 
 `install-hooks` also installs a Claude Code `PreToolUse` hook (matcher
 `Edit|Write|MultiEdit`, 5s timeout) that surfaces project-scoped memories
@@ -170,7 +170,7 @@ After every capture, the auto-extractor runs over the new session and produces c
 
 ## Memory
 
-The memory layer captures project knowledge that doesn't live in code: decisions, gotchas, conventions, recurring patterns. Memories surface in agent sessions via the rehydration briefing (a "what's available" digest) and via the `recall_memory` / `get_memory` tools.
+The memory layer captures project knowledge that doesn't live in code: decisions, gotchas, conventions, recurring patterns. Memories surface in agent sessions via the rehydration briefing (a "what's available" digest) and via the `recall_memory` / `get_memory` tools. They also surface **proactively at edit time**: a `PreToolUse` hook injects pointers to the target file's project-scoped memories as non-blocking context before an Edit/Write/MultiEdit (Claude Code; opt out with `AI_CORTEX_SURFACE=0`), so surfacing no longer depends on the agent remembering to ask.
 
 ```bash
 ai-cortex memory install-prompt-guide          # nudge agent into the recall→get pattern
@@ -284,5 +284,7 @@ Highlights:
 See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for the full list and workarounds.
 
 ## Notable Changes
+
+**Edit-time memory surfacing (v0.9.0):** a `PreToolUse` hook surfaces a file's project-scoped memories as non-blocking context before an Edit/Write — surfacing no longer depends on the agent remembering to call `recall_memory`. Pointers only (the agent judges relevance; `get_memory` stays the honest consult signal). Claude Code; the Codex `apply_patch` equivalent is pending verification of the hook payload shape. Opt out with `AI_CORTEX_SURFACE=0`.
 
 **Repo-key keying fix (v0.5.3):** Memory MCP tools now take `worktreePath` (an absolute path inside the project's git worktree) instead of `repoKey`; the server derives the canonical hashed `repoKey` server-side via `resolveRepoIdentity`. MCP-driven agents pick this up automatically from the tool schemas. Existing literal-name cache directories are auto-migrated to the canonical hashed location on first call — no user action needed. CLI commands still accept `--repo-key` as an escape hatch, now restricted to 16-hex hashed keys or the reserved literal `"global"`.

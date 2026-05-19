@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.9.0 — 2026-05-19
+
+- feat(memory): edit-time memory surfacing via a `PreToolUse` hook — before an Edit/Write/MultiEdit, project-scoped memories for the target file are surfaced as non-blocking `additionalContext` (pointers only; the agent judges relevance, `get_memory` stays the honest consult signal)
+- feat(memory): deterministic project-tier `scopeFiles` matcher (literal + glob) with precision-first tiering (specificity → getCount → recency); never bumps usage counters, no embedding
+- feat(memory): per-session set-hash dedup ledger (cache-only — no repo writes); `AI_CORTEX_SURFACE=0` disables the hook
+- feat(hooks): `install-hooks` adds a Claude Code `PreToolUse` hook (matcher `Edit|Write|MultiEdit`, 5s timeout) under a marker independent of history capture; the hook never blocks an edit (always-allow, fail-open)
+- feat(memory): pure Codex `apply_patch` path parser (built + unit-tested); the Codex hook install is deferred pending verification of the `apply_patch` PreToolUse payload shape
+- note: v0.6.0–v0.8.0 (TUI stats dashboard, memory browser, memory capture redesign) were never published to npm — 0.9.0 is the first npm release since 0.5.6 and includes those changes cumulatively
+
+---
+
 ## v0.8.0 — 2026-05-19
 
 - feat(memory): capture pipeline redesign — extractor is now a structural noise-killer (reject-only), survivors are unjudged `capture` candidates the agent confirms via `review_pending_captures` + `rewrite_memory`/`deprecate_memory`
