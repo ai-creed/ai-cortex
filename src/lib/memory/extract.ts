@@ -102,7 +102,13 @@ export async function extractFromSession(
 	}
 
 	const prior = allowReExtract ? null : await readManifest(repoKey, sessionId);
-	const afterTurn = prior?.lastProcessedTurn ?? 0;
+	// Initial extraction (no prior manifest) must default to -1, NOT 0:
+	// parsed transcripts assign the first message turn:0 (compact.ts), and
+	// filterEvidenceAfterTurn keeps only `turn > afterTurn`. With a 0 default
+	// a structurally-clean first prompt is skipped forever (lastProcessedTurn
+	// never advances past it). Subsequent runs use the persisted
+	// lastProcessedTurn unchanged.
+	const afterTurn = prior?.lastProcessedTurn ?? -1;
 
 	const newEvidence = filterEvidenceAfterTurn(session.evidence, afterTurn);
 	const newMaxTurn = Math.max(afterTurn, calcMaxTurn(session.evidence));

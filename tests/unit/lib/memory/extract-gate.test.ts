@@ -120,4 +120,34 @@ describe("extractFromSession with structural gate", () => {
 			lc.close();
 		}
 	}, 60_000);
+
+	it("extracts a structurally-clean FIRST turn (turn:0) on initial run", async () => {
+		repoKey = await mkRepoKey("extract-gate-turn0");
+		await writeSession(
+			repoKey,
+			sess("s1", [
+				{
+					turn: 0,
+					text: "CLAUDE_SESSION_ID is too specific to claude. Make it agnostic; Codex sends one too.",
+					nextAssistantSnippet: "Agreed.",
+				},
+			]),
+		);
+		const lc = await openLifecycle(repoKey);
+		try {
+			await extractFromSession(repoKey, "s1");
+			const rows = lc.index
+				.rawDb()
+				.prepare("SELECT type,status,source FROM memories")
+				.all() as { type: string; status: string; source: string }[];
+			expect(rows).toHaveLength(1); // turn 0 must NOT be skipped
+			expect(rows[0]).toEqual({
+				type: "capture",
+				status: "candidate",
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+	}, 60_000);
 });
