@@ -25,4 +25,20 @@ describe("patternSpecificity", () => {
 			patternSpecificity("a.ts"),
 		);
 	});
+
+	it("deep recursive subtree scope outranks a shallow glob", () => {
+		expect(patternSpecificity("src/lib/memory/**")).toBeGreaterThan(
+			patternSpecificity("src/*"),
+		);
+	});
+
+	it("at the same prefix, a single * is more specific than **", () => {
+		expect(patternSpecificity("src/a/*.ts")).toBeGreaterThan(
+			patternSpecificity("src/a/**"),
+		);
+	});
+
+	it("empty/normalized-empty pattern is least specific", () => {
+		expect(patternSpecificity("")).toBeLessThan(patternSpecificity("*"));
+	});
 });

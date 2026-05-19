@@ -50,18 +50,25 @@ export function createMatchCache(): (pattern: string, path: string) => boolean {
 /**
  * Deterministic specificity score for a stored scope pattern. Higher = more
  * specific. Literal patterns (no glob chars) always outrank any glob. Among
- * globs, a longer non-glob prefix is more specific. Used by edit-time
- * surfacing so an exact-path rule is never displaced by a broad glob
- * (spec §4.1). Pure; normalizes separators like the matchers above.
+ * globs, a longer literal prefix (string length before the first glob char)
+ * dominates; the number of `**` segments is only a minor tiebreaker, so a
+ * deep recursive subtree scope (e.g. `src/lib/memory/**`) still outranks a
+ * shallow glob (e.g. `src/*`). Pure; normalizes separators like the matchers
+ * above. An empty / normalized-empty pattern is least specific by contract.
+ * Used by edit-time surfacing so an exact-path rule is never displaced by a
+ * broad glob (spec §4.1).
  */
 export function patternSpecificity(pattern: string): number {
 	const np = normalizePath(pattern);
+	if (np.length === 0) return -1;
 	if (!GLOB_CHARS.test(np)) {
-		// Literal: dominant tier, tie-broken by length.
-		return 1_000_000 + np.length;
+		// Literal: dominant tier, tie-broken by path string length.
+		return 1_000_000_000 + np.length;
 	}
+	// Glob tier: prefix length dominates (scaled far above any realistic
+	// `**` count); `**` count is a minor subtractive tiebreaker that cannot
+	// invert prefix ordering.
 	const firstGlob = np.search(GLOB_CHARS);
 	const doubleStars = (np.match(/\*\*/g) ?? []).length;
-	// Longer literal prefix → higher; each '**' broadens → penalty.
-	return firstGlob - doubleStars * 10;
+	return firstGlob * 1000 - doubleStars;
 }
