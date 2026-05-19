@@ -45,7 +45,34 @@ describe("surface hook install (Claude)", () => {
 		expect(pre.some((e) => e.hooks.some((h) => h.command === "other"))).toBe(true);
 	});
 
-	it("does NOT add a Codex PreToolUse group in v1 (fixture-gated)", () => {
+	it("exports the distinct surface marker (independent of history capture)", () => {
 		expect(SURFACE_HOOK_MARKER).toBe("ai-cortex memory surface-hook");
+	});
+
+	it("uninstall keys on the command marker, not the matcher (shared-matcher user hook survives)", () => {
+		const base = {
+			hooks: {
+				PreToolUse: [
+					{
+						matcher: "Edit|Write|MultiEdit",
+						hooks: [{ type: "command" as const, command: "user-thing" }],
+					},
+				],
+			},
+		};
+		const installed = applySurfaceInstall(base);
+		const removed = applySurfaceUninstall(installed);
+		const pre = (removed.hooks?.PreToolUse ?? []) as Array<{
+			matcher: string;
+			hooks: Array<{ command: string }>;
+		}>;
+		expect(
+			pre.some((e) =>
+				e.hooks.some((h) => h.command.includes(SURFACE_HOOK_MARKER)),
+			),
+		).toBe(false);
+		expect(
+			pre.some((e) => e.hooks.some((h) => h.command === "user-thing")),
+		).toBe(true);
 	});
 });
