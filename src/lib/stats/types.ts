@@ -29,6 +29,8 @@ export type StatsEvent = {
 	 * percentiles but counted in volume queries.
 	 */
 	synthetic?: 0 | 1;
+	/** Best-effort session attribution; NULL when undetectable. */
+	session_id?: string | null;
 } & StatsResultFields &
 	StatsParamFields;
 

@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("openSink", () => {
-	it("creates the stats dir, events.sqlite, schema v2, and expected columns", () => {
+	it("creates the stats dir, events.sqlite, schema v3, and expected columns", () => {
 		const sink = openSink(padded);
 		try {
 			expect(fs.existsSync(statsDir(padded))).toBe(true);
@@ -36,7 +36,7 @@ describe("openSink", () => {
 			const version = sink.db.pragma("user_version", {
 				simple: true,
 			}) as number;
-			expect(version).toBe(2);
+			expect(version).toBe(3);
 
 			const cols = sink.db
 				.prepare("PRAGMA table_info(tool_calls)")
@@ -54,13 +54,14 @@ describe("openSink", () => {
 				"query_len",
 				"meta",
 				"synthetic",
+				"session_id",
 			]);
 		} finally {
 			sink.close();
 		}
 	});
 
-	it("migrates a v1 database to v2 by adding the synthetic column", () => {
+	it("migrates a v1 database to v3 by adding the synthetic and session_id columns", () => {
 		// Hand-craft a v1 database matching the original schema.
 		fs.mkdirSync(statsDir(padded), { recursive: true });
 		const dbPath = statsDbPath(padded);
@@ -91,12 +92,13 @@ describe("openSink", () => {
 			const version = sink.db.pragma("user_version", {
 				simple: true,
 			}) as number;
-			expect(version).toBe(2);
+			expect(version).toBe(3);
 
 			const cols = sink.db
 				.prepare("PRAGMA table_info(tool_calls)")
 				.all() as Array<{ name: string }>;
 			expect(cols.map((c) => c.name)).toContain("synthetic");
+			expect(cols.map((c) => c.name)).toContain("session_id");
 
 			// Existing v1 rows preserved with synthetic = 0 by DEFAULT.
 			const row = sink.db
