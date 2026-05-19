@@ -92,6 +92,7 @@ export function backfillRepo(repoKey: string): BackfillResult {
 					dur_ms: 0,
 					status: "ok",
 					synthetic: 1,
+					session_id: e.name,
 					query_len:
 						typeof call.args === "string" ? call.args.length : undefined,
 				});
