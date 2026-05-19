@@ -10,6 +10,7 @@
  * unverified Codex assumption (spec §13 BLOCKER); this parser is only
  * wired into an enabled Codex hook once the fixture gate clears.
  */
+// Codex envelope tokens are capitalized; matching is case-sensitive by design.
 const ENVELOPE =
 	/^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$|^\*\*\* Move to:\s*(.+?)\s*$/;
 

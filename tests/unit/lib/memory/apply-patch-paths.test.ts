@@ -48,4 +48,27 @@ describe("parseApplyPatchPaths", () => {
 		].join("\n");
 		expect(parseApplyPatchPaths(body)).toEqual(["src/a.ts"]);
 	});
+
+	it("handles CRLF line endings (no stray \\r in paths)", () => {
+		const body = [
+			"*** Begin Patch",
+			"*** Update File:   src/a.ts  ",
+			"@@",
+			"*** End Patch",
+		].join("\r\n");
+		expect(parseApplyPatchPaths(body)).toEqual(["src/a.ts"]);
+	});
+
+	it("preserves interior spaces in paths", () => {
+		const body = "*** Update File: src/my dir/my file.ts";
+		expect(parseApplyPatchPaths(body)).toEqual(["src/my dir/my file.ts"]);
+	});
+
+	it("ignores marker-looking text not at column 0", () => {
+		const body = [
+			"*** Update File: src/real.ts",
+			"+*** Update File: src/fake.ts",
+		].join("\n");
+		expect(parseApplyPatchPaths(body)).toEqual(["src/real.ts"]);
+	});
 });
