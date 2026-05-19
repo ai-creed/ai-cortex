@@ -127,6 +127,7 @@ function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
 				tool: args.tool,
 				dur_ms: args.dur_ms,
 				status: args.status,
+				session_id: resolveLoggedSessionId(),
 				...(args.status === "error" ? { err_class: errClassOf(args.err) } : {}),
 				...sParams,
 				...sResult,
@@ -137,6 +138,27 @@ function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
 			);
 		}
 	});
+}
+
+// Best-effort session attribution for stats: env-preferred with a heuristic
+// fallback (see detectCurrentSession). The MCP server serves one session for
+// its lifetime, so resolve once and memoize — avoids a per-event filesystem
+// scan when no canonical session env var is set. Never throws.
+let memoizedSessionId: string | null | undefined;
+export function resolveLoggedSessionId(): string | null {
+	if (memoizedSessionId !== undefined) return memoizedSessionId;
+	try {
+		memoizedSessionId =
+			detectCurrentSession({ cwd: process.cwd() })?.sessionId ?? null;
+	} catch {
+		memoizedSessionId = null;
+	}
+	return memoizedSessionId;
+}
+
+/** Test-only: clear the memoized session id between cases. */
+export function _resetSessionIdMemoForTest(): void {
+	memoizedSessionId = undefined;
 }
 
 export function logged<P, R>(
@@ -1514,7 +1536,25 @@ export function createServer(): McpServer {
 			(p) => ({ worktreePath: p.worktreePath, sessionId: p.sessionId }),
 			NO_STATS_PARAMS,
 			rkFromWorktree,
-			NO_STATS_RESULT,
+			(r) => {
+				// `extractFromSession` returns an ExtractorManifest, JSON-stringified
+				// in the single text content block. New-candidate count is the
+				// numeric field `candidatesCreated` (src/lib/memory/extract.ts:37);
+				// 0 on a re-extract that creates nothing (extract.ts:125).
+				try {
+					const m = JSON.parse(
+						(r as { content: { text: string }[] }).content[0].text,
+					) as { candidatesCreated?: unknown };
+					const n =
+						typeof m.candidatesCreated === "number" &&
+						Number.isFinite(m.candidatesCreated)
+							? m.candidatesCreated
+							: 0;
+					return { result_count: n };
+				} catch {
+					return { result_count: 0 };
+				}
+			},
 			async (p) => withRepoIdentity(p.worktreePath, (repoKey) =>
 				withReconcileForRepoKey(repoKey, async () => {
 					const { extractFromSession } = await import("../lib/memory/extract.js");
