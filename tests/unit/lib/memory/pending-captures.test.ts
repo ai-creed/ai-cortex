@@ -5,7 +5,7 @@ import path from "node:path";
 import {
 	openLifecycle,
 	createMemory,
-	confirmMemory,
+	rewriteMemory,
 	addEvidence,
 } from "../../../../src/lib/memory/lifecycle.js";
 import { writeSession } from "../../../../src/lib/history/store.js";
@@ -78,9 +78,18 @@ describe("reviewPendingCaptures", () => {
 				scope: { files: [], tags: [] },
 				source: "explicit",
 			});
-			await confirmMemory(lc, weak); // → active, must drop out
+			// `weak` is type:"capture" → confirmMemory is disallowed (would
+			// leave active+capture). rewriteMemory is the valid keep path: it
+			// assigns a real type AND promotes, dropping it from the queue.
+			await rewriteMemory(lc, weak, {
+				title: "we changed the color",
+				body: "Rule: button color is X.",
+				scopeFiles: [],
+				scopeTags: [],
+				type: "decision",
+			});
 			const out = await reviewPendingCaptures(repoKey, { limit: 10 });
-			expect(out.map((o) => o.id)).toEqual([strong]); // weak active, explicit not extracted
+			expect(out.map((o) => o.id)).toEqual([strong]); // weak promoted, explicit not extracted
 			expect(out[0].context.kind).toBe("body-only");
 			expect(out[0].signalScore).toBeGreaterThanOrEqual(1);
 			// internal sort key must not leak

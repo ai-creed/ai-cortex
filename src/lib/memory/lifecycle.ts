@@ -750,6 +750,15 @@ export async function confirmMemory(
 			`confirmMemory only from candidate, not ${current.frontmatter.status}`,
 		);
 	}
+	// `capture` is the unjudged provisional type; confirmMemory does not
+	// assign a real type, so promoting a capture row would create the
+	// forbidden active+capture state. Captures are kept via rewriteMemory
+	// (which assigns the real type AND promotes) — never confirmMemory.
+	if (current.frontmatter.type === "capture") {
+		throw new Error(
+			'confirmMemory cannot promote a type:"capture" candidate (would leave active+capture). Use rewriteMemory(id,{type,...}) to assign a real type and promote, or deprecateMemory to reject.',
+		);
+	}
 	const next: MemoryRecord = {
 		frontmatter: {
 			...current.frontmatter,
