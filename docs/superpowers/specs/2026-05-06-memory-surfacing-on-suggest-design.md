@@ -2,6 +2,8 @@
 
 **Status:** draft
 **Date:** 2026-05-06
+
+> **Revised 2026-05-19:** this spec remains the authority for pull-on-`suggest_files` surfacing and is unchanged. A separate **edit-time push-via-hook** path is now specified in `2026-05-19-edit-time-memory-surface-hook-design.md`; the two coexist.
 **Scope:** MCP `suggest_files`, `suggest_files_deep`, `suggest_files_semantic` tools; memory layer match utility; `recall_memory` consistency fix.
 
 ---

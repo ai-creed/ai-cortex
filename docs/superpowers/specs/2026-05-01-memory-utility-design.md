@@ -3,6 +3,8 @@
 **Date:** 2026-05-01
 **Status:** design — implementation phased; see end of document
 
+> **Revised 2026-05-19:** the "agent-agnostic rules out hooks", "push-based injection rejected", and "pull-only" hard constraints below are **superseded for the edit-time surfacing path** by `2026-05-19-edit-time-memory-surface-hook-design.md`. They still hold for the pull-on-`suggest_files` path. See that spec §3.1 for rationale.
+
 ## Goal
 
 Make the memory layer genuinely useful as a product, not just demonstrably correct in a smoke test. Useful means: when the agent consults memory, the answer is sharp and actionable; the agent reliably knows when to consult; and the layer remains agent-agnostic and deterministic.
