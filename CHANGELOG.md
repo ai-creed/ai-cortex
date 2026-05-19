@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.9.1 — 2026-05-19
+
+- perf(stats): TUI dashboard reads a small `*.meta.json` sidecar instead of parsing every full worktree cache JSON on each tick — the dashboard previously parsed 80+ MB of JSON per 1.5s tick on repos with multiple worktrees, causing visible CPU spikes
+- `writeCache` emits the sidecar best-effort (failure logged, never blocks the main JSON); `cacheMeta` falls back to the full JSON and lazy-writes the sidecar on miss, so existing entries self-heal on first dashboard tick — no migration needed
+
+---
+
 ## v0.9.0 — 2026-05-19
 
 - feat(memory): edit-time memory surfacing via a `PreToolUse` hook — before an Edit/Write/MultiEdit, project-scoped memories for the target file are surfaced as non-blocking `additionalContext` (pointers only; the agent judges relevance, `get_memory` stays the honest consult signal)
