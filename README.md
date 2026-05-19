@@ -159,6 +159,13 @@ ai-cortex history off             # disable capture globally
 
 `install-hooks` edits `~/.claude/settings.json` (Claude Code SessionStart / Stop hooks) and `~/.codex/config.toml` (Codex equivalents) and creates timestamped `.bak.*` backups for any file it modifies. Captures land under `~/.cache/ai-cortex/<repo-key>/history/` and never write into the target repo. Search defaults to the current session and auto-broadens to the whole project when the current-session search returns nothing.
 
+`install-hooks` also installs a Claude Code `PreToolUse` hook (matcher
+`Edit|Write|MultiEdit`, 5s timeout) that surfaces project-scoped memories
+for the file about to be edited as non-blocking context. It never blocks
+an edit and writes no repo files (dedup state lives under the cache).
+Disable with `AI_CORTEX_SURFACE=0`. The Codex `apply_patch` equivalent is
+not yet wired (pending verification of the Codex hook payload shape).
+
 After every capture, the auto-extractor runs over the new session and produces candidate memories — see below.
 
 ## Memory
