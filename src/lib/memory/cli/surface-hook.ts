@@ -62,11 +62,15 @@ function toRepoRel(worktreePath: string, p: string): string | null {
 	return rel.split(path.sep).join("/");
 }
 
+function pushToGroup<V>(map: Map<string, V[]>, key: string, value: V): void {
+	const arr = map.get(key);
+	if (arr) arr.push(value);
+	else map.set(key, [value]);
+}
+
 function buildContext(pointers: SurfacePointer[]): string {
 	const byFile = new Map<string, SurfacePointer[]>();
-	for (const p of pointers) {
-		(byFile.get(p.path) ?? byFile.set(p.path, []).get(p.path)!).push(p);
-	}
+	for (const p of pointers) pushToGroup(byFile, p.path, p);
 	const lines: string[] = [];
 	for (const [file, ps] of byFile) {
 		lines.push(
@@ -147,9 +151,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		}
 
 		const perFile = new Map<string, string[]>();
-		for (const p of pointers) {
-			(perFile.get(p.path) ?? perFile.set(p.path, []).get(p.path)!).push(p.id);
-		}
+		for (const p of pointers) pushToGroup(perFile, p.path, p.id);
 		const { emit } = evaluateLedger(
 			repoKey,
 			input.session_id ?? "_nosession",

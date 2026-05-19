@@ -125,4 +125,108 @@ describe("runSurfaceHook (integration)", () => {
 			else process.env.AI_CORTEX_SURFACE = prev;
 		}
 	});
+
+	it("surfaces for a Codex apply_patch", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "codex patch rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		const command = [
+			"*** Begin Patch",
+			`*** Update File: ${rel}`,
+			"@@", "-a", "+b",
+			"*** End Patch",
+		].join("\n");
+		const { json } = await run({
+			session_id: "cdx1", cwd: worktreePath,
+			tool_name: "apply_patch", tool_input: { command },
+		});
+		expect(json.hookSpecificOutput.additionalContext as string).toContain(
+			"codex patch rule",
+		);
+	});
+
+	it("caps at 3 memories total across a multi-file apply_patch", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const f1 = "src/lib/memory/store.ts";
+		const f2 = "src/lib/memory/retrieve.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			for (let i = 0; i < 3; i++)
+				await createMemory(lc, {
+					type: "decision", title: `s${i}`, body: "## x\ny",
+					scope: { files: [f1], tags: [] }, source: "explicit",
+				});
+			for (let i = 0; i < 3; i++)
+				await createMemory(lc, {
+					type: "decision", title: `r${i}`, body: "## x\ny",
+					scope: { files: [f2], tags: [] }, source: "explicit",
+				});
+		} finally { lc.close(); }
+		const command = [
+			"*** Begin Patch",
+			`*** Update File: ${f1}`, "@@", "-a", "+b",
+			`*** Update File: ${f2}`, "@@", "-c", "+d",
+			"*** End Patch",
+		].join("\n");
+		const { json } = await run({
+			session_id: "cdx2", cwd: worktreePath,
+			tool_name: "apply_patch", tool_input: { command },
+		});
+		const ctx = json.hookSpecificOutput.additionalContext as string;
+		const bullets = ctx.split("\n").filter((l) => l.startsWith("- ["));
+		expect(bullets.length).toBe(3);
+	});
+
+	it("abandons to silent-allow when the deadline is exceeded", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "deadline rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		const out = captureStdout();
+		let calls = 0;
+		const code = await runSurfaceHook({
+			stdin: Readable.from([
+				JSON.stringify({
+					session_id: "dl", cwd: worktreePath,
+					tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+				}),
+			]),
+			stdout: out.stream,
+			now: () => (calls++ === 0 ? 0 : 1000), // start=0; subsequent checks exceed DEADLINE_MS
+		});
+		expect(code).toBe(0);
+		const json = JSON.parse(out.text());
+		expect(json.hookSpecificOutput.permissionDecision).toBe("allow");
+		expect(json.hookSpecificOutput.additionalContext).toBeUndefined();
+	});
+
+	it("works with no session_id (uses _nosession fallback)", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "nosess rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		const { json } = await run({
+			cwd: worktreePath, tool_name: "Edit",
+			tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		expect(json.hookSpecificOutput.additionalContext as string).toContain(
+			"nosess rule",
+		);
+	});
 });
