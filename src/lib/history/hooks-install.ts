@@ -4,12 +4,16 @@ import path from "node:path";
 import readline from "node:readline";
 
 export const HOOK_COMMAND_MARKER = "ai-cortex history capture";
+export const SURFACE_HOOK_MARKER = "ai-cortex memory surface-hook";
+const SURFACE_HOOK_COMMAND = SURFACE_HOOK_MARKER;
+const SURFACE_PRETOOLUSE_MATCHER = "Edit|Write|MultiEdit";
+const SURFACE_HOOK_TIMEOUT_SEC = 5;
 
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
 const CODEX_HOOK_EVENTS = ["UserPromptSubmit", "Stop"] as const;
 const HOOK_COMMAND = HOOK_COMMAND_MARKER;
 
-type InnerHook = { type: "command"; command: string };
+type InnerHook = { type: "command"; command: string; timeout?: number };
 type Hook = { matcher: string; hooks: InnerHook[] };
 type Settings = {
 	hooks?: Partial<Record<string, Hook[]>>;
@@ -46,7 +50,7 @@ export async function installHooks(
 		? fs.readFileSync(codexPath, "utf8")
 		: "";
 
-	const next = applyInstall(settings);
+	const next = applySurfaceInstall(applyInstall(settings));
 	const afterText = JSON.stringify(next, null, 2) + "\n";
 	const codexAfterText = applyCodexInstall(codexBefore);
 	const beforeText = before.length > 0 ? before : "(no existing file)\n";
@@ -103,7 +107,7 @@ export async function uninstallHooks(
 		? fs.readFileSync(settingsPath, "utf8")
 		: "";
 	const settings = parseOrThrow(before, settingsPath);
-	const next = applyUninstall(settings);
+	const next = applySurfaceUninstall(applyUninstall(settings));
 	const afterText = JSON.stringify(next, null, 2) + "\n";
 	const codexBefore = fs.existsSync(codexPath)
 		? fs.readFileSync(codexPath, "utf8")
@@ -187,6 +191,42 @@ function applyUninstall(s: Settings): Settings {
 			.filter((entry) => entry.hooks.length > 0);
 		next.hooks![evt] = list;
 	}
+	return next;
+}
+
+export function applySurfaceInstall(s: Settings): Settings {
+	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
+	const list = ((next.hooks!.PreToolUse ?? []) as Hook[]).slice();
+	const already = list.some((entry) =>
+		(entry.hooks ?? []).some((h) => h.command.includes(SURFACE_HOOK_MARKER)),
+	);
+	if (!already) {
+		list.push({
+			matcher: SURFACE_PRETOOLUSE_MATCHER,
+			hooks: [
+				{
+					type: "command",
+					command: SURFACE_HOOK_COMMAND,
+					timeout: SURFACE_HOOK_TIMEOUT_SEC,
+				},
+			],
+		});
+	}
+	next.hooks!.PreToolUse = list;
+	return next;
+}
+
+export function applySurfaceUninstall(s: Settings): Settings {
+	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
+	const list = ((next.hooks!.PreToolUse ?? []) as Hook[])
+		.map((entry) => ({
+			...entry,
+			hooks: (entry.hooks ?? []).filter(
+				(h) => !h.command.includes(SURFACE_HOOK_MARKER),
+			),
+		}))
+		.filter((entry) => entry.hooks.length > 0);
+	next.hooks!.PreToolUse = list;
 	return next;
 }
 
