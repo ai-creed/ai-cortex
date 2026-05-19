@@ -855,9 +855,7 @@ async function main(): Promise<void> {
 					break;
 				}
 				case "surface-hook": {
-					const { runSurfaceHook } = await import(
-						"./lib/memory/cli/surface-hook.js"
-					);
+					const { runSurfaceHook } = await import("./lib/memory/cli/surface-hook.js");
 					await runSurfaceHook();
 					break;
 				}
