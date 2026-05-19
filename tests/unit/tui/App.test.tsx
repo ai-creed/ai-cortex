@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { App, type AppProps } from "../../../src/tui/App.js";
+import { EMPTY_ADOPTION } from "../../../src/lib/stats/sessions.js";
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -49,6 +50,7 @@ function makeRead() {
 				}
 			: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
 		recallGetRatio: 0,
+		adoption: EMPTY_ADOPTION,
 	}));
 }
 

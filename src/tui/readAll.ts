@@ -15,7 +15,13 @@ import {
 	type MemoryHealth,
 	type ToolStat,
 } from "../lib/stats/query.js";
-import type { StatsWindow } from "../lib/stats/types.js";
+import {
+	EMPTY_ADOPTION,
+	loadSessionAdoption,
+	type AdoptionSummary,
+	type SessionRow,
+} from "../lib/stats/sessions.js";
+import { WINDOW_MS, type StatsWindow } from "../lib/stats/types.js";
 
 export type Snapshot = {
 	projects: Array<{ repoKey: string; name: string | null; calls: number }>;
@@ -31,6 +37,8 @@ export type Snapshot = {
 	meta: CacheMeta;
 	/** Recall→get fallback ratio: count(get_memory) / count(recall_memory). 0 when no recalls. */
 	recallGetRatio: number;
+	/** Session adoption data. Empty when focus is null (overview). */
+	adoption: { sessions: SessionRow[]; summary: AdoptionSummary };
 };
 
 function safeRatio(num: number, den: number): number {
@@ -81,5 +89,6 @@ export function readAll(
 			? { indexedAt: null, fingerprint: null, fileCount: null, name: null }
 			: cacheMeta(focus),
 		recallGetRatio,
+		adoption: isOverview ? EMPTY_ADOPTION : loadSessionAdoption(focus, { windowMs: WINDOW_MS[window] }),
 	};
 }

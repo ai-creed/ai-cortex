@@ -11,7 +11,9 @@ import { ToolsTab } from "./ToolsTab.js";
 import { MemoryTab } from "./MemoryTab.js";
 import { SuggestTab } from "./SuggestTab.js";
 import { StorageTab } from "./StorageTab.js";
+import { SessionsTab } from "./SessionsTab.js";
 import type { StatsWindow } from "../../lib/stats/types.js";
+import type { AdoptionSummary, SessionRow } from "../../lib/stats/sessions.js";
 import { THEME } from "../theme.js";
 
 export type Detail = {
@@ -22,9 +24,10 @@ export type Detail = {
 	memory: MemoryHealth;
 	storage: Record<string, number>;
 	meta: CacheMeta;
+	adoption: { sessions: SessionRow[]; summary: AdoptionSummary };
 };
 
-const TABS = ["Tools", "Memory", "Suggest", "Storage"] as const;
+const TABS = ["Tools", "Memory", "Suggest", "Storage", "Sessions"] as const;
 type Tab = (typeof TABS)[number];
 
 export function DetailPanel({
@@ -50,7 +53,7 @@ export function DetailPanel({
 				onOpenMemoryBrowser(detail.repoKey);
 				return;
 			}
-			const i = "1234".indexOf(input);
+			const i = "12345".indexOf(input);
 			if (i >= 0) setTab(TABS[i]);
 			if (key.tab) setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length]);
 		},
@@ -99,6 +102,9 @@ export function DetailPanel({
 						storage={detail.storage}
 						meta={detail.meta}
 					/>
+				)}
+				{tab === "Sessions" && (
+					<SessionsTab adoption={detail.adoption} window={windowProp} />
 				)}
 			</Box>
 		</Box>

@@ -33,6 +33,20 @@ export type AdoptionSummary = {
 	histogram: { used: number; notUsed: number };
 };
 
+/** Zeroed adoption bundle — overview placeholder + test fixtures (single source). */
+export const EMPTY_ADOPTION: { sessions: SessionRow[]; summary: AdoptionSummary } = {
+	sessions: [],
+	summary: {
+		sessionCount: 0,
+		memoryUsedPct: 0,
+		recallToGetPct: 0,
+		surfaceToGetPct: 0,
+		extractCleanupPct: 0,
+		unattributedShare: 0,
+		histogram: { used: 0, notUsed: 0 },
+	},
+};
+
 type Row = {
 	tool: string;
 	ts: number;

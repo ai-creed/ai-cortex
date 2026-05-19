@@ -63,6 +63,7 @@ export function App({
 							memory: s.memory,
 							storage: s.storage,
 							meta: s.meta,
+							adoption: s.adoption,
 						};
 					})()
 				: null;

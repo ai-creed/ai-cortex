@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { DetailPanel } from "../../../src/tui/detail/DetailPanel.js";
+import { EMPTY_ADOPTION } from "../../../src/lib/stats/sessions.js";
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -41,6 +42,7 @@ const detail = {
 		fileCount: 348,
 		name: "ai-cortex",
 	},
+	adoption: EMPTY_ADOPTION,
 };
 
 describe("DetailPanel", () => {
