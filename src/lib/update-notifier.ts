@@ -194,7 +194,7 @@ export function formatNotice(opts: {
 	const { mode, count } = minorsOrMajorBehind(current, latest);
 	const behindLine =
 		mode === "major"
-			? `you are a major version behind`
+			? "you are a major version behind"
 			: `you are ${count} minor releases behind`;
 	const title = bold(`ai-cortex ${latest} available${headlinePart}`);
 	return `\n---\n${title}\n${behindLine}\n${installLine}\n---\n`;

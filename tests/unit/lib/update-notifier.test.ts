@@ -125,6 +125,7 @@ describe("formatNotice — tier-aware, surface-aware", () => {
 		headline: "fix briefing render bug",
 	} as const;
 
+	// eslint-disable-next-line no-control-regex
 	const ANSI = /\x1b\[[0-9;]*m/;
 
 	it("patch + cli: single line, includes versions, install command, headline", () => {
@@ -471,7 +472,7 @@ describe("runBackgroundFetch — extracts releaseHeadline and preserves lastBrie
 			aiCortex: { releaseHeadline: "edit-time surfacing" },
 		});
 		const { runBackgroundFetch } = await import(
-			"../../../src/lib/update-notifier.js"
+			"../../../src/lib/update-notifier.js",
 		);
 		await runBackgroundFetch();
 		const cache = readCache(
@@ -484,7 +485,7 @@ describe("runBackgroundFetch — extracts releaseHeadline and preserves lastBrie
 	it("defaults releaseHeadline to '' when missing from manifest", async () => {
 		mockFetch({ version: "0.11.0" });
 		const { runBackgroundFetch } = await import(
-			"../../../src/lib/update-notifier.js"
+			"../../../src/lib/update-notifier.js",
 		);
 		await runBackgroundFetch();
 		const cache = readCache(
@@ -496,7 +497,7 @@ describe("runBackgroundFetch — extracts releaseHeadline and preserves lastBrie
 	it("defaults releaseHeadline to '' when present but wrong type", async () => {
 		mockFetch({ version: "0.11.0", aiCortex: { releaseHeadline: 42 } });
 		const { runBackgroundFetch } = await import(
-			"../../../src/lib/update-notifier.js"
+			"../../../src/lib/update-notifier.js",
 		);
 		await runBackgroundFetch();
 		const cache = readCache(
@@ -522,7 +523,7 @@ describe("runBackgroundFetch — extracts releaseHeadline and preserves lastBrie
 			aiCortex: { releaseHeadline: "new" },
 		});
 		const { runBackgroundFetch } = await import(
-			"../../../src/lib/update-notifier.js"
+			"../../../src/lib/update-notifier.js",
 		);
 		await runBackgroundFetch();
 		const cache = readCache(p);
@@ -694,6 +695,7 @@ describe("getBriefingNotice", () => {
 	it("returns plain text (no ANSI escape sequences) for MCP surface", () => {
 		plantCache({ latestVersion: "0.11.0", releaseHeadline: "feat" });
 		const notice = getBriefingNotice({ currentVersion: "0.10.5" });
+		// eslint-disable-next-line no-control-regex
 		expect(notice).not.toMatch(/\x1b\[[0-9;]*m/);
 	});
 
