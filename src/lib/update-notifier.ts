@@ -25,6 +25,8 @@ const SKIP_COMMANDS = new Set([
 export type CacheData = {
 	checkedAt: string;
 	latestVersion: string;
+	releaseHeadline: string;
+	lastBriefingShownAt?: string;
 };
 
 export function cachePath(): string {
@@ -102,14 +104,25 @@ export function isCacheStale(
 export function readCache(filePath: string): CacheData | null {
 	try {
 		const raw = fs.readFileSync(filePath, "utf-8");
-		const parsed = JSON.parse(raw);
+		const parsed = JSON.parse(raw) as Partial<CacheData> & Record<string, unknown>;
 		if (
 			typeof parsed?.checkedAt !== "string" ||
 			typeof parsed?.latestVersion !== "string"
 		) {
 			return null;
 		}
-		return parsed as CacheData;
+		return {
+			checkedAt: parsed.checkedAt,
+			latestVersion: parsed.latestVersion,
+			releaseHeadline:
+				typeof parsed.releaseHeadline === "string"
+					? parsed.releaseHeadline
+					: "",
+			lastBriefingShownAt:
+				typeof parsed.lastBriefingShownAt === "string"
+					? parsed.lastBriefingShownAt
+					: undefined,
+		};
 	} catch {
 		return null;
 	}
@@ -117,7 +130,13 @@ export function readCache(filePath: string): CacheData | null {
 
 export function writeCache(filePath: string, data: CacheData): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	fs.writeFileSync(filePath, JSON.stringify(data));
+	const out: Record<string, string> = {
+		checkedAt: data.checkedAt,
+		latestVersion: data.latestVersion,
+		releaseHeadline: data.releaseHeadline,
+	};
+	if (data.lastBriefingShownAt) out.lastBriefingShownAt = data.lastBriefingShownAt;
+	fs.writeFileSync(filePath, JSON.stringify(out));
 }
 
 export function formatNotice(current: string, latest: string): string {
@@ -182,6 +201,7 @@ export async function runBackgroundFetch(): Promise<void> {
 		writeCache(cachePath(), {
 			checkedAt: new Date().toISOString(),
 			latestVersion: data.version,
+			releaseHeadline: "",
 		});
 	} catch {
 		// network errors, timeouts, parse errors — silent

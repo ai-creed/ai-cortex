@@ -131,14 +131,19 @@ describe("readCache / writeCache", () => {
 		if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
 	});
 
-	it("round-trips cache data", () => {
-		writeCache(tmpFile, {
-			checkedAt: "2026-05-01T00:00:00Z",
-			latestVersion: "0.5.0",
-		});
+	it("round-trips cache data (legacy two-field)", () => {
+		fs.writeFileSync(
+			tmpFile,
+			JSON.stringify({
+				checkedAt: "2026-05-01T00:00:00Z",
+				latestVersion: "0.5.0",
+			}),
+		);
 		expect(readCache(tmpFile)).toEqual({
 			checkedAt: "2026-05-01T00:00:00Z",
 			latestVersion: "0.5.0",
+			releaseHeadline: "",
+			lastBriefingShownAt: undefined,
 		});
 	});
 
@@ -157,6 +162,7 @@ describe("readCache / writeCache", () => {
 			writeCache(nested, {
 				checkedAt: "2026-05-01T00:00:00Z",
 				latestVersion: "0.5.0",
+				releaseHeadline: "",
 			});
 			expect(fs.existsSync(nested)).toBe(true);
 		} finally {
@@ -199,5 +205,80 @@ describe("compareSeverity", () => {
 	it("ignores pre-release suffixes for the comparison", () => {
 		expect(compareSeverity("0.10.0-rc.1", "0.11.0-beta.0")).toBe("minor");
 		expect(compareSeverity("0.10.0-rc.1", "0.10.0")).toBe("none");
+	});
+});
+
+describe("readCache / writeCache — extended cache shape", () => {
+	let tmpFile: string;
+
+	beforeEach(() => {
+		tmpFile = path.join(
+			os.tmpdir(),
+			`update-cache-ext-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+		);
+	});
+
+	afterEach(() => {
+		if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+	});
+
+	it("round-trips the four-field shape", () => {
+		writeCache(tmpFile, {
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.11.0",
+			releaseHeadline: "edit-time surfacing + Phase 11",
+			lastBriefingShownAt: "2026-05-20T08:00:00Z",
+		});
+		expect(readCache(tmpFile)).toEqual({
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.11.0",
+			releaseHeadline: "edit-time surfacing + Phase 11",
+			lastBriefingShownAt: "2026-05-20T08:00:00Z",
+		});
+	});
+
+	it("reads the legacy two-field shape as releaseHeadline='' + lastBriefingShownAt undefined", () => {
+		fs.writeFileSync(
+			tmpFile,
+			JSON.stringify({
+				checkedAt: "2026-05-01T00:00:00Z",
+				latestVersion: "0.10.0",
+			}),
+		);
+		expect(readCache(tmpFile)).toEqual({
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.10.0",
+			releaseHeadline: "",
+			lastBriefingShownAt: undefined,
+		});
+	});
+
+	it("omits lastBriefingShownAt from the JSON when undefined", () => {
+		writeCache(tmpFile, {
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.11.0",
+			releaseHeadline: "feat",
+		});
+		const raw = fs.readFileSync(tmpFile, "utf-8");
+		const parsed = JSON.parse(raw);
+		expect(parsed).toEqual({
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.11.0",
+			releaseHeadline: "feat",
+		});
+		expect("lastBriefingShownAt" in parsed).toBe(false);
+	});
+
+	it("coerces non-string releaseHeadline to ''", () => {
+		fs.writeFileSync(
+			tmpFile,
+			JSON.stringify({
+				checkedAt: "2026-05-01T00:00:00Z",
+				latestVersion: "0.11.0",
+				releaseHeadline: 42,
+			}),
+		);
+		const cache = readCache(tmpFile);
+		expect(cache?.releaseHeadline).toBe("");
 	});
 });
