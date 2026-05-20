@@ -13,6 +13,7 @@ import {
 import { IndexError, RepoIdentityError } from "../../../src/lib/models.js";
 import { createServer } from "../../../src/mcp/server.js";
 import { getBriefingNotice } from "../../../src/lib/update-notifier.js";
+import { getHookMigrationNotice } from "../../../src/lib/migration-notifier.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -20,6 +21,9 @@ vi.mock("../../../src/lib/index.js");
 vi.mock("node:fs");
 vi.mock("../../../src/lib/update-notifier.js", () => ({
 	getBriefingNotice: vi.fn(),
+}));
+vi.mock("../../../src/lib/migration-notifier.js", () => ({
+	getHookMigrationNotice: vi.fn(),
 }));
 vi.mock("../../../src/lib/repo-identity.js", () => ({
 	validateWorktreePath: vi.fn(),
@@ -201,6 +205,70 @@ describe("rehydrate_project — update-notice wiring", () => {
 		expect(rehydrateRepo).toHaveBeenCalledWith(
 			"/repo",
 			expect.objectContaining({ notice: null }),
+		);
+		expect(result.content[0]).toMatchObject({ type: "text" });
+	});
+
+	it("forwards the hook-migration notice when update notice is null", async () => {
+		vi.mocked(getBriefingNotice).mockReturnValue(null);
+		vi.mocked(getHookMigrationNotice).mockReturnValue(
+			"ai-cortex hook configuration out of date — some features won't activate.\nRun: ai-cortex history install-hooks",
+		);
+		const client = await makeClient();
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/repo" },
+		});
+		expect(rehydrateRepo).toHaveBeenCalledWith(
+			"/repo",
+			expect.objectContaining({
+				notice: expect.stringContaining("hook configuration out of date"),
+			}),
+		);
+	});
+
+	it("joins both notices with a blank line when both are non-null", async () => {
+		vi.mocked(getBriefingNotice).mockReturnValue("UPDATE_NOTICE");
+		vi.mocked(getHookMigrationNotice).mockReturnValue("HOOK_NOTICE");
+		const client = await makeClient();
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/repo" },
+		});
+		expect(rehydrateRepo).toHaveBeenCalledWith(
+			"/repo",
+			expect.objectContaining({ notice: "UPDATE_NOTICE\n\nHOOK_NOTICE" }),
+		);
+	});
+
+	it("forwards null when both notices return null", async () => {
+		vi.mocked(getBriefingNotice).mockReturnValue(null);
+		vi.mocked(getHookMigrationNotice).mockReturnValue(null);
+		const client = await makeClient();
+		await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/repo" },
+		});
+		expect(rehydrateRepo).toHaveBeenCalledWith(
+			"/repo",
+			expect.objectContaining({ notice: null }),
+		);
+	});
+
+	it("falls back gracefully when getHookMigrationNotice throws (defense-in-depth)", async () => {
+		vi.mocked(getBriefingNotice).mockReturnValue("UPDATE_NOTICE");
+		vi.mocked(getHookMigrationNotice).mockImplementation(() => {
+			throw new Error("synthetic migration failure");
+		});
+		const client = await makeClient();
+		const result = await client.callTool({
+			name: "rehydrate_project",
+			arguments: { path: "/repo" },
+		});
+		// Update notice still flows through; hook-side failure is swallowed.
+		expect(rehydrateRepo).toHaveBeenCalledWith(
+			"/repo",
+			expect.objectContaining({ notice: "UPDATE_NOTICE" }),
 		);
 		expect(result.content[0]).toMatchObject({ type: "text" });
 	});

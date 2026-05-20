@@ -29,6 +29,7 @@ import { runRepoKeyMigrationIfNeeded } from "../lib/cache-store-migrate.js";
 import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
 import { VERSION as SERVER_VERSION } from "../version.js";
 import { getBriefingNotice } from "../lib/update-notifier.js";
+import { getHookMigrationNotice } from "../lib/migration-notifier.js";
 import {
 	openRetrieve,
 	getMemory,
@@ -437,14 +438,23 @@ export function createServer(): McpServer {
 						"../lib/memory/capture-triage.js",
 					);
 					await runCaptureTriageIfNeeded(repoKey);
-					let notice: string | null = null;
+					let updateNotice: string | null = null;
+					let hookNotice: string | null = null;
 					try {
-						notice = getBriefingNotice({
+						updateNotice = getBriefingNotice({
 							currentVersion: SERVER_VERSION,
 						});
 					} catch {
-						notice = null;
+						updateNotice = null;
 					}
+					try {
+						hookNotice = getHookMigrationNotice();
+					} catch {
+						hookNotice = null;
+					}
+					const notice = [updateNotice, hookNotice]
+						.filter((n): n is string => Boolean(n))
+						.join("\n\n") || null;
 					const result = await rehydrateRepo(worktreePath, { notice });
 					const briefing = fs.readFileSync(result.briefingPath, "utf8");
 					return {
