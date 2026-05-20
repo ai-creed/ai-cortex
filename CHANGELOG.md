@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.10.0 — 2026-05-20
+
+- feat(stats): per-session adoption telemetry — `tool_calls` schema v3 adds `session_id` (nullable, harness-detected via `AI_CORTEX_SESSION_ID`/`CLAUDE_SESSION_ID`/`CODEX_THREAD_ID`); MCP `logged()` attributes every tool call; `extract_session` reports candidate count as `result_count`; cache-only `surface-events.jsonl` records edit-time surfacings hot-path-safely (no native dep)
+- feat(stats): `loadSessionAdoption` aggregation core joins SQL + surface-events into per-session rows + a window summary (`memoryUsed`, `recall→get`, `surface→get`, `extract→cleanup`, `unattributedShare`)
+- feat(stats): `ai-cortex stats sessions` CLI report (`--json` for CI) with inline per-metric meanings
+- feat(tui): Sessions adoption tab in the stats dashboard — pure presenter fed by the central `readAll` loader, each metric shows its meaning as a `↳` subtitle
+- feat(stats): backfill attributes synthetic rows with `session_id` (existing `stats backfill` already knows the session dir name) so running backfill doesn't inflate `(unattributed)`
+- feat(stats): column-detect prepared-statement fallback in `openSink` — a failed schema migration degrades to legacy logging instead of crashing the sink
+- fix(stats): `loadSessionAdoption` returns a partial result (surface events only) when the stats sqlite is corrupt or unreadable, instead of propagating — inviolable §9 contract
+- docs: adoption-metrics interpretation guide (`docs/shared/adoption-metrics.md`) — per-metric meaning, combined-read patterns, why no ✓/✗ thresholds yet; KNOWN_LIMITATIONS *Adoption telemetry* entry resolved
+- docs: §13 Claude Code PreToolUse timeout fail-open verified empirically on CC 2.1.144 (downgraded from open risk); update-notification aggression design committed for the next release
+
+---
+
 ## v0.9.1 — 2026-05-19
 
 - perf(stats): TUI dashboard reads a small `*.meta.json` sidecar instead of parsing every full worktree cache JSON on each tick — the dashboard previously parsed 80+ MB of JSON per 1.5s tick on repos with multiple worktrees, causing visible CPU spikes
