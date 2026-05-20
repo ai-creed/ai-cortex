@@ -63,6 +63,33 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
 	return 0;
 }
 
+export type Severity = "none" | "patch" | "minor" | "multi-minor";
+
+export function compareSeverity(current: string, latest: string): Severity {
+	const parse = (v: string): number[] =>
+		v
+			.split("-")[0]
+			.split(".")
+			.map((n) => Number.parseInt(n, 10) || 0);
+	const c = parse(current);
+	const l = parse(latest);
+	const cMajor = c[0] ?? 0,
+		cMinor = c[1] ?? 0,
+		cPatch = c[2] ?? 0;
+	const lMajor = l[0] ?? 0,
+		lMinor = l[1] ?? 0,
+		lPatch = l[2] ?? 0;
+
+	if (cMajor > lMajor) return "none";
+	if (cMajor === lMajor && cMinor > lMinor) return "none";
+	if (cMajor === lMajor && cMinor === lMinor && cPatch >= lPatch) return "none";
+
+	if (cMajor < lMajor) return "multi-minor";
+	if (lMinor - cMinor >= 2) return "multi-minor";
+	if (lMinor - cMinor === 1) return "minor";
+	return "patch";
+}
+
 export function isCacheStale(
 	checkedAt: string,
 	now: number = Date.now(),

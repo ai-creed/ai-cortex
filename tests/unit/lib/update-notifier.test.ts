@@ -10,6 +10,7 @@ import {
 	formatNotice,
 	readCache,
 	writeCache,
+	compareSeverity,
 } from "../../../src/lib/update-notifier.js";
 
 describe("compareVersions", () => {
@@ -161,5 +162,42 @@ describe("readCache / writeCache", () => {
 		} finally {
 			fs.rmSync(path.dirname(path.dirname(nested)), { recursive: true, force: true });
 		}
+	});
+});
+
+describe("compareSeverity", () => {
+	it("returns 'none' when current === latest", () => {
+		expect(compareSeverity("0.11.0", "0.11.0")).toBe("none");
+	});
+
+	it("returns 'none' when current > latest", () => {
+		expect(compareSeverity("0.12.0", "0.11.5")).toBe("none");
+		expect(compareSeverity("1.0.0", "0.99.0")).toBe("none");
+	});
+
+	it("returns 'patch' when same major.minor and patch behind", () => {
+		expect(compareSeverity("0.10.0", "0.10.1")).toBe("patch");
+		expect(compareSeverity("0.10.1", "0.10.3")).toBe("patch");
+	});
+
+	it("returns 'minor' when exactly 1 minor behind (same major)", () => {
+		expect(compareSeverity("0.10.5", "0.11.0")).toBe("minor");
+		expect(compareSeverity("0.10.0", "0.11.0")).toBe("minor");
+		expect(compareSeverity("0.10.0", "0.11.5")).toBe("minor");
+	});
+
+	it("returns 'multi-minor' when 2+ minors behind (same major)", () => {
+		expect(compareSeverity("0.9.0", "0.11.0")).toBe("multi-minor");
+		expect(compareSeverity("0.9.5", "0.11.0")).toBe("multi-minor");
+	});
+
+	it("returns 'multi-minor' when a major is behind", () => {
+		expect(compareSeverity("0.99.0", "1.0.0")).toBe("multi-minor");
+		expect(compareSeverity("0.5.0", "2.0.0")).toBe("multi-minor");
+	});
+
+	it("ignores pre-release suffixes for the comparison", () => {
+		expect(compareSeverity("0.10.0-rc.1", "0.11.0-beta.0")).toBe("minor");
+		expect(compareSeverity("0.10.0-rc.1", "0.10.0")).toBe("none");
 	});
 });
