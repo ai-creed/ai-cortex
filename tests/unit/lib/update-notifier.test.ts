@@ -281,4 +281,16 @@ describe("readCache / writeCache — extended cache shape", () => {
 		const cache = readCache(tmpFile);
 		expect(cache?.releaseHeadline).toBe("");
 	});
+
+	it("preserves an empty-string lastBriefingShownAt in the JSON (not coerced to absent)", () => {
+		writeCache(tmpFile, {
+			checkedAt: "2026-05-01T00:00:00Z",
+			latestVersion: "0.11.0",
+			releaseHeadline: "feat",
+			lastBriefingShownAt: "",
+		});
+		const parsed = JSON.parse(fs.readFileSync(tmpFile, "utf-8"));
+		expect("lastBriefingShownAt" in parsed).toBe(true);
+		expect(parsed.lastBriefingShownAt).toBe("");
+	});
 });

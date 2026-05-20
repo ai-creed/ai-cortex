@@ -135,7 +135,9 @@ export function writeCache(filePath: string, data: CacheData): void {
 		latestVersion: data.latestVersion,
 		releaseHeadline: data.releaseHeadline,
 	};
-	if (data.lastBriefingShownAt) out.lastBriefingShownAt = data.lastBriefingShownAt;
+	if (data.lastBriefingShownAt !== undefined) {
+		out.lastBriefingShownAt = data.lastBriefingShownAt;
+	}
 	fs.writeFileSync(filePath, JSON.stringify(out));
 }
 
