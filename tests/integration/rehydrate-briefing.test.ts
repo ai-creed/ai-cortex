@@ -111,4 +111,14 @@ describe("rehydration briefing — memory digest section", () => {
 		// Section ordering: Pending review appears before "How to consult".
 		expect(md.indexOf("## Pending review")).toBeLessThan(md.indexOf("How to consult"));
 	});
+
+	it("forwards options.notice into the briefing file (prepended above the header)", async () => {
+		const result = await rehydrateRepo(repoPath, {
+			notice:
+				"ai-cortex 9.9.9 available — test headline. Run: npm install -g ai-cortex@latest",
+		});
+		const md = fs.readFileSync(result.briefingPath, "utf8");
+		expect(md.startsWith("ai-cortex 9.9.9 available")).toBe(true);
+		expect(md).toContain("# rd-test");
+	});
 });

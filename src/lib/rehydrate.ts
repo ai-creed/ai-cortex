@@ -12,6 +12,7 @@ import { renderMemoryDigest } from "./memory/briefing-digest.js";
 
 export type RehydrateOptions = {
 	stale?: boolean;
+	notice?: string | null;
 };
 
 export type RehydrateResult = {
@@ -31,7 +32,7 @@ export async function rehydrateRepo(
 			options ?? {},
 		);
 
-		const briefing = renderBriefing(cache);
+		const briefing = renderBriefing(cache, { notice: options?.notice });
 		const pinned = await renderPinnedSection(identity.repoKey);
 		const digest = await renderMemoryDigest(identity.repoKey);
 		const extras = [pinned, digest].filter((p): p is string => Boolean(p));
