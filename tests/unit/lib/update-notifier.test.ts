@@ -12,6 +12,7 @@ import {
 	writeCache,
 	compareSeverity,
 	shownTodayUTC,
+	checkForUpdate,
 } from "../../../src/lib/update-notifier.js";
 
 describe("compareVersions", () => {
@@ -109,12 +110,127 @@ describe("isCacheStale", () => {
 	});
 });
 
-describe("formatNotice", () => {
-	it("includes current and latest versions and install command", () => {
-		const out = formatNotice("0.4.0", "0.5.0");
-		expect(out).toContain("0.4.0");
-		expect(out).toContain("0.5.0");
+describe("formatNotice — tier-aware, surface-aware", () => {
+	const baseArgs = {
+		current: "0.10.0",
+		latest: "0.10.1",
+		headline: "fix briefing render bug",
+	} as const;
+
+	const ANSI = /\x1b\[[0-9;]*m/;
+
+	it("patch + cli: single line, includes versions, install command, headline", () => {
+		const out = formatNotice({
+			...baseArgs,
+			tier: "patch",
+			surface: "cli",
+		});
+		expect(out).toContain("0.10.1");
+		expect(out).toContain("fix briefing render bug");
 		expect(out).toContain("npm install -g ai-cortex@latest");
+		// patch tier is subtle on CLI — no ANSI bold.
+		expect(out).not.toMatch(ANSI);
+	});
+
+	it("patch + mcp: same fields, never contains ANSI escapes", () => {
+		const out = formatNotice({
+			...baseArgs,
+			tier: "patch",
+			surface: "mcp",
+		});
+		expect(out).toContain("0.10.1");
+		expect(out).toContain("fix briefing render bug");
+		expect(out).toContain("npm install -g ai-cortex@latest");
+		expect(out).not.toMatch(ANSI);
+	});
+
+	it("minor + cli: two-line block with --- rules; contains ANSI bold", () => {
+		const out = formatNotice({
+			current: "0.10.0",
+			latest: "0.11.0",
+			headline: "edit-time surfacing",
+			tier: "minor",
+			surface: "cli",
+		});
+		expect(out).toContain("---");
+		expect(out).toMatch(ANSI);
+		expect(out).toContain("0.11.0");
+		expect(out).toContain("edit-time surfacing");
+	});
+
+	it("minor + mcp: two-line block with --- rules; NO ANSI", () => {
+		const out = formatNotice({
+			current: "0.10.0",
+			latest: "0.11.0",
+			headline: "edit-time surfacing",
+			tier: "minor",
+			surface: "mcp",
+		});
+		expect(out).toContain("---");
+		expect(out).not.toMatch(ANSI);
+		expect(out).toContain("0.11.0");
+	});
+
+	it("multi-minor + cli: includes 'N minor releases behind' and ANSI bold", () => {
+		const out = formatNotice({
+			current: "0.9.0",
+			latest: "0.11.0",
+			headline: "Phase 11 telemetry",
+			tier: "multi-minor",
+			surface: "cli",
+		});
+		expect(out).toContain("2 minor releases behind");
+		expect(out).toMatch(ANSI);
+	});
+
+	it("multi-minor + mcp: includes 'N minor releases behind'; NO ANSI", () => {
+		const out = formatNotice({
+			current: "0.9.0",
+			latest: "0.11.0",
+			headline: "Phase 11 telemetry",
+			tier: "multi-minor",
+			surface: "mcp",
+		});
+		expect(out).toContain("2 minor releases behind");
+		expect(out).not.toMatch(ANSI);
+	});
+
+	it("multi-minor when a major is behind: uses 'major version behind' phrasing", () => {
+		const out = formatNotice({
+			current: "0.99.0",
+			latest: "1.0.0",
+			headline: "stable API",
+			tier: "multi-minor",
+			surface: "mcp",
+		});
+		expect(out).toContain("major version behind");
+		expect(out).not.toContain("minor releases behind");
+	});
+
+	it("no-headline fallback (patch): no em-dash, no dangling 'available — .'", () => {
+		const out = formatNotice({
+			current: "0.10.0",
+			latest: "0.10.1",
+			headline: "",
+			tier: "patch",
+			surface: "mcp",
+		});
+		expect(out).toContain("0.10.1 available");
+		expect(out).not.toContain("—");
+		expect(out).not.toContain("available — .");
+		expect(out).toContain("npm install -g ai-cortex@latest");
+	});
+
+	it("no-headline fallback (minor): drops headline phrase, no em-dash", () => {
+		const out = formatNotice({
+			current: "0.10.0",
+			latest: "0.11.0",
+			headline: "",
+			tier: "minor",
+			surface: "mcp",
+		});
+		expect(out).toContain("0.11.0 available");
+		expect(out).not.toContain("—");
 	});
 });
 
@@ -317,5 +433,50 @@ describe("shownTodayUTC", () => {
 
 	it("returns false when shown the next UTC day", () => {
 		expect(shownTodayUTC("2026-05-21T00:00:01Z", now)).toBe(false);
+	});
+});
+
+describe("checkForUpdate — return shape", () => {
+	let tmpHome: string;
+
+	beforeEach(() => {
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "uc-checkforupdate-"));
+		process.env.AI_CORTEX_CACHE_HOME = tmpHome;
+	});
+
+	afterEach(() => {
+		delete process.env.AI_CORTEX_CACHE_HOME;
+		fs.rmSync(tmpHome, { recursive: true, force: true });
+	});
+
+	it("returns null when no cache yet", () => {
+		expect(
+			checkForUpdate({ currentVersion: "0.10.0", command: "index" }),
+		).toBeNull();
+	});
+
+	it("returns { latest, headline, tier } when an upgrade is available", () => {
+		const p = path.join(tmpHome, "ai-cortex", "update-check.json");
+		fs.mkdirSync(path.dirname(p), { recursive: true });
+		fs.writeFileSync(
+			p,
+			JSON.stringify({
+				checkedAt: new Date().toISOString(),
+				latestVersion: "0.11.0",
+				releaseHeadline: "feat",
+			}),
+		);
+		// Make shouldCheck pass: simulate TTY.
+		const origIsTTY = process.stdout.isTTY;
+		(process.stdout as { isTTY?: boolean }).isTTY = true;
+		try {
+			const out = checkForUpdate({ currentVersion: "0.10.0", command: "index" });
+			expect(out).not.toBeNull();
+			expect(out?.latest).toBe("0.11.0");
+			expect(out?.headline).toBe("feat");
+			expect(out?.tier).toBe("minor");
+		} finally {
+			(process.stdout as { isTTY?: boolean }).isTTY = origIsTTY;
+		}
 	});
 });

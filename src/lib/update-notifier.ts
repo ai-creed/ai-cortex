@@ -151,14 +151,59 @@ export function writeCache(filePath: string, data: CacheData): void {
 	fs.writeFileSync(filePath, JSON.stringify(out));
 }
 
-export function formatNotice(current: string, latest: string): string {
-	return `\nai-cortex update available: ${current} → ${latest}\n  run: ${INSTALL_COMMAND}\n`;
+function minorsOrMajorBehind(current: string, latest: string): {
+	mode: "major" | "minor";
+	count: number;
+} {
+	const parse = (v: string): number[] =>
+		v
+			.split("-")[0]
+			.split(".")
+			.map((n) => Number.parseInt(n, 10) || 0);
+	const c = parse(current);
+	const l = parse(latest);
+	if ((c[0] ?? 0) < (l[0] ?? 0)) {
+		return { mode: "major", count: (l[0] ?? 0) - (c[0] ?? 0) };
+	}
+	return { mode: "minor", count: (l[1] ?? 0) - (c[1] ?? 0) };
+}
+
+export function formatNotice(opts: {
+	current: string;
+	latest: string;
+	headline: string;
+	tier: Exclude<Severity, "none">;
+	surface: "cli" | "mcp";
+}): string {
+	const { current, latest, headline, tier, surface } = opts;
+	const useAnsi = surface === "cli";
+	const bold = (s: string): string => (useAnsi ? `\x1b[1m${s}\x1b[0m` : s);
+	const headlinePart = headline ? ` — ${headline}` : "";
+	const installLine = `Run: ${INSTALL_COMMAND}`;
+
+	if (tier === "patch") {
+		return `\nai-cortex ${latest} available${headlinePart}. ${installLine}\n`;
+	}
+
+	if (tier === "minor") {
+		const title = bold(`ai-cortex ${latest} available${headlinePart}`);
+		return `\n---\n${title}\n${installLine}\n---\n`;
+	}
+
+	// multi-minor
+	const { mode, count } = minorsOrMajorBehind(current, latest);
+	const behindLine =
+		mode === "major"
+			? `you are a major version behind`
+			: `you are ${count} minor releases behind`;
+	const title = bold(`ai-cortex ${latest} available${headlinePart}`);
+	return `\n---\n${title}\n${behindLine}\n${installLine}\n---\n`;
 }
 
 export function checkForUpdate(opts: {
 	currentVersion: string;
 	command: string;
-}): string | null {
+}): { latest: string; headline: string; tier: Exclude<Severity, "none"> } | null {
 	if (
 		!shouldCheck({
 			command: opts.command,
@@ -170,17 +215,21 @@ export function checkForUpdate(opts: {
 	}
 
 	const cache = readCache(cachePath());
-	let availableVersion: string | null = null;
-
-	if (cache && compareVersions(opts.currentVersion, cache.latestVersion) < 0) {
-		availableVersion = cache.latestVersion;
-	}
 
 	if (!cache || isCacheStale(cache.checkedAt)) {
 		spawnBackgroundFetch();
 	}
 
-	return availableVersion;
+	if (!cache) return null;
+
+	const tier = compareSeverity(opts.currentVersion, cache.latestVersion);
+	if (tier === "none") return null;
+
+	return {
+		latest: cache.latestVersion,
+		headline: cache.releaseHeadline,
+		tier,
+	};
 }
 
 function spawnBackgroundFetch(): void {
@@ -222,6 +271,17 @@ export async function runBackgroundFetch(): Promise<void> {
 	}
 }
 
-export function printUpdateNotice(current: string, latest: string): void {
-	process.stderr.write(formatNotice(current, latest));
+export function printUpdateNotice(
+	current: string,
+	info: { latest: string; headline: string; tier: Exclude<Severity, "none"> },
+): void {
+	process.stderr.write(
+		formatNotice({
+			current,
+			latest: info.latest,
+			headline: info.headline,
+			tier: info.tier,
+			surface: "cli",
+		}),
+	);
 }

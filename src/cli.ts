@@ -464,10 +464,10 @@ async function main(): Promise<void> {
 		}
 
 		const currentVersion = readPackageVersion();
-		const updateAvailable = checkForUpdate({ currentVersion, command });
-		if (updateAvailable) {
+		const updateInfo = checkForUpdate({ currentVersion, command });
+		if (updateInfo) {
 			process.on("exit", () => {
-				printUpdateNotice(currentVersion, updateAvailable);
+				printUpdateNotice(currentVersion, updateInfo);
 			});
 		}
 
