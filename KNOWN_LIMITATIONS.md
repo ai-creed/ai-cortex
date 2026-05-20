@@ -115,7 +115,7 @@ This hook is **not** installed by `ai-cortex history install-hooks` — the harn
 
 ### Adoption telemetry
 
-Resolved (Phase 11). `ai-cortex stats sessions` (CLI, `--json`) and the stats dashboard **Sessions** tab report per-session memory adoption from `tool_calls` (now `session_id`-attributed) plus edit-time surfacings. Coverage is honest: events whose session id the harness didn't expose to the MCP process are bucketed `(unattributed)` and that share is shown alongside every number. Two refinements remain deliberately deferred (documented in the design spec): precise surfaced-id→`get_memory(id)` correlation (coarse session-level in v1) and exact extract→cleanup cohorts (window-level rate in v1).
+Resolved (Phase 11). `ai-cortex stats sessions` (CLI, `--json`) and the stats dashboard **Sessions** tab report per-session memory adoption from `tool_calls` (now `session_id`-attributed) plus edit-time surfacings. Coverage is honest: events whose session id the harness didn't expose to the MCP process are bucketed `(unattributed)` and that share is shown alongside every number. Two refinements remain deliberately deferred (documented in the design spec): precise surfaced-id→`get_memory(id)` correlation (coarse session-level in v1) and exact extract→cleanup cohorts (window-level rate in v1). For interpreting the numbers (per-metric meaning, patterns to look for, why no ✓/✗ thresholds yet), see [`docs/shared/adoption-metrics.md`](./docs/shared/adoption-metrics.md).
 
 ---
 

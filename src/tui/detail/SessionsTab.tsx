@@ -41,6 +41,11 @@ export function SessionsTab({
 					</Text>
 				))}
 			</Box>
+			<Box marginTop={1}>
+				<Text dimColor>
+					interpret: docs/shared/adoption-metrics.md
+				</Text>
+			</Box>
 		</Box>
 	);
 }

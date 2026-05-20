@@ -29,5 +29,8 @@ export function runStatsSessions(
 				`${s.memoryUsed ? "USED" : "—"}\n`,
 		);
 	}
+	write(
+		"\nHow to read these numbers: docs/shared/adoption-metrics.md\n",
+	);
 	return 0;
 }
