@@ -62,4 +62,36 @@ describe("loadSessionAdoption", () => {
 		expect(sessions).toEqual([]);
 		expect(summary.memoryUsedPct).toBe(0);
 	});
+
+	it("corrupt stats DB → partial result (surface events still load, no throw)", () => {
+		// Plant a file that better-sqlite3 cannot open (not a database).
+		// On open: `new Database()` throws — the inviolable §9 contract is
+		// that loadSessionAdoption must NOT propagate, leave rows=[], and
+		// still aggregate from surface events.
+		const dbPath = path.join(home, KEY, "stats", "events.sqlite");
+		fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+		fs.writeFileSync(dbPath, "not a sqlite file");
+		// One surface event so the aggregator has something to work with.
+		appendSurfaceEvent(KEY, {
+			ts: Date.now(),
+			session_id: "S",
+			memoryIds: ["m1"],
+			count: 1,
+		});
+
+		expect(() =>
+			loadSessionAdoption(KEY, { windowMs: 7 * 24 * 3600 * 1000 }),
+		).not.toThrow();
+
+		const { sessions, summary } = loadSessionAdoption(KEY, {
+			windowMs: 7 * 24 * 3600 * 1000,
+		});
+		// Partial: SQL side empty (rows=[]) but surface side produced session S.
+		const byId = Object.fromEntries(sessions.map((r) => [r.sessionId, r]));
+		expect(byId["S"]!.surfacings).toBe(1);
+		expect(byId["S"]!.memoryUsed).toBe(false); // no get/record in tool_calls
+		// SQL totals are zero, so unattributedShare guards on totalEvents===0 → 0.
+		expect(summary.unattributedShare).toBe(0);
+		expect(summary.sessionCount).toBe(1);
+	});
 });

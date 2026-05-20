@@ -1,5 +1,5 @@
 // src/lib/stats/sessions.ts
-import Database from "better-sqlite3";
+import Database, { type Database as DB } from "better-sqlite3";
 import fs from "node:fs";
 import { statsDbPath } from "./paths.js";
 import { readSurfaceEvents } from "./surface-events.js";
@@ -67,8 +67,13 @@ export function loadSessionAdoption(
 	const since = Date.now() - opts.windowMs;
 	let rows: Row[] = [];
 	if (fs.existsSync(statsDbPath(repoKey))) {
-		const db = new Database(statsDbPath(repoKey), { readonly: true });
+		// Spec §9 (inviolable): a sqlite read error (corrupt DB, locked file,
+		// bad header, schema surprise) must degrade to a partial result, not
+		// crash. `new Database(...)` itself can throw, so the open must be
+		// inside the try; `db?.close()` covers the never-opened case.
+		let db: DB | null = null;
 		try {
+			db = new Database(statsDbPath(repoKey), { readonly: true });
 			// Task 1's fallback intentionally preserves a degraded DB with NO
 			// session_id column. The reader must NOT assume it exists, or the
 			// SELECT throws on exactly that shape — column-detect and project
@@ -85,8 +90,15 @@ export function loadSessionAdoption(
 					} FROM tool_calls WHERE ts >= ?`,
 				)
 				.all(since) as Row[];
+		} catch {
+			// Partial result: leave `rows = []` and continue to surface events.
+			rows = [];
 		} finally {
-			db.close();
+			try {
+				db?.close();
+			} catch {
+				/* close on broken handle */
+			}
 		}
 	}
 	const surface = readSurfaceEvents(repoKey).filter((e) => e.ts >= since);
