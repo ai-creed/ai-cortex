@@ -3,7 +3,7 @@
 **Date:** 2026-05-20
 **Status:** design — single phase
 **Scope:** route the existing CLI update notifier to the MCP `rehydrate_project` briefing path; add a one-line "what's new" headline sourced from the npm manifest; tier the loudness by how far behind the user is.
-**Builds on:** post-v0.10.0 tree (Phase 11 adoption telemetry shipped; `src/lib/update-notifier.ts` with daily-throttled CLI nudge; `src/lib/briefing.ts` pure renderer; `src/mcp/rehydrate.ts` calls `renderBriefing`).
+**Builds on:** post-v0.10.0 tree (Phase 11 adoption telemetry shipped; `src/lib/update-notifier.ts` with daily-throttled CLI nudge; `src/lib/briefing.ts` pure renderer; `src/lib/rehydrate.ts:23` `rehydrateRepo` calls `renderBriefing` and writes the briefing file; `src/mcp/server.ts:439` reads it back in the `rehydrate_project` tool handler).
 
 ---
 
@@ -38,18 +38,23 @@ A secondary problem: even when the CLI nudge does fire, it says "newer version a
 ```
 ai-cortex mcp (long-lived)
    │
-   ├─ rehydrate_project called by agent
+   ├─ rehydrate_project handler (src/mcp/server.ts)
    │     │
-   │     ├─ rehydrate.ts → getBriefingNotice(currentVersion, callCount++)
+   │     ├─ getBriefingNotice({ currentVersion: SERVER_VERSION })
    │     │      │
    │     │      ├─ AI_CORTEX_NO_UPDATE_CHECK?           → null
    │     │      ├─ readCache(update-check.json)
    │     │      │     └─ stale? → spawnBackgroundFetch() (detached)
    │     │      ├─ compareSeverity(current, latest)     → tier
-   │     │      ├─ throttle gate (tier-aware)           → null OR proceed
+   │     │      ├─ throttle gate (tier-aware, keyed off
+   │     │      │   cache.lastBriefingShownAt)          → null OR proceed
    │     │      └─ formatNotice(..., surface: "mcp")    → string
    │     │
-   │     └─ renderBriefing(cache, { notice })           → markdown
+   │     ├─ rehydrateRepo(worktreePath, { notice })
+   │     │      └─ renderBriefing(cache, { notice })    → markdown
+   │     │      └─ fs.writeFileSync(briefingPath, ...)
+   │     │
+   │     └─ fs.readFileSync(briefingPath) → content
    │
    └─ returned to agent → relayed to user
 
@@ -82,7 +87,12 @@ to:
 - `releaseHeadline`: copied from the registry manifest's `aiCortex.releaseHeadline` field (see §5). Missing → empty string; renderer falls back to no-headline form. Backward-compatible: pre-v0.11.0 caches lack this field — `readCache` tolerates absence.
 - `lastBriefingShownAt`: set when the MCP briefing actually emits a patch-tier notice (UTC-day throttle key). Untouched for minor/multi-minor tiers (they don't throttle). Missing → throttle gate fires (treats as never shown).
 
-`readCache` accepts both shapes (existing two-field cache parses as `releaseHeadline: ""`, `lastBriefingShownAt: undefined`). `writeCache` always writes the four-field shape on a fresh fetch; `getBriefingNotice` may write a one-field update (`lastBriefingShownAt` only) without touching the others — implemented as read-modify-write of the JSON.
+`readCache` accepts both shapes (existing two-field cache parses as `releaseHeadline: ""`, `lastBriefingShownAt: undefined`).
+
+Write paths:
+
+- `runBackgroundFetch` (detached child) refreshes `checkedAt`, `latestVersion`, `releaseHeadline`. **It must read the prior cache first and preserve `lastBriefingShownAt`** as-is — the throttle key belongs to the main process and resetting it on every 24h fetch would over-emit patch notices. Implementation: read-modify-write, defaulting absent `lastBriefingShownAt` to `undefined` (which the renderer's `shownTodayUTC` treats as "never shown").
+- `getBriefingNotice` (main process) may write a `lastBriefingShownAt`-only update when emitting a patch-tier notice — read-modify-write of the same JSON, leaves the other three fields untouched.
 
 ## 5. "What's new" data source
 
@@ -102,8 +112,13 @@ The npm registry preserves arbitrary top-level package.json fields in the per-ve
 
 **Release-time workflow change:**
 
-- `scripts/release.sh` (or the equivalent — confirm during planning) gains a step: prompt for a one-line headline before `npm publish`, write it to `package.json` under `aiCortex.releaseHeadline`, then proceed. After publish, the field is left in place (the dev tree mirrors the published manifest). An empty string is a valid value — falls back to the generic "newer version available" form.
-- One-line headline conventions: ≤ 60 chars, present-tense feature summary (matches the leading bullet style of CHANGELOG.md entries). The release-script prompt shows the previous headline for reference; pressing Enter accepts the previous value to make patch-release scripting frictionless.
+- `scripts/release.sh` gains a step: prompt for a one-line headline **before the version-bump commit / tag / push** (publish is handled by GitHub CD on tag push — there is no in-script `npm publish`). The step writes the headline to `package.json` under `aiCortex.releaseHeadline`, then commits, tags, pushes. Insertion point: **before line 45** (the existing `git add package.json src/version.ts`) — the new headline must be staged in that same `git add`. After release, the field is left in place (the dev tree mirrors the published manifest).
+- One-line headline conventions: ≤ 60 chars, present-tense feature summary (matches the leading bullet style of CHANGELOG.md entries).
+- Prompt behavior: shows the previous `aiCortex.releaseHeadline` for reference. Three input shapes:
+  - non-empty string → new headline.
+  - bare `Enter` → reuse the previous value (frictionless for patch-release scripting).
+  - the literal sentinel `-` (single dash, on its own) → clear to empty string (no headline; renderer falls back to the no-headline form per §6). Reserving a sentinel rather than treating bare-empty as "clear" avoids accidental wipes from a typo / accidental Enter on a fresh script run.
+  - Round-trip note: if the previous-value display would itself be `-` (highly unlikely under the ≤ 60-char feature-summary convention), the prompt shows `(none)` instead so the user can't confuse it with the sentinel.
 
 ## 6. Severity tiers + throttle
 
@@ -129,6 +144,11 @@ Pre-release suffixes (`-rc.1`, `-beta.0`) are ignored for the comparison (matche
 
 The throttle compares UTC days via `floor(ts / 86_400_000)`, robust to DST and timezones.
 
+**No-headline fallback exemplar (when `cache.releaseHeadline` is empty / missing):**
+
+- patch tier → `ai-cortex 0.10.1 available. Run: npm install -g ai-cortex@latest` (no em-dash, no headline slot).
+- minor / multi-minor → first line drops the headline phrase; rest of the block unchanged. Formatter never emits a dangling em-dash or `available — .` punctuation artifact.
+
 ## 7. Components
 
 **`src/lib/update-notifier.ts` (extended):**
@@ -145,41 +165,55 @@ The throttle compares UTC days via `floor(ts / 86_400_000)`, robust to DST and t
 
 - `renderBriefing(cache, opts?: { notice?: string | null })` — new optional second arg. When `notice` is provided and non-empty, prepended above `renderHeader`, separated by a blank line. When absent / null / empty, identical to the existing output. Stays pure.
 
-**`src/mcp/rehydrate.ts`:**
+**`src/lib/rehydrate.ts` (`rehydrateRepo`, line 23):**
 
-- Reads the running package version from the bundled `package.json` (the existing project-meta read path already does this — reuse, do not duplicate).
-- Calls `getBriefingNotice` and passes the result into `renderBriefing` as `{ notice }`. A thrown notifier is caught and treated as `null` — defense in depth even though `getBriefingNotice` itself never throws.
+- New optional option on `RehydrateOptions`: `notice?: string | null`.
+- Forwarded into `renderBriefing(cache, { notice })` at line 34 — must be wired in before `fs.writeFileSync(briefingPath, md)` at line 44 so the persisted briefing file (which the MCP handler reads back at `src/mcp/server.ts:440`) carries the notice.
+- `rehydrateRepo` itself does not call `getBriefingNotice` — keeps the lib pure and lets CLI callers (which have their own CLI-surface nudge via `checkForUpdate`) opt out by passing nothing.
+
+**`src/mcp/server.ts` (`rehydrate_project` tool handler — call site at line 439, briefing read-back at line 440):**
+
+- The canonical version source is `VERSION` from `src/version.ts` — already imported into this file as `SERVER_VERSION` (`src/mcp/server.ts:30`). **Do not read `package.json` at runtime** — the bundled `dist/src/cli.js` vs `src/cli.ts` path math diverges between prod and tests, per the existing comment at `src/cli.ts:23-30`.
+- Before the `rehydrateRepo(worktreePath, ...)` call at line 439, call `getBriefingNotice({ currentVersion: SERVER_VERSION })`. Wrap in a top-level `try { ... } catch { /* notice = null */ }` — defense in depth even though `getBriefingNotice` itself never throws — and pass the result through `rehydrateRepo`'s new `notice` option.
 
 **CLI entry (`src/cli.ts`):**
 
-- `printUpdateNotice` updated to consume the new `checkForUpdate` return shape and render via the tier-aware `formatNotice` with `surface: "cli"`. No new CLI flags.
+- `printUpdateNotice` signature changes from `(current: string, latest: string)` to `(current: string, info: { latest: string; headline: string; tier: Severity })` (where `Severity` is the union from §6 minus `"none"`). It calls the tier-aware `formatNotice({ ...info, current, surface: "cli" })` and writes to stderr (existing behavior). No new CLI flags.
 
-**`scripts/release.sh` (or the actual release script):**
+**`scripts/release.sh`:**
 
-- New step before `npm publish`: read previous `aiCortex.releaseHeadline` from `package.json`, prompt for a new one (default = previous), write back. Implementation must be idempotent (re-running the release script doesn't accumulate cruft).
-- A dedicated unit test verifies the JSON manipulation; the prompt step is excluded from automated test (interactive).
+- New step **before line 45 (`git add package.json src/version.ts`)**: read previous `aiCortex.releaseHeadline` from `package.json`, prompt for a new one (default = previous; `-` sentinel = clear; see §5), write back. The headline write must be staged in the same `git add` line — extend it to include any other `package.json` mutation already covered. Implementation must be idempotent (re-running the release script doesn't accumulate cruft).
+- `scripts/release.sh` has **no in-script `npm publish`** (publish runs in GitHub CD on tag push) — the prompt step lives strictly inside the script's pre-commit window.
+- A dedicated unit test verifies the JSON read-modify-write helper (pure JSON manipulation; interactive prompt excluded).
 
 ## 8. Data flow (one cycle, MCP path)
 
 ```
-1. Agent calls rehydrate_project.
-2. rehydrate.ts:
-     currentVersion = require('../../package.json').version
-     notice = getBriefingNotice({ currentVersion })
-     return renderBriefing(cache, { notice })
-3. getBriefingNotice:
+1. Agent calls rehydrate_project (handled in src/mcp/server.ts:418).
+2. src/mcp/server.ts handler:
+     // SERVER_VERSION already imported from "../version.js" at line 30.
+     try { notice = getBriefingNotice({ currentVersion: SERVER_VERSION }) }
+     catch { notice = null }
+     result = await rehydrateRepo(worktreePath, { notice })
+     // rehydrateRepo writes the briefing file at line 44; result.briefingPath
+     // is read back by the handler at src/mcp/server.ts:440.
+3. getBriefingNotice (in src/lib/update-notifier.ts):
      env AI_CORTEX_NO_UPDATE_CHECK? → null
      cache = readCache(cachePath())
      if !cache || isCacheStale(cache.checkedAt): spawnBackgroundFetch()
      if !cache: return null   # nothing to compare against yet
      tier = compareSeverity(currentVersion, cache.latestVersion)
      if tier === "none": return null
+     // shownTodayUTC must treat undefined/missing as "never shown".
      if tier === "patch" and shownTodayUTC(cache.lastBriefingShownAt): return null
      if tier === "patch": writeCache({ ...cache, lastBriefingShownAt: nowIso })
      return formatNotice({ current: currentVersion, latest: cache.latestVersion,
                            headline: cache.releaseHeadline,
                            tier, surface: "mcp" })
-4. renderBriefing(cache, { notice }):
+4. rehydrateRepo (src/lib/rehydrate.ts:23) forwards `options.notice`:
+     briefing = renderBriefing(cache, { notice: options?.notice })
+     fs.writeFileSync(briefingPath, briefing + extras...)
+5. renderBriefing(cache, { notice }):
      [notice ? notice + "\n" : ""] + renderHeader(...) + renderKeyDocs(...) + ...
 ```
 
@@ -196,7 +230,7 @@ The first MCP session after `ai-cortex` is installed will see no notice — `cac
 ## 10. Phased implementation
 
 - **v1 (this spec).** MCP-side briefing notice + "what's new" headline from `aiCortex.releaseHeadline` + tier-aware throttle + CLI-surface format parity. Release-script `aiCortex.releaseHeadline` prompt.
-- **v2 (deferred).** Multi-version "behind on these releases:" enumeration. When `tier === "multi-minor"`, fetch the full `/ai-cortex` registry doc, walk the intervening versions from `currentVersion` to `latestVersion`, list each's `aiCortex.releaseHeadline`. Adds a second / heavier fetch and a multi-version cache. Skipped now because the single-headline + `N releases behind` count is sufficient for the immediate win; the doc fetch and a multi-version cache are non-trivial.
+- **v2 (deferred).** Multi-version "behind on these releases:" enumeration. When `tier === "multi-minor"`, fetch the full `/ai-cortex` packument (the registry endpoint without `/latest` — heavier payload, currently ~50–200 KB and grows with release count) and walk intervening versions from `currentVersion` to `latestVersion`, listing each's `aiCortex.releaseHeadline`. Adds a second / heavier fetch and a multi-version cache (which must be sized for the packument's growth). Skipped now because the single-headline + `N releases behind` count is sufficient for the immediate win; the doc fetch and multi-version cache are non-trivial.
 - **v3 (deferred).** User-tunable tier overrides (`AI_CORTEX_UPDATE_TIER_MAX=patch` etc.). Not requested; YAGNI until someone asks.
 
 ## 11. Testing
@@ -242,6 +276,8 @@ Release-script:
 
 - `src/lib/update-notifier.ts` — existing CLI-side implementation
 - `src/lib/briefing.ts` — pure briefing renderer
-- `src/mcp/rehydrate.ts` — MCP-side caller
+- `src/lib/rehydrate.ts` — `rehydrateRepo` (renders + writes the briefing file)
+- `src/mcp/server.ts` — `rehydrate_project` tool handler (calls `rehydrateRepo`, owns version source via `SERVER_VERSION` alias of `VERSION`)
+- `src/version.ts` — canonical version source; do NOT read `package.json` at runtime
 - `docs/superpowers/specs/2026-05-19-adoption-telemetry-design.md` — Phase 11 telemetry (related: telemetry on this path is in §12)
 - `KNOWN_LIMITATIONS.md` — *Adoption / agent integration* (the existing "MCP tool discovery is best-effort" entry; this design partially addresses one slice of that)
