@@ -1,5 +1,5 @@
 // tests/unit/lib/update-notifier.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +13,15 @@ import {
 	compareSeverity,
 	shownTodayUTC,
 	checkForUpdate,
+	getBriefingNotice,
 } from "../../../src/lib/update-notifier.js";
+
+vi.mock("node:child_process", () => ({
+	spawn: vi.fn(() => ({
+		unref: vi.fn(),
+		on: vi.fn(),
+	})),
+}));
 
 describe("compareVersions", () => {
 	it("returns -1 when a < b", () => {
@@ -566,5 +574,135 @@ describe("checkForUpdate — return shape", () => {
 		} finally {
 			(process.stdout as { isTTY?: boolean }).isTTY = origIsTTY;
 		}
+	});
+});
+
+describe("getBriefingNotice", () => {
+	let tmpHome: string;
+	let cachePathStr: string;
+
+	beforeEach(() => {
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "uc-briefing-notice-"));
+		process.env.AI_CORTEX_CACHE_HOME = tmpHome;
+		cachePathStr = path.join(tmpHome, "ai-cortex", "update-check.json");
+		delete process.env.AI_CORTEX_NO_UPDATE_CHECK;
+	});
+
+	afterEach(() => {
+		delete process.env.AI_CORTEX_CACHE_HOME;
+		delete process.env.AI_CORTEX_NO_UPDATE_CHECK;
+		fs.rmSync(tmpHome, { recursive: true, force: true });
+	});
+
+	function plantCache(data: Partial<{
+		checkedAt: string;
+		latestVersion: string;
+		releaseHeadline: string;
+		lastBriefingShownAt: string;
+	}>): void {
+		fs.mkdirSync(path.dirname(cachePathStr), { recursive: true });
+		fs.writeFileSync(
+			cachePathStr,
+			JSON.stringify({
+				checkedAt: data.checkedAt ?? new Date().toISOString(),
+				latestVersion: data.latestVersion ?? "0.11.0",
+				releaseHeadline: data.releaseHeadline ?? "headline",
+				...(data.lastBriefingShownAt
+					? { lastBriefingShownAt: data.lastBriefingShownAt }
+					: {}),
+			}),
+		);
+	}
+
+	it("returns null when AI_CORTEX_NO_UPDATE_CHECK=1 even with a patch behind", () => {
+		plantCache({ latestVersion: "0.10.1" });
+		process.env.AI_CORTEX_NO_UPDATE_CHECK = "1";
+		expect(getBriefingNotice({ currentVersion: "0.10.0" })).toBeNull();
+	});
+
+	it("returns null when there is no cache (first run; background fetch is scheduled)", async () => {
+		const { spawn } = await import("node:child_process");
+		vi.mocked(spawn).mockClear();
+		expect(getBriefingNotice({ currentVersion: "0.10.0" })).toBeNull();
+		expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+	});
+
+	it("schedules a background fetch when cache is stale (>24h old)", async () => {
+		const { spawn } = await import("node:child_process");
+		vi.mocked(spawn).mockClear();
+		const longAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+		plantCache({ checkedAt: longAgo, latestVersion: "0.10.0" });
+		getBriefingNotice({ currentVersion: "0.10.0" });
+		expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+	});
+
+	it("does NOT schedule a background fetch when cache is fresh", async () => {
+		const { spawn } = await import("node:child_process");
+		vi.mocked(spawn).mockClear();
+		plantCache({ checkedAt: new Date().toISOString(), latestVersion: "0.10.0" });
+		getBriefingNotice({ currentVersion: "0.10.0" });
+		expect(vi.mocked(spawn)).not.toHaveBeenCalled();
+	});
+
+	it("returns null when current === latest", () => {
+		plantCache({ latestVersion: "0.10.0" });
+		expect(getBriefingNotice({ currentVersion: "0.10.0" })).toBeNull();
+	});
+
+	it("returns a notice on patch tier with never-shown lastBriefingShownAt + writes lastBriefingShownAt", () => {
+		plantCache({ latestVersion: "0.10.1", releaseHeadline: "fix briefing render bug" });
+		const notice = getBriefingNotice({ currentVersion: "0.10.0" });
+		expect(notice).not.toBeNull();
+		expect(notice).toContain("0.10.1");
+		expect(notice).toContain("fix briefing render bug");
+		const cache = readCache(cachePathStr);
+		expect(cache?.lastBriefingShownAt).toBeTruthy();
+	});
+
+	it("returns null on patch tier when already shown today UTC", () => {
+		const now = new Date();
+		plantCache({
+			latestVersion: "0.10.1",
+			releaseHeadline: "fix",
+			lastBriefingShownAt: now.toISOString(),
+		});
+		expect(getBriefingNotice({ currentVersion: "0.10.0" })).toBeNull();
+	});
+
+	it("returns a notice on minor tier and does NOT touch lastBriefingShownAt", () => {
+		plantCache({ latestVersion: "0.11.0", releaseHeadline: "minor feat" });
+		const notice = getBriefingNotice({ currentVersion: "0.10.5" });
+		expect(notice).not.toBeNull();
+		expect(notice).toContain("0.11.0");
+		const cache = readCache(cachePathStr);
+		expect(cache?.lastBriefingShownAt).toBeUndefined();
+	});
+
+	it("returns a notice on multi-minor tier with 'N minor releases behind'", () => {
+		plantCache({ latestVersion: "0.11.0", releaseHeadline: "two minors" });
+		const notice = getBriefingNotice({ currentVersion: "0.9.0" });
+		expect(notice).toContain("2 minor releases behind");
+	});
+
+	it("falls back to no-headline form when cache.releaseHeadline is empty (no stray em-dash)", () => {
+		plantCache({ latestVersion: "0.10.1", releaseHeadline: "" });
+		const notice = getBriefingNotice({ currentVersion: "0.10.0" });
+		expect(notice).toContain("0.10.1 available");
+		expect(notice).not.toContain("—");
+	});
+
+	it("returns plain text (no ANSI escape sequences) for MCP surface", () => {
+		plantCache({ latestVersion: "0.11.0", releaseHeadline: "feat" });
+		const notice = getBriefingNotice({ currentVersion: "0.10.5" });
+		expect(notice).not.toMatch(/\x1b\[[0-9;]*m/);
+	});
+
+	it("returns null (does not throw) when the cache file is corrupted", () => {
+		fs.mkdirSync(path.dirname(cachePathStr), { recursive: true });
+		fs.writeFileSync(cachePathStr, "not json {");
+		expect(() =>
+			getBriefingNotice({ currentVersion: "0.10.0" }),
+		).not.toThrow();
+		expect(getBriefingNotice({ currentVersion: "0.10.0" })).toBeNull();
 	});
 });

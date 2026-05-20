@@ -283,6 +283,40 @@ export async function runBackgroundFetch(): Promise<void> {
 	}
 }
 
+export function getBriefingNotice(opts: {
+	currentVersion: string;
+}): string | null {
+	try {
+		if (process.env.AI_CORTEX_NO_UPDATE_CHECK) return null;
+		const cp = cachePath();
+		const cache = readCache(cp);
+		if (!cache || isCacheStale(cache.checkedAt)) {
+			spawnBackgroundFetch();
+		}
+		if (!cache) return null;
+		const tier = compareSeverity(opts.currentVersion, cache.latestVersion);
+		if (tier === "none") return null;
+		if (tier === "patch" && shownTodayUTC(cache.lastBriefingShownAt)) {
+			return null;
+		}
+		if (tier === "patch") {
+			writeCache(cp, {
+				...cache,
+				lastBriefingShownAt: new Date().toISOString(),
+			});
+		}
+		return formatNotice({
+			current: opts.currentVersion,
+			latest: cache.latestVersion,
+			headline: cache.releaseHeadline,
+			tier,
+			surface: "mcp",
+		});
+	} catch {
+		return null;
+	}
+}
+
 export function printUpdateNotice(
 	current: string,
 	info: { latest: string; headline: string; tier: Exclude<Severity, "none"> },
