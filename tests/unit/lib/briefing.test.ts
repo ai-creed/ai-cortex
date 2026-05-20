@@ -128,4 +128,26 @@ describe("renderBriefing", () => {
 		const md = renderBriefing(makeCache({ files: [] }));
 		expect(md).toContain("## Directory Structure");
 	});
+
+	it("baseline output is unchanged when opts is undefined", () => {
+		const baseline = renderBriefing(makeCache());
+		expect(renderBriefing(makeCache(), undefined)).toBe(baseline);
+	});
+
+	it("prepends notice followed by blank line above the header when non-empty", () => {
+		const md = renderBriefing(makeCache(), {
+			notice: "ai-cortex 0.11.0 available — feat. Run: npm i -g ai-cortex@latest",
+		});
+		expect(md.startsWith("ai-cortex 0.11.0 available")).toBe(true);
+		const headerIdx = md.indexOf("# test-app");
+		expect(headerIdx).toBeGreaterThan(0);
+		expect(md.slice(0, headerIdx)).toMatch(/\n\n$/);
+	});
+
+	it("treats notice: null / '' / whitespace as absent (baseline)", () => {
+		const baseline = renderBriefing(makeCache());
+		expect(renderBriefing(makeCache(), { notice: null })).toBe(baseline);
+		expect(renderBriefing(makeCache(), { notice: "" })).toBe(baseline);
+		expect(renderBriefing(makeCache(), { notice: "   \n  " })).toBe(baseline);
+	});
 });

@@ -82,7 +82,10 @@ function renderImportHotSpots(cache: RepoCache): string | null {
 	);
 }
 
-export function renderBriefing(cache: RepoCache): string {
+export function renderBriefing(
+	cache: RepoCache,
+	opts?: { notice?: string | null },
+): string {
 	const sections: string[] = [
 		renderHeader(cache),
 		renderKeyDocs(cache),
@@ -93,5 +96,7 @@ export function renderBriefing(cache: RepoCache): string {
 	const hotSpots = renderImportHotSpots(cache);
 	if (hotSpots) sections.push(hotSpots);
 
-	return sections.join("\n");
+	const body = sections.join("\n");
+	const notice = opts?.notice?.trim();
+	return notice ? `${notice}\n\n${body}` : body;
 }
