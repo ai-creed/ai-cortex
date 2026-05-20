@@ -7,61 +7,224 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.10.3 — 2026-05-20
+
+The hook-configuration migration notice. Existing users on v0.9.0+ who never re-ran `ai-cortex history install-hooks` after upgrading have features that depend on later-introduced hooks sitting silently inert. v0.10.3 surfaces a one-line nudge in the MCP rehydrate briefing whenever their `~/.claude/settings.json` or `~/.codex/config.toml` diverge from what the installer would write today — built on top of the v0.10.2 notice infrastructure so it composes cleanly with the update notice.
+
+### Added
+
+- **`hooksMigrationStatus()`** in `src/lib/history/hooks-install.ts` — pure read-only check. Reuses the existing `applyInstall` + `applySurfaceInstall` + `applyCodexInstall` pipeline to compute the post-install state and compare against current files. Returns `{ needsInstall: true }` defensively on parse failure — better to surface a notice than silently miss a real migration. No writes; no prompts.
+- **`src/lib/migration-notifier.ts`** with `getHookMigrationNotice()` — mirrors `update-notifier`'s shape: env gate (`AI_CORTEX_NO_UPDATE_CHECK` honored for symmetry with the update nudge), top-level try/catch so a briefing render can never crash on its behalf, plain-text MCP-surface output. Wording is **neutral on tool-specific behavior** — Codex 0.130.x doesn't fire `PreToolUse` for `apply_patch`/`Bash` regardless of install state, so claiming "Edit/Write surface won't fire" would be wrong on Codex. The notice points users at `ai-cortex history install-hooks`, which surfaces the exact diff before applying.
+- **Notice composition in `rehydrate_project` handler** — both notice helpers (`getBriefingNotice` + `getHookMigrationNotice`) called under independent try/catch blocks; non-null results join with a blank line and pass through `rehydrateRepo({ notice })`. When both are null, the briefing renders exactly as before.
+
+### Internal
+
+- 6 unit tests on `hooksMigrationStatus` covering absent files, partial install (pre-v0.9.0 case), codex-only divergence, malformed JSON, and pure-read confirmation; 5 on `getHookMigrationNotice`; 4 new server-handler tests asserting composition and defense-in-depth.
+
+---
+
+## v0.10.2 — 2026-05-20
+
+The update-notification aggression release. The MCP `rehydrate_project` briefing now surfaces an upgrade nudge with tier-aware loudness and a one-line "what's new" headline sourced from a new custom `aiCortex.releaseHeadline` package.json field. ai-cortex has ~2k npm downloads and most users only run `ai-cortex mcp` (long-lived) — the existing CLI-side update notifier never fires for them, so a meaningful fraction of users are likely several releases behind without knowing it. v0.10.2 routes that signal through the briefing surface where the agent naturally relays it. (v0.10.1 was a burned tag — failing CI on this same feature work; never published. v0.10.2 reships with the test fix.)
+
+### Added
+
+- **Severity tiers (`compareSeverity`, `Severity` union)** — `"none" | "patch" | "minor" | "multi-minor"`. Pre-release suffixes ignored for comparison. Drives loudness: patch is once-per-UTC-day throttled and subtle; minor is a two-line block; multi-minor adds an `N minor releases behind` / `major version behind` callout. Each tier × surface combination is unit-tested.
+- **Tier-aware `formatNotice({ current, latest, headline, tier, surface })`** — replaces the prior 2-arg form. `surface: "cli"` may include ANSI bold on minor / multi-minor; `surface: "mcp"` is always plain text (the agent's relay must be readable). Empty headline collapses to the no-em-dash fallback (`ai-cortex 0.10.1 available. Run: ...`) — no `available — .` punctuation artifact.
+- **MCP-side `getBriefingNotice({ currentVersion })`** — honors `AI_CORTEX_NO_UPDATE_CHECK`; triggers `spawnBackgroundFetch()` on stale/absent cache (same as `checkForUpdate`); applies the tier throttle; on patch-tier emit, performs read-modify-write of `lastBriefingShownAt` only (leaves the other three cache fields untouched). Wrapped in a top-level try/catch — must never crash a briefing.
+- **`renderBriefing(cache, opts?: { notice? })`** — new optional second arg in `src/lib/briefing.ts`. When `notice` is non-empty after trimming, prepended with a blank line above the existing header. When absent / null / empty / whitespace, output is byte-identical to baseline (regression-guarded).
+- **`RehydrateOptions.notice`** — forwarded into `renderBriefing` *before* `fs.writeFileSync(briefingPath, ...)` so the persisted briefing file (which the MCP handler reads back at line 440) carries the notice.
+- **`src/mcp/server.ts` rehydrate_project handler** — calls `getBriefingNotice({ currentVersion: SERVER_VERSION })` and passes the result via `rehydrateRepo({ notice })`. Uses `SERVER_VERSION` (already imported as `VERSION` from `src/version.ts`) — **does not read `package.json` at runtime** (the dist-vs-tests path math diverges, per the existing comment in `src/cli.ts:23-30`).
+- **`aiCortex.releaseHeadline` manifest field** — npm preserves arbitrary top-level package.json fields in the per-version manifest, so the existing `/ai-cortex/latest` fetch returns the headline with no second request.
+- **`scripts/lib/release-headline.ts`** (TypeScript helper, not `.mjs`) — pure JSON read-modify-write for `aiCortex.releaseHeadline`. Preserves tab indentation and trailing newline. CLI dispatch compares `fs.realpathSync(fileURLToPath(import.meta.url))` against `fs.realpathSync(process.argv[1])` so `/tmp ↔ /private/tmp` symlinks on macOS don't silently no-op the entrypoint check (same realpath issue that bit the repo-identity path earlier). Wrapped in try/catch so it behaves as a pure library if `argv[1]` is unresolvable.
+- **`scripts/release.sh` headline prompt** — runs **before** any file mutation (`npm version`, `sed src/version.ts`) so a failed read leaves the working tree clean. `AI_CORTEX_RELEASE_HEADLINE` env var provides a non-interactive escape hatch (CI / unattended); without it AND without a TTY, the script exits non-zero with an explicit error rather than EOF-failing under `set -e`. Three input shapes: non-empty (new headline), bare Enter (reuse previous), literal `-` (clear). `(none)` display when the previous value was empty or literally `-` (round-trip ambiguity guard).
+
+### Changed
+
+- **`checkForUpdate(...)` return shape** — evolved from `string | null` to `{ latest: string; headline: string; tier: Exclude<Severity, "none"> } | null`. `printUpdateNotice` signature changed to match: `(current, info)`. `src/cli.ts` call site updated accordingly. CLI surface keeps its existing daily cache cadence and `SKIP_COMMANDS` list — notably `mcp` stays in skip, so only the briefing path emits to the MCP server's own stderr.
+- **`runBackgroundFetch`** — extended to extract `aiCortex.releaseHeadline` from the manifest (default `""` on missing / wrong type). **Reads the prior cache first and preserves `lastBriefingShownAt`** as-is — the throttle key belongs to the main process, and resetting it on every 24h fetch would over-emit patch notices.
+- **`CacheData`** shape — `{ checkedAt, latestVersion }` extended to `{ checkedAt, latestVersion, releaseHeadline, lastBriefingShownAt? }`. `readCache` accepts both legacy and new shapes (legacy → `releaseHeadline: ""`, `lastBriefingShownAt: undefined`). `writeCache` omits `lastBriefingShownAt` when undefined — guarded on `!== undefined`, not falsy, so a future empty-string value (if any caller wanted it) would round-trip cleanly.
+
+### Fixed
+
+- **`checkForUpdate` test cleared `process.stdout.isTTY` but not `process.env.CI`** — passed locally and failed under GitHub Actions, which sets `CI=true` automatically. The v0.10.1 tag was burned by exactly this. v0.10.2 saves+restores both env vars across the test. Memorized for future releases: **always run `CI=true pnpm test` before tagging** — local `pnpm test` is not equivalent to CI for env-gated code.
+
+### Internal
+
+- 14 task commits + 1 in-task fix (`writeCache` undefined-guard) + 1 lint cleanup. 1410 → 1422 tests under `CI=true`; lint and typecheck clean.
+- `tsconfig.json` `include` extended with `scripts/**/*.ts` so the new helper is typechecked alongside the rest of the codebase. Compiled output `dist/scripts/...` is not shipped (the `files` array in package.json restricts publish to `dist/src/`).
+
+### Known limitations (new this release)
+
+- **Multi-version "behind on these releases:" enumeration deferred.** When `tier === "multi-minor"`, the notice today shows just the latest release's headline + the `N minor releases behind` count. Walking the full `/ai-cortex` packument to list every intervening release's headline would require a second / heavier fetch and a multi-version cache; deferred until the single-headline form proves insufficient.
+- **First MCP session after install sees no notice.** Background fetch is detached and asynchronous; the first call has no cached version to compare against. The next call (typically seconds later or guaranteed in the next session) emits the notice. Matches the existing CLI nudge's first-run behavior.
+
+---
+
+## v0.10.1 — 2026-05-20 (burned tag, never published)
+
+**Never published.** The `checkForUpdate` unit test introduced in the update-notification work cleared `process.stdout.isTTY` but not `process.env.CI`. The test passed locally and failed under GitHub Actions, which sets `CI=true` automatically. The `v0.10.1` tag exists on origin (`28591dc`) but the Publish workflow's `pnpm test` step blocked the npm publication — npm registry never saw a 0.10.1 tarball. Superseded by **v0.10.2** (`de16012`).
+
+---
+
 ## v0.10.0 — 2026-05-20
 
-- feat(stats): per-session adoption telemetry — `tool_calls` schema v3 adds `session_id` (nullable, harness-detected via `AI_CORTEX_SESSION_ID`/`CLAUDE_SESSION_ID`/`CODEX_THREAD_ID`); MCP `logged()` attributes every tool call; `extract_session` reports candidate count as `result_count`; cache-only `surface-events.jsonl` records edit-time surfacings hot-path-safely (no native dep)
-- feat(stats): `loadSessionAdoption` aggregation core joins SQL + surface-events into per-session rows + a window summary (`memoryUsed`, `recall→get`, `surface→get`, `extract→cleanup`, `unattributedShare`)
-- feat(stats): `ai-cortex stats sessions` CLI report (`--json` for CI) with inline per-metric meanings
-- feat(tui): Sessions adoption tab in the stats dashboard — pure presenter fed by the central `readAll` loader, each metric shows its meaning as a `↳` subtitle
-- feat(stats): backfill attributes synthetic rows with `session_id` (existing `stats backfill` already knows the session dir name) so running backfill doesn't inflate `(unattributed)`
-- feat(stats): column-detect prepared-statement fallback in `openSink` — a failed schema migration degrades to legacy logging instead of crashing the sink
-- fix(stats): `loadSessionAdoption` returns a partial result (surface events only) when the stats sqlite is corrupt or unreadable, instead of propagating — inviolable §9 contract
-- docs: adoption-metrics interpretation guide (`docs/shared/adoption-metrics.md`) — per-metric meaning, combined-read patterns, why no ✓/✗ thresholds yet; KNOWN_LIMITATIONS *Adoption telemetry* entry resolved
-- docs: §13 Claude Code PreToolUse timeout fail-open verified empirically on CC 2.1.144 (downgraded from open risk); update-notification aggression design committed for the next release
+The Phase 11 adoption-telemetry release. ai-cortex grows the ability to answer **"is the memory layer actually being used?"** per session, not just in aggregate. The schema gets a `session_id` column on `tool_calls`, `logged()` attributes every MCP call, edit-time surfacings get their own hot-path-safe JSONL telemetry, and a new aggregation core joins SQL + surface events into per-session adoption rows plus a window summary. Plus a CLI report, a TUI tab, and an interpretation guide — the metrics ship with their own meaning baked in so a number on screen is read the same way every time.
+
+### Added
+
+- **`tool_calls` schema v3 — `session_id` column** (nullable). Harness-detected from `AI_CORTEX_SESSION_ID`, `CLAUDE_SESSION_ID`, or `CODEX_THREAD_ID` (whichever is set first). Column-detect prepared-statement fallback in `openSink`: a failed migration degrades to legacy logging instead of crashing the sink.
+- **`logged()` MCP middleware attributes every call** — `session_id` carried through tool invocations. `extract_session` reports candidate count as `result_count` for consistency with other readers.
+- **`surface-events.jsonl`** (cache-only, hot-path-safe) — records every edit-time surfacing without a native sqlite dep, so the surface hook stays fast. Read at aggregation time only.
+- **`loadSessionAdoption` aggregation core** — joins `tool_calls` + `surface-events` into per-session rows and a window summary. Exposes `memoryUsed`, `recall→get`, `surface→get`, `extract→cleanup`, and `unattributedShare` ratios. Each metric ships with an inline meaning (`↳` subtitle in the TUI; appended line in the CLI report) — no thresholds yet, just a stable read.
+- **`ai-cortex stats sessions [--window 7d] [--json]`** — CLI report. `--json` for CI / scripting; default human-readable table with per-metric meanings inline.
+- **Sessions adoption tab** in the stats dashboard — pure presenter fed by the central `readAll` loader; mirrors the CLI's per-metric meaning text.
+- **Adoption-metrics interpretation guide** (`docs/shared/adoption-metrics.md`) — per-metric meaning, combined-read patterns, and why no ✓/✗ thresholds yet. CLI + TUI reports footer-link to this doc.
+
+### Changed
+
+- **Backfill attributes synthetic rows with `session_id`** — `ai-cortex stats backfill` already knew the session directory name; backfill now stamps it so running backfill doesn't inflate `(unattributed)` in the aggregation.
+
+### Fixed
+
+- **`loadSessionAdoption` returns a partial result (surface events only) when the stats sqlite is corrupt or unreadable** instead of propagating the error — preserves the §9 inviolable "readers never crash callers" contract.
+
+### Documentation
+
+- **`docs/shared/adoption-metrics.md`** — the new interpretation guide above.
+- **`KNOWN_LIMITATIONS.md`** — the *Adoption telemetry* entry is resolved.
+- **§13 Claude `PreToolUse` timeout fail-open** verified empirically on CC 2.1.144 — downgraded from "open risk" to a documented gotcha (memorized).
+- **Update-notification aggression design** committed (`docs/superpowers/specs/2026-05-20-update-notification-aggression-design.md`) for the next release.
 
 ---
 
 ## v0.9.1 — 2026-05-19
 
-- perf(stats): TUI dashboard reads a small `*.meta.json` sidecar instead of parsing every full worktree cache JSON on each tick — the dashboard previously parsed 80+ MB of JSON per 1.5s tick on repos with multiple worktrees, causing visible CPU spikes
-- `writeCache` emits the sidecar best-effort (failure logged, never blocks the main JSON); `cacheMeta` falls back to the full JSON and lazy-writes the sidecar on miss, so existing entries self-heal on first dashboard tick — no migration needed
+A targeted performance fix. The TUI stats dashboard previously parsed every full worktree cache JSON on each 1.5s tick — 80+ MB of parsing per tick on repos with multiple worktrees, producing visible CPU spikes. v0.9.1 introduces a small `*.meta.json` sidecar that the dashboard reads instead, with no migration needed.
+
+### Fixed
+
+- **`cacheMeta` reads a small `*.meta.json` sidecar** instead of parsing the full worktree cache JSON on each TUI dashboard tick. Removes the 80+ MB/tick parse path on multi-worktree repos.
+- **`writeCache` emits the sidecar best-effort** — sidecar write failure is logged but never blocks the main JSON write.
+- **Self-healing migration** — `cacheMeta` falls back to the full JSON and lazy-writes the sidecar on miss, so existing entries upgrade themselves on the first dashboard tick. No explicit migration step required.
+
+### Documentation
+
+- **§13 Codex `PreToolUse` non-emission** verified on `codex-cli` 0.130.0 — Codex doesn't fire `PreToolUse` for `apply_patch` or `Bash`, regardless of installation state (memorized — informs the v0.10.3 migration notice wording).
+- Aligned `MEMORY_LAYER.md` and `KNOWN_LIMITATIONS.md` with the edit-time surfacing semantics introduced in v0.9.0.
 
 ---
 
 ## v0.9.0 — 2026-05-19
 
-- feat(memory): edit-time memory surfacing via a `PreToolUse` hook — before an Edit/Write/MultiEdit, project-scoped memories for the target file are surfaced as non-blocking `additionalContext` (pointers only; the agent judges relevance, `get_memory` stays the honest consult signal)
-- feat(memory): deterministic project-tier `scopeFiles` matcher (literal + glob) with precision-first tiering (specificity → getCount → recency); never bumps usage counters, no embedding
-- feat(memory): per-session set-hash dedup ledger (cache-only — no repo writes); `AI_CORTEX_SURFACE=0` disables the hook
-- feat(hooks): `install-hooks` adds a Claude Code `PreToolUse` hook (matcher `Edit|Write|MultiEdit`, 5s timeout) under a marker independent of history capture; the hook never blocks an edit (always-allow, fail-open)
-- feat(memory): pure Codex `apply_patch` path parser (built + unit-tested); the Codex hook install is deferred pending verification of the `apply_patch` PreToolUse payload shape
-- note: v0.6.0–v0.8.0 (TUI stats dashboard, memory browser, memory capture redesign) were never published to npm — 0.9.0 is the first npm release since 0.5.6 and includes those changes cumulatively
+The edit-time memory surfacing release. ai-cortex memories now activate *before* an edit, not after — a Claude Code `PreToolUse` hook surfaces project-scoped memories for the target file as non-blocking `additionalContext` so the agent has the rule in hand at the moment it matters. First npm release since v0.5.6: v0.6.0–v0.8.0 were tagged but never published, and their cumulative content (TUI stats dashboard, memory browser, memory capture redesign) is included here.
+
+### Added
+
+- **`PreToolUse` surface hook** (Claude Code) — fires before `Edit`/`Write`/`MultiEdit`. Surfaces project-scoped memories for the target file as non-blocking `additionalContext`. **Always-allow, fail-open**: a hook timeout (>5s) does not block the edit (verified on CC 2.1.144 in v0.10.0's docs work).
+- **Deterministic project-tier `scopeFiles` matcher** — literal + glob, with precision-first tiering (specificity → `get_count` → recency). Never bumps usage counters; no embedding lookup. Surfaced rules are *pointers* — the agent calls `get_memory(id)` to commit, preserving the recall→get separation.
+- **`patternSpecificity` ranking primitive** — prefix-dominant; deep `**` outranks shallow globs (review fix). Pure, well-tested.
+- **Per-session set-hash dedup ledger** — cache-only, no repo writes. The same memory surfaced twice in one session is dedup'd by hash of the surfaced set.
+- **`install-hooks` adds a Claude `PreToolUse` hook entry** — matcher `Edit|Write|MultiEdit`, 5s timeout, under a marker independent of the history capture hook so they can be installed/uninstalled separately. (Existing users on pre-v0.9.0 installs need to re-run `install-hooks` — see v0.10.3's migration notice.)
+- **Pure `apply_patch` path parser for Codex** — built + unit-tested with CRLF, spaces, and column-0 fixtures locked down by contract tests. The Codex hook install itself is **deferred** pending verification of Codex's `PreToolUse` payload shape (Codex 0.130.x doesn't fire `PreToolUse` for `apply_patch`/`Bash` — see v0.9.1's docs entry).
+- **`AI_CORTEX_SURFACE=0`** escape hatch — disables the surface hook at runtime.
+
+### Fixed
+
+- **`confirmMemory` rejects `type: "capture"`** — enforces the v0.8.0 invariant that confirmation alone doesn't promote a capture (the agent must rewrite or deprecate first).
+- **Initial extraction must not skip turn 0** — review fix to the capture extractor; the first turn of a session was being dropped from candidate consideration.
+
+### Internal
+
+- Cap / deadline / no-session coverage added to surface-hook tests.
+- Codebase first npm release in 12 days — see the note above on v0.6.0–v0.8.0.
+
+### Known limitations (new this release)
+
+- **Codex `apply_patch` surface deferred.** The pure path parser ships; the Codex hook install is gated off until `PreToolUse` payload shape is verified on a Codex release that actually fires the hook for `apply_patch`. Tracked in `KNOWN_LIMITATIONS.md` §13.
 
 ---
 
 ## v0.8.0 — 2026-05-19
 
-- feat(memory): capture pipeline redesign — extractor is now a structural noise-killer (reject-only), survivors are unjudged `capture` candidates the agent confirms via `review_pending_captures` + `rewrite_memory`/`deprecate_memory`
-- feat(memory): reserved `capture` registry type + idempotent seed-merge migration (REGISTRY_VERSION 2)
-- feat(memory): `retypeCandidate` lifecycle primitive; `retype` AuditChangeType
-- fix(memory): disable confidence/re_extract promotion for extracted candidates (it rewarded re-ingested boilerplate)
-- chore(memory): one-shot legacy candidate triage on first rehydrate after upgrade (deprecates structural noise, retypes survivors to `capture`)
+The memory capture redesign. The auto-extractor changes from a positive classifier (regex cues that promote text into typed memories) into a **structural noise-killer** (reject the obvious noise, type the survivors as `capture`, hand off to the agent for confirmation). The judgment moves out of the substrate and into the agent, where it can use full conversational context to decide whether a candidate is actually a rule worth keeping.
+
+### Added
+
+- **Reserved `capture` memory type** — provisional, registry-backed. Idempotent seed-merge migration (`REGISTRY_VERSION` 2) creates the type on first run without touching user-registered types.
+- **`retypeCandidate` lifecycle primitive** — candidate-only, registry-validated, **clears `typeFields` at the type boundary** so stale legacy metadata doesn't survive the transition. Audits as a new `retype` `AuditChangeType` arm.
+- **Structural reject gate** in `extract.ts` — drops obvious-noise candidates by deterministic shape (length, repetition, code-block-only, etc.). Survivors are typed as `capture` and stored unjudged. **No positive classify; no `extracted` promotion path.**
+- **`signalScore`** — pure, deterministic, recomputable metric for ranking captures. Not stored on the row (it's a function of the body and evidence), so changing the formula doesn't require a migration.
+- **`reviewPendingCaptures` reader + `review_pending_captures` MCP tool** — read-only surface for the agent to inspect captures awaiting confirmation. Context fallback hierarchy: evidence-by-turn → session-window → bare body.
+- **Briefing `Captures pending confirmation` section** — `renderBriefing` surfaces captures awaiting agent confirmation alongside the existing memory digest, so the user sees the queue every rehydrate.
+- **One-shot legacy capture triage** — sentinel-guarded migration that runs on the first rehydrate after upgrade: deprecates structural noise from pre-redesign extractions; retypes legitimate survivors to `capture`. Idempotent.
+
+### Changed
+
+- **`extract.ts` is a structural gate, not a classifier** — the function is shorter, faster, and more honest about what it does. Decisions about whether a candidate is *actually* a `decision` / `gotcha` / `pattern` / `how-to` are made by the agent during confirmation, not by regex.
+- **Disable confidence / `reExtractCount` promotion for `extracted` candidates** — the old promotion rewarded re-ingested boilerplate. Now: structural rejects stay dropped; survivors stay `capture` until the agent intervenes.
+
+### Internal
+
+- Regression corpus fixture for the structural reject gate — locks in shape decisions against future drift.
 
 ---
 
 ## v0.7.0 — 2026-05-16
 
-- feat(tui): full-screen memory browser (status-grouped, colored type tags, scrollable body), reachable from the stats Memory tab
-- feat(tui): memory activity sparklines (recorded vs used) in the Memory tab and browser strip
-- feat(stats): read-only memory readers (loadMemoryList/loadMemoryBody/memoryActivity) — no schema change, no writes
+v0.6.0's TUI stats dashboard gains a full memory browser (drill into individual memories, see metadata + body, navigate by status group) and **memory activity sparklines** — recorded (audit) vs used (sink) signals over time so users can see whether the memory layer is being adopted. Plus a `stats backfill` subcommand for synthesizing telemetry from session history that pre-dates the v0.6.0 sink.
+
+### Added
+
+- **Memory browser** (`MemoryBrowser`, `MemoryList`, `MemoryBodyView`) — status-grouped table with colored type tags, windowed viewport for large stores, scrollable body view with metadata header. Reachable from the stats Memory tab via Enter; exit returns to the project detail. Selection + body memoization + reload live in the TUI without re-querying SQL.
+- **Memory activity sparklines** (`MemoryActivityStrip`) — two-series rec/used sparkline. *Recorded* sourced from the audit log; *used* from the stats sink. Visualizes whether memories are flowing in *and* being consulted, not just stored.
+- **Read-only memory readers** — `loadMemoryList`, `loadMemoryBody`, `memoryActivity`. No schema change, no writes, typed errors. `loadMemoryBody` is side-effect-free (tested).
+- **`typeColor`** — deterministic palette with fixed hues for built-in types and a deterministic fallback for user-registered ones, so the browser stays visually stable across sessions.
+- **`ai-cortex stats backfill`** — synthesizes stats rows from captured session history (pre-sink sessions). Schema v2 adds a `synthetic` column + migration; the latency-stats reader excludes synthetic rows so backfilled history doesn't pollute the p50/p95.
+- **Tool-name allowlist** for ai-cortex MCP tools — keeps the stats sink focused on this project's surface, ignores foreign MCP tool calls that happen to share the same logging path.
+
+### Changed
+
+- **Memory tab rebuilt** with the rec/used sparklines as the headline; raw counts moved to a sub-row.
+- **Tools tab** — column headers + value legend (was a flat list, hard to read).
+- **Single-screen layout** — inline detail panel for the highlighted project replaces the prior two-pane navigation.
+- **Color scheme** — claude-style accent + semantic colors (green for recorded, terracotta for used).
+
+### Internal
+
+- **Architectural test: TUI files cannot import side-effecting memory modules.** Locks in the read-only stance of the dashboard against future drift.
+- `AI_CORTEX_CACHE_HOME` pinned to a session tmpdir via vitest setup; explicit cache-home handling in path-assertion / isolation-sensitive tests.
+- `.worktrees/**` excluded from vitest + eslint (was tripping coverage when worktrees existed on disk).
+- Stats sink is a no-op under vitest unless tests opt in via env — prevents test runs from corrupting real telemetry.
+- Lint sweep across pre-existing files + branch-new code.
 
 ---
 
 ## v0.6.0 — 2026-05-15
 
-- feat(stats): new `ai-cortex stats` TUI for inspecting per-call latency, cache hit rates, memory effectiveness, and storage footprint across projects
-- feat(stats): per-repo events.sqlite under `~/.cache/ai-cortex/v1/<repoKey>/stats/`
-- breaking(internal): the `logged()` MCP wrapper signature changed from 3 to 6 args; external consumers using `logged()` directly must update their call sites
+The first interactive way to inspect how ai-cortex actually performs in your projects — an Ink-based TUI dashboard that surfaces per-call latency, cache hit rates, memory health, and storage footprint across projects, fed by a lightweight per-repo telemetry sink wired through the `logged()` MCP middleware.
+
+### Added
+
+- **`ai-cortex stats`** — boots an Ink TUI dashboard. Components: `Overview` (project list + aggregate widgets), `ProjectDetail` (Tools / Memory / Suggest / Storage tabs), `Sparkline` (unicode-block bars), `TopList` (column-aligned label/value rows), `KeyBar` (footer hint strip), `WindowPicker` (1–4 hotkeys for 1d / 7d / 30d / 90d windows), `App` shell with polling + focus state + min-size guard.
+- **`useStatsTick` hook** with backpressure — drops ticks while a previous load is in flight, so a slow read doesn't pile up renders.
+- **Per-repo stats sink** — `events.sqlite` under `~/.cache/ai-cortex/v1/<repoKey>/stats/`, schema v1 with prepared inserts. Sink registry reuses handles; prune rows older than 90d on open; err-class sanitizer with a safe-tag charset to avoid PII leakage.
+- **`logged()` MCP middleware extended with stats sink hooks** — every tool call records `tool`, `repoKey`, `durationMs`, `cacheStatus`, `result_count`, `errClass` (sanitized). All existing MCP call sites migrated.
+- **Stats readers** (read-only, never write): `aggregate(window)` (p50/p95, cache mix), `topTools` + `latencyPerTool`, `memoryHealth` (from the existing memory index — no new sink), `storageFootprint` (10s in-process cache), `listProjects` across the v1 cache root, `cacheMeta(repoKey)` from the existing worktree JSON.
+- **Cross-project aggregate** — `memoryHealthAcross`, `toolCounts` summed across projects so the Overview screen has a single coherent picture.
+
+### Changed
+
+- **`logged()` signature** — extended from 3 to 6 args. External consumers using `logged()` directly must update their call sites. **Internal-only breaking change** (no public API consumer known).
+
+### Internal
+
+- New deps: `ink`, `ink-spinner`, `react`. `.tsx` + JSX enabled in `tsconfig.json`.
+- Integration smoke test for the `ai-cortex stats` CLI subcommand.
+
+### Known limitations (new this release)
+
+- **`recall→get` ratio definition.** v1 ships the call-count form: ratio = `count(get_memory) / count(recall_memory)` per session. This intentionally trades fidelity for clarity — a more rigorous "did this recall lead to a `get` on the same memory id within N turns" form is deferred until adoption data tells us the simpler form misleads. (Phase 11 telemetry in v0.10.0 builds on top of this same call-count form.)
 
 ---
 
