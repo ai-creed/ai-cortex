@@ -563,9 +563,15 @@ describe("checkForUpdate — return shape", () => {
 				releaseHeadline: "feat",
 			}),
 		);
-		// Make shouldCheck pass: simulate TTY.
+		// shouldCheck gates on TTY *and* on the absence of CI/AI_CORTEX_NO_UPDATE_CHECK.
+		// GitHub Actions sets CI=true automatically — clear it (and the suppress var)
+		// for this test so shouldCheck can pass.
 		const origIsTTY = process.stdout.isTTY;
+		const origCI = process.env.CI;
+		const origNoCheck = process.env.AI_CORTEX_NO_UPDATE_CHECK;
 		(process.stdout as { isTTY?: boolean }).isTTY = true;
+		delete process.env.CI;
+		delete process.env.AI_CORTEX_NO_UPDATE_CHECK;
 		try {
 			const out = checkForUpdate({ currentVersion: "0.10.0", command: "index" });
 			expect(out).not.toBeNull();
@@ -574,6 +580,8 @@ describe("checkForUpdate — return shape", () => {
 			expect(out?.tier).toBe("minor");
 		} finally {
 			(process.stdout as { isTTY?: boolean }).isTTY = origIsTTY;
+			if (origCI !== undefined) process.env.CI = origCI;
+			if (origNoCheck !== undefined) process.env.AI_CORTEX_NO_UPDATE_CHECK = origNoCheck;
 		}
 	});
 });
