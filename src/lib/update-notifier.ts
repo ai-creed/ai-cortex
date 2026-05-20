@@ -101,6 +101,16 @@ export function isCacheStale(
 	return now - t > CACHE_TTL_MS;
 }
 
+export function shownTodayUTC(
+	lastShownAt: string | undefined,
+	now: number = Date.now(),
+): boolean {
+	if (!lastShownAt) return false;
+	const t = new Date(lastShownAt).getTime();
+	if (!Number.isFinite(t)) return false;
+	return Math.floor(t / 86_400_000) === Math.floor(now / 86_400_000);
+}
+
 export function readCache(filePath: string): CacheData | null {
 	try {
 		const raw = fs.readFileSync(filePath, "utf-8");

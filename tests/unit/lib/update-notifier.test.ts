@@ -11,6 +11,7 @@ import {
 	readCache,
 	writeCache,
 	compareSeverity,
+	shownTodayUTC,
 } from "../../../src/lib/update-notifier.js";
 
 describe("compareVersions", () => {
@@ -292,5 +293,29 @@ describe("readCache / writeCache — extended cache shape", () => {
 		const parsed = JSON.parse(fs.readFileSync(tmpFile, "utf-8"));
 		expect("lastBriefingShownAt" in parsed).toBe(true);
 		expect(parsed.lastBriefingShownAt).toBe("");
+	});
+});
+
+describe("shownTodayUTC", () => {
+	const now = Date.parse("2026-05-20T15:00:00Z");
+
+	it("returns false when lastShownAt is undefined", () => {
+		expect(shownTodayUTC(undefined, now)).toBe(false);
+	});
+
+	it("returns false when lastShownAt is an invalid string", () => {
+		expect(shownTodayUTC("not-a-date", now)).toBe(false);
+	});
+
+	it("returns true when shown earlier the same UTC day", () => {
+		expect(shownTodayUTC("2026-05-20T02:00:00Z", now)).toBe(true);
+	});
+
+	it("returns false when shown the previous UTC day", () => {
+		expect(shownTodayUTC("2026-05-19T23:59:59Z", now)).toBe(false);
+	});
+
+	it("returns false when shown the next UTC day", () => {
+		expect(shownTodayUTC("2026-05-21T00:00:01Z", now)).toBe(false);
 	});
 });
