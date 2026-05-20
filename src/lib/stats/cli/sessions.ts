@@ -15,12 +15,12 @@ export function runStatsSessions(
 	}
 	const p = (n: number) => `${n.toFixed(0)}%`;
 	write(
-		`Adoption — window ${opts.window} — ${summary.sessionCount} sessions\n` +
-			`  memory used:     ${p(summary.memoryUsedPct)} (${summary.histogram.used}/${summary.sessionCount})\n` +
-			`  recall→get:      ${p(summary.recallToGetPct)}\n` +
-			`  surface→get:     ${p(summary.surfaceToGetPct)}\n` +
-			`  extract→cleanup: ${p(summary.extractCleanupPct)}\n` +
-			`  unattributed:    ${(summary.unattributedShare * 100).toFixed(0)}% of events (lower = more reliable)\n\n`,
+		`Adoption — window ${opts.window} — ${summary.sessionCount} sessions\n\n` +
+			`  memory used:     ${p(summary.memoryUsedPct)} (${summary.histogram.used}/${summary.sessionCount}) — sessions where get_memory or record_memory ran\n` +
+			`  recall→get:      ${p(summary.recallToGetPct)} — recall sessions that then did get_memory (the cardinal pattern)\n` +
+			`  surface→get:     ${p(summary.surfaceToGetPct)} — surfacings followed by a later get_memory same session\n` +
+			`  extract→cleanup: ${p(summary.extractCleanupPct)} — Σ cleanup ÷ Σ extracted candidates (window-level)\n` +
+			`  unattributed:    ${(summary.unattributedShare * 100).toFixed(0)}% of events — share with no session_id (lower = numbers more reliable)\n\n`,
 	);
 	for (const s of sessions.slice(0, 50)) {
 		write(
@@ -30,7 +30,7 @@ export function runStatsSessions(
 		);
 	}
 	write(
-		"\nHow to read these numbers: docs/shared/adoption-metrics.md\n",
+		"\nCombined-read patterns + calibration debt: docs/shared/adoption-metrics.md\n",
 	);
 	return 0;
 }
