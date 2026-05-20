@@ -34,6 +34,38 @@ export type InstallOpts = {
 	answerForTest?: "y" | "n";
 };
 
+/**
+ * Pure read-only check: would `installHooks({ yes: true })` actually change
+ * anything? Used by the MCP rehydrate-briefing migration notice to surface a
+ * "hooks out of date" prompt without ever writing to user-owned config.
+ *
+ * Returns `needsInstall: true` defensively on parse failure — we'd rather
+ * surface a notice than silently miss a real migration. The user's own
+ * `installHooks` call will surface the parse error properly.
+ */
+export function hooksMigrationStatus(): { needsInstall: boolean } {
+	try {
+		const settingsPath = getSettingsPath();
+		const codexPath = getCodexConfigPath();
+		const before = fs.existsSync(settingsPath)
+			? fs.readFileSync(settingsPath, "utf8")
+			: "";
+		const settings = parseOrThrow(before, settingsPath);
+		const next = applySurfaceInstall(applyInstall(settings));
+		const afterText = JSON.stringify(next, null, 2) + "\n";
+		const codexBefore = fs.existsSync(codexPath)
+			? fs.readFileSync(codexPath, "utf8")
+			: "";
+		const codexAfterText = applyCodexInstall(codexBefore);
+		const noop =
+			afterText.trim() === before.trim() &&
+			codexAfterText.trim() === codexBefore.trim();
+		return { needsInstall: !noop };
+	} catch {
+		return { needsInstall: true };
+	}
+}
+
 export async function installHooks(
 	opts: InstallOpts,
 ): Promise<"installed" | "no-op" | "aborted"> {

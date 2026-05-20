@@ -8,6 +8,7 @@ import {
 	getSettingsPath,
 	getCodexConfigPath,
 	HOOK_COMMAND_MARKER,
+	hooksMigrationStatus,
 } from "../../../../src/lib/history/hooks-install.js";
 
 let tmp: string;
@@ -211,5 +212,71 @@ describe("uninstallHooks", () => {
 		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
 		fs.writeFileSync(getSettingsPath(), "{ broken");
 		await expect(uninstallHooks({ yes: true })).rejects.toThrow(/parse/i);
+	});
+});
+
+describe("hooksMigrationStatus", () => {
+	it("returns needsInstall=true when settings.json and config.toml are both absent", () => {
+		expect(hooksMigrationStatus().needsInstall).toBe(true);
+	});
+
+	it("returns needsInstall=false after a fresh install", async () => {
+		await installHooks({ yes: true });
+		expect(hooksMigrationStatus().needsInstall).toBe(false);
+	});
+
+	it("returns needsInstall=true when settings.json has the history hooks but is missing the surface hook (pre-v0.9.0 case)", () => {
+		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
+		fs.writeFileSync(
+			getSettingsPath(),
+			JSON.stringify({
+				hooks: {
+					PreCompact: [
+						{
+							matcher: "",
+							hooks: [{ type: "command", command: HOOK_COMMAND_MARKER }],
+						},
+					],
+					SessionEnd: [
+						{
+							matcher: "",
+							hooks: [{ type: "command", command: HOOK_COMMAND_MARKER }],
+						},
+					],
+				},
+			}),
+		);
+		fs.mkdirSync(path.dirname(getCodexConfigPath()), { recursive: true });
+		fs.writeFileSync(
+			getCodexConfigPath(),
+			`[[hooks.UserPromptSubmit]]\nmatcher = ""\n[[hooks.UserPromptSubmit.hooks]]\ntype = "command"\ncommand = "${HOOK_COMMAND_MARKER}"\n\n[[hooks.Stop]]\nmatcher = ""\n[[hooks.Stop.hooks]]\ntype = "command"\ncommand = "${HOOK_COMMAND_MARKER}"\n`,
+		);
+		const status = hooksMigrationStatus();
+		expect(status.needsInstall).toBe(true);
+	});
+
+	it("returns needsInstall=true when claude settings are complete but codex config is missing", async () => {
+		await installHooks({ yes: true });
+		fs.unlinkSync(getCodexConfigPath());
+		expect(hooksMigrationStatus().needsInstall).toBe(true);
+	});
+
+	it("returns needsInstall=true defensively when settings.json is malformed JSON", () => {
+		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
+		fs.writeFileSync(getSettingsPath(), "{ broken");
+		const status = hooksMigrationStatus();
+		expect(status.needsInstall).toBe(true);
+	});
+
+	it("does not write to disk (pure read)", async () => {
+		await installHooks({ yes: true });
+		const settingsBefore = fs.readFileSync(getSettingsPath(), "utf8");
+		const codexBefore = fs.readFileSync(getCodexConfigPath(), "utf8");
+		const dirBefore = fs.readdirSync(path.dirname(getSettingsPath()));
+		hooksMigrationStatus();
+		hooksMigrationStatus();
+		expect(fs.readFileSync(getSettingsPath(), "utf8")).toBe(settingsBefore);
+		expect(fs.readFileSync(getCodexConfigPath(), "utf8")).toBe(codexBefore);
+		expect(fs.readdirSync(path.dirname(getSettingsPath()))).toEqual(dirBefore);
 	});
 });
