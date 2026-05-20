@@ -436,6 +436,94 @@ describe("shownTodayUTC", () => {
 	});
 });
 
+describe("runBackgroundFetch — extracts releaseHeadline and preserves lastBriefingShownAt", () => {
+	let tmpHome: string;
+	let origFetch: typeof globalThis.fetch;
+
+	beforeEach(() => {
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "uc-bgfetch-"));
+		process.env.AI_CORTEX_CACHE_HOME = tmpHome;
+		origFetch = globalThis.fetch;
+	});
+
+	afterEach(() => {
+		delete process.env.AI_CORTEX_CACHE_HOME;
+		fs.rmSync(tmpHome, { recursive: true, force: true });
+		globalThis.fetch = origFetch;
+	});
+
+	function mockFetch(body: unknown): void {
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify(body), { status: 200 })) as typeof fetch;
+	}
+
+	it("persists releaseHeadline from manifest's aiCortex.releaseHeadline", async () => {
+		mockFetch({
+			version: "0.11.0",
+			aiCortex: { releaseHeadline: "edit-time surfacing" },
+		});
+		const { runBackgroundFetch } = await import(
+			"../../../src/lib/update-notifier.js"
+		);
+		await runBackgroundFetch();
+		const cache = readCache(
+			path.join(tmpHome, "ai-cortex", "update-check.json"),
+		);
+		expect(cache?.latestVersion).toBe("0.11.0");
+		expect(cache?.releaseHeadline).toBe("edit-time surfacing");
+	});
+
+	it("defaults releaseHeadline to '' when missing from manifest", async () => {
+		mockFetch({ version: "0.11.0" });
+		const { runBackgroundFetch } = await import(
+			"../../../src/lib/update-notifier.js"
+		);
+		await runBackgroundFetch();
+		const cache = readCache(
+			path.join(tmpHome, "ai-cortex", "update-check.json"),
+		);
+		expect(cache?.releaseHeadline).toBe("");
+	});
+
+	it("defaults releaseHeadline to '' when present but wrong type", async () => {
+		mockFetch({ version: "0.11.0", aiCortex: { releaseHeadline: 42 } });
+		const { runBackgroundFetch } = await import(
+			"../../../src/lib/update-notifier.js"
+		);
+		await runBackgroundFetch();
+		const cache = readCache(
+			path.join(tmpHome, "ai-cortex", "update-check.json"),
+		);
+		expect(cache?.releaseHeadline).toBe("");
+	});
+
+	it("preserves lastBriefingShownAt from the prior cache (does not reset throttle)", async () => {
+		const p = path.join(tmpHome, "ai-cortex", "update-check.json");
+		fs.mkdirSync(path.dirname(p), { recursive: true });
+		fs.writeFileSync(
+			p,
+			JSON.stringify({
+				checkedAt: "2026-05-19T00:00:00Z",
+				latestVersion: "0.10.0",
+				releaseHeadline: "old",
+				lastBriefingShownAt: "2026-05-20T08:00:00Z",
+			}),
+		);
+		mockFetch({
+			version: "0.11.0",
+			aiCortex: { releaseHeadline: "new" },
+		});
+		const { runBackgroundFetch } = await import(
+			"../../../src/lib/update-notifier.js"
+		);
+		await runBackgroundFetch();
+		const cache = readCache(p);
+		expect(cache?.latestVersion).toBe("0.11.0");
+		expect(cache?.releaseHeadline).toBe("new");
+		expect(cache?.lastBriefingShownAt).toBe("2026-05-20T08:00:00Z");
+	});
+});
+
 describe("checkForUpdate — return shape", () => {
 	let tmpHome: string;
 

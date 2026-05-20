@@ -257,12 +257,24 @@ export async function runBackgroundFetch(): Promise<void> {
 	try {
 		const res = await fetch(REGISTRY_URL, { signal: controller.signal });
 		if (!res.ok) return;
-		const data = (await res.json()) as { version?: unknown };
+		const data = (await res.json()) as {
+			version?: unknown;
+			aiCortex?: { releaseHeadline?: unknown } | unknown;
+		};
 		if (typeof data.version !== "string") return;
+		const releaseHeadline =
+			typeof data.aiCortex === "object" &&
+			data.aiCortex !== null &&
+			typeof (data.aiCortex as { releaseHeadline?: unknown })
+				.releaseHeadline === "string"
+				? (data.aiCortex as { releaseHeadline: string }).releaseHeadline
+				: "";
+		const prior = readCache(cachePath());
 		writeCache(cachePath(), {
 			checkedAt: new Date().toISOString(),
 			latestVersion: data.version,
-			releaseHeadline: "",
+			releaseHeadline,
+			lastBriefingShownAt: prior?.lastBriefingShownAt,
 		});
 	} catch {
 		// network errors, timeouts, parse errors — silent
