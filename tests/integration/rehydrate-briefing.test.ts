@@ -8,6 +8,7 @@ import {
 	openLifecycle,
 	createMemory,
 } from "../../src/lib/memory/lifecycle.js";
+import { getBriefingNotice } from "../../src/lib/update-notifier.js";
 
 describe("rehydration briefing — memory digest section", () => {
 	let cacheHome: string;
@@ -39,6 +40,7 @@ describe("rehydration briefing — memory digest section", () => {
 	});
 
 	afterEach(() => {
+		delete process.env.AI_CORTEX_NO_UPDATE_CHECK;
 		delete process.env.AI_CORTEX_CACHE_HOME;
 		fs.rmSync(cacheHome, { recursive: true, force: true });
 		fs.rmSync(repoPath, { recursive: true, force: true });
@@ -120,5 +122,55 @@ describe("rehydration briefing — memory digest section", () => {
 		const md = fs.readFileSync(result.briefingPath, "utf8");
 		expect(md.startsWith("ai-cortex 9.9.9 available")).toBe(true);
 		expect(md).toContain("# rd-test");
+	});
+
+	it("end-to-end: planted stale-but-readable cache surfaces notice in the briefing file", async () => {
+		// The test helper isolate-cache-home.ts already redirects AI_CORTEX_CACHE_HOME.
+		// We plant a cache under the same root.
+		const cacheRoot = process.env.AI_CORTEX_CACHE_HOME!;
+		const updateCachePath = path.join(cacheRoot, "ai-cortex", "update-check.json");
+		fs.mkdirSync(path.dirname(updateCachePath), { recursive: true });
+		fs.writeFileSync(
+			updateCachePath,
+			JSON.stringify({
+				checkedAt: new Date().toISOString(),
+				latestVersion: "99.0.0",
+				releaseHeadline: "test headline e2e",
+			}),
+		);
+
+		const notice = getBriefingNotice({ currentVersion: "0.0.1" });
+		expect(notice).not.toBeNull();
+
+		const result = await rehydrateRepo(repoPath, { notice });
+		const md = fs.readFileSync(result.briefingPath, "utf8");
+		expect(md).toContain("99.0.0");
+		expect(md).toContain("test headline e2e");
+		expect(md).toContain("# rd-test");
+	});
+
+	it("end-to-end: AI_CORTEX_NO_UPDATE_CHECK=1 suppresses the notice even with planted cache", async () => {
+		const cacheRoot = process.env.AI_CORTEX_CACHE_HOME!;
+		const updateCachePath = path.join(cacheRoot, "ai-cortex", "update-check.json");
+		fs.mkdirSync(path.dirname(updateCachePath), { recursive: true });
+		fs.writeFileSync(
+			updateCachePath,
+			JSON.stringify({
+				checkedAt: new Date().toISOString(),
+				latestVersion: "99.0.0",
+				releaseHeadline: "should not appear",
+			}),
+		);
+		process.env.AI_CORTEX_NO_UPDATE_CHECK = "1";
+		try {
+			const notice = getBriefingNotice({ currentVersion: "0.0.1" });
+			expect(notice).toBeNull();
+			const result = await rehydrateRepo(repoPath, { notice });
+			const md = fs.readFileSync(result.briefingPath, "utf8");
+			expect(md).not.toContain("99.0.0");
+			expect(md).not.toContain("should not appear");
+		} finally {
+			delete process.env.AI_CORTEX_NO_UPDATE_CHECK;
+		}
 	});
 });
