@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.10.3",
+	"version": "0.10.4",
 	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
 	"type": "module",
 	"license": "MIT",
@@ -103,6 +103,6 @@
 		"vitest": "^3.2.4"
 	},
 	"aiCortex": {
-		"releaseHeadline": "rehydrate briefing nudges users to install hooks when stale"
+		"releaseHeadline": "bump protobufjs >=7.5.5 (CVE-2026-41242)"
 	}
 }
