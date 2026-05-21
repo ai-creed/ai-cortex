@@ -29,7 +29,16 @@
 	"files": [
 		"dist/src/",
 		"README.md",
-		"MANUAL.md",
+		"CHANGELOG.md",
+		"docs/index.md",
+		"docs/getting-started.md",
+		"docs/concepts/",
+		"docs/guides/",
+		"docs/reference/",
+		"docs/architecture/",
+		"docs/shared/",
+		"docs/roadmap.md",
+		"docs/assets/demo.gif",
 		"LICENSE"
 	],
 	"bin": {

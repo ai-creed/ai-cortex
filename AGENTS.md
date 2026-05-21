@@ -11,7 +11,7 @@
 - Tracked architecture and product decisions live in `docs/superpowers/specs/`.
 - Local execution plans live in `docs/superpowers/plans/`.
 - `docs/superpowers/plans/` is git-ignored and local-only. Do not commit or re-track files from that directory.
-- User-facing reference docs: `README.md`, `MANUAL.md`, `MEMORY_LAYER.md`. Known issues: `KNOWN_LIMITATIONS.md`.
+- User-facing docs: `README.md` plus the curated hierarchy under `docs/` (`getting-started`, `concepts`, `guides`, `reference`, `architecture`, and `roadmap`).
 
 ## Repo Layout
 
@@ -58,7 +58,7 @@ If verification is not clean, the work is not complete. Report real failures cle
 ## Documentation Policy
 
 - Update tracked specs when architecture decisions change.
-- Update `README.md` / `MANUAL.md` for user-facing changes.
+- Update `README.md` and the relevant `docs/` page for user-facing changes.
 - `CHANGELOG.md` follows a narrative style: intro paragraph + `### Added / Changed / Fixed / Internal / Known limitations` sections + bold-lead-phrase bullets with WHY/HOW prose. Do not write flat conventional-commit listings.
 - Keep this file procedural and stable. Do not duplicate spec content here; refer to specs and reference docs.
 
