@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.10.4 — 2026-05-21
+
+Security patch. The embedding stack (`@xenova/transformers` → `onnxruntime-web` → `onnx-proto`) pulled `protobufjs@6.11.5` transitively, which is exposed to **CVE-2026-41242** — arbitrary code execution through crafted protobuf "type" fields during decode, CVSS 9.8 — plus eight related HIGH/MODERATE advisories (CVE-2026-44288 through 44294, CVE-2026-45740). No direct usage and no source imports of protobufjs; the exposure is purely the bundled dependency version.
+
+### Fixed
+
+- **`pnpm.overrides` pin** in `package.json` — targeted `"protobufjs@<7.5.5": "^7.5.5"` rewrites only the vulnerable range, leaving the resolver free elsewhere. Resolves to `protobufjs@7.6.0`, which clears every advisory in the chain: the `^7.5.5` floor covers both the critical fix (7.5.5) and the slightly newer 7.5.6 fix for CVE-2026-44293, and the `<8.0.0` ceiling avoids the also-vulnerable 8.0.0 line. OSV recheck on 7.6.0 returns zero advisories.
+
+### Internal
+
+- Verified the v6→v7 major bump against the ONNX path: typecheck clean, full unit suite (1425 tests) green, and the env-gated semantic integration suite (`AI_CORTEX_SEMANTIC_INTEGRATION=1`, real ~23 MB model load through `@xenova/transformers`) passes — confirming protobufjs 7 parses ONNX schemas without regression.
+
+---
+
 ## v0.10.3 — 2026-05-20
 
 The hook-configuration migration notice. Existing users on v0.9.0+ who never re-ran `ai-cortex history install-hooks` after upgrading have features that depend on later-introduced hooks sitting silently inert. v0.10.3 surfaces a one-line nudge in the MCP rehydrate briefing whenever their `~/.claude/settings.json` or `~/.codex/config.toml` diverge from what the installer would write today — built on top of the v0.10.2 notice infrastructure so it composes cleanly with the update notice.
