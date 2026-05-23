@@ -9,8 +9,9 @@ import {
 	createMemory,
 } from "../../../../src/lib/memory/lifecycle.js";
 import { writeMemoryFile } from "../../../../src/lib/memory/store.js";
-import { memoriesDir } from "../../../../src/lib/memory/paths.js";
+import { memoriesDir, trashDir } from "../../../../src/lib/memory/paths.js";
 import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
+import { serializeMemoryMarkdown } from "../../../../src/lib/memory/markdown.js";
 import type { MemoryRecord } from "../../../../src/lib/memory/types.js";
 
 let tmp: string;
@@ -416,5 +417,55 @@ describe("reconcileStore", () => {
 		const scopes = idx.scopeRows(id);
 		expect(scopes).toHaveLength(0);
 		idx.close();
+	}, 30_000);
+
+	it("does not repair a legacy-shaped file in trash/", async () => {
+		const id = "mem-2026-04-30-legacy-trash-fff666";
+		const legacyBody =
+			"## Rule\nbody.\n\n" +
+			'<scopeFiles>["a.ts"]</scopeFiles>\n' +
+			'<scopeTags>["t1"]</scopeTags>\n';
+		const record: MemoryRecord = {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "trashed",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		};
+
+		// Hand-write the file directly into trashDir to bypass the normal
+		// write-then-move-to-trash lifecycle (which would invoke other code paths).
+		await fs.mkdir(trashDir(repoKey), { recursive: true });
+		const trashPath = path.join(trashDir(repoKey), `${id}.md`);
+		await fs.writeFile(trashPath, serializeMemoryMarkdown(record), "utf8");
+
+		const before = await fs.readFile(trashPath, "utf8");
+		const report = await reconcileStore(repoKey);
+
+		// Trashed file must NOT appear in legacyRepaired.
+		expect(report.legacyRepaired).not.toContain(id);
+
+		// File on disk must be byte-identical to before reconcile.
+		const after = await fs.readFile(trashPath, "utf8");
+		expect(after).toBe(before);
+
+		// File must NOT have been moved into memories/ by repair.
+		const activePath = path.join(memoriesDir(repoKey), `${id}.md`);
+		await expect(fs.access(activePath)).rejects.toThrow();
 	}, 30_000);
 });
