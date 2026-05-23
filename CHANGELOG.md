@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## Unreleased
+
+- feat(memory): `reconcileStore` self-heals active memories whose scope is stranded in an inline terminal body trailer (`<scopeFiles>`, `<scopeTags>`, `<source>`, `<confidence>`, `<globalScope>`, `</invoke>`). Trailer is parsed (strict JSON-array when payload looks like JSON, comma-fallback for plain text), merged into canonical frontmatter only when frontmatter scope is empty, body is stripped, file is rewritten via the atomic write path, and the audit row records reason `legacy scope normalized`. Mid-body tag mentions are preserved. Trashed files are not repaired.
+
+---
+
 ## v0.10.4 — 2026-05-21
 
 Security patch. The embedding stack (`@xenova/transformers` → `onnxruntime-web` → `onnx-proto`) pulled `protobufjs@6.11.5` transitively, which is exposed to **CVE-2026-41242** — arbitrary code execution through crafted protobuf "type" fields during decode, CVSS 9.8 — plus eight related HIGH/MODERATE advisories (CVE-2026-44288 through 44294, CVE-2026-45740). No direct usage and no source imports of protobufjs; the exposure is purely the bundled dependency version.
