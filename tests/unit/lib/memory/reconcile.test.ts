@@ -338,4 +338,40 @@ describe("reconcileStore", () => {
 		);
 		expect(onDisk).not.toMatch(/<scopeFiles>/);
 	}, 30_000);
+
+	it("is idempotent: second reconcile pass does not re-repair a canonicalized file", async () => {
+		const id = "mem-2026-04-30-legacy-idem-ddd444";
+		const legacyBody =
+			"## Rule\nbody.\n\n" + '<scopeFiles>["x.ts"]</scopeFiles>\n';
+		await writeMemoryFile(repoKey, {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		});
+
+		const first = await reconcileStore(repoKey);
+		expect(first.legacyRepaired).toContain(id);
+
+		const second = await reconcileStore(repoKey);
+		expect(second.legacyRepaired).not.toContain(id);
+		expect(second.adopted).not.toContain(id);
+		expect(second.reindexed).not.toContain(id);
+	}, 30_000);
 });
