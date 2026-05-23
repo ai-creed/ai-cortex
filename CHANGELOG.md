@@ -47,7 +47,7 @@ The update-notification aggression release. The MCP `rehydrate_project` briefing
 - **Tier-aware `formatNotice({ current, latest, headline, tier, surface })`** — replaces the prior 2-arg form. `surface: "cli"` may include ANSI bold on minor / multi-minor; `surface: "mcp"` is always plain text (the agent's relay must be readable). Empty headline collapses to the no-em-dash fallback (`ai-cortex 0.10.1 available. Run: ...`) — no `available — .` punctuation artifact.
 - **MCP-side `getBriefingNotice({ currentVersion })`** — honors `AI_CORTEX_NO_UPDATE_CHECK`; triggers `spawnBackgroundFetch()` on stale/absent cache (same as `checkForUpdate`); applies the tier throttle; on patch-tier emit, performs read-modify-write of `lastBriefingShownAt` only (leaves the other three cache fields untouched). Wrapped in a top-level try/catch — must never crash a briefing.
 - **`renderBriefing(cache, opts?: { notice? })`** — new optional second arg in `src/lib/briefing.ts`. When `notice` is non-empty after trimming, prepended with a blank line above the existing header. When absent / null / empty / whitespace, output is byte-identical to baseline (regression-guarded).
-- **`RehydrateOptions.notice`** — forwarded into `renderBriefing` *before* `fs.writeFileSync(briefingPath, ...)` so the persisted briefing file (which the MCP handler reads back at line 440) carries the notice.
+- **`RehydrateOptions.notice`** — forwarded into `renderBriefing` _before_ `fs.writeFileSync(briefingPath, ...)` so the persisted briefing file (which the MCP handler reads back at line 440) carries the notice.
 - **`src/mcp/server.ts` rehydrate_project handler** — calls `getBriefingNotice({ currentVersion: SERVER_VERSION })` and passes the result via `rehydrateRepo({ notice })`. Uses `SERVER_VERSION` (already imported as `VERSION` from `src/version.ts`) — **does not read `package.json` at runtime** (the dist-vs-tests path math diverges, per the existing comment in `src/cli.ts:23-30`).
 - **`aiCortex.releaseHeadline` manifest field** — npm preserves arbitrary top-level package.json fields in the per-version manifest, so the existing `/ai-cortex/latest` fetch returns the headline with no second request.
 - **`scripts/lib/release-headline.ts`** (TypeScript helper, not `.mjs`) — pure JSON read-modify-write for `aiCortex.releaseHeadline`. Preserves tab indentation and trailing newline. CLI dispatch compares `fs.realpathSync(fileURLToPath(import.meta.url))` against `fs.realpathSync(process.argv[1])` so `/tmp ↔ /private/tmp` symlinks on macOS don't silently no-op the entrypoint check (same realpath issue that bit the repo-identity path earlier). Wrapped in try/catch so it behaves as a pure library if `argv[1]` is unresolvable.
@@ -106,7 +106,7 @@ The Phase 11 adoption-telemetry release. ai-cortex grows the ability to answer *
 ### Documentation
 
 - **`docs/shared/adoption-metrics.md`** — the new interpretation guide above.
-- **`KNOWN_LIMITATIONS.md`** — the *Adoption telemetry* entry is resolved.
+- **`KNOWN_LIMITATIONS.md`** — the _Adoption telemetry_ entry is resolved.
 - **§13 Claude `PreToolUse` timeout fail-open** verified empirically on CC 2.1.144 — downgraded from "open risk" to a documented gotcha (memorized).
 - **Update-notification aggression design** committed (`docs/superpowers/specs/2026-05-20-update-notification-aggression-design.md`) for the next release.
 
@@ -131,12 +131,12 @@ A targeted performance fix. The TUI stats dashboard previously parsed every full
 
 ## v0.9.0 — 2026-05-19
 
-The edit-time memory surfacing release. ai-cortex memories now activate *before* an edit, not after — a Claude Code `PreToolUse` hook surfaces project-scoped memories for the target file as non-blocking `additionalContext` so the agent has the rule in hand at the moment it matters. First npm release since v0.5.6: v0.6.0–v0.8.0 were tagged but never published, and their cumulative content (TUI stats dashboard, memory browser, memory capture redesign) is included here.
+The edit-time memory surfacing release. ai-cortex memories now activate _before_ an edit, not after — a Claude Code `PreToolUse` hook surfaces project-scoped memories for the target file as non-blocking `additionalContext` so the agent has the rule in hand at the moment it matters. First npm release since v0.5.6: v0.6.0–v0.8.0 were tagged but never published, and their cumulative content (TUI stats dashboard, memory browser, memory capture redesign) is included here.
 
 ### Added
 
 - **`PreToolUse` surface hook** (Claude Code) — fires before `Edit`/`Write`/`MultiEdit`. Surfaces project-scoped memories for the target file as non-blocking `additionalContext`. **Always-allow, fail-open**: a hook timeout (>5s) does not block the edit (verified on CC 2.1.144 in v0.10.0's docs work).
-- **Deterministic project-tier `scopeFiles` matcher** — literal + glob, with precision-first tiering (specificity → `get_count` → recency). Never bumps usage counters; no embedding lookup. Surfaced rules are *pointers* — the agent calls `get_memory(id)` to commit, preserving the recall→get separation.
+- **Deterministic project-tier `scopeFiles` matcher** — literal + glob, with precision-first tiering (specificity → `get_count` → recency). Never bumps usage counters; no embedding lookup. Surfaced rules are _pointers_ — the agent calls `get_memory(id)` to commit, preserving the recall→get separation.
 - **`patternSpecificity` ranking primitive** — prefix-dominant; deep `**` outranks shallow globs (review fix). Pure, well-tested.
 - **Per-session set-hash dedup ledger** — cache-only, no repo writes. The same memory surfaced twice in one session is dedup'd by hash of the surfaced set.
 - **`install-hooks` adds a Claude `PreToolUse` hook entry** — matcher `Edit|Write|MultiEdit`, 5s timeout, under a marker independent of the history capture hook so they can be installed/uninstalled separately. (Existing users on pre-v0.9.0 installs need to re-run `install-hooks` — see v0.10.3's migration notice.)
@@ -175,7 +175,7 @@ The memory capture redesign. The auto-extractor changes from a positive classifi
 
 ### Changed
 
-- **`extract.ts` is a structural gate, not a classifier** — the function is shorter, faster, and more honest about what it does. Decisions about whether a candidate is *actually* a `decision` / `gotcha` / `pattern` / `how-to` are made by the agent during confirmation, not by regex.
+- **`extract.ts` is a structural gate, not a classifier** — the function is shorter, faster, and more honest about what it does. Decisions about whether a candidate is _actually_ a `decision` / `gotcha` / `pattern` / `how-to` are made by the agent during confirmation, not by regex.
 - **Disable confidence / `reExtractCount` promotion for `extracted` candidates** — the old promotion rewarded re-ingested boilerplate. Now: structural rejects stay dropped; survivors stay `capture` until the agent intervenes.
 
 ### Internal
@@ -191,7 +191,7 @@ v0.6.0's TUI stats dashboard gains a full memory browser (drill into individual 
 ### Added
 
 - **Memory browser** (`MemoryBrowser`, `MemoryList`, `MemoryBodyView`) — status-grouped table with colored type tags, windowed viewport for large stores, scrollable body view with metadata header. Reachable from the stats Memory tab via Enter; exit returns to the project detail. Selection + body memoization + reload live in the TUI without re-querying SQL.
-- **Memory activity sparklines** (`MemoryActivityStrip`) — two-series rec/used sparkline. *Recorded* sourced from the audit log; *used* from the stats sink. Visualizes whether memories are flowing in *and* being consulted, not just stored.
+- **Memory activity sparklines** (`MemoryActivityStrip`) — two-series rec/used sparkline. _Recorded_ sourced from the audit log; _used_ from the stats sink. Visualizes whether memories are flowing in _and_ being consulted, not just stored.
 - **Read-only memory readers** — `loadMemoryList`, `loadMemoryBody`, `memoryActivity`. No schema change, no writes, typed errors. `loadMemoryBody` is side-effect-free (tested).
 - **`typeColor`** — deterministic palette with fixed hues for built-in types and a deterministic fallback for user-registered ones, so the browser stays visually stable across sessions.
 - **`ai-cortex stats backfill`** — synthesizes stats rows from captured session history (pre-sink sessions). Schema v2 adds a `synthetic` column + migration; the latency-stats reader excludes synthetic rows so backfilled history doesn't pollute the p50/p95.
@@ -342,7 +342,7 @@ The memory layer release. ai-cortex grows from "fast project rehydration" into a
 
 #### Memory layer — utility (Phase 3, this release's headline)
 
-- **Opinionated MCP tool descriptions** — six memory tools rewritten to teach *when* to call, not just *what* they do. Centerpiece: **the cardinal pattern** — `recall_memory` is browse-only and does not signal usage; `get_memory(id)` is the use signal that drives cleanup eligibility.
+- **Opinionated MCP tool descriptions** — six memory tools rewritten to teach _when_ to call, not just _what_ they do. Centerpiece: **the cardinal pattern** — `recall_memory` is browse-only and does not signal usage; `get_memory(id)` is the use signal that drives cleanup eligibility.
 - **Briefing memory digest** — `renderMemoryDigest` injects a "Memory available — N active, N candidates, N pinned" section + per-type top-5 + "How to consult" guidance into the rehydration briefing. Type-agnostic: queries `DISTINCT type` from SQL rather than iterating a hardcoded list, so user-registered custom types appear too.
 - **Access counters** — four new SQL columns (`get_count`, `last_accessed_at`, `re_extract_count`, `rewritten_at`) added via the codebase's first idempotent ALTER TABLE migration. `get_memory` bumps `get_count` and `last_accessed_at`; `recall_memory` does not. Counter columns gate cleanup eligibility and lay the data shape for a future closed feedback loop.
 - **`rewriteMemory` lifecycle function** — auto-promotes `candidate → active` (confidence 1.0); errors on terminal states (`merged_into`, `trashed`, `purged_redacted`); validates registry whenever `type` or `typeFields` change; respects `shouldPreserveBody` for audit; audits as `update` with reason `"rewrite"`. The agent's investment in rewriting is the endorsement signal.
