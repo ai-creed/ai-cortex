@@ -292,4 +292,50 @@ describe("reconcileStore", () => {
 		).toBe(true);
 		idx.close();
 	}, 30_000);
+
+	it("preserves existing frontmatter scope when body trailer is also present (strip-only)", async () => {
+		const id = "mem-2026-04-30-legacy-merge-ccc333";
+		const legacyBody =
+			"## Rule\nbody.\n\n" + '<scopeFiles>["from-body.ts"]</scopeFiles>\n';
+		const r: MemoryRecord = {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: ["from-frontmatter.ts"], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		};
+		await writeMemoryFile(repoKey, r);
+
+		const report = await reconcileStore(repoKey);
+		expect(report.legacyRepaired).toContain(id);
+
+		const idx = openMemoryIndex(repoKey);
+		const scopes = idx.scopeRows(id);
+		// Frontmatter wins: file scope is unchanged, body fragment is discarded.
+		expect(scopes.filter((s) => s.kind === "file").map((s) => s.value)).toEqual(
+			["from-frontmatter.ts"],
+		);
+		idx.close();
+
+		const onDisk = await fs.readFile(
+			path.join(memoriesDir(repoKey), `${id}.md`),
+			"utf8",
+		);
+		expect(onDisk).not.toMatch(/<scopeFiles>/);
+	}, 30_000);
 });
