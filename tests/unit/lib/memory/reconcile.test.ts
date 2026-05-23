@@ -12,6 +12,8 @@ import { writeMemoryFile } from "../../../../src/lib/memory/store.js";
 import { memoriesDir, trashDir } from "../../../../src/lib/memory/paths.js";
 import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
 import { serializeMemoryMarkdown } from "../../../../src/lib/memory/markdown.js";
+import { openRetrieve } from "../../../../src/lib/memory/retrieve.js";
+import { matchSurfaceMemories } from "../../../../src/lib/memory/surface-core.js";
 import type { MemoryRecord } from "../../../../src/lib/memory/types.js";
 
 let tmp: string;
@@ -467,5 +469,55 @@ describe("reconcileStore", () => {
 		// File must NOT have been moved into memories/ by repair.
 		const activePath = path.join(memoriesDir(repoKey), `${id}.md`);
 		await expect(fs.access(activePath)).rejects.toThrow();
+	}, 30_000);
+
+	it("repaired legacy memory becomes surface-eligible via matchSurfaceMemories", async () => {
+		const id = "mem-2026-04-30-legacy-surface-ggg777";
+		const legacyBody =
+			"## Rule\nUse strictEqual.\n\n" +
+			'<scopeFiles>["**/*.app-test.ts"]</scopeFiles>\n' +
+			'<scopeTags>["unit-tests"]</scopeTags>\n';
+		await writeMemoryFile(repoKey, {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "assert.equal → strictEqual",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		});
+
+		// Before reconcile: file's frontmatter scope is empty, so the surface
+		// matcher (scopeFiles-only) has nothing to match.
+		const reportBefore = await reconcileStore(repoKey); // first pass repairs
+		expect(reportBefore.legacyRepaired).toContain(id);
+
+		// After reconcile: the matcher must find the memory when given a path
+		// that satisfies the repaired glob scope.
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(rh, [
+				"Services/server/feature.app-test.ts",
+			]);
+			expect(got.map((p) => p.id)).toContain(id);
+			const pointer = got.find((p) => p.id === id);
+			expect(pointer?.title).toBe("assert.equal → strictEqual");
+			expect(pointer?.path).toBe("Services/server/feature.app-test.ts");
+		} finally {
+			rh.close();
+		}
 	}, 30_000);
 });
