@@ -230,4 +230,66 @@ describe("reconcileStore", () => {
 		).toBe(true);
 		idx.close();
 	}, 30_000);
+
+	it("repairs an already-indexed legacy file via the drift branch", async () => {
+		const id = "mem-2026-04-30-legacy-drift-bbb222";
+		const legacyBody =
+			"## Rule\nbody.\n\n" +
+			'<scopeFiles>["a.ts"]</scopeFiles>\n' +
+			'<scopeTags>["t1"]</scopeTags>\n';
+		const r: MemoryRecord = {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		};
+		await writeMemoryFile(repoKey, r);
+
+		// First pass: legacy is adopted-and-repaired.
+		const first = await reconcileStore(repoKey);
+		expect(first.legacyRepaired).toContain(id);
+
+		// Re-introduce drift by rewriting the file with a stale legacy shape AGAIN.
+		// (Simulates the realistic case where an indexed memory file still carries
+		// the legacy shape on disk because the agent rewrote it later.)
+		await writeMemoryFile(repoKey, {
+			...r,
+			frontmatter: { ...r.frontmatter, version: 2 },
+		});
+
+		const second = await reconcileStore(repoKey);
+		expect(second.reindexed).toContain(id);
+		expect(second.legacyRepaired).toContain(id);
+
+		const idx = openMemoryIndex(repoKey);
+		const scopes = idx.scopeRows(id);
+		expect(scopes.filter((s) => s.kind === "file").map((s) => s.value)).toEqual(
+			["a.ts"],
+		);
+		const audit = idx.auditRows(id);
+		expect(
+			audit.some(
+				(a) =>
+					a.changeType === "reconcile" &&
+					a.reason === "legacy scope normalized",
+			),
+		).toBe(true);
+		idx.close();
+	}, 30_000);
 });
