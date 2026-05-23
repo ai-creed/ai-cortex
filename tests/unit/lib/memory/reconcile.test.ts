@@ -374,4 +374,47 @@ describe("reconcileStore", () => {
 		expect(second.adopted).not.toContain(id);
 		expect(second.reindexed).not.toContain(id);
 	}, 30_000);
+
+	it("does not throw and still strips trailer when payload JSON is malformed", async () => {
+		const id = "mem-2026-04-30-legacy-malformed-eee555";
+		const legacyBody =
+			"## Rule\nbody.\n\n" + "<scopeFiles>{not valid</scopeFiles>\n";
+		await writeMemoryFile(repoKey, {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		});
+
+		const report = await reconcileStore(repoKey);
+		// Repair still fires (trailer stripped) but no scope is recovered.
+		expect(report.legacyRepaired).toContain(id);
+
+		const onDisk = await fs.readFile(
+			path.join(memoriesDir(repoKey), `${id}.md`),
+			"utf8",
+		);
+		expect(onDisk).not.toMatch(/<scopeFiles>/);
+
+		const idx = openMemoryIndex(repoKey);
+		const scopes = idx.scopeRows(id);
+		expect(scopes).toHaveLength(0);
+		idx.close();
+	}, 30_000);
 });
