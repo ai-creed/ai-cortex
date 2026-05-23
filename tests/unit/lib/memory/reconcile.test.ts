@@ -144,4 +144,16 @@ describe("reconcileStore", () => {
 		expect(row?.body_hash).toBe(newHash);
 		idx.close();
 	}, 30_000);
+
+	it("returns legacyRepaired in the report shape", async () => {
+		const report = await reconcileStore(repoKey);
+		expect(report).toEqual(
+			expect.objectContaining({
+				adopted: expect.any(Array),
+				reindexed: expect.any(Array),
+				phantomsRemoved: expect.any(Array),
+				legacyRepaired: expect.any(Array),
+			}),
+		);
+	});
 });

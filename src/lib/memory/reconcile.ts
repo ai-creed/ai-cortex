@@ -10,6 +10,7 @@ export type ReconcileReport = {
 	reindexed: string[];
 	adopted: string[];
 	phantomsRemoved: string[];
+	legacyRepaired: string[];
 };
 
 function safeAppendAudit(index: MemoryIndex, row: AuditRow): void {
@@ -49,6 +50,7 @@ export async function reconcileStore(
 		reindexed: [],
 		adopted: [],
 		phantomsRemoved: [],
+		legacyRepaired: [],
 	};
 
 	try {
