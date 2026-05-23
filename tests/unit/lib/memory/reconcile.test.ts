@@ -156,4 +156,78 @@ describe("reconcileStore", () => {
 			}),
 		);
 	});
+
+	it("repairs and adopts a legacy-shaped orphan: scope merged into frontmatter, body stripped, audit reason 'legacy scope normalized'", async () => {
+		const id = "mem-2026-04-30-legacy-adopt-aaa111";
+		const legacyBody =
+			"## Rule\nUse strictEqual.\n\n" +
+			'<scopeFiles>["**/*.app-test.ts", "Test/src/**/*.ts"]</scopeFiles>\n' +
+			'<scopeTags>["unit-tests", "assertions"]</scopeTags>\n' +
+			"<source>explicit</source>\n" +
+			"<confidence>1</confidence>\n" +
+			"<globalScope>false</globalScope>\n" +
+			"</invoke>\n";
+		const r: MemoryRecord = {
+			frontmatter: {
+				id,
+				type: "decision",
+				status: "active",
+				title: "T",
+				version: 1,
+				createdAt: "2026-04-30T00:00:00.000Z",
+				updatedAt: "2026-04-30T00:00:00.000Z",
+				source: "explicit",
+				confidence: 1,
+				pinned: false,
+				scope: { files: [], tags: [] },
+				provenance: [],
+				supersedes: [],
+				mergedInto: null,
+				deprecationReason: null,
+				promotedFrom: [],
+				rewrittenAt: null,
+			},
+			body: legacyBody,
+		};
+		await writeMemoryFile(repoKey, r);
+
+		const report = await reconcileStore(repoKey);
+		expect(report.adopted).toContain(id);
+		expect(report.legacyRepaired).toContain(id);
+
+		// File on disk is now canonical
+		const onDisk = await fs.readFile(
+			path.join(memoriesDir(repoKey), `${id}.md`),
+			"utf8",
+		);
+		expect(onDisk).not.toMatch(/<scopeFiles>/);
+		expect(onDisk).not.toMatch(/<scopeTags>/);
+		expect(onDisk).not.toMatch(/<\/invoke>/);
+		expect(onDisk).toMatch(
+			/scope:\s*\n\s*files:\s*\n\s*-\s*"?\*\*\/\*\.app-test\.ts"?/,
+		);
+		expect(onDisk).toMatch(/version:\s*2/);
+
+		// memory_scope rows are populated
+		const idx = openMemoryIndex(repoKey);
+		const scopes = idx.scopeRows(id);
+		expect(scopes.filter((s) => s.kind === "file").map((s) => s.value)).toEqual(
+			expect.arrayContaining(["**/*.app-test.ts", "Test/src/**/*.ts"]),
+		);
+		expect(scopes.filter((s) => s.kind === "tag").map((s) => s.value)).toEqual(
+			expect.arrayContaining(["unit-tests", "assertions"]),
+		);
+
+		// Audit row has the legacy-repair reason
+		const audit = idx.auditRows(id);
+		expect(
+			audit.some(
+				(a) =>
+					a.changeType === "reconcile" &&
+					a.reason !== null &&
+					a.reason.includes("legacy scope normalized"),
+			),
+		).toBe(true);
+		idx.close();
+	}, 30_000);
 });
