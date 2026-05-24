@@ -6,6 +6,8 @@
 
 > **Follow-up to:** `2026-05-19-edit-time-memory-surface-hook-design.md` (Track A precondition: legacy-scope self-heal, shipped 2026-05-23).
 
+> **Revised 2026-05-24 (review pass):** clarified mixed-scope Tier 2 fallthrough semantics in §2 and §9; corrected Codex hook TOML to the documented nested-handler form in §6.1 and §6.3; unified telemetry shape across §7 and §10 to use a `tiers` array parallel to `memoryIds`; added required usage-signal-invariant regression coverage to §9.
+
 ---
 
 ## 1. Context & problem
@@ -31,7 +33,7 @@ The current `matchSurfaceMemories` explicitly excludes tag-only memories (`surfa
 
 ### Goals
 
-- **Prong A — edit-time tag fallback:** the existing PreToolUse(Edit/Write/MultiEdit/apply_patch) hook gains a Tier 2 match that admits tag-only and mixed-scope memories via normalized-token overlap between the file path and the memory's `scope.tags`. Tier 1 file-scope match retains precedence.
+- **Prong A — edit-time tag fallback:** the existing PreToolUse(Edit/Write/MultiEdit/apply_patch) hook gains a Tier 2 match that admits tag-only AND mixed-scope memories via normalized-token overlap between the file path and the memory's `scope.tags`. Tier 1 file-scope match retains precedence for any memory whose `scope.files` matches the current path. A mixed-scope memory (`scope.files.length > 0 && scope.tags.length > 0`) whose `scope.files` does NOT match the current path is **eligible for Tier 2** via its `scope.tags`. No memory is double-counted across tiers — Tier 2 always excludes ids already selected in Tier 1 (§3.1).
 - **Prong B — session-start workflow rules surface:** a new SessionStart hook (Claude Code + Codex) emits a curated list of active tag-only workflow memories on session startup, resume, clear, and (where supported) compact. The list re-fires on resume, surviving compaction-erasure of the original session-start context.
 - **Both prongs ship for both CLIs:** Claude Code and Codex have functionally equivalent PreToolUse and SessionStart contracts (Codex docs confirmed — see §8.1). Codex install is enabled.
 - **Preserve the recall→get usage-signal contract.** Surfacing pushes pointers; only `get_memory(id)` bumps counters. Same invariant Track A preserved.
@@ -61,22 +63,27 @@ PreToolUse fires (Edit | Write | MultiEdit | apply_patch)
     ↓
 surface-hook reads tool_input → relPaths (existing)
     ↓
-matchSurfaceMemories(rh, relPaths) — extended:
+matchSurfaceMemories(rh, relPaths, { tier2: true }) — extended:
   Tier 1 — file-scope match (existing, unchanged)
-    candidates: active memories with non-empty scope.files
+    candidate pool: active memories with non-empty scope.files
     rank: pattern specificity → getCount desc → updatedAt desc → id asc
-    take min(hits, CAP)        ← CAP bumped from 3 to 5
+    take min(matched-hits, CAP)        ← CAP bumped from 3 to 5
     ↓
   Tier 2 — tag-fallback match (NEW)
-    fires only when Tier 1 returned < CAP
-    candidates: active memories NOT already in Tier 1, with non-empty scope.tags
+    fires only when |Tier-1 result| < CAP
+    candidate pool: active memories with non-empty scope.tags,
+                    MINUS ids already selected in the Tier-1 result set.
+                    A mixed-scope memory whose scope.files did NOT match the
+                    current path is included in this pool (its absence from the
+                    Tier-1 result set, not from the Tier-1 candidate pool, is
+                    what matters for the no-double-counting invariant).
     signal: normalized tokens from relPaths
     score: |path-tokens ∩ tag-tokens|, with a +1 bonus if any matched tag
            is in the project's top-N popular tags
     rank: score desc → getCount desc → updatedAt desc → id asc
-    take min(CAP - tier1.length, remaining)
+    take min(CAP - |Tier-1 result|, remaining)
     ↓
-combined results = tier1 ++ tier2 (Tier 1 always ranks above Tier 2)
+combined results = Tier-1-result ++ Tier-2-result (Tier 1 always ranks above Tier 2)
     ↓
 existing surface-ledger dedup keyed on file path (unchanged)
     ↓
@@ -323,11 +330,15 @@ The CLI exit code is always 0 on the hook code path. Non-zero exit reserved for 
 
 ```toml
 [[hooks.PreToolUse]]
-command = ["ai-cortex", "memory", "surface-hook"]
+matcher = "apply_patch"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "ai-cortex memory surface-hook"
 # Codex default 600s; no explicit timeout needed
 ```
 
-Matcher: `apply_patch` (Codex's file-edit primitive). Codex's PreToolUse also fires for `Bash` and MCP tool calls per the docs; we do **not** install on those — Bash-triggered surfacing is a v1 non-goal.
+Codex's hook contract per https://developers.openai.com/codex/hooks: each event-typed array entry (`[[hooks.PreToolUse]]`) declares a `matcher` (regex string against `tool_name`), and a nested `[[hooks.<Event>.hooks]]` table declares the handler with `type` and `command`. We deliberately scope the matcher to `apply_patch` only — Codex's PreToolUse also fires for `Bash` and MCP tool calls, but Bash-triggered surfacing is a v1 non-goal.
 
 ### 6.2 Bump Claude Code PreToolUse timeout
 
@@ -357,12 +368,15 @@ Claude Code (`~/.claude/settings.json`):
 }
 ```
 
-Codex (`~/.codex/config.toml`):
+Codex (`~/.codex/config.toml`) — documented nested-handler form (regex matcher, nested `[[hooks.SessionStart.hooks]]` handler table):
 
 ```toml
 [[hooks.SessionStart]]
-command = ["ai-cortex", "memory", "list-workflow-rules", "--format=hook"]
-matcher = { source = "startup,resume,clear,compact" }
+matcher = "startup|resume|clear|compact"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "ai-cortex memory list-workflow-rules --format=hook"
 ```
 
 Marker comment / sentinel: a `# ai-cortex:workflow-rules` marker line above each entry, so `hooksMigrationStatus()` can detect the install state (§6.4).
@@ -430,17 +444,33 @@ Users on older Claude Code or Codex versions without SessionStart hook support g
 
 - **`tag-overlap.test.ts`** — `normalize`, `stripBasicPlural`, `tagOverlapScore` against fixture cases including the §4.4 catches and misses.
 - **`workflow-rules.test.ts`** — filter (status / file-empty / tags-nonempty / type-in-set), sort (pinned-first, getCount tiebreaker, updatedAt newer-first), cap.
-- **`surface-core.test.ts`** — extended with Tier 2 scenarios: file-scope returns 2, tag fallback fills 3 more; file-scope returns 0, tag fallback fills 5; mixed-scope memory eligible in Tier 1 only (not double-counted); empty Tier 2 candidate set.
+- **`surface-core.test.ts`** — extended with Tier 2 scenarios:
+  - file-scope returns 2 → tag fallback fills up to 3 more (combined cap 5);
+  - file-scope returns 0 → tag fallback fills up to 5;
+  - **mixed-scope memory whose `scope.files` matches the current path** is ranked in Tier 1 only and is excluded from Tier 2 candidate evaluation (no double-counting);
+  - **mixed-scope memory whose `scope.files` does NOT match the current path but whose `scope.tags` overlap path tokens** is surfaced via Tier 2 (the §2 Goal fallthrough case);
+  - empty Tier 2 candidate set yields the Tier-1-only result unchanged.
+- **`usage-signal-invariant.test.ts`** — capture `getCount` and `last_accessed_at` (via `idx.getMemory(id)`) for every memory in the test fixture **before and after** each surfacing path:
+  - `runSurfaceHook` invocation that produces Tier 1 hits;
+  - `runSurfaceHook` invocation that produces Tier 2 hits (file-scope empty, tag-fallback only);
+  - `runSurfaceHook` invocation that produces mixed Tier 1 + Tier 2 hits;
+  - `list-workflow-rules --format=hook` invocation;
+  - `rehydrate_project` briefing render that emits the workflow-rules section.
+  Assert byte-equal snapshots for all counters across all five scenarios. The only mutation surface remains `get_memory(id)`; surfacing must never write to counter columns.
 
 ### 9.2 Integration tests
 
 - **`surface-hook-tier2.test.ts`** — drive the CLI hook with a `tool_input.file_path` that has no file-scope match but has tag-overlap; assert `additionalContext` includes the tag-matched memory's pointer.
 - **`list-workflow-rules.test.ts`** — CLI invocation against a synthetic store with mixed memory types; verify `--format=hook` JSON shape, `--format=text` body, empty-store behavior.
 - **`rehydrate-workflow-fallback.test.ts`** — rehydrate against a repo with (a) the SessionStart hook installed → section absent; (b) hook not installed → section present.
+- **`surface-events-telemetry-shape.test.ts`** — assert `appendSurfaceEvent` payload shape: `tiers` is an array of length `memoryIds.length`, each element is `"file"` or `"tag"` corresponding to the source tier of the same-index memory id. A mixed-tier event (Tier 1 + Tier 2 in one emit) MUST produce a `tiers` array containing both values in their correct positions; this is the test that locks §7 and §10 against the prior scalar-vs-array contradiction.
 
 ### 9.3 End-to-end / hook-level tests
 
-- **`install-hooks-codex-reenabled.test.ts`** — `install-hooks` writes both PreToolUse and SessionStart entries to `~/.codex/config.toml`; `uninstall-hooks` removes them.
+- **`install-hooks-codex-reenabled.test.ts`** — `install-hooks` writes both PreToolUse and SessionStart entries to `~/.codex/config.toml` in the documented nested form:
+  - PreToolUse: `[[hooks.PreToolUse]]` with `matcher = "apply_patch"` (regex string), followed by `[[hooks.PreToolUse.hooks]]` with `type = "command"` and `command = "ai-cortex memory surface-hook"` (command as a single string, not a TOML array; no top-level `command` field on `[[hooks.PreToolUse]]`);
+  - SessionStart: `[[hooks.SessionStart]]` with `matcher = "startup|resume|clear|compact"`, followed by `[[hooks.SessionStart.hooks]]` with `type = "command"` and `command = "ai-cortex memory list-workflow-rules --format=hook"`;
+  - `uninstall-hooks` removes both event arrays AND their nested handler tables in one pass (no dangling `[[hooks.PreToolUse.hooks]]` orphans).
 - **`install-hooks-timeout-bump.test.ts`** — `install-hooks` writes `timeout: 10000` for Claude Code PreToolUse (not 5000).
 
 ### 9.4 Manual verification (precondition)
@@ -451,11 +481,11 @@ Per §8.1, run an actual Codex CLI session with the hook installed; confirm `add
 
 ## 10. Telemetry
 
-- Extend the existing `surface-events` cache-only telemetry (`src/lib/stats/surface-events.ts`) with one new field per event: `tier: "file" | "tag"`. Counts how often Tier 2 contributes to a surfacing event.
+- Extend the existing `surface-events` cache-only telemetry (`src/lib/stats/surface-events.ts`) with one new field per event: `tiers?: ("file" | "tag")[]`, **parallel to the existing `memoryIds` array** (same length, same index correspondence). Each element records the tier the memory id at the same index was sourced from. A mixed-tier emit (Tier 1 + Tier 2 in one event) is represented unambiguously by mixed values in the `tiers` array. The field is optional for back-compat with pre-Track-B cache rows. (This is the same shape declared in §7; the two sections must agree.)
 - Add a new event type `workflow-rules-emit` recording `{ ts, session_id, source: "startup"|"resume"|"clear"|"compact", count }` for each SessionStart-hook emit.
 - Both are cache-only writes via the existing best-effort path; never blocks the hook.
 
-These feed the `ai-cortex stats sessions` adoption report.
+These feed the `ai-cortex stats sessions` adoption report. The §9.2 `surface-events-telemetry-shape.test.ts` locks the array form against the prior scalar-vs-array drift.
 
 ---
 
