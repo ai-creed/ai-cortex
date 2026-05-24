@@ -28,6 +28,42 @@ export function getCodexConfigPath(): string {
 	return path.join(os.homedir(), ".codex", "config.toml");
 }
 
+/**
+ * Detect whether the SessionStart workflow-rules hook is installed for the
+ * given CLI. Used by `renderWorkflowRulesSection` (rehydrate fallback) to
+ * decide whether to inject a workflow-rules section into the briefing.
+ *
+ * When the hook IS installed the SessionStart event already surfaces the
+ * list, so the fallback section is suppressed to avoid duplication.
+ *
+ * Defensive: returns `false` on any read/parse failure so the fallback
+ * still surfaces rules rather than silently dropping them.
+ */
+export function sessionStartWorkflowHookInstalled(
+	cli: "claude" | "codex" = "claude",
+): boolean {
+	try {
+		if (cli === "claude") {
+			const settingsPath = getSettingsPath();
+			if (!fs.existsSync(settingsPath)) return false;
+			const txt = fs.readFileSync(settingsPath, "utf8");
+			return (
+				txt.includes("# ai-cortex:workflow-rules") ||
+				txt.includes("memory list-workflow-rules")
+			);
+		}
+		const configPath = getCodexConfigPath();
+		if (!fs.existsSync(configPath)) return false;
+		const txt = fs.readFileSync(configPath, "utf8");
+		return (
+			txt.includes("# ai-cortex:workflow-rules") ||
+			txt.includes("memory list-workflow-rules")
+		);
+	} catch {
+		return false;
+	}
+}
+
 export type InstallOpts = {
 	yes: boolean;
 	/** Test-only: bypass readline, supply the answer directly. */

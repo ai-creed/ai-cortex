@@ -9,6 +9,7 @@ import type { RepoCache } from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
 import { renderPinnedSection } from "./memory/briefing-pinned.js";
 import { renderMemoryDigest } from "./memory/briefing-digest.js";
+import { renderWorkflowRulesSection } from "./memory/briefing-workflow-rules.js";
 
 export type RehydrateOptions = {
 	stale?: boolean;
@@ -35,7 +36,10 @@ export async function rehydrateRepo(
 		const briefing = renderBriefing(cache, { notice: options?.notice });
 		const pinned = await renderPinnedSection(identity.repoKey);
 		const digest = await renderMemoryDigest(identity.repoKey);
-		const extras = [pinned, digest].filter((p): p is string => Boolean(p));
+		const workflowRules = await renderWorkflowRulesSection(identity.repoKey);
+		const extras = [pinned, digest, workflowRules].filter(
+			(p): p is string => Boolean(p),
+		);
 		const md = extras.length
 			? `${briefing}\n${extras.join("\n")}\n`
 			: briefing;
