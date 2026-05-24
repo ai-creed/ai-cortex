@@ -47,6 +47,28 @@ describe("install-hooks Claude PreToolUse timeout", () => {
 	});
 });
 
+describe("install-hooks Claude SessionStart workflow-rules", () => {
+	it("writes Claude SessionStart entry with matcher 'startup|resume|clear|compact' invoking list-workflow-rules --format=hook", async () => {
+		const result = await installHooks({ yes: true, answerForTest: "y" });
+		expect(result).toBe("installed");
+
+		const settingsPath = getSettingsPath();
+		const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+		const events = parsed?.hooks?.SessionStart ?? [];
+		const wf = events.find((e: { hooks: { command: string }[] }) =>
+			e.hooks?.some((h) => h.command?.includes("memory list-workflow-rules")),
+		);
+		expect(wf).toBeDefined();
+		expect(wf.matcher).toBe("startup|resume|clear|compact");
+		const handler = wf.hooks.find((h: { command: string }) =>
+			h.command?.includes("memory list-workflow-rules"),
+		);
+		expect(handler.type).toBe("command");
+		expect(handler.command).toContain("--format=hook");
+		expect(handler.timeout).toBe(10);
+	});
+});
+
 describe("hooksMigrationStatus recognizes legacy installs as needing migration", () => {
 	it("returns needsInstall:true when settings.json has the old timeout: 5", () => {
 		const settingsDir = path.join(tmpHome, ".claude");

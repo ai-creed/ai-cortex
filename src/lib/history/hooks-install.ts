@@ -5,9 +5,13 @@ import readline from "node:readline";
 
 export const HOOK_COMMAND_MARKER = "ai-cortex history capture";
 export const SURFACE_HOOK_MARKER = "ai-cortex memory surface-hook";
+export const WORKFLOW_RULES_HOOK_MARKER = "ai-cortex memory list-workflow-rules";
 const SURFACE_HOOK_COMMAND = SURFACE_HOOK_MARKER;
 const SURFACE_PRETOOLUSE_MATCHER = "Edit|Write|MultiEdit";
 const SURFACE_HOOK_TIMEOUT_SEC = 10;
+const WORKFLOW_RULES_HOOK_COMMAND = `${WORKFLOW_RULES_HOOK_MARKER} --format=hook`;
+const WORKFLOW_RULES_SESSIONSTART_MATCHER = "startup|resume|clear|compact";
+const WORKFLOW_RULES_HOOK_TIMEOUT_SEC = 10;
 
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
 const CODEX_HOOK_EVENTS = ["UserPromptSubmit", "Stop"] as const;
@@ -87,7 +91,7 @@ export function hooksMigrationStatus(): { needsInstall: boolean } {
 			? fs.readFileSync(settingsPath, "utf8")
 			: "";
 		const settings = parseOrThrow(before, settingsPath);
-		const next = applySurfaceInstall(applyInstall(settings));
+		const next = applyWorkflowRulesInstall(applySurfaceInstall(applyInstall(settings)));
 		const afterText = JSON.stringify(next, null, 2) + "\n";
 		const codexBefore = fs.existsSync(codexPath)
 			? fs.readFileSync(codexPath, "utf8")
@@ -118,7 +122,9 @@ export async function installHooks(
 		? fs.readFileSync(codexPath, "utf8")
 		: "";
 
-	const next = applySurfaceInstall(applyInstall(settings));
+	const next = applyWorkflowRulesInstall(
+		applySurfaceInstall(applyInstall(settings)),
+	);
 	const afterText = JSON.stringify(next, null, 2) + "\n";
 	const codexAfterText = applyCodexInstall(codexBefore);
 	const beforeText = before.length > 0 ? before : "(no existing file)\n";
@@ -175,7 +181,9 @@ export async function uninstallHooks(
 		? fs.readFileSync(settingsPath, "utf8")
 		: "";
 	const settings = parseOrThrow(before, settingsPath);
-	const next = applySurfaceUninstall(applyUninstall(settings));
+	const next = applyWorkflowRulesUninstall(
+		applySurfaceUninstall(applyUninstall(settings)),
+	);
 	const afterText = JSON.stringify(next, null, 2) + "\n";
 	const codexBefore = fs.existsSync(codexPath)
 		? fs.readFileSync(codexPath, "utf8")
@@ -281,6 +289,49 @@ export function applySurfaceInstall(s: Settings): Settings {
 		});
 	}
 	next.hooks!.PreToolUse = list;
+	return next;
+}
+
+export function applyWorkflowRulesInstall(s: Settings): Settings {
+	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
+	const list = ((next.hooks!.SessionStart ?? []) as Hook[]).slice();
+	const already = list.some((entry) =>
+		(entry.hooks ?? []).some((h) =>
+			h.command.includes(WORKFLOW_RULES_HOOK_MARKER),
+		),
+	);
+	if (!already) {
+		list.push({
+			matcher: WORKFLOW_RULES_SESSIONSTART_MATCHER,
+			hooks: [
+				{
+					type: "command",
+					command: WORKFLOW_RULES_HOOK_COMMAND,
+					timeout: WORKFLOW_RULES_HOOK_TIMEOUT_SEC,
+				},
+			],
+		});
+	}
+	next.hooks!.SessionStart = list;
+	return next;
+}
+
+export function applyWorkflowRulesUninstall(s: Settings): Settings {
+	const next: Settings = { ...s, hooks: { ...(s.hooks ?? {}) } };
+	const list = ((next.hooks!.SessionStart ?? []) as Hook[])
+		.map((entry) => ({
+			...entry,
+			hooks: (entry.hooks ?? []).filter(
+				(h) => !h.command.includes(WORKFLOW_RULES_HOOK_MARKER),
+			),
+		}))
+		.filter((entry) => entry.hooks.length > 0);
+	if (list.length === 0) {
+		const { SessionStart: _drop, ...rest } = next.hooks ?? {};
+		next.hooks = rest;
+	} else {
+		next.hooks!.SessionStart = list;
+	}
 	return next;
 }
 
