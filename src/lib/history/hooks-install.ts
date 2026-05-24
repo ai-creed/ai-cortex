@@ -7,7 +7,7 @@ export const HOOK_COMMAND_MARKER = "ai-cortex history capture";
 export const SURFACE_HOOK_MARKER = "ai-cortex memory surface-hook";
 const SURFACE_HOOK_COMMAND = SURFACE_HOOK_MARKER;
 const SURFACE_PRETOOLUSE_MATCHER = "Edit|Write|MultiEdit";
-const SURFACE_HOOK_TIMEOUT_SEC = 5;
+const SURFACE_HOOK_TIMEOUT_SEC = 10;
 
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
 const CODEX_HOOK_EVENTS = ["UserPromptSubmit", "Stop"] as const;
