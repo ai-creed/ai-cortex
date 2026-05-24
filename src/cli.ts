@@ -862,7 +862,7 @@ async function main(): Promise<void> {
 				}
 				case "list-workflow-rules": {
 					const { runListWorkflowRules } = await import(
-						"./lib/memory/cli/list-workflow-rules.js"
+						"./lib/memory/cli/list-workflow-rules.js",
 					);
 					const limitFlag = flagValue(rest, "--limit");
 					const formatFlag = flagValue(rest, "--format");
