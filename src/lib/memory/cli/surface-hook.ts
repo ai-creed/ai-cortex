@@ -141,7 +141,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		let pointers: SurfacePointer[] = [];
 		const rh = openRetrieve(repoKey);
 		try {
-			pointers = matchSurfaceMemories(rh, relPaths);
+			pointers = matchSurfaceMemories(rh, relPaths, { tier2: true });
 		} finally {
 			rh.close();
 		}
@@ -167,6 +167,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 					session_id:
 						typeof input.session_id === "string" ? input.session_id : null,
 					memoryIds: pointers.map((p) => p.id),
+					tiers: pointers.map((p) => p.tier ?? "file"),
 					count: pointers.length,
 				});
 			} catch {
