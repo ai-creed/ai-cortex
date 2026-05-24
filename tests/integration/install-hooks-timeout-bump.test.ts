@@ -70,6 +70,33 @@ describe("install-hooks Claude SessionStart workflow-rules", () => {
 });
 
 describe("hooksMigrationStatus recognizes legacy installs as needing migration", () => {
+	it("returns needsInstall:true when settings.json is missing the SessionStart workflow-rules entry", () => {
+		const settingsDir = path.join(tmpHome, ".claude");
+		fs.mkdirSync(settingsDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(settingsDir, "settings.json"),
+			JSON.stringify({
+				hooks: {
+					PreToolUse: [
+						{
+							matcher: "Edit|Write|MultiEdit",
+							hooks: [
+								{
+									type: "command",
+									command: "ai-cortex memory surface-hook",
+									timeout: 10,
+								},
+							],
+						},
+					],
+					// No SessionStart entry — the new workflow-rules install is missing.
+				},
+			}),
+		);
+		const status = hooksMigrationStatus();
+		expect(status.needsInstall).toBe(true);
+	});
+
 	it("returns needsInstall:true when settings.json has the old timeout: 5", () => {
 		const settingsDir = path.join(tmpHome, ".claude");
 		fs.mkdirSync(settingsDir, { recursive: true });
