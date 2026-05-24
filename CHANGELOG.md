@@ -9,7 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-- feat(memory): `reconcileStore` self-heals active memories whose scope is stranded in an inline terminal body trailer (`<scopeFiles>`, `<scopeTags>`, `<source>`, `<confidence>`, `<globalScope>`, `</invoke>`). Trailer is parsed (strict JSON-array when payload looks like JSON, comma-fallback for plain text), merged into canonical frontmatter only when frontmatter scope is empty, body is stripped, file is rewritten via the atomic write path, and the audit row records reason `legacy scope normalized`. Mid-body tag mentions are preserved. Trashed files are not repaired.
+Track B — tag-aware memory surfacing. Track A (legacy-scope self-heal, 2026-05-23) closed the gap where memories with stranded scope went unseen; Track B closes the next gap, where memories that are correctly tag-scoped but have no file scope go unseen too. Real-world cost in the 2026-05-21 postmortem: five raw `git commit --no-verify` calls in one session while `favro-commit-auto` sat unreached. The PreToolUse `surface-hook` learns a Tier 2 fallback that admits tag-only and mixed-scope memories when Tier 1 returns fewer than the cap; a new SessionStart hook emits a curated workflow-rules listing on every session boundary (startup, resume, clear, compact) for the cross-cutting rules that don't tie to a specific file. Ships Claude-only — the Codex install path remains deferred pending empirical verification of Codex's `apply_patch`-side PreToolUse delivery (per v0.9.1 §13 historical record).
+
+### Added
+
+- **Tier 2 tag-overlap fallback in `matchSurfaceMemories`** — opt-in via a new `{ tier2: true }` parameter. Fires only when Tier 1 file-scope match returns fewer than `CAP` hits. Tier 2 scores each candidate via normalized-token overlap between the file path and the memory's `scope.tags` (lowercase, split on `[-_./\s]+`, basic plural strip in `src/lib/memory/tag-overlap.ts`; popular-tag set as +1 tiebreaker, cached on `RetrieveHandle`). Mixed-scope memories whose `scope.files` does not match this path fall through to Tier 2 via tags. Tier 1 always ranks above Tier 2; no memory double-counts. `suggest_files*` `relatedMemories` path explicitly does NOT opt in — the 2026-05-06 Non-goal is preserved.
+- **`CAP` bumped 3 → 5** in `src/lib/memory/surface-core.ts` — gives Tier 2 room without crowding out Tier 1 hits. The dedup ledger (per-file, per-session) and the "surfaced ≠ relevant" footer continue to bound noise.
+- **`SurfacePointer.tier`** — optional `"file" | "tag"` label exposing which tier sourced each pointer. Surfaces in telemetry; no impact on call-site consumers that ignore it.
+- **SessionStart workflow-rules surface** — new CLI `ai-cortex memory list-workflow-rules` (`text` / `json` / `hook` formats) and Claude Code SessionStart hook (matcher `startup|resume|clear|compact`, command `ai-cortex memory list-workflow-rules --format=hook`, 10s timeout). Filters to active, tag-only (no file scope), `decision` / `how-to` memories; sorts pinned-first → `getCount` desc → recency; capped at 10 (`AI_CORTEX_WORKFLOW_LIST_CAP` configurable).
+- **`rehydrate_project` workflow-rules fallback** — when no SessionStart hook is installed (detected by `sessionStartWorkflowHookInstalled()` reading the canonical hook config), `rehydrateRepo`'s briefing appends the same workflow-rules section as a backup surface. Detection is fail-open: read errors include the section rather than risk hiding it. Renders via the same `briefing-workflow-rules.ts` helper the CLI uses — single source of truth.
+
+### Changed
+
+- **Claude Code PreToolUse hook timeout bumped 5s → 10s** in `applySurfaceInstall` — cushion for cold-start SQLite open and IO contention, since Tier 2 adds a candidate scan over the project's tag-only memories. The internal `DEADLINE_MS = 250` soft deadline in `surface-hook.ts` remains the real gate; 10s is harness headroom.
+- **`surface-events` telemetry** — events gain an optional `tiers: ("file" | "tag")[]` array parallel to `memoryIds`. Each element labels the tier the same-index memory came from, so mixed Tier 1 + Tier 2 events are representable. Existing readers ignoring the field are unaffected.
+- **`hooksMigrationStatus()` recognizes the new install shape** — settings with the old `timeout: 5` or without the new SessionStart entries report `needsInstall: true`, surfacing the same v0.10.3 briefing nudge until the user re-runs `ai-cortex history install-hooks`.
+
+### Internal
+
+- **`src/lib/memory/tag-overlap.ts`** (new) — pure normalization + scoring primitives. `stripBasicPlural` handles `-ies → -y`, sibilant `-ses` / `-xes` / `-ches` / `-shes`, and plain `-s` (preserving `-ss` so `less` stays `less` and `class` stays `class`).
+- **`src/lib/memory/workflow-rules.ts`** (new) — pure selection (`selectWorkflowRules`) + text formatter (`formatWorkflowRulesText`).
+- **`src/lib/memory/briefing-workflow-rules.ts`** (new) — repo-keyed briefing extra following the `briefing-pinned.ts` / `briefing-digest.ts` pattern; consumed by `rehydrateRepo` and gated on install state.
+- **`src/lib/memory/cli/list-workflow-rules.ts`** (new) — CLI entrypoint exposed via `ai-cortex memory list-workflow-rules`.
+- **`applyWorkflowRulesInstall` / `applyWorkflowRulesUninstall`** in `hooks-install.ts` — pure functional install/uninstall of the Claude SessionStart entry, composed into `installHooks` and `uninstallHooks` via the existing `applyXxxInstall` chain.
+
+### Known limitations
+
+- **Codex install path deferred.** The Codex side of the install (PreToolUse on `apply_patch` and SessionStart) was historically gated off per v0.9.1's §13 (Codex 0.130.x didn't fire `PreToolUse` for `apply_patch`/`Bash`). Track B ships Claude-only until empirical verification on a current Codex CLI release confirms `PreToolUse` payload delivery — re-test and re-enable when verified.
+- **Tag synonym misses.** Track B's tag overlap matches normalized tokens only; true synonyms (`git` ≈ `repo`, `e2e` ≈ `end-to-end`) won't match. v1 accepts these misses; revisit with an embedding fallback or per-project synonym map if telemetry shows the miss rate matters.
+- **Cross-tier (global store) surfacing** stays project-tier only, matching Tier 1's existing scope. A future track may extend either prong via the `recallMemoryCrossTier` pattern.
+
+---
+
+(Track A — legacy-scope self-heal, shipped 2026-05-23: `reconcileStore` self-heals active memories whose scope is stranded in an inline terminal body trailer. Trailer is parsed (strict JSON-array when payload looks like JSON, comma-fallback for plain text), merged into canonical frontmatter only when frontmatter scope is empty, body is stripped, file is rewritten via the atomic write path, and the audit row records reason `legacy scope normalized`. Mid-body tag mentions are preserved. Trashed files are not repaired.)
 
 ---
 
