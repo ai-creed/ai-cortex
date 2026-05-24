@@ -860,6 +860,32 @@ async function main(): Promise<void> {
 					await runSurfaceHook();
 					break;
 				}
+				case "list-workflow-rules": {
+					const { runListWorkflowRules } = await import(
+						"./lib/memory/cli/list-workflow-rules.js"
+					);
+					const limitFlag = flagValue(rest, "--limit");
+					const formatFlag = flagValue(rest, "--format");
+					const repoKeyFlag = flagValue(rest, "--repo-key");
+					const cwdFlag = flagValue(rest, "--cwd");
+					const limit = limitFlag
+						? Number.parseInt(limitFlag, 10) || undefined
+						: undefined;
+					const format =
+						formatFlag === "text" ||
+						formatFlag === "json" ||
+						formatFlag === "hook"
+							? formatFlag
+							: undefined;
+					const code = await runListWorkflowRules({
+						cwd: cwdFlag,
+						repoKey: repoKeyFlag,
+						limit,
+						format,
+					});
+					if (code !== 0) process.exit(code);
+					break;
+				}
 				case "list": {
 					const cwd = flagValue(rest, "--cwd") ?? process.cwd();
 					const repoKey =
