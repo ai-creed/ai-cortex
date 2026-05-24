@@ -9,6 +9,8 @@ export type SurfacePointer = {
 	type: string;
 	/** The target path (one of the inputs) this memory matched. */
 	path: string;
+	/** Which match tier produced this pointer. Tier 1 = file-scope; Tier 2 = tag-scope fallback. */
+	tier?: "file" | "tag";
 };
 
 const POOL = 10_000;
@@ -70,6 +72,7 @@ export function matchSurfaceMemories(
 			title: c.title,
 			type: c.type,
 			path: bestPath,
+			tier: "file",
 			_spec: bestSpec,
 			_getCount: c.getCount,
 			_updatedAt: c.updatedAt,

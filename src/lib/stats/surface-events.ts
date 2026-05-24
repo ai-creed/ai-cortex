@@ -9,6 +9,19 @@ export type SurfaceEvent = {
 	ts: number;
 	session_id: string | null;
 	memoryIds: string[];
+	/**
+	 * Optional per-pointer tier labels parallel to `memoryIds` (same length
+	 * and index correspondence). Tier 1 = "file"; Tier 2 = "tag" fallback.
+	 * Omitted for back-compat with pre-Track-B events.
+	 */
+	tiers?: ("file" | "tag")[];
+	count: number;
+};
+
+export type WorkflowRulesEmit = {
+	ts: number;
+	session_id: string | null;
+	source: "startup" | "resume" | "clear" | "compact";
 	count: number;
 };
 
@@ -16,15 +29,43 @@ function filePath(repoKey: string): string {
 	return path.join(getCacheDir(repoKey), "adoption", "surface-events.jsonl");
 }
 
-/** Best-effort append. Never throws (caller is the latency-critical hook). */
-export function appendSurfaceEvent(repoKey: string, ev: SurfaceEvent): void {
+function workflowRulesFilePath(repoKey: string): string {
+	return path.join(
+		getCacheDir(repoKey),
+		"adoption",
+		"workflow-rules-events.jsonl",
+	);
+}
+
+/**
+ * Best-effort JSONL append shared by telemetry sinks. Creates the parent
+ * directory as needed and swallows all errors — telemetry must never block
+ * the latency-critical hook caller.
+ */
+function appendJsonl(fp: string, ev: unknown): void {
 	try {
-		const fp = filePath(repoKey);
 		fs.mkdirSync(path.dirname(fp), { recursive: true });
 		fs.appendFileSync(fp, JSON.stringify(ev) + "\n");
 	} catch {
 		/* telemetry is best-effort; never block the edit */
 	}
+}
+
+/** Best-effort append. Never throws (caller is the latency-critical hook). */
+export function appendSurfaceEvent(repoKey: string, ev: SurfaceEvent): void {
+	appendJsonl(filePath(repoKey), ev);
+}
+
+/**
+ * Best-effort append for SessionStart-hook workflow-rules emit tracking.
+ * Mirrors `appendSurfaceEvent`'s never-throws contract. Writes to a sibling
+ * JSONL file `workflow-rules-events.jsonl` under the same cache dir.
+ */
+export function appendWorkflowRulesEmit(
+	repoKey: string,
+	event: WorkflowRulesEmit,
+): void {
+	appendJsonl(workflowRulesFilePath(repoKey), event);
 }
 
 /**
