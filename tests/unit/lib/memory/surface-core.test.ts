@@ -85,11 +85,11 @@ describe("matchSurfaceMemories", () => {
 		}
 	});
 
-	it("caps at 3", async () => {
-		for (let i = 0; i < 5; i++) await add(["src/a.ts"], `r${i}`);
+	it("caps at 5", async () => {
+		for (let i = 0; i < 7; i++) await add(["src/a.ts"], `r${i}`);
 		const rh = openRetrieve(repoKey);
 		try {
-			expect(matchSurfaceMemories(rh, ["src/a.ts"]).length).toBe(3);
+			expect(matchSurfaceMemories(rh, ["src/a.ts"]).length).toBe(5);
 		} finally {
 			rh.close();
 		}
@@ -112,6 +112,179 @@ describe("matchSurfaceMemories", () => {
 		const rh = openRetrieve(repoKey);
 		try {
 			expect(matchSurfaceMemories(rh, ["src/a.ts"]).map((p) => p.id)).not.toContain(id);
+		} finally {
+			rh.close();
+		}
+	});
+});
+
+async function addTagOnly(scopeTags: string[], title: string): Promise<string> {
+	const lc = await openLifecycle(repoKey, { agentId: "test" });
+	try {
+		return await createMemory(lc, {
+			type: "decision",
+			title,
+			body: `## ${title}\nrule body`,
+			scope: { files: [], tags: scopeTags },
+			source: "explicit",
+		});
+	} finally {
+		lc.close();
+	}
+}
+
+async function addMixed(
+	scopeFiles: string[],
+	scopeTags: string[],
+	title: string,
+): Promise<string> {
+	const lc = await openLifecycle(repoKey, { agentId: "test" });
+	try {
+		return await createMemory(lc, {
+			type: "decision",
+			title,
+			body: `## ${title}\nrule body`,
+			scope: { files: scopeFiles, tags: scopeTags },
+			source: "explicit",
+		});
+	} finally {
+		lc.close();
+	}
+}
+
+describe("matchSurfaceMemories Tier 2", () => {
+	it("Tier 2 is OFF by default — tag-only memories never surface without opts.tier2", async () => {
+		await addTagOnly(["unit-tests"], "tag-only");
+		const rh = openRetrieve(repoKey);
+		try {
+			expect(
+				matchSurfaceMemories(rh, ["Services/foo.app-test.ts"]),
+			).toEqual([]);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("Tier 2 surfaces tag-only memory on path-token / tag-token overlap when opts.tier2 = true", async () => {
+		const id = await addTagOnly(["unit-tests"], "use strictEqual");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got.map((p) => p.id)).toContain(id);
+			expect(got.find((p) => p.id === id)?.tier).toBe("tag");
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("Tier 1 always ranks above Tier 2 (file-scope-matched memory comes first)", async () => {
+		await addTagOnly(["app", "test"], "tag-only first?");
+		const fileId = await add(["**/*.app-test.ts"], "file-scope first");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got[0]?.id).toBe(fileId);
+			expect(got[0]?.tier).toBe("file");
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("mixed-scope memory: file-scope matches → Tier 1 ONLY, NOT double-counted in Tier 2", async () => {
+		const id = await addMixed(["**/*.app-test.ts"], ["test"], "mixed both");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			const occurrences = got.filter((p) => p.id === id);
+			expect(occurrences).toHaveLength(1);
+			expect(occurrences[0]?.tier).toBe("file");
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("mixed-scope memory: file-scope does NOT match this path but tags overlap → Tier 2 fallthrough", async () => {
+		const id = await addMixed(
+			["MainApp/**/*.ts"],
+			["app", "test"],
+			"mixed scope, file misses, tags hit",
+		);
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got.map((p) => p.id)).toContain(id);
+			expect(got.find((p) => p.id === id)?.tier).toBe("tag");
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("CAP=5: Tier 1 returns 2, Tier 2 fills up to 3 more", async () => {
+		await add(["**/*.app-test.ts"], "file-1");
+		await add(["Services/**/*.ts"], "file-2");
+		for (let i = 0; i < 5; i++) {
+			await addTagOnly(["app", "test"], `tag-${i}`);
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got).toHaveLength(5);
+			expect(got.filter((p) => p.tier === "file")).toHaveLength(2);
+			expect(got.filter((p) => p.tier === "tag")).toHaveLength(3);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("CAP=5: Tier 1 returns 0, Tier 2 fills up to 5 (capped, not 8)", async () => {
+		for (let i = 0; i < 8; i++) {
+			await addTagOnly(["app", "test"], `tag-${i}`);
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got).toHaveLength(5);
+			expect(got.every((p) => p.tier === "tag")).toBe(true);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("empty Tier 2 candidate pool yields Tier-1-only result unchanged", async () => {
+		const fileId = await add(["**/*.app-test.ts"], "file-only");
+		const rh = openRetrieve(repoKey);
+		try {
+			const got = matchSurfaceMemories(
+				rh,
+				["Services/foo.app-test.ts"],
+				{ tier2: true },
+			);
+			expect(got.map((p) => p.id)).toEqual([fileId]);
+			expect(got[0]?.tier).toBe("file");
 		} finally {
 			rh.close();
 		}

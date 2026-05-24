@@ -6,6 +6,7 @@ import type { MemoryRecord, AuditRow } from "./types.js";
 export type RetrieveHandle = {
 	repoKey: string;
 	index: MemoryIndex;
+	popularTags?: Set<string>;
 	close: () => void;
 };
 
@@ -396,4 +397,26 @@ export async function recallMemoryCrossTier(
 	];
 	merged.sort((a, b) => b.score - a.score);
 	return merged.slice(0, limit);
+}
+
+const POPULAR_TAGS_LIMIT = 20;
+
+export function getPopularTags(rh: RetrieveHandle): Set<string> {
+	if (rh.popularTags) return rh.popularTags;
+	const rows = rh.index
+		.rawDb()
+		.prepare(
+			`
+            SELECT s.value
+            FROM memory_scope s
+            JOIN memories m ON m.id = s.memory_id
+            WHERE s.kind = 'tag' AND m.status = 'active'
+            GROUP BY s.value
+            ORDER BY COUNT(*) DESC
+            LIMIT ?
+        `,
+		)
+		.all(POPULAR_TAGS_LIMIT) as { value: string }[];
+	rh.popularTags = new Set(rows.map((r) => r.value));
+	return rh.popularTags;
 }

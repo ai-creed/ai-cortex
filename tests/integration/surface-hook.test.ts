@@ -151,18 +151,18 @@ describe("runSurfaceHook (integration)", () => {
 		);
 	});
 
-	it("caps at 3 memories total across a multi-file apply_patch", async () => {
+	it("caps at 5 memories total across a multi-file apply_patch", async () => {
 		const { worktreePath } = resolveRepoIdentity(process.cwd());
 		const f1 = "src/lib/memory/store.ts";
 		const f2 = "src/lib/memory/retrieve.ts";
 		const lc = await openLifecycle(repoKey, { agentId: "t" });
 		try {
-			for (let i = 0; i < 3; i++)
+			for (let i = 0; i < 4; i++)
 				await createMemory(lc, {
 					type: "decision", title: `s${i}`, body: "## x\ny",
 					scope: { files: [f1], tags: [] }, source: "explicit",
 				});
-			for (let i = 0; i < 3; i++)
+			for (let i = 0; i < 4; i++)
 				await createMemory(lc, {
 					type: "decision", title: `r${i}`, body: "## x\ny",
 					scope: { files: [f2], tags: [] }, source: "explicit",
@@ -180,7 +180,7 @@ describe("runSurfaceHook (integration)", () => {
 		});
 		const ctx = json.hookSpecificOutput.additionalContext as string;
 		const bullets = ctx.split("\n").filter((l) => l.startsWith("- ["));
-		expect(bullets.length).toBe(3);
+		expect(bullets.length).toBe(5);
 	});
 
 	it("abandons to silent-allow when the deadline is exceeded", async () => {

@@ -1,7 +1,8 @@
 // src/lib/memory/surface-core.ts
 import type { RetrieveHandle } from "./retrieve.js";
-import { filterCandidates } from "./retrieve.js";
+import { filterCandidates, getPopularTags } from "./retrieve.js";
 import { createMatchCache, patternSpecificity } from "./scope-match.js";
+import { normalize, tagOverlapScore } from "./tag-overlap.js";
 
 export type SurfacePointer = {
 	id: string;
@@ -13,8 +14,12 @@ export type SurfacePointer = {
 	tier?: "file" | "tag";
 };
 
+export type MatchSurfaceOpts = {
+	tier2?: boolean;
+};
+
 const POOL = 10_000;
-const CAP = 3;
+const CAP = 5;
 
 type Ranked = SurfacePointer & {
 	_spec: number;
@@ -27,12 +32,17 @@ type Ranked = SurfacePointer & {
  * surfacing (spec §4, §4.1). For each active memory whose file scope
  * (literal or glob) covers one of `relPaths`, emit a pointer. Unscoped
  * and tag-only memories are excluded by design. Ranked precision-first:
- * pattern specificity → getCount → recency. Capped at 3 total. No
+ * pattern specificity → getCount → recency. Capped at 5 total. No
  * embedding, no model load. Never bumps usage counters.
+ *
+ * When `opts.tier2` is true, after Tier 1 (file-scope matches) fills,
+ * Tier 2 fallback considers remaining active memories by path-token /
+ * tag-token overlap and fills up to the cap.
  */
 export function matchSurfaceMemories(
 	rh: RetrieveHandle,
 	relPaths: string[],
+	opts: MatchSurfaceOpts = {},
 ): SurfacePointer[] {
 	if (relPaths.length === 0) return [];
 
@@ -41,7 +51,6 @@ export function matchSurfaceMemories(
 		scope: { files: relPaths },
 		candidatePoolSize: POOL,
 	});
-	if (candidates.length === 0) return [];
 
 	const matcher = createMatchCache();
 	const ranked: Ranked[] = [];
@@ -79,15 +88,68 @@ export function matchSurfaceMemories(
 		});
 	}
 
-	ranked.sort((a, b) => {
-		if (b._spec !== a._spec) return b._spec - a._spec;
+	const tier1 = ranked
+		.sort((a, b) => {
+			if (b._spec !== a._spec) return b._spec - a._spec;
+			if (b._getCount !== a._getCount) return b._getCount - a._getCount;
+			if (a._updatedAt !== b._updatedAt)
+				return a._updatedAt < b._updatedAt ? 1 : -1;
+			return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+		})
+		.slice(0, CAP)
+		.map(({ _spec, _getCount, _updatedAt, ...p }) => p);
+
+	if (!opts.tier2 || tier1.length >= CAP) return tier1;
+
+	const tier1Ids = new Set(tier1.map((p) => p.id));
+	const pathTokens = new Set<string>();
+	for (const rel of relPaths) for (const t of normalize(rel)) pathTokens.add(t);
+	if (pathTokens.size === 0) return tier1;
+
+	const tier2Candidates = filterCandidates(rh, {
+		includeStatus: ["active"],
+		candidatePoolSize: POOL,
+	}).filter((c) => !tier1Ids.has(c.id));
+
+	const popularTagSet = getPopularTags(rh);
+
+	type Tier2Ranked = SurfacePointer & {
+		_score: number;
+		_getCount: number;
+		_updatedAt: string;
+	};
+	const tier2Ranked: Tier2Ranked[] = [];
+	for (const c of tier2Candidates) {
+		const tagValues = rh.index
+			.scopeRows(c.id)
+			.filter((s) => s.kind === "tag")
+			.map((s) => s.value);
+		if (tagValues.length === 0) continue;
+		const score = tagOverlapScore(pathTokens, tagValues, popularTagSet);
+		if (score <= 0) continue;
+		tier2Ranked.push({
+			id: c.id,
+			title: c.title,
+			type: c.type,
+			path: relPaths[0]!,
+			tier: "tag",
+			_score: score,
+			_getCount: c.getCount,
+			_updatedAt: c.updatedAt,
+		});
+	}
+
+	tier2Ranked.sort((a, b) => {
+		if (b._score !== a._score) return b._score - a._score;
 		if (b._getCount !== a._getCount) return b._getCount - a._getCount;
 		if (a._updatedAt !== b._updatedAt)
-			return a._updatedAt < b._updatedAt ? 1 : -1; // newer first
+			return a._updatedAt < b._updatedAt ? 1 : -1;
 		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 	});
 
-	return ranked
-		.slice(0, CAP)
-		.map(({ _spec, _getCount, _updatedAt, ...p }) => p);
+	const tier2 = tier2Ranked
+		.slice(0, CAP - tier1.length)
+		.map(({ _score, _getCount, _updatedAt, ...p }) => p);
+
+	return [...tier1, ...tier2];
 }
