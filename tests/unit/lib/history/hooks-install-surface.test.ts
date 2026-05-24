@@ -6,7 +6,7 @@ import {
 } from "../../../../src/lib/history/hooks-install.js";
 
 describe("surface hook install (Claude)", () => {
-	it("adds a PreToolUse entry with matcher and 5s timeout", () => {
+	it("adds a PreToolUse entry with matcher and 10s timeout", () => {
 		const next = applySurfaceInstall({});
 		const entries = (next.hooks?.PreToolUse ?? []) as Array<{
 			matcher: string;
@@ -17,7 +17,8 @@ describe("surface hook install (Claude)", () => {
 		);
 		expect(mine).toBeDefined();
 		expect(mine!.matcher).toBe("Edit|Write|MultiEdit");
-		expect(mine!.hooks[0]!.timeout).toBe(5);
+		// Bumped 5 → 10 in Track B per spec §6.2 (Tier 2 candidate scan + cold-start IO cushion).
+		expect(mine!.hooks[0]!.timeout).toBe(10);
 	});
 
 	it("is idempotent", () => {
