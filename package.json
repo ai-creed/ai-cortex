@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.10.4",
+	"version": "0.11.0",
 	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
 	"type": "module",
 	"license": "MIT",
@@ -112,6 +112,6 @@
 		"vitest": "^3.2.4"
 	},
 	"aiCortex": {
-		"releaseHeadline": "bump protobufjs >=7.5.5 (CVE-2026-41242)"
+		"releaseHeadline": "Tag-aware memory surfacing — Tier 2 tag fallback + SessionStart workflow rules"
 	}
 }
