@@ -160,15 +160,23 @@ function normalize(s: string): string[] {
     return s
         .toLowerCase()
         .split(/[-_./\s]+/)        // split on hyphen, underscore, dot, slash, whitespace
-        .map(stripBasicPlural)     // "tests" → "test", "boxes" → "box", "fixes" → "fix"
-        .filter((t) => t.length > 1) // drop single-char fragments
-        .filter(Boolean);
+        .map(stripBasicPlural)     // "tests" → "test", "services" → "service", "boxes" → "box"
+        .filter((t) => t.length > 1); // drop single-char fragments
 }
 
 function stripBasicPlural(t: string): string {
+    // -ies → -y (parties → party, queries → query)
     if (t.endsWith("ies") && t.length > 4) return t.slice(0, -3) + "y";
-    if (t.endsWith("es") && t.length > 3)  return t.slice(0, -2);
-    if (t.endsWith("s")  && t.length > 2)  return t.slice(0, -1);
+    // -ses / -xes / -ches / -shes → -s-stripped (services → service, boxes → box,
+    // fixes → fix, batches → batch, washes → wash). These are the common English
+    // plural-of-sibilant endings; the prior loose "any -es" rule incorrectly
+    // collapsed "services" → "servic", which broke real-world tag overlap.
+    if (t.endsWith("ses") && t.length > 4) return t.slice(0, -2);
+    if (t.endsWith("xes") && t.length > 4) return t.slice(0, -2);
+    if (t.endsWith("ches") && t.length > 5) return t.slice(0, -2);
+    if (t.endsWith("shes") && t.length > 5) return t.slice(0, -2);
+    // Plain trailing -s (but NOT -ss — "less" must stay "less").
+    if (t.endsWith("s") && !t.endsWith("ss") && t.length > 2) return t.slice(0, -1);
     return t;
 }
 ```
@@ -177,10 +185,13 @@ Examples:
 
 | Input | Output |
 |---|---|
-| `Services/server/import_matching.app-test.ts` | `{services, server, import, matching, app, test, ts}` |
+| `Services/server/import_matching.app-test.ts` | `{service, server, import, matching, app, test, ts}` |
 | `unit-tests` | `{unit, test}` |
 | `e2e` | `{e2e}` |
 | `git-commits` | `{git, commit}` |
+| `classes` | `{class}` (`-ses → -s`-stripped) |
+| `boxes` | `{box}` (`-xes → -x`) |
+| `less` | `{less}` (`-ss` preserved) |
 
 ### 4.2 Scoring
 
