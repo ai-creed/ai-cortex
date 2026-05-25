@@ -13,6 +13,17 @@ const WORKFLOW_RULES_HOOK_COMMAND = `${WORKFLOW_RULES_HOOK_MARKER} --format=hook
 const WORKFLOW_RULES_SESSIONSTART_MATCHER = "startup|resume|clear|compact";
 const WORKFLOW_RULES_HOOK_TIMEOUT_SEC = 10;
 
+// Codex reports tool_name "apply_patch" for file edits; the aliases Edit/Write
+// all map to it, so the single matcher covers every Codex edit path.
+const CODEX_SURFACE_PRETOOLUSE_MATCHER = "apply_patch";
+
+// Every ai-cortex Codex hook command carries one of these markers; uninstall
+// keys on them so user-authored hooks sharing an event are preserved.
+const CODEX_MARKERS = [HOOK_COMMAND_MARKER, SURFACE_HOOK_MARKER] as const;
+function containsCodexMarker(s: string): boolean {
+	return CODEX_MARKERS.some((m) => s.includes(m));
+}
+
 const HOOK_EVENTS = ["PreCompact", "SessionEnd"] as const;
 const CODEX_HOOK_EVENTS = ["UserPromptSubmit", "Stop"] as const;
 const HOOK_COMMAND = HOOK_COMMAND_MARKER;
@@ -167,7 +178,24 @@ export async function installHooks(
 	}
 	writeAtomic(settingsPath, afterText);
 	writeAtomic(codexPath, codexAfterText);
+	if (codexAfterText.trim() !== codexBefore.trim()) {
+		printCodexTrustNotice();
+	}
 	return "installed";
+}
+
+/**
+ * Codex skips non-managed hooks until the user reviews and trusts them in
+ * `/hooks`, and trust is pinned to the hook's hash — so any future ai-cortex
+ * upgrade that changes the hook definition requires re-trusting. Without this
+ * step the surface hook silently no-ops, so we surface it on every Codex write.
+ */
+function printCodexTrustNotice(): void {
+	process.stdout.write(
+		"\nCodex: run `/hooks` in a Codex session and trust the ai-cortex hooks.\n" +
+			"Codex skips untrusted hooks, and trust is pinned to the hook's hash —\n" +
+			"re-trust after any ai-cortex upgrade that changes the hook definition.\n",
+	);
 }
 
 export async function uninstallHooks(
@@ -352,22 +380,28 @@ export function applySurfaceUninstall(s: Settings): Settings {
 function applyCodexInstall(text: string): string {
 	let next = text.trimEnd();
 	for (const evt of CODEX_HOOK_EVENTS) {
-		if (codexEventHasMarker(next, evt)) continue;
+		if (codexEventHasMarker(next, evt, HOOK_COMMAND_MARKER)) continue;
 		next += `${next.length > 0 ? "\n\n" : ""}[[hooks.${evt}]]\n`;
 		next += 'matcher = ""\n';
 		next += `[[hooks.${evt}.hooks]]\n`;
 		next += 'type = "command"\n';
 		next += `command = "${HOOK_COMMAND}"\n`;
 	}
+	if (!codexEventHasMarker(next, "PreToolUse", SURFACE_HOOK_MARKER)) {
+		next += `${next.length > 0 ? "\n\n" : ""}[[hooks.PreToolUse]]\n`;
+		next += `matcher = "${CODEX_SURFACE_PRETOOLUSE_MATCHER}"\n`;
+		next += "[[hooks.PreToolUse.hooks]]\n";
+		next += 'type = "command"\n';
+		next += `command = "${SURFACE_HOOK_COMMAND}"\n`;
+		next += `timeout = ${SURFACE_HOOK_TIMEOUT_SEC}\n`;
+	}
 	return next + "\n";
 }
 
-function codexEventHasMarker(text: string, evt: string): boolean {
+function codexEventHasMarker(text: string, evt: string, marker: string): boolean {
 	const groups = codexHookGroups(text);
 	return groups.some(
-		(group) =>
-			group.event === evt &&
-			group.lines.join("\n").includes(HOOK_COMMAND_MARKER),
+		(group) => group.event === evt && group.lines.join("\n").includes(marker),
 	);
 }
 
@@ -423,14 +457,14 @@ function removeCodexMarkerHooks(lines: string[]): string[] {
 		if (/^\[\[hooks\.[A-Za-z]+\.hooks\]\]$/.test(lines[i])) hookStarts.push(i);
 	}
 	if (hookStarts.length === 0)
-		return lines.join("\n").includes(HOOK_COMMAND_MARKER) ? [] : lines;
+		return containsCodexMarker(lines.join("\n")) ? [] : lines;
 	const prefix = lines.slice(0, hookStarts[0]);
 	const keptHooks: string[] = [];
 	for (let i = 0; i < hookStarts.length; i += 1) {
 		const start = hookStarts[i];
 		const end = hookStarts[i + 1] ?? lines.length;
 		const hook = lines.slice(start, end);
-		if (!hook.join("\n").includes(HOOK_COMMAND_MARKER)) keptHooks.push(...hook);
+		if (!containsCodexMarker(hook.join("\n"))) keptHooks.push(...hook);
 	}
 	return keptHooks.length === 0 ? [] : [...prefix, ...keptHooks];
 }

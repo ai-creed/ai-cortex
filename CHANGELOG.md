@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Unreleased
+## v0.11.1 — 2026-05-25
+
+Codex edit-time memory surfacing. The `PreToolUse` surface hook — previously Claude-only — now installs for Codex too. The v0.9.1 §13 "Codex doesn't fire `PreToolUse`" gate turned out to be a misdiagnosis of Codex's hook-trust requirement rather than an upstream defect; re-verified on codex-cli 0.133.0, `PreToolUse` fires for `apply_patch` once the hook is trusted via `/hooks`, and the captured payload confirms the patch body arrives at `tool_input.command` exactly as the parser assumed.
+
+### Added
+
+- **Codex `PreToolUse` surface hook** in `src/lib/history/hooks-install.ts` — `ai-cortex hooks install` now writes a `[[hooks.PreToolUse]]` block with `matcher = "apply_patch"` (the alias every Codex file edit reports), at the same 10s timeout as the Claude hook. Idempotent install/uninstall, keyed on the existing `ai-cortex memory surface-hook` marker so user-authored Codex hooks are preserved.
+- **`/hooks` trust reminder** printed after any Codex hook write — Codex skips non-managed hooks until trusted, and trust is pinned to the hook's hash, so an upgrade that changes the definition requires re-trusting.
+
+### Fixed
+
+- **`permissionDecision` is now Claude-only** in `src/lib/memory/cli/surface-hook.ts`. Codex rejects the field (`unsupported permissionDecision:allow`) and fails the hook, which would have fired on every Codex `apply_patch`. The field is now emitted only for positively-identified Claude edit tools (`Edit`/`Write`/`MultiEdit`); Codex and all unknown/error paths omit it. Absence means "proceed normally" on both harnesses, so an edit is never blocked.
+
+### Known limitations
+
+- **Codex edit-time surfacing requires hook trust and has narrower coverage than Claude.** Re-verified on codex-cli 0.133.0: `PreToolUse` fires for `apply_patch`, but Codex skips non-managed hooks until they are trusted in `/hooks`, and trust is pinned to the hook's hash (so an ai-cortex upgrade that changes the hook requires re-trusting). Interception covers `apply_patch` and simple `Bash`/MCP calls, not the newer `unified_exec` shell path or non-shell, non-MCP tools. Supersedes the v0.11.0 "Codex install path deferred" limitation.
+
+---
+
+## v0.11.0 — 2026-05-24
 
 Track B — tag-aware memory surfacing. Track A (legacy-scope self-heal, 2026-05-23) closed the gap where memories with stranded scope went unseen; Track B closes the next gap, where memories that are correctly tag-scoped but have no file scope go unseen too. Real-world cost in the 2026-05-21 postmortem: five raw `git commit --no-verify` calls in one session while `favro-commit-auto` sat unreached. The PreToolUse `surface-hook` learns a Tier 2 fallback that admits tag-only and mixed-scope memories when Tier 1 returns fewer than the cap; a new SessionStart hook emits a curated workflow-rules listing on every session boundary (startup, resume, clear, compact) for the cross-cutting rules that don't tie to a specific file. Ships Claude-only — the Codex install path remains deferred pending empirical verification of Codex's `apply_patch`-side PreToolUse delivery (per v0.9.1 §13 historical record).
 

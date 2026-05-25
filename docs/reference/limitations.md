@@ -96,12 +96,20 @@ Current behavior:
 | Harness | Status |
 |---|---|
 | Claude Code | Supported for edit tools through `PreToolUse` |
-| Codex CLI | Not enabled because Codex 0.130.0 did not emit `PreToolUse` for `apply_patch` or `Bash` in verification |
+| Codex CLI | Supported on Codex >= 0.133.0 for `apply_patch`, but the hook must be trusted (see below) |
 | Other agents | Depends on compatible hook support |
 
 The edit-time hook only uses file scope. Tag-only and unscoped memories do not surface through this path, though agents can still find them through `recall_memory`.
 
 Claude Code timeout behavior was verified on 2026-05-19 with Claude Code 2.1.144: timed-out `PreToolUse` hooks failed open, so the edit proceeded. This behavior is not guaranteed by upstream documentation and should be rechecked on major harness changes.
+
+Codex requirements and limits (verified 2026-05-25 on codex-cli 0.133.0):
+
+- Codex skips non-managed hooks until you review and trust them with `/hooks`. The installed surface hook stays inert until trusted, so `ai-cortex hooks install` prints a reminder.
+- Trust is pinned to the hook's hash, so any ai-cortex upgrade that changes the hook definition requires re-trusting it in `/hooks`.
+- Coverage is narrower than Claude: `PreToolUse` intercepts `apply_patch` (matcher aliases `apply_patch`/`Edit`/`Write`) and simple `Bash`/MCP calls, but not the newer `unified_exec` shell path or non-shell, non-MCP tools (for example `WebSearch`). It is a guardrail, not a complete enforcement boundary.
+
+The earlier "Codex 0.130.0 does not emit `PreToolUse`" finding was a misdiagnosis of the hook-trust gate, not an upstream defect.
 
 Disable edit-time surfacing:
 

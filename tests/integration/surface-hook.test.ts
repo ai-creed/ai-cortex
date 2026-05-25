@@ -45,6 +45,19 @@ describe("runSurfaceHook (integration)", () => {
 		expect(json.hookSpecificOutput.additionalContext).toBeUndefined();
 	});
 
+	it("never emits permissionDecision for a Codex apply_patch (Codex rejects it)", async () => {
+		// no-match case: the common path for most edits — must not fail the hook
+		const { json } = await run({
+			session_id: "cdx-nd", cwd,
+			tool_name: "apply_patch",
+			tool_input: {
+				command: "*** Begin Patch\n*** Add File: no/such/unscoped-xyz.ts\n+x\n*** End Patch\n",
+			},
+		});
+		expect(json.hookSpecificOutput.permissionDecision).toBeUndefined();
+		expect(json.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+	});
+
 	it("surfaces a scoped memory for a Claude Edit", async () => {
 		const { worktreePath } = resolveRepoIdentity(cwd);
 		const rel = "src/lib/memory/store.ts";
@@ -98,7 +111,11 @@ describe("runSurfaceHook (integration)", () => {
 			stdout: out.stream,
 		});
 		expect(code).toBe(0);
-		expect(JSON.parse(out.text()).hookSpecificOutput.permissionDecision).toBe("allow");
+		// Harness unknown on parse failure → omit permissionDecision (Claude
+		// proceeds via normal flow; Codex would reject the field). Never blocks.
+		const ho = JSON.parse(out.text()).hookSpecificOutput;
+		expect(ho.hookEventName).toBe("PreToolUse");
+		expect(ho.permissionDecision).toBeUndefined();
 	});
 
 	it("allows silently when cwd is not a git repo", async () => {
@@ -149,6 +166,7 @@ describe("runSurfaceHook (integration)", () => {
 		expect(json.hookSpecificOutput.additionalContext as string).toContain(
 			"codex patch rule",
 		);
+		expect(json.hookSpecificOutput.permissionDecision).toBeUndefined();
 	});
 
 	it("caps at 5 memories total across a multi-file apply_patch", async () => {

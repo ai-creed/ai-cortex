@@ -22,16 +22,30 @@ type RunOpts = {
 	now?: () => number;
 };
 
+/**
+ * Emit the PreToolUse allow response. `permissionDecision: "allow"` is a
+ * Claude Code field — Codex *rejects* it ("unsupported permissionDecision")
+ * and fails the hook, which would fire on every Codex apply_patch. So it is
+ * emitted only when we positively identify a Claude edit tool (`decision`);
+ * every other path (Codex, unknown harness, parse failure) omits it. Absence
+ * means "proceed normally" on both harnesses, so the edit is never blocked.
+ */
 function allow(
 	stdout: NonNullable<RunOpts["stdout"]>,
-	additionalContext?: string,
+	opts: { decision?: boolean; additionalContext?: string } = {},
 ): void {
 	const hookSpecificOutput: Record<string, unknown> = {
 		hookEventName: "PreToolUse",
-		permissionDecision: "allow",
 	};
-	if (additionalContext) hookSpecificOutput.additionalContext = additionalContext;
+	if (opts.decision) hookSpecificOutput.permissionDecision = "allow";
+	if (opts.additionalContext)
+		hookSpecificOutput.additionalContext = opts.additionalContext;
 	stdout.write(JSON.stringify({ hookSpecificOutput }) + "\n");
+}
+
+/** Edit tools reported only by Claude Code; Codex always reports apply_patch. */
+function isClaudeEditTool(name: string | undefined): boolean {
+	return name === "Edit" || name === "Write" || name === "MultiEdit";
 }
 
 async function readAll(stream: Readable | NodeJS.ReadStream): Promise<string> {
@@ -96,22 +110,25 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 	const now = opts.now ?? Date.now;
 	const start = now();
 	try {
-		if (process.env.AI_CORTEX_SURFACE === "0") {
-			allow(stdout);
-			return 0;
-		}
 		const raw = await readAll(opts.stdin ?? process.stdin);
 		let input: HookInput;
 		try {
 			input = JSON.parse(raw) as HookInput;
 		} catch {
+			// Harness unknown on parse failure → omit permissionDecision.
 			allow(stdout);
+			return 0;
+		}
+		const decision = isClaudeEditTool(input.tool_name);
+
+		if (process.env.AI_CORTEX_SURFACE === "0") {
+			allow(stdout, { decision });
 			return 0;
 		}
 
 		const rawPaths = extractRawPaths(input);
 		if (rawPaths.length === 0 || typeof input.cwd !== "string") {
-			allow(stdout);
+			allow(stdout, { decision });
 			return 0;
 		}
 
@@ -120,11 +137,11 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		try {
 			({ repoKey, worktreePath } = resolveRepoIdentity(input.cwd));
 		} catch {
-			allow(stdout);
+			allow(stdout, { decision });
 			return 0;
 		}
 		if (now() - start > DEADLINE_MS) {
-			allow(stdout);
+			allow(stdout, { decision });
 			return 0;
 		}
 
@@ -134,7 +151,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 			if (rel) relPaths.push(rel);
 		}
 		if (relPaths.length === 0) {
-			allow(stdout);
+			allow(stdout, { decision });
 			return 0;
 		}
 
@@ -146,7 +163,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 			rh.close();
 		}
 		if (pointers.length === 0 || now() - start > DEADLINE_MS) {
-			allow(stdout);
+			allow(stdout, { decision });
 			return 0;
 		}
 
@@ -174,7 +191,10 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 				/* never block the edit on telemetry */
 			}
 		}
-		allow(stdout, emit ? buildContext(pointers) : undefined);
+		allow(stdout, {
+			decision,
+			additionalContext: emit ? buildContext(pointers) : undefined,
+		});
 		return 0;
 	} catch {
 		// Inviolable: never block an edit.

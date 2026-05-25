@@ -42,6 +42,37 @@ describe("installHooks", () => {
 		expect(text.match(new RegExp(HOOK_COMMAND_MARKER, "g"))).toHaveLength(2);
 	});
 
+	it("creates Codex PreToolUse surface hook with apply_patch matcher and 10s timeout", async () => {
+		await installHooks({ yes: true });
+		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(text).toContain("[[hooks.PreToolUse]]");
+		expect(text).toContain('matcher = "apply_patch"');
+		expect(text).toContain('command = "ai-cortex memory surface-hook"');
+		expect(text).toContain("timeout = 10");
+	});
+
+	it("Codex install is idempotent for the PreToolUse surface hook", async () => {
+		await installHooks({ yes: true });
+		await installHooks({ yes: true });
+		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(text.match(/\[\[hooks\.PreToolUse\]\]/g)).toHaveLength(1);
+	});
+
+	it("prints a /hooks trust notice after writing Codex hooks", async () => {
+		const writes: string[] = [];
+		const orig = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string) => {
+			writes.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			await installHooks({ yes: true });
+		} finally {
+			process.stdout.write = orig;
+		}
+		expect(writes.join("")).toMatch(/\/hooks/);
+	});
+
 	it("appends to existing hooks without duplicating", async () => {
 		fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
 		fs.writeFileSync(
@@ -184,6 +215,14 @@ describe("uninstallHooks", () => {
 		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
 		expect(text).not.toContain(HOOK_COMMAND_MARKER);
 		expect(text).toContain('command = "other-tool"');
+	});
+
+	it("removes the Codex PreToolUse surface hook too", async () => {
+		await installHooks({ yes: true });
+		await uninstallHooks({ yes: true });
+		const text = fs.readFileSync(getCodexConfigPath(), "utf8");
+		expect(text).not.toContain("[[hooks.PreToolUse]]");
+		expect(text).not.toContain("ai-cortex memory surface-hook");
 	});
 
 	it("uninstalls Codex hooks without creating Claude settings when only Codex config exists", async () => {
