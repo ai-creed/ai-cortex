@@ -149,6 +149,21 @@ Most agent memory systems blur storage, retrieval, reasoning, and automation.
 
 The goal is not to make the agent autonomous. The goal is to make project knowledge durable enough that an agent can work with the context an engineer has already established.
 
+## Inspecting Performance
+
+Run `cortex stats` (or `cortex stats --once` for a snapshot) to open the
+dashboard. The top band synthesizes a plain-language verdict from
+`memoryUsed%`, `recall→get`, and the error rate; press `?` for an overlay
+that explains every metric and its good/ok/bad thresholds (single source
+of truth: `src/lib/stats/verdict.ts`).
+
+To hide a workspace (e.g. a test/smoke-run repo) from the dashboard,
+select it with `j/k` and press:
+
+- `e` — exclude (reversible: edit `~/.cache/ai-cortex/v1/stats-config.json`)
+- `a` — archive (move cache to `~/.cache/ai-cortex/v1/_archived/<repoKey>/`)
+- `x` — clean (prompts y/n; deletes the cache dir, irreversible)
+
 ## Where To Go Next
 
 - [Getting started](./docs/getting-started.md): install, connect an agent, index a repo, capture sessions, and record a first memory.

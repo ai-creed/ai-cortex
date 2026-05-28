@@ -67,3 +67,5 @@ Premature thresholds would be confidently wrong for many real configurations. Th
 - KNOWN_LIMITATIONS — *Adoption telemetry* section
 - Design spec — `docs/superpowers/specs/2026-05-19-adoption-telemetry-design.md` (metric definitions in §6)
 - Memory layer guide — `MEMORY_LAYER.md` (the cardinal `recall_memory → get_memory` pattern that several of these dials measure)
+
+The TUI mirrors this vocabulary: open `cortex stats` and press `?` to see the same thresholds inline.

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.12.0 — 2026-05-28
+
+Self-explaining stats dashboard and TUI-driven workspace hygiene. The
+overview now leads with a plain-language verdict ("Is ai-cortex
+helping?") backed by a new aggregate adoption reader, and junk
+workspaces from test/smoke runs can be excluded, archived, or cleaned
+directly from `cortex stats`.
+
+### Added
+- `cortex stats` overview leads with a verdict band synthesizing
+  `memoryUsed%`, `recall→get`, and `err%` into a plain-language helping /
+  mixed / too-little-data verdict (`src/lib/stats/verdict.ts` is the
+  single source of truth for thresholds and phrase priority).
+- `[?]` help overlay explains every metric with its good/ok/bad
+  thresholds, sharing constants with the verdict synthesizer and panel
+  colors so the dashboard can never drift from its own legend.
+- `Effectiveness` is a first-class panel on the overview (memory used,
+  recall→get, suggest hit), backed by a new `adoptionAcross` reader and
+  `suggestHitCounts` aggregate.
+- Workspace hygiene from the TUI: `e` exclude, `a` archive, `x` clean
+  on the selected project. Only `x` prompts y/n; `assertRepoKey`
+  validates every path before any filesystem op. Exclusions live in
+  `~/.cache/ai-cortex/v1/stats-config.json`; archived caches move under
+  `~/.cache/ai-cortex/v1/_archived/<repoKey>/`.
+
+### Changed
+- Detail panel default tab is now `Effectiveness`; tabs reordered to
+  `Effectiveness · Tools · Memory · Suggest · Storage`. Numeric keys
+  `1-5` follow the new order.
+- Overview grid is `Effectiveness / Activity` over `Memory / Storage`;
+  the cache-mix panel moves into the help overlay (still on the
+  per-project Tools tab).
+- `KeyBar` advertises `j/k` nav, `Tab`, `w`, and `?help`, plus a
+  context-aware hygiene hint line for the selected project.
+- `listProjects()` honors `stats-config.json` exclusions in addition to
+  the existing underscore-prefix filter for the archive subtree.
+
 ## v0.11.1 — 2026-05-25
 
 Codex edit-time memory surfacing. The `PreToolUse` surface hook — previously Claude-only — now installs for Codex too. The v0.9.1 §13 "Codex doesn't fire `PreToolUse`" gate turned out to be a misdiagnosis of Codex's hook-trust requirement rather than an upstream defect; re-verified on codex-cli 0.133.0, `PreToolUse` fires for `apply_patch` once the hook is trusted via `/hooks`, and the captured payload confirms the patch body arrives at `tool_input.command` exactly as the parser assumed.
