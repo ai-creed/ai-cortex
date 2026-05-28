@@ -46,28 +46,27 @@ const detail = {
 };
 
 describe("DetailPanel", () => {
-	it("starts on the Tools tab and shows the project name header", () => {
+	it("starts on the Effectiveness tab and shows the project name header", () => {
 		const { lastFrame } = render(<DetailPanel detail={detail} />);
 		const frame = strip(lastFrame());
-		expect(frame).toMatch(/Tools\*/);
+		expect(frame).toMatch(/Effectiveness\*/);
 		expect(frame).toContain("ai-cortex");
-		expect(frame).toContain("suggest_files");
 	});
 
-	it("switches to Memory tab on '2'", async () => {
+	it("switches to Memory tab on '3' (new order: Effectiveness=1, Tools=2, Memory=3)", async () => {
 		const { stdin, lastFrame } = render(<DetailPanel detail={detail} />);
-		stdin.write("2");
+		stdin.write("3");
 		await flush();
 		const frame = strip(lastFrame());
 		expect(frame).toMatch(/Memory\*/);
 		expect(frame).toContain("mem-a");
 	});
 
-	it("cycles tabs on Tab", async () => {
+	it("cycles tabs on Tab (Effectiveness → Tools)", async () => {
 		const { stdin, lastFrame } = render(<DetailPanel detail={detail} />);
 		stdin.write("\t");
 		await flush();
-		expect(strip(lastFrame())).toMatch(/Memory\*/);
+		expect(strip(lastFrame())).toMatch(/Tools\*/);
 	});
 
 	it("shows an empty-state hint when detail is null", () => {
@@ -82,7 +81,7 @@ describe("DetailPanel onOpenMemoryBrowser", () => {
 		const { stdin } = render(
 			<DetailPanel detail={detail} onOpenMemoryBrowser={onOpen} />,
 		);
-		stdin.write("2"); // switch to Memory tab
+		stdin.write("3"); // switch to Memory tab (new index)
 		await flush();
 		stdin.write("\r"); // Enter
 		await flush();
@@ -94,7 +93,7 @@ describe("DetailPanel onOpenMemoryBrowser", () => {
 		const { stdin } = render(
 			<DetailPanel detail={detail} onOpenMemoryBrowser={onOpen} />,
 		);
-		stdin.write("\r"); // Enter on Tools (default)
+		stdin.write("\r"); // Enter on Effectiveness (default)
 		await flush();
 		expect(onOpen).not.toHaveBeenCalled();
 	});
@@ -104,7 +103,7 @@ describe("DetailPanel onOpenMemoryBrowser", () => {
 		const { stdin } = render(
 			<DetailPanel detail={null} onOpenMemoryBrowser={onOpen} />,
 		);
-		stdin.write("2");
+		stdin.write("3");
 		await flush();
 		stdin.write("\r");
 		await flush();

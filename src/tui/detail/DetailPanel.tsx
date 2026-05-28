@@ -27,7 +27,7 @@ export type Detail = {
 	adoption: { sessions: SessionRow[]; summary: AdoptionSummary };
 };
 
-const TABS = ["Tools", "Memory", "Suggest", "Storage", "Sessions"] as const;
+const TABS = ["Effectiveness", "Tools", "Memory", "Suggest", "Storage"] as const;
 type Tab = (typeof TABS)[number];
 
 export function DetailPanel({
@@ -41,7 +41,7 @@ export function DetailPanel({
 	window?: StatsWindow;
 	onOpenMemoryBrowser?: (repoKey: string) => void;
 }): JSX.Element {
-	const [tab, setTab] = useState<Tab>("Tools");
+	const [tab, setTab] = useState<Tab>("Effectiveness");
 	useInput(
 		(input, key) => {
 			if (
@@ -81,6 +81,9 @@ export function DetailPanel({
 				))}
 			</Text>
 			<Box marginTop={1}>
+				{tab === "Effectiveness" && (
+					<SessionsTab adoption={detail.adoption} window={windowProp} />
+				)}
 				{tab === "Tools" && (
 					<ToolsTab
 						aggregate={detail.aggregate}
@@ -102,9 +105,6 @@ export function DetailPanel({
 						storage={detail.storage}
 						meta={detail.meta}
 					/>
-				)}
-				{tab === "Sessions" && (
-					<SessionsTab adoption={detail.adoption} window={windowProp} />
 				)}
 			</Box>
 		</Box>
