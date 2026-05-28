@@ -122,19 +122,19 @@ export function App({
 						setToast(`error: ${(e as Error).message}`);
 					}
 				} else if (input === "x") {
-					// Spec §confirm dialog: include calls, origin path from
-					// cacheMeta when available, and size so the user knows
-					// disk impact.
+					// Spec §confirm dialog (line 243): "Origin path comes from
+					// cacheMeta when available; otherwise omitted." CacheMeta
+					// today carries indexedAt / fingerprint / fileCount / name
+					// — no worktree origin path — so we omit (path = null).
+					// fingerprint is a content hash, not a path; do NOT surface
+					// it as the origin path.
 					const bytes = snap?.ov.storage[proj.repoKey] ?? 0;
-					const det = snap?.det;
-					const fingerprint =
-						det && det.repoKey === proj.repoKey ? det.meta.fingerprint : null;
 					setConfirm({
 						repoKey: proj.repoKey,
 						label: proj.name ?? proj.repoKey,
 						calls: proj.calls,
 						bytes,
-						path: fingerprint,
+						path: null,
 					});
 				}
 			}

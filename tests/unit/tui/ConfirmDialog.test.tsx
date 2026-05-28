@@ -40,7 +40,7 @@ describe("ConfirmDialog", () => {
 		expect(onCancel).not.toHaveBeenCalled();
 	});
 
-	it("Esc triggers onCancel", async () => {
+	it("n triggers onCancel", async () => {
 		const onConfirm = vi.fn();
 		const onCancel = vi.fn();
 		const { stdin } = render(
@@ -49,5 +49,21 @@ describe("ConfirmDialog", () => {
 		stdin.write("n");
 		await new Promise((r) => setImmediate(r));
 		expect(onCancel).toHaveBeenCalledOnce();
+		expect(onConfirm).not.toHaveBeenCalled();
+	});
+
+	it("Esc triggers onCancel (escape byte; needs ink's escape-flush delay)", async () => {
+		const onConfirm = vi.fn();
+		const onCancel = vi.fn();
+		const { stdin } = render(
+			<ConfirmDialog title="Clean?" body={["x"]} danger="x" onConfirm={onConfirm} onCancel={onCancel} />,
+		);
+		// Bare ESC byte. Ink's input parser waits briefly before flushing ESC
+		// (to distinguish from CSI sequences like arrow keys). 250ms is safely
+		// beyond that flush window.
+		stdin.write("\x1b");
+		await new Promise((r) => setTimeout(r, 250));
+		expect(onCancel).toHaveBeenCalledOnce();
+		expect(onConfirm).not.toHaveBeenCalled();
 	});
 });

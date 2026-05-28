@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render } from "ink-testing-library";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,6 +7,7 @@ import path from "node:path";
 import { App, type AppProps } from "../../../src/tui/App.js";
 import { cacheRoot, statsConfigPath } from "../../../src/lib/stats/paths.js";
 import type { Snapshot } from "../../../src/tui/readAll.js";
+import * as hygiene from "../../../src/lib/stats/hygiene.js";
 
 const SNAP: Snapshot = {
 	projects: [
@@ -105,5 +106,36 @@ describe("App hygiene + help wiring", () => {
 		await flush();
 		expect(lastFrame()).not.toContain("Clean workspace?");
 		expect(fs.existsSync(path.join(cacheRoot(), "aaaaaaaaaaaaaaaa"))).toBe(true);
+	});
+
+	it("x then Esc cancels without deleting", async () => {
+		const { stdin, lastFrame } = render(<App read={read} termSize={{ cols: 100, rows: 40 }} />);
+		await flush();
+		stdin.write("x");
+		await flush();
+		stdin.write("\x1b"); // Esc
+		await new Promise((r) => setTimeout(r, 250)); // ink ESC flush window
+		expect(lastFrame()).not.toContain("Clean workspace?");
+		expect(fs.existsSync(path.join(cacheRoot(), "aaaaaaaaaaaaaaaa"))).toBe(true);
+	});
+
+	it("clean failure surfaces an error toast (does not crash)", async () => {
+		// Spec §testing line 303: "clean failure rolls back nothing but shows
+		// error toast." Force cleanWorkspace to throw and assert the toast.
+		const spy = vi
+			.spyOn(hygiene, "cleanWorkspace")
+			.mockImplementation(() => {
+				throw new Error("EACCES: permission denied");
+			});
+		const { stdin, lastFrame } = render(<App read={read} termSize={{ cols: 100, rows: 40 }} />);
+		await flush();
+		stdin.write("x");
+		await flush();
+		stdin.write("y");
+		await flush();
+		const frame = lastFrame() ?? "";
+		expect(frame).toContain("error:");
+		expect(frame).toContain("EACCES");
+		spy.mockRestore();
 	});
 });
