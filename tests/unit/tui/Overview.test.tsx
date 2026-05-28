@@ -26,7 +26,10 @@ describe("Overview", () => {
 				memory={{ active: 247, candidate: 62, pinned: 1, deprecated: 4, topAccessed: [] }}
 				storage={{ "ai-cortex": 18_000_000, "ai-whisper": 11_000_000 }}
 				projectNames={{ "ai-cortex": "ai-cortex", "ai-whisper": "ai-whisper" }}
-				recallGetRatio={0.73}
+				memoryUsedPct={72}
+				recallToGetPct={73}
+				suggestHitPct={61}
+				totalSessions={11}
 				selected={0}
 				onSelect={() => {}}
 			/>,
@@ -54,7 +57,10 @@ describe("Overview", () => {
 				memory={{ active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [] }}
 				storage={{}}
 				projectNames={{}}
-				recallGetRatio={0}
+				memoryUsedPct={0}
+				recallToGetPct={0}
+				suggestHitPct={0}
+				totalSessions={0}
 				selected={0}
 				onSelect={() => {}}
 			/>,
