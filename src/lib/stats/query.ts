@@ -1,10 +1,9 @@
 // src/lib/stats/query.ts
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { Database as DB } from "better-sqlite3";
-import { statsDbPath } from "./paths.js";
+import { cacheRoot, statsDbPath } from "./paths.js";
 import { indexDbPath } from "../memory/paths.js";
 import { WINDOW_MS, type StatsWindow } from "./types.js";
 
@@ -208,13 +207,6 @@ let storageCache: { at: number; data: Record<string, number> } | null = null;
 
 export function _resetStorageCacheForTest(): void {
 	storageCache = null;
-}
-
-function cacheRoot(): string {
-	return (
-		process.env.AI_CORTEX_CACHE_HOME ??
-		path.join(os.homedir(), ".cache", "ai-cortex", "v1")
-	);
 }
 
 function dirSize(dir: string): number {
