@@ -7,6 +7,7 @@ describe("VerdictBand", () => {
 	it("renders the green verdict text and the 4-metric strip", () => {
 		const { lastFrame } = render(
 			<VerdictBand
+				title="Is ai-cortex helping?"
 				memoryUsedPct={72}
 				recallToGetPct={72}
 				suggestHitPct={61}
@@ -26,15 +27,31 @@ describe("VerdictBand", () => {
 
 	it("renders muted verdict on low data", () => {
 		const { lastFrame } = render(
-			<VerdictBand memoryUsedPct={0} recallToGetPct={0} suggestHitPct={0} errPct={0} totalSessions={1} totalCalls={3} />,
+			<VerdictBand title="Is ai-cortex helping?" memoryUsedPct={0} recallToGetPct={0} suggestHitPct={0} errPct={0} totalSessions={1} totalCalls={3} />,
 		);
 		expect(lastFrame()).toContain("too little data yet to tell");
 	});
 
 	it("renders mixed verdict naming error rate when err% >= 5", () => {
 		const { lastFrame } = render(
-			<VerdictBand memoryUsedPct={72} recallToGetPct={72} suggestHitPct={61} errPct={5.6} totalSessions={11} totalCalls={321} />,
+			<VerdictBand title="Is ai-cortex helping?" memoryUsedPct={72} recallToGetPct={72} suggestHitPct={61} errPct={5.6} totalSessions={11} totalCalls={321} />,
 		);
 		expect(lastFrame()).toContain("mixed — error rate is high");
+	});
+
+	it("renders the `title` prop verbatim (parameterized title)", () => {
+		const { lastFrame } = render(
+			<VerdictBand
+				title="ai-cortex (this project)"
+				memoryUsedPct={72}
+				recallToGetPct={72}
+				suggestHitPct={61}
+				errPct={3.2}
+				totalSessions={11}
+				totalCalls={321}
+			/>,
+		);
+		expect(lastFrame()).toContain("ai-cortex (this project)");
+		expect(lastFrame()).not.toContain("Is ai-cortex helping?");
 	});
 });

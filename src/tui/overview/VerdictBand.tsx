@@ -4,6 +4,7 @@ import { synthesizeVerdict, THRESHOLDS } from "../../lib/stats/verdict.js";
 import { THEME } from "../theme.js";
 
 export type VerdictBandProps = {
+	title: string;
 	memoryUsedPct: number;
 	recallToGetPct: number;
 	suggestHitPct: number;
@@ -38,7 +39,7 @@ export function VerdictBand(p: VerdictBandProps): JSX.Element {
 	});
 	return (
 		<Box borderStyle="single" flexDirection="column" paddingX={1}>
-			<Text bold>Is ai-cortex helping?</Text>
+			<Text bold>{p.title}</Text>
 			<Text>
 				<Text color={dotColor(v.dot)}>{dotChar(v.dot)}</Text> {v.text}
 			</Text>

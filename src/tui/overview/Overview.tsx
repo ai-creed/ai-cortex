@@ -39,6 +39,7 @@ export function Overview(p: OverviewProps): JSX.Element {
 		<Box flexDirection="column">
 			<Text bold color={THEME.accent}>ai-cortex stats · {p.window}</Text>
 			<VerdictBand
+				title="Is ai-cortex helping?"
 				memoryUsedPct={p.memoryUsedPct}
 				recallToGetPct={p.recallToGetPct}
 				suggestHitPct={p.suggestHitPct}
