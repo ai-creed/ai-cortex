@@ -50,6 +50,7 @@ function makeRead() {
 				}
 			: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
 		recallGetRatio: 0,
+		suggestHit: 0,
 		adoption: EMPTY_ADOPTION,
 	}));
 }
