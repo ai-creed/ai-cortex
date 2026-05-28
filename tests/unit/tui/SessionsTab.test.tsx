@@ -33,6 +33,8 @@ describe("SessionsTab", () => {
 			sessionCount: 1,
 			memoryUsedPct: 100,
 			recallToGetPct: 100,
+			sessionsRecalled: 1,
+			sessionsRecallToGet: 1,
 			surfaceToGetPct: 0,
 			extractCleanupPct: 0,
 			unattributedShare: 0,
