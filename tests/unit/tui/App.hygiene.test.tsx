@@ -14,12 +14,12 @@ const SNAP: Snapshot = {
 		{ repoKey: "bbbbbbbbbbbbbbbb", name: null, calls: 0 },
 	],
 	projectNames: { aaaaaaaaaaaaaaaa: "ai-cortex", bbbbbbbbbbbbbbbb: null },
-	aggregate: { total: 100, errs: 1, p50: 10, p95: 100, cache_status: { fresh: 100, reindexed: 0, stale: 0 } } as any,
-	memory: { active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [], recallToGet: 0 } as any,
-	storage: {},
+	aggregate: { total: 100, errs: 1, p50: 10, p95: 100, cache_status: { fresh: 100, reindexed: 0, stale: 0 } },
+	memory: { active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [] },
+	storage: { aaaaaaaaaaaaaaaa: 250_000, bbbbbbbbbbbbbbbb: 0 },
 	latencyPerTool: {},
 	topTools: [],
-	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: null } as any,
+	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
 	recallGetRatio: 0,
 	suggestHit: 0,
 	adoption: {
@@ -77,12 +77,19 @@ describe("App hygiene + help wiring", () => {
 		expect(lastFrame()).toContain("excluded");
 	});
 
-	it("x opens confirm; y deletes the cache dir", async () => {
+	it("x opens confirm showing calls + size + impact; y deletes the cache dir", async () => {
 		const { stdin, lastFrame } = render(<App read={read} termSize={{ cols: 100, rows: 40 }} />);
 		await flush();
 		stdin.write("x");
 		await flush();
-		expect(lastFrame()).toContain("Clean workspace?");
+		const frame = lastFrame() ?? "";
+		// Spec §confirm dialog (clean only): must show calls, size,
+		// and disk-impact framing so the user knows what's lost.
+		expect(frame).toContain("Clean workspace?");
+		expect(frame).toContain("100 calls");
+		expect(frame).toContain("0.3 MB");
+		expect(frame).toContain("frees ~0.3 MB");
+		expect(frame).toContain("cannot be undone");
 		stdin.write("y");
 		await flush();
 		expect(fs.existsSync(path.join(cacheRoot(), "aaaaaaaaaaaaaaaa"))).toBe(false);

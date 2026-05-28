@@ -2,21 +2,22 @@ import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 import { AggregatePanels } from "../../../src/tui/overview/AggregatePanels.js";
+import type { Aggregate, MemoryHealth } from "../../../src/lib/stats/query.js";
 
-const aggregate = {
+const aggregate: Aggregate = {
 	total: 321, errs: 10, p50: 41, p95: 374,
 	cache_status: { fresh: 100, reindexed: 50, stale: 0 },
 };
-const memory = {
+const memory: MemoryHealth = {
 	active: 72, candidate: 139, pinned: 1, deprecated: 231,
-	topAccessed: [], recallToGet: 0.72,
-} as any;
+	topAccessed: [],
+};
 
 describe("AggregatePanels recompose", () => {
 	it("renders Effectiveness first and Activity second in row 1", () => {
 		const { lastFrame } = render(
 			<AggregatePanels
-				aggregate={aggregate as any}
+				aggregate={aggregate}
 				memory={memory}
 				storage={{ aaaaaaaaaaaaaaaa: 18_000_000 }}
 				projectNames={{ aaaaaaaaaaaaaaaa: "ai-cortex" }}
@@ -35,7 +36,7 @@ describe("AggregatePanels recompose", () => {
 	it("Memory panel does not duplicate recall→get from Effectiveness", () => {
 		const { lastFrame } = render(
 			<AggregatePanels
-				aggregate={aggregate as any}
+				aggregate={aggregate}
 				memory={memory}
 				storage={{}}
 				projectNames={{}}
@@ -52,7 +53,7 @@ describe("AggregatePanels recompose", () => {
 	it("removes the Cache mix panel from the overview grid", () => {
 		const { lastFrame } = render(
 			<AggregatePanels
-				aggregate={aggregate as any}
+				aggregate={aggregate}
 				memory={memory}
 				storage={{}}
 				projectNames={{}}

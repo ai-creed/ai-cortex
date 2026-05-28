@@ -2,12 +2,13 @@ import React from "react";
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 import { Overview } from "../../../src/tui/overview/Overview.js";
+import type { Aggregate, MemoryHealth } from "../../../src/lib/stats/query.js";
 
-const aggregate = {
+const aggregate: Aggregate = {
 	total: 321, errs: 10, p50: 41, p95: 374,
 	cache_status: { fresh: 100, reindexed: 50, stale: 0 },
-} as any;
-const memory = { active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [], recallToGet: 0 } as any;
+};
+const memory: MemoryHealth = { active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [] };
 
 describe("Overview renders VerdictBand on top", () => {
 	it("VerdictBand appears above the projects/panels block", () => {

@@ -43,7 +43,13 @@ export function App({
 	const [lastErr, setLastErr] = useState<string | null>(null);
 	const [browserRepoKey, setBrowserRepoKey] = useState<string | null>(null);
 	const [helpOpen, setHelpOpen] = useState(false);
-	const [confirm, setConfirm] = useState<null | { repoKey: string; label: string }>(null);
+	const [confirm, setConfirm] = useState<null | {
+		repoKey: string;
+		label: string;
+		calls: number;
+		bytes: number;
+		path: string | null;
+	}>(null);
 	const [toast, setToast] = useState<string | null>(null);
 	const selectedRef = useRef(0);
 	selectedRef.current = selected;
@@ -116,7 +122,20 @@ export function App({
 						setToast(`error: ${(e as Error).message}`);
 					}
 				} else if (input === "x") {
-					setConfirm({ repoKey: proj.repoKey, label: proj.name ?? proj.repoKey });
+					// Spec §confirm dialog: include calls, origin path from
+					// cacheMeta when available, and size so the user knows
+					// disk impact.
+					const bytes = snap?.ov.storage[proj.repoKey] ?? 0;
+					const det = snap?.det;
+					const fingerprint =
+						det && det.repoKey === proj.repoKey ? det.meta.fingerprint : null;
+					setConfirm({
+						repoKey: proj.repoKey,
+						label: proj.name ?? proj.repoKey,
+						calls: proj.calls,
+						bytes,
+						path: fingerprint,
+					});
 				}
 			}
 		},
@@ -172,9 +191,13 @@ export function App({
 					title="Clean workspace?"
 					body={[
 						"Permanently delete cached stats + index for",
-						`  ${confirm.label}`,
+						`  ${confirm.label}   ${confirm.calls} calls${
+							confirm.path ? ` · ${confirm.path}` : ""
+						} · ${(confirm.bytes / 1_000_000).toFixed(1)} MB`,
 					]}
-					danger="This deletes the cache dir and cannot be undone."
+					danger={`This deletes the cache dir (frees ~${(
+						confirm.bytes / 1_000_000
+					).toFixed(1)} MB) and cannot be undone.`}
 					onConfirm={() => {
 						try {
 							cleanWorkspace(confirm.repoKey);
