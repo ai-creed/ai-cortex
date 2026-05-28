@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { Database as DB } from "better-sqlite3";
 import { cacheRoot, statsDbPath } from "./paths.js";
+import { readExcluded } from "./hygiene.js";
 import { indexDbPath } from "../memory/paths.js";
 import { WINDOW_MS, type StatsWindow } from "./types.js";
 
@@ -421,9 +422,11 @@ export function listProjects(): string[] {
 	} catch {
 		return [];
 	}
+	const excluded = new Set(readExcluded());
 	return entries
 		.filter((e) => e.isDirectory() && REPO_KEY_RE.test(e.name))
 		.map((e) => e.name)
+		.filter((n) => !excluded.has(n))
 		.sort();
 }
 
