@@ -160,6 +160,10 @@ average. Press `?` for an overlay that explains every metric and its
 good/ok/bad thresholds (single source of truth:
 `src/lib/stats/verdict.ts`).
 
+<p align="center">
+  <img src="docs/assets/dashboard-two-verdicts.png" alt="cortex stats dashboard showing two verdict bands: 'Is ai-cortex helping? (all projects)' with a mixed/yellow verdict above 'ai-cortex (this project)' with a green YES verdict, plus per-project Effectiveness/Activity/Memory panels and a cross-project Storage panel" width="800" />
+</p>
+
 To hide a workspace (e.g. a test/smoke-run repo) from the dashboard,
 select it with `j/k` and press:
 
