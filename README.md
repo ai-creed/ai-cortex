@@ -152,10 +152,13 @@ The goal is not to make the agent autonomous. The goal is to make project knowle
 ## Inspecting Performance
 
 Run `cortex stats` (or `cortex stats --once` for a snapshot) to open the
-dashboard. The top band synthesizes a plain-language verdict from
-`memoryUsed%`, `recall→get`, and the error rate; press `?` for an overlay
-that explains every metric and its good/ok/bad thresholds (single source
-of truth: `src/lib/stats/verdict.ts`).
+dashboard. The top of the overview shows two verdict bands: one
+synthesizing "Is ai-cortex helping? (all projects)" across every cached
+workspace, and one named after the currently-selected project so a
+single workspace's signal is never drowned out by the cross-project
+average. Press `?` for an overlay that explains every metric and its
+good/ok/bad thresholds (single source of truth:
+`src/lib/stats/verdict.ts`).
 
 To hide a workspace (e.g. a test/smoke-run repo) from the dashboard,
 select it with `j/k` and press:

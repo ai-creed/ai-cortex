@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.12.1 — 2026-05-28
+
+### Changed
+- `cortex stats` overview now renders two verdict bands: one for "all
+  projects" (the v0.12.0 behavior) and a second for the currently-
+  selected project so per-workspace signal isn't drowned by the
+  cross-project average. The `Effectiveness` / `Activity` / `Memory`
+  panels follow the selected project too; `Storage` stays aggregate
+  (top-N is more useful that way).
+
+### Fixed
+- When opened on an empty cache (no workspaces yet), the dashboard
+  cleanly hides the per-project verdict band instead of rendering a
+  blank row.
+
+---
+
 ## v0.12.0 — 2026-05-28
 
 Self-explaining stats dashboard and TUI-driven workspace hygiene. The
