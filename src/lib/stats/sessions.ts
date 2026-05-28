@@ -3,6 +3,7 @@ import Database, { type Database as DB } from "better-sqlite3";
 import fs from "node:fs";
 import { statsDbPath } from "./paths.js";
 import { readSurfaceEvents } from "./surface-events.js";
+import { WINDOW_MS, type StatsWindow } from "./types.js";
 
 const UNATTRIBUTED = "(unattributed)";
 const CLEANUP = new Set([
@@ -27,6 +28,10 @@ export type AdoptionSummary = {
 	sessionCount: number;
 	memoryUsedPct: number;
 	recallToGetPct: number;
+	/** Raw count: sessions with at least one recall_memory call in window. */
+	sessionsRecalled: number;
+	/** Raw count: subset of sessionsRecalled that did get_memory after first recall. */
+	sessionsRecallToGet: number;
 	surfaceToGetPct: number;
 	extractCleanupPct: number;
 	unattributedShare: number;
@@ -40,6 +45,8 @@ export const EMPTY_ADOPTION: { sessions: SessionRow[]; summary: AdoptionSummary 
 		sessionCount: 0,
 		memoryUsedPct: 0,
 		recallToGetPct: 0,
+		sessionsRecalled: 0,
+		sessionsRecallToGet: 0,
 		surfaceToGetPct: 0,
 		extractCleanupPct: 0,
 		unattributedShare: 0,
@@ -169,6 +176,8 @@ export function loadSessionAdoption(
 		sessionCount: sessions.length,
 		memoryUsedPct: pct(used, sessions.length),
 		recallToGetPct: pct(recallToGet, recallSessions),
+		sessionsRecalled: recallSessions,
+		sessionsRecallToGet: recallToGet,
 		surfaceToGetPct: pct(surfToGet, surfSessions),
 		extractCleanupPct: pct(cleanup, candidates),
 		unattributedShare: totalEvents === 0 ? 0 : unattributed / totalEvents,
@@ -178,4 +187,53 @@ export function loadSessionAdoption(
 		sessions: sessions.sort((a, b) => b.lastTs - a.lastTs),
 		summary,
 	};
+}
+
+/**
+ * Module-level indirection table so `adoptionAcross` calls a binding that can
+ * be replaced by `vi.spyOn(sessions, "_loadAdoption")` in tests. Internal
+ * function references inside the compiled ESM don't go through the exports
+ * table, so a plain `vi.spyOn(sessionsMod, "loadSessionAdoption")` cannot
+ * intercept the self-call. This is the documented escape hatch.
+ */
+export const _adoptionInternals = { load: loadSessionAdoption };
+
+export function adoptionAcross(
+	repoKeys: string[],
+	window: StatsWindow,
+): { sessions: SessionRow[]; summary: AdoptionSummary } {
+	if (repoKeys.length === 0) return EMPTY_ADOPTION;
+	const windowMs = WINDOW_MS[window];
+
+	let sessionCount = 0;
+	let used = 0;
+	let sessionsRecalled = 0;
+	let sessionsRecallToGet = 0;
+
+	for (const rk of repoKeys) {
+		let part: ReturnType<typeof loadSessionAdoption>;
+		try {
+			part = _adoptionInternals.load(rk, { windowMs });
+		} catch {
+			continue;
+		}
+		sessionCount += part.summary.sessionCount;
+		used += part.summary.histogram.used;
+		sessionsRecalled += part.summary.sessionsRecalled;
+		sessionsRecallToGet += part.summary.sessionsRecallToGet;
+	}
+
+	const pct = (n: number, d: number) => (d === 0 ? 0 : (n / d) * 100);
+	const summary: AdoptionSummary = {
+		sessionCount,
+		memoryUsedPct: pct(used, sessionCount),
+		recallToGetPct: pct(sessionsRecallToGet, sessionsRecalled),
+		sessionsRecalled,
+		sessionsRecallToGet,
+		surfaceToGetPct: 0,
+		extractCleanupPct: 0,
+		unattributedShare: 0,
+		histogram: { used, notUsed: Math.max(0, sessionCount - used) },
+	};
+	return { sessions: [], summary };
 }
