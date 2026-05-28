@@ -46,7 +46,7 @@ describe("ConfirmDialog", () => {
 		const { stdin } = render(
 			<ConfirmDialog title="Clean?" body={["x"]} danger="x" onConfirm={onConfirm} onCancel={onCancel} />,
 		);
-		stdin.write("");
+		stdin.write("n");
 		await new Promise((r) => setImmediate(r));
 		expect(onCancel).toHaveBeenCalledOnce();
 	});
