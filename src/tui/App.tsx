@@ -5,8 +5,17 @@ import { useStatsTick } from "./hooks/useStatsTick.js";
 import { Overview } from "./overview/Overview.js";
 import { DetailPanel, type Detail } from "./detail/DetailPanel.js";
 import { KeyBar } from "./components/KeyBar.js";
+import { HelpOverlay } from "./components/HelpOverlay.js";
+import { ConfirmDialog } from "./components/ConfirmDialog.js";
+import { Toast } from "./components/Toast.js";
 import { MemoryBrowser } from "./memory/MemoryBrowser.js";
 import { readAll, type Snapshot } from "./readAll.js";
+import {
+	excludeWorkspace,
+	archiveWorkspace,
+	cleanWorkspace,
+} from "../lib/stats/hygiene.js";
+import { statsConfigPath, archiveDir } from "../lib/stats/paths.js";
 
 const MIN_COLS = 80;
 const MIN_ROWS = 24;
@@ -33,6 +42,9 @@ export function App({
 	const [selected, setSelected] = useState(0);
 	const [lastErr, setLastErr] = useState<string | null>(null);
 	const [browserRepoKey, setBrowserRepoKey] = useState<string | null>(null);
+	const [helpOpen, setHelpOpen] = useState(false);
+	const [confirm, setConfirm] = useState<null | { repoKey: string; label: string }>(null);
+	const [toast, setToast] = useState<string | null>(null);
 	const selectedRef = useRef(0);
 	selectedRef.current = selected;
 	const initialProjectRef = useRef(initialProject);
@@ -42,31 +54,20 @@ export function App({
 			const ov = read(window, null);
 			const projs = ov.projects;
 			if (initialProjectRef.current) {
-				const idx = projs.findIndex(
-					(p) => p.repoKey === initialProjectRef.current,
-				);
+				const idx = projs.findIndex((p) => p.repoKey === initialProjectRef.current);
 				initialProjectRef.current = null;
-				if (idx >= 0) {
-					selectedRef.current = idx;
-					setSelected(idx);
-				}
+				if (idx >= 0) { selectedRef.current = idx; setSelected(idx); }
 			}
 			const rk = projs[selectedRef.current]?.repoKey ?? null;
-			const det: Detail | null = rk
-				? (() => {
-						const s = read(window, rk);
-						return {
-							repoKey: rk,
-							aggregate: s.aggregate,
-							latencyPerTool: s.latencyPerTool,
-							topTools: s.topTools,
-							memory: s.memory,
-							storage: s.storage,
-							meta: s.meta,
-							adoption: s.adoption,
-						};
-					})()
-				: null;
+			const det: Detail | null = rk ? (() => {
+				const s = read(window, rk);
+				return {
+					repoKey: rk,
+					aggregate: s.aggregate, latencyPerTool: s.latencyPerTool,
+					topTools: s.topTools, memory: s.memory, storage: s.storage,
+					meta: s.meta, adoption: s.adoption,
+				};
+			})() : null;
 			setLastErr(null);
 			return { ov, det };
 		} catch (e) {
@@ -75,20 +76,48 @@ export function App({
 		}
 	}, once ? 60_000 : 1500);
 
-	const onSelect = (i: number) => {
-		selectedRef.current = i;
-		setSelected(i);
-		refresh();
+	const onSelect = (i: number) => { selectedRef.current = i; setSelected(i); refresh(); };
+
+	const moveSelectionAfterRemoval = (idx: number, newLen: number) => {
+		if (newLen === 0) { setSelected(0); return; }
+		setSelected(Math.min(idx, newLen - 1));
 	};
 
 	useInput(
-		(input) => {
+		(input, key) => {
+			if (confirm !== null) return;
+			if (input === "?") { setHelpOpen((v) => !v); return; }
+			if (helpOpen) { if (key.escape) setHelpOpen(false); return; }
 			if (input === "q") exit();
-			if (input === "r") refresh();
-			if (input === "w") {
+			else if (input === "r") refresh();
+			else if (input === "w") {
 				const order: StatsWindow[] = ["1h", "24h", "7d", "30d"];
 				const i = order.indexOf(window);
 				setWindow(order[(i + 1) % order.length]);
+			} else {
+				const proj = snap?.ov.projects[selectedRef.current];
+				if (!proj) return;
+				if (input === "e") {
+					try {
+						excludeWorkspace(proj.repoKey);
+						setToast(`✓ excluded ${proj.name ?? proj.repoKey.slice(0, 14)} — edit ${statsConfigPath()} to restore.`);
+						moveSelectionAfterRemoval(selectedRef.current, (snap?.ov.projects.length ?? 1) - 1);
+						refresh();
+					} catch (e) {
+						setToast(`error: ${(e as Error).message}`);
+					}
+				} else if (input === "a") {
+					try {
+						archiveWorkspace(proj.repoKey);
+						setToast(`✓ archived ${proj.repoKey} — moved to ${archiveDir(proj.repoKey)}`);
+						moveSelectionAfterRemoval(selectedRef.current, (snap?.ov.projects.length ?? 1) - 1);
+						refresh();
+					} catch (e) {
+						setToast(`error: ${(e as Error).message}`);
+					}
+				} else if (input === "x") {
+					setConfirm({ repoKey: proj.repoKey, label: proj.name ?? proj.repoKey });
+				}
 			}
 		},
 		{ isActive: !once && browserRepoKey === null },
@@ -101,16 +130,16 @@ export function App({
 	if (browserRepoKey !== null) {
 		return (
 			<MemoryBrowser
-				repoKey={browserRepoKey}
-				window={window}
-				interactive={!once}
-				termSize={termSize}
+				repoKey={browserRepoKey} window={window}
+				interactive={!once} termSize={termSize}
 				onExit={() => setBrowserRepoKey(null)}
 			/>
 		);
 	}
 
 	if (!snap) return <Text>Loading…</Text>;
+
+	const selProj = snap.ov.projects[selected];
 
 	return (
 		<Box flexDirection="column">
@@ -121,30 +150,54 @@ export function App({
 				memory={snap.ov.memory}
 				storage={snap.ov.storage}
 				projectNames={snap.ov.projectNames}
-				recallGetRatio={snap.ov.recallGetRatio}
+				memoryUsedPct={snap.ov.adoption.summary.memoryUsedPct}
+				recallToGetPct={snap.ov.adoption.summary.recallToGetPct}
+				suggestHitPct={snap.ov.suggestHit * 100}
+				totalSessions={snap.ov.adoption.summary.sessionCount}
 				selected={selected}
 				onSelect={onSelect}
-				interactive={!once}
+				interactive={!once && !helpOpen && confirm === null}
 			/>
 			<Box marginTop={1}>
 				<DetailPanel
 					detail={snap.det}
-					interactive={!once && browserRepoKey === null}
+					interactive={!once && browserRepoKey === null && !helpOpen && confirm === null}
 					window={window}
-					onOpenMemoryBrowser={
-						once ? undefined : (rk) => setBrowserRepoKey(rk)
-					}
+					onOpenMemoryBrowser={once ? undefined : (rk) => setBrowserRepoKey(rk)}
 				/>
 			</Box>
+			{helpOpen && <HelpOverlay />}
+			{confirm && (
+				<ConfirmDialog
+					title="Clean workspace?"
+					body={[
+						"Permanently delete cached stats + index for",
+						`  ${confirm.label}`,
+					]}
+					danger="This deletes the cache dir and cannot be undone."
+					onConfirm={() => {
+						try {
+							cleanWorkspace(confirm.repoKey);
+							setToast(`✓ cleaned ${confirm.label}`);
+							moveSelectionAfterRemoval(selectedRef.current, (snap?.ov.projects.length ?? 1) - 1);
+						} catch (e) {
+							setToast(`error: ${(e as Error).message}`);
+						} finally {
+							setConfirm(null);
+							refresh();
+						}
+					}}
+					onCancel={() => setConfirm(null)}
+				/>
+			)}
 			<KeyBar
 				hints={[
-					["q", "uit"],
-					["r", "efresh"],
-					["Tab", "tab"],
-					["w", "indow"],
+					["q", "uit"], ["r", "efresh"], ["j/k", "nav"], ["Tab", "tab"], ["w", "indow"], ["?", "help"],
 				]}
+				selectedLabel={selProj ? selProj.name ?? selProj.repoKey.slice(0, 14) : null}
 				statusLine={lastErr ? `last error: ${lastErr}` : undefined}
 			/>
+			<Toast message={toast} onDismiss={() => setToast(null)} />
 		</Box>
 	);
 }

@@ -56,7 +56,7 @@ function makeRead() {
 }
 
 describe("App", () => {
-	it("renders the project list with an inline detail panel (Tools by default)", async () => {
+	it("renders the project list with an inline detail panel (Effectiveness by default)", async () => {
 		const { lastFrame } = render(
 			<App read={makeRead() as AppProps["read"]} initialWindow="7d" once={true} />,
 		);
@@ -64,9 +64,8 @@ describe("App", () => {
 		const frame = strip(lastFrame());
 		expect(frame).toContain("ai-cortex");
 		expect(frame).toContain("ai-whisper");
-		expect(frame).toMatch(/Tools\*/);
+		expect(frame).toMatch(/Effectiveness\*/);
 		expect(frame).toContain("[q]uit");
-		// No separate-screen back affordance.
 		expect(frame).not.toContain("[Esc]");
 	});
 
@@ -81,12 +80,12 @@ describe("App", () => {
 		expect(frame).toContain("── ai-whisper ──");
 	});
 
-	it("switches the detail tab with '2'", async () => {
+	it("switches the detail tab with '3' (Memory is now index 3 in new order)", async () => {
 		const { stdin, lastFrame } = render(
 			<App read={makeRead() as AppProps["read"]} initialWindow="7d" />,
 		);
 		await flush();
-		stdin.write("2");
+		stdin.write("3");
 		await flush();
 		expect(strip(lastFrame())).toMatch(/Memory\*/);
 	});
@@ -111,9 +110,9 @@ describe("App memory-browser view", () => {
 		);
 		await flush();
 		// move to a project with data is already default selected[0]
-		stdin.write("\t"); // DetailPanel: Tools → Memory? Tab cycles within DetailPanel
-		// The DetailPanel owns tab; press '2' to go straight to Memory:
-		stdin.write("2");
+		stdin.write("\t"); // DetailPanel cycles tabs
+		// New order: Effectiveness=1, Tools=2, Memory=3
+		stdin.write("3");
 		await flush();
 		stdin.write("\r"); // Enter on Memory tab
 		await flush();
