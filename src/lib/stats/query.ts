@@ -81,6 +81,38 @@ export function aggregate(repoKey: string, window: StatsWindow): Aggregate {
 	}
 }
 
+export function suggestHitCounts(
+	repoKey: string,
+	window: StatsWindow,
+): { hits: number; total: number } {
+	const db = openRO(repoKey);
+	if (!db) return { hits: 0, total: 0 };
+	try {
+		const since = Date.now() - WINDOW_MS[window];
+		// Spec §testing: nulls excluded — `result_count IS NOT NULL` keeps
+		// rows without a recorded outcome from poisoning the denominator.
+		const row = db
+			.prepare(
+				`SELECT
+					count(*) AS total,
+					sum(CASE WHEN result_count > 0 THEN 1 ELSE 0 END) AS hits
+				   FROM tool_calls
+				  WHERE tool = 'suggest_files'
+				    AND ts > ?
+				    AND result_count IS NOT NULL`,
+			)
+			.get(since) as { total: number | null; hits: number | null };
+		return { hits: row.hits ?? 0, total: row.total ?? 0 };
+	} finally {
+		db.close();
+	}
+}
+
+export function suggestHitRate(repoKey: string, window: StatsWindow): number {
+	const { hits, total } = suggestHitCounts(repoKey, window);
+	return total === 0 ? 0 : hits / total;
+}
+
 export type ToolStat = { tool: string; n: number; errs: number };
 
 export function topTools(
