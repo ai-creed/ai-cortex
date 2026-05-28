@@ -30,6 +30,14 @@ describe("Overview", () => {
 				recallToGetPct={73}
 				suggestHitPct={61}
 				totalSessions={11}
+				selectedRepoKey={null}
+				selectedName={null}
+				selectedAggregate={null}
+				selectedMemory={null}
+				selectedMemoryUsedPct={0}
+				selectedRecallToGetPct={0}
+				selectedSuggestHitPct={0}
+				selectedTotalSessions={0}
 				selected={0}
 				onSelect={() => {}}
 			/>,
@@ -61,6 +69,14 @@ describe("Overview", () => {
 				recallToGetPct={0}
 				suggestHitPct={0}
 				totalSessions={0}
+				selectedRepoKey={null}
+				selectedName={null}
+				selectedAggregate={null}
+				selectedMemory={null}
+				selectedMemoryUsedPct={0}
+				selectedRecallToGetPct={0}
+				selectedSuggestHitPct={0}
+				selectedTotalSessions={0}
 				selected={0}
 				onSelect={() => {}}
 			/>,

@@ -173,12 +173,20 @@ export function App({
 				projects={snap.ov.projects}
 				aggregate={snap.ov.aggregate}
 				memory={snap.ov.memory}
-				storage={snap.ov.storage}
-				projectNames={snap.ov.projectNames}
 				memoryUsedPct={snap.ov.adoption.summary.memoryUsedPct}
 				recallToGetPct={snap.ov.adoption.summary.recallToGetPct}
 				suggestHitPct={snap.ov.suggestHit * 100}
 				totalSessions={snap.ov.adoption.summary.sessionCount}
+				selectedRepoKey={snap.det?.repoKey ?? null}
+				selectedName={snap.det?.meta.name ?? null}
+				selectedAggregate={snap.det?.aggregate ?? null}
+				selectedMemory={snap.det?.memory ?? null}
+				selectedMemoryUsedPct={snap.det?.adoption.summary.memoryUsedPct ?? 0}
+				selectedRecallToGetPct={snap.det?.adoption.summary.recallToGetPct ?? 0}
+				selectedSuggestHitPct={(snap.det?.suggestHit ?? 0) * 100}
+				selectedTotalSessions={snap.det?.adoption.summary.sessionCount ?? 0}
+				storage={snap.ov.storage}
+				projectNames={snap.ov.projectNames}
 				selected={selected}
 				onSelect={onSelect}
 				interactive={!once && !helpOpen && confirm === null}
