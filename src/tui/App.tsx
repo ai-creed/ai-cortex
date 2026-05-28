@@ -72,6 +72,7 @@ export function App({
 					aggregate: s.aggregate, latencyPerTool: s.latencyPerTool,
 					topTools: s.topTools, memory: s.memory, storage: s.storage,
 					meta: s.meta, adoption: s.adoption,
+					suggestHit: s.suggestHit,
 				};
 			})() : null;
 			setLastErr(null);

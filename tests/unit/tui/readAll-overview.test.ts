@@ -71,4 +71,18 @@ describe("readAll overview", () => {
 		const snap = readAll("7d", null);
 		expect(snap.suggestHit).toBe(0);
 	});
+
+	it("focus=<repoKey> populates Snapshot.suggestHit from the focused project's ratio (not a cross-repo sum)", () => {
+		// Spec lines 40, 168-186: the per-project read must return that
+		// project's suggestHit ratio (used by App's Detail builder to
+		// drive the per-project verdict band). With focus set, readAll
+		// must NOT sum across repos — it delegates to suggestHitRate,
+		// which is what we spy on here.
+		const spy = vi
+			.spyOn(queryMod, "suggestHitRate")
+			.mockImplementation((rk) => (rk === A ? 0.5 : 0.99));
+		const snap = readAll("7d", A);
+		expect(snap.suggestHit).toBeCloseTo(0.5, 5);
+		spy.mockRestore();
+	});
 });

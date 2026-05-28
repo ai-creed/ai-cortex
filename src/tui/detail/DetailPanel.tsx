@@ -25,6 +25,7 @@ export type Detail = {
 	storage: Record<string, number>;
 	meta: CacheMeta;
 	adoption: { sessions: SessionRow[]; summary: AdoptionSummary };
+	suggestHit: number;
 };
 
 const TABS = ["Effectiveness", "Tools", "Memory", "Suggest", "Storage"] as const;

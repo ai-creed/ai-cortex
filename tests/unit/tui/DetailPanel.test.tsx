@@ -44,6 +44,7 @@ const detail = {
 		worktreePath: "/Users/vuphan/Dev/ai-cortex",
 	},
 	adoption: EMPTY_ADOPTION,
+	suggestHit: 0,
 };
 
 describe("DetailPanel", () => {

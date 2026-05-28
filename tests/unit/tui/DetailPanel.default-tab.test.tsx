@@ -13,6 +13,7 @@ const detail: Detail = {
 	storage: {},
 	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: "ai-cortex", worktreePath: null },
 	adoption: EMPTY_ADOPTION,
+	suggestHit: 0,
 };
 
 describe("DetailPanel tab reorder + default", () => {
