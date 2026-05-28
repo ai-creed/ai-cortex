@@ -254,6 +254,7 @@ describe("cacheMeta", () => {
 			fingerprint: "newer-sha",
 			fileCount: 3,
 			name: "ai-cortex",
+			worktreePath: null,
 		});
 	});
 
@@ -263,6 +264,7 @@ describe("cacheMeta", () => {
 			fingerprint: null,
 			fileCount: null,
 			name: null,
+			worktreePath: null,
 		});
 	});
 
@@ -302,6 +304,7 @@ describe("cacheMeta", () => {
 			fingerprint: "fresh-sha",
 			fileCount: 42,
 			name: "fresh-name",
+			worktreePath: null,
 		});
 	});
 
@@ -323,6 +326,7 @@ describe("cacheMeta", () => {
 			fingerprint: "main-sha",
 			fileCount: 4,
 			name: "lazy-self-heal",
+			worktreePath: null,
 		});
 
 		const sidecarPath = path.join(
@@ -336,6 +340,7 @@ describe("cacheMeta", () => {
 			fingerprint: "main-sha",
 			fileCount: 4,
 			name: "lazy-self-heal",
+			worktreePath: null,
 		});
 	});
 
@@ -360,6 +365,7 @@ describe("cacheMeta", () => {
 			fingerprint: "main-sha",
 			fileCount: 1,
 			name: "fallback-name",
+			worktreePath: null,
 		});
 
 		// Self-heal: corrupt sidecar overwritten with valid content.
@@ -407,7 +413,24 @@ describe("cacheMeta", () => {
 			fingerprint: "newer",
 			fileCount: 5,
 			name: "newer",
+			worktreePath: null,
 		});
+	});
+
+	it("propagates worktreePath from the main cache JSON into CacheMeta", async () => {
+		const rk = "70".repeat(8);
+		await fsp.mkdir(path.join(tmp, rk), { recursive: true });
+		await fsp.writeFile(
+			path.join(tmp, rk, "aaaaaaaaaaaaaaaa.json"),
+			JSON.stringify({
+				indexedAt: "2026-05-19T00:00:00.000Z",
+				fingerprint: "wp-sha",
+				files: [],
+				packageMeta: { name: "wp-test" },
+				worktreePath: "/Users/example/repo",
+			}),
+		);
+		expect(cacheMeta(rk).worktreePath).toBe("/Users/example/repo");
 	});
 });
 

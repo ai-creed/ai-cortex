@@ -41,6 +41,7 @@ const detail = {
 		fingerprint: "abc1234",
 		fileCount: 348,
 		name: "ai-cortex",
+		worktreePath: "/Users/vuphan/Dev/ai-cortex",
 	},
 	adoption: EMPTY_ADOPTION,
 };

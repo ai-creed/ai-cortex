@@ -294,6 +294,10 @@ export type CacheMeta = {
 	fingerprint: string | null;
 	fileCount: number | null;
 	name: string | null;
+	/** Origin worktree absolute path; used by the clean-confirm dialog
+	 * (spec line 243: "Origin path comes from cacheMeta when available;
+	 * otherwise omitted"). */
+	worktreePath: string | null;
 };
 
 const EMPTY_CACHE_META: CacheMeta = {
@@ -301,6 +305,7 @@ const EMPTY_CACHE_META: CacheMeta = {
 	fingerprint: null,
 	fileCount: null,
 	name: null,
+	worktreePath: null,
 };
 
 const SIDECAR_SUFFIX = ".meta.json";
@@ -322,6 +327,8 @@ function readSidecarSync(sidecarPath: string): CacheMeta | null {
 			fileCount:
 				typeof parsed.fileCount === "number" ? parsed.fileCount : null,
 			name: typeof parsed.name === "string" ? parsed.name : null,
+			worktreePath:
+				typeof parsed.worktreePath === "string" ? parsed.worktreePath : null,
 		};
 	} catch {
 		return null;
@@ -356,12 +363,14 @@ function readFromMainJson(jsonPath: string): CacheMeta | null {
 			fingerprint?: string;
 			files?: unknown[];
 			packageMeta?: { name?: string };
+			worktreePath?: string;
 		};
 		return {
 			indexedAt: data.indexedAt ?? null,
 			fingerprint: data.fingerprint ?? null,
 			fileCount: Array.isArray(data.files) ? data.files.length : null,
 			name: data.packageMeta?.name ?? null,
+			worktreePath: typeof data.worktreePath === "string" ? data.worktreePath : null,
 		};
 	} catch {
 		return null;

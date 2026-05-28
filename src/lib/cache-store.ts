@@ -52,6 +52,10 @@ export type CacheMetaSidecar = {
 	fingerprint: string | null;
 	fileCount: number | null;
 	name: string | null;
+	/** Origin worktree absolute path. Surfaced for the dashboard hygiene
+	 * confirm dialog so users can see WHICH workspace they're about to
+	 * delete cache for; spec §confirm dialog requires it when available. */
+	worktreePath: string | null;
 };
 
 export function deriveCacheMeta(cache: RepoCache): CacheMetaSidecar {
@@ -60,6 +64,7 @@ export function deriveCacheMeta(cache: RepoCache): CacheMetaSidecar {
 		fingerprint: cache.fingerprint ?? null,
 		fileCount: Array.isArray(cache.files) ? cache.files.length : null,
 		name: cache.packageMeta?.name ?? null,
+		worktreePath: cache.worktreePath ?? null,
 	};
 }
 

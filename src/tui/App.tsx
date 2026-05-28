@@ -123,18 +123,23 @@ export function App({
 					}
 				} else if (input === "x") {
 					// Spec §confirm dialog (line 243): "Origin path comes from
-					// cacheMeta when available; otherwise omitted." CacheMeta
-					// today carries indexedAt / fingerprint / fileCount / name
-					// — no worktree origin path — so we omit (path = null).
-					// fingerprint is a content hash, not a path; do NOT surface
-					// it as the origin path.
+					// cacheMeta when available; otherwise omitted." Source is
+					// CacheMeta.worktreePath, populated by deriveCacheMeta
+					// from the main cache JSON. Old sidecars (pre-v0.12) may
+					// lack the field; in that case the path is null and the
+					// dialog omits the path segment.
 					const bytes = snap?.ov.storage[proj.repoKey] ?? 0;
+					const det = snap?.det;
+					const worktreePath =
+						det && det.repoKey === proj.repoKey
+							? det.meta.worktreePath
+							: null;
 					setConfirm({
 						repoKey: proj.repoKey,
 						label: proj.name ?? proj.repoKey,
 						calls: proj.calls,
 						bytes,
-						path: null,
+						path: worktreePath,
 					});
 				}
 			}

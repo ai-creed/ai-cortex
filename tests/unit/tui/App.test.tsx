@@ -47,8 +47,9 @@ function makeRead() {
 					fingerprint: "abc",
 					fileCount: 10,
 					name: NAMES[focus] ?? focus,
+					worktreePath: `/tmp/${focus}`,
 				}
-			: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
+			: { indexedAt: null, fingerprint: null, fileCount: null, name: null, worktreePath: null },
 		recallGetRatio: 0,
 		suggestHit: 0,
 		adoption: EMPTY_ADOPTION,

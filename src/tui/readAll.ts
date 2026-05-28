@@ -86,7 +86,7 @@ export function readAll(window: StatsWindow, focus: string | null): Snapshot {
 		latencyPerTool: isOverview ? {} : latencyPerTool(focus, window),
 		topTools: isOverview ? [] : topTools(focus, window, 10),
 		meta: isOverview
-			? { indexedAt: null, fingerprint: null, fileCount: null, name: null }
+			? { indexedAt: null, fingerprint: null, fileCount: null, name: null, worktreePath: null }
 			: cacheMeta(focus),
 		recallGetRatio,
 		suggestHit,

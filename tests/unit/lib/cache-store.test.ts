@@ -127,6 +127,8 @@ describe("writeCache sidecar (*.meta.json)", () => {
 			fingerprint: "deadbeef0000",
 			fileCount: 3,
 			name: "ai-cortex",
+			// Spec §confirm dialog: dashboard surfaces this in the clean confirm.
+			worktreePath: "/repo",
 		});
 	});
 

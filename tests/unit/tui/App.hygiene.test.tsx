@@ -20,7 +20,7 @@ const SNAP: Snapshot = {
 	storage: { aaaaaaaaaaaaaaaa: 250_000, bbbbbbbbbbbbbbbb: 0 },
 	latencyPerTool: {},
 	topTools: [],
-	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: null },
+	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: null, worktreePath: null },
 	recallGetRatio: 0,
 	suggestHit: 0,
 	adoption: {
@@ -84,8 +84,6 @@ describe("App hygiene + help wiring", () => {
 		stdin.write("x");
 		await flush();
 		const frame = lastFrame() ?? "";
-		// Spec §confirm dialog (clean only): must show calls, size,
-		// and disk-impact framing so the user knows what's lost.
 		expect(frame).toContain("Clean workspace?");
 		expect(frame).toContain("100 calls");
 		expect(frame).toContain("0.3 MB");
@@ -95,6 +93,46 @@ describe("App hygiene + help wiring", () => {
 		await flush();
 		expect(fs.existsSync(path.join(cacheRoot(), "aaaaaaaaaaaaaaaa"))).toBe(false);
 		expect(lastFrame()).toContain("cleaned");
+	});
+
+	it("clean confirm omits the origin path when cacheMeta.worktreePath is null (spec line 243)", async () => {
+		// SNAP has worktreePath: null. The dialog body should be
+		// `<label>   <calls> calls · <MB>` with no path segment between
+		// calls and size.
+		const { stdin, lastFrame } = render(<App read={read} termSize={{ cols: 100, rows: 40 }} />);
+		await flush();
+		stdin.write("x");
+		await flush();
+		const frame = lastFrame() ?? "";
+		expect(frame).toMatch(/100 calls\s+·\s+0\.3 MB/);
+		expect(frame).not.toMatch(/100 calls\s+·\s+\/[^·]+·/);
+	});
+
+	it("clean confirm renders the origin path when cacheMeta.worktreePath is set", async () => {
+		// Spec line 243: "Origin path comes from cacheMeta when available;
+		// otherwise omitted." Wire a snapshot whose detail-meta carries a
+		// worktreePath and assert the dialog body shows it between calls
+		// and size.
+		const ORIGIN = "/Users/vuphan/Dev/ai-cortex";
+		const withPath: AppProps["read"] = () => ({
+			...SNAP,
+			meta: {
+				indexedAt: null,
+				fingerprint: null,
+				fileCount: null,
+				name: "ai-cortex",
+				worktreePath: ORIGIN,
+			},
+		});
+		const { stdin, lastFrame } = render(<App read={withPath} termSize={{ cols: 100, rows: 40 }} />);
+		await flush();
+		stdin.write("x");
+		await flush();
+		const frame = lastFrame() ?? "";
+		expect(frame).toContain(ORIGIN);
+		expect(frame).toMatch(
+			new RegExp(`100 calls\\s+·\\s+${ORIGIN.replace(/\//g, "\\/")}\\s+·\\s+0\\.3 MB`),
+		);
 	});
 
 	it("x then n cancels without deleting", async () => {

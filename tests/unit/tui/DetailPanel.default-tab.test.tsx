@@ -11,7 +11,7 @@ const detail: Detail = {
 	topTools: [],
 	memory: { active: 0, candidate: 0, pinned: 0, deprecated: 0, topAccessed: [] },
 	storage: {},
-	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: "ai-cortex" },
+	meta: { indexedAt: null, fingerprint: null, fileCount: null, name: "ai-cortex", worktreePath: null },
 	adoption: EMPTY_ADOPTION,
 };
 
