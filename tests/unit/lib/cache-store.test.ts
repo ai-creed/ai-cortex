@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Database from "better-sqlite3";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 
@@ -20,6 +21,7 @@ import { exec } from "node:child_process";
 import {
 	assertHashedRepoKey,
 	buildRepoFingerprint,
+	getCacheDbFilePath,
 	getCacheDir,
 	getCacheMetaFilePath,
 	isWorktreeDirty,
@@ -59,6 +61,13 @@ function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 }
 
 let tmpDir: string;
+
+// The global setup (tests/helpers/isolate-cache-home.ts) pins
+// AI_CORTEX_CACHE_HOME to a session tmpdir, which takes precedence over
+// os.homedir(). Tests that need their OWN isolated cache home override the env
+// per-test and restore this session value afterward (deleting it would strip
+// isolation for later files sharing the worker).
+const SESSION_CACHE_HOME = process.env.AI_CORTEX_CACHE_HOME;
 
 beforeEach(() => {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-cache-test-"));
@@ -170,6 +179,164 @@ describe("writeCache sidecar (*.meta.json)", () => {
 		const sidecarPath = getCacheMetaFilePath(cache.repoKey, cache.worktreeKey);
 		const parsed = JSON.parse(fs.readFileSync(sidecarPath, "utf8"));
 		expect(parsed.name).toBeNull();
+	});
+});
+
+describe("writeCache (SQLite)", () => {
+	beforeEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = tmpDir;
+	});
+	afterEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = SESSION_CACHE_HOME;
+	});
+
+	it("writes a .db (not a .json) plus the .meta.json sidecar", async () => {
+		const cache = makeCache({
+			files: [{ path: "src/a.ts", kind: "file", contentHash: "h1" }],
+			functions: [
+				{
+					qualifiedName: "foo",
+					file: "src/a.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+			],
+		});
+		await writeCache(cache);
+
+		const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+		expect(fs.existsSync(dbPath)).toBe(true);
+		expect(
+			fs.existsSync(getCacheMetaFilePath(cache.repoKey, cache.worktreeKey)),
+		).toBe(true);
+		expect(fs.existsSync(dbPath + "-wal")).toBe(false);
+
+		const db = new Database(dbPath, { readonly: true });
+		try {
+			expect(db.prepare("SELECT COUNT(*) c FROM functions").get()).toEqual({
+				c: 1,
+			});
+		} finally {
+			db.close();
+		}
+	});
+
+	it("deletes a leftover legacy .json when writing", async () => {
+		const cache = makeCache();
+		fs.mkdirSync(getCacheDir(cache.repoKey), { recursive: true });
+		const jsonPath = path.join(
+			getCacheDir(cache.repoKey),
+			cache.worktreeKey + ".json",
+		);
+		fs.writeFileSync(jsonPath, "{}");
+		await writeCache(cache);
+		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+});
+
+describe("readCacheForWorktree (SQLite + migration)", () => {
+	const repoKey = "aabbccdd11223344";
+	const worktreeKey = "eeff00112233aabb";
+
+	beforeEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = tmpDir;
+	});
+	afterEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = SESSION_CACHE_HOME;
+	});
+
+	function writeLegacyJson(cache: RepoCache): string {
+		const dir = getCacheDir(repoKey);
+		fs.mkdirSync(dir, { recursive: true });
+		const p = path.join(dir, `${worktreeKey}.json`);
+		fs.writeFileSync(p, JSON.stringify(cache, null, 2));
+		return p;
+	}
+
+	it("round-trips through write then read (db path)", async () => {
+		const cache = makeCache({
+			files: [{ path: "src/a.ts", kind: "file", contentHash: "h1" }],
+			functions: [
+				{
+					qualifiedName: "foo",
+					file: "src/a.ts",
+					exported: true,
+					isDefaultExport: false,
+					line: 1,
+				},
+			],
+			calls: [{ from: "src/a.ts::foo", to: "src/b.ts::bar", kind: "call" }],
+		});
+		await writeCache(cache);
+		expect(await readCacheForWorktree(repoKey, worktreeKey)).toEqual(cache);
+	});
+
+	it("returns null when neither db nor json exists", async () => {
+		expect(await readCacheForWorktree(repoKey, worktreeKey)).toBeNull();
+	});
+
+	it("transcodes a compatible legacy .json: db created, json deleted, sidecar written", async () => {
+		const cache = makeCache({
+			files: [{ path: "x.ts", kind: "file", contentHash: "h" }],
+		});
+		const jsonPath = writeLegacyJson(cache);
+
+		const result = await readCacheForWorktree(repoKey, worktreeKey);
+
+		expect(result).toEqual(cache);
+		expect(fs.existsSync(jsonPath)).toBe(false);
+		expect(fs.existsSync(getCacheDbFilePath(repoKey, worktreeKey))).toBe(true);
+		expect(fs.existsSync(getCacheMetaFilePath(repoKey, worktreeKey))).toBe(true);
+	});
+
+	it("does NOT reindex (preserves the cache) for a compatible legacy json", async () => {
+		const cache = makeCache({ fingerprint: "preserve-me" });
+		writeLegacyJson(cache);
+		const result = await readCacheForWorktree(repoKey, worktreeKey);
+		expect(result?.fingerprint).toBe("preserve-me");
+	});
+
+	it("reindexes (returns null) for an incompatible-major legacy json and deletes it", async () => {
+		const cache = makeCache({
+			schemaVersion: "2" as RepoCache["schemaVersion"],
+		});
+		const jsonPath = writeLegacyJson(cache);
+		expect(await readCacheForWorktree(repoKey, worktreeKey)).toBeNull();
+		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+
+	it("reindexes (returns null) for a corrupt legacy json and deletes it", async () => {
+		const dir = getCacheDir(repoKey);
+		fs.mkdirSync(dir, { recursive: true });
+		const jsonPath = path.join(dir, `${worktreeKey}.json`);
+		fs.writeFileSync(jsonPath, "{ not valid json");
+		expect(await readCacheForWorktree(repoKey, worktreeKey)).toBeNull();
+		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+
+	it("deletes a leftover json when a valid db already exists", async () => {
+		const cache = makeCache();
+		await writeCache(cache);
+		const jsonPath = path.join(getCacheDir(repoKey), `${worktreeKey}.json`);
+		fs.writeFileSync(jsonPath, "{}");
+		await readCacheForWorktree(repoKey, worktreeKey);
+		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+
+	it("returns null and clears a store-format-mismatched db", async () => {
+		const cache = makeCache();
+		await writeCache(cache);
+		const dbPath = getCacheDbFilePath(repoKey, worktreeKey);
+		const db = new Database(dbPath);
+		db.pragma("user_version = 999");
+		db.close();
+		const stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
+		expect(await readCacheForWorktree(repoKey, worktreeKey)).toBeNull();
+		expect(fs.existsSync(dbPath)).toBe(false);
+		stderrSpy.mockRestore();
 	});
 });
 

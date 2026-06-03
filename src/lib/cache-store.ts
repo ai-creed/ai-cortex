@@ -6,6 +6,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { SCHEMA_VERSION } from "./models.js";
 import type { RepoCache } from "./models.js";
+import {
+	transcodeCacheToDb,
+	readFromDb,
+	majorOf,
+} from "./cache-store-sqlite.js";
 
 const execAsync = promisify(exec);
 
@@ -38,6 +43,13 @@ export function getCacheDir(repoKey: string): string {
 
 export function getCacheFilePath(repoKey: string, worktreeKey: string): string {
 	return path.join(getCacheDir(repoKey), `${worktreeKey}.json`);
+}
+
+export function getCacheDbFilePath(
+	repoKey: string,
+	worktreeKey: string,
+): string {
+	return path.join(getCacheDir(repoKey), `${worktreeKey}.db`);
 }
 
 export function getCacheMetaFilePath(
@@ -87,13 +99,18 @@ export async function isWorktreeDirty(worktreePath: string): Promise<boolean> {
 export async function writeCache(cache: RepoCache): Promise<void> {
 	const dir = getCacheDir(cache.repoKey);
 	await fs.promises.mkdir(dir, { recursive: true });
-	const filePath = getCacheFilePath(cache.repoKey, cache.worktreeKey);
-	const tmp = filePath + ".tmp";
-	await fs.promises.writeFile(tmp, JSON.stringify(cache, null, 2) + "\n");
-	await fs.promises.rename(tmp, filePath);
 
-	// Best-effort sidecar: dashboard reads this instead of the full cache JSON.
-	// Failure here must not propagate — main JSON is the source of truth.
+	// Bulk-replace into the per-worktree SQLite db (self-contained single file).
+	const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+	transcodeCacheToDb(cache, dbPath);
+
+	// Drop any legacy JSON manifest now that the db is canonical.
+	await fs.promises.rm(getCacheFilePath(cache.repoKey, cache.worktreeKey), {
+		force: true,
+	});
+
+	// Best-effort sidecar: dashboard reads this instead of the full cache.
+	// Failure here must not propagate — the db is the source of truth.
 	try {
 		await writeCacheMetaSidecar(
 			cache.repoKey,
@@ -124,21 +141,59 @@ export async function readCacheForWorktree(
 	repoKey: string,
 	worktreeKey: string,
 ): Promise<RepoCache | null> {
-	const filePath = getCacheFilePath(repoKey, worktreeKey);
-	try {
-		await fs.promises.access(filePath);
-	} catch {
-		return null;
-	}
-	const raw = JSON.parse(
-		await fs.promises.readFile(filePath, "utf8"),
-	) as RepoCache;
-	if (raw.schemaVersion !== SCHEMA_VERSION) {
-		await fs.promises.rm(filePath, { force: true });
+	const dbPath = getCacheDbFilePath(repoKey, worktreeKey);
+	const jsonPath = getCacheFilePath(repoKey, worktreeKey);
+
+	// 1. Canonical db present.
+	if (fs.existsSync(dbPath)) {
+		const cache = readFromDb(dbPath);
+		if (cache) {
+			// Drop any stale legacy json now that the db is authoritative.
+			await fs.promises.rm(jsonPath, { force: true });
+			return cache;
+		}
+		// Version mismatch: discard the db (and sidecars) so the coordinator reindexes.
+		for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
+			await fs.promises.rm(p, { force: true });
+		}
 		process.stderr.write(
 			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
 		);
 		return null;
 	}
-	return raw;
+
+	// 2. No db, but a legacy json exists: migrate in place (transcode) or reindex.
+	if (fs.existsSync(jsonPath)) {
+		let cache: RepoCache;
+		try {
+			cache = JSON.parse(
+				await fs.promises.readFile(jsonPath, "utf8"),
+			) as RepoCache;
+		} catch {
+			await fs.promises.rm(jsonPath, { force: true }); // corrupt -> reindex
+			return null;
+		}
+		if (majorOf(cache.schemaVersion ?? "") !== majorOf(SCHEMA_VERSION)) {
+			await fs.promises.rm(jsonPath, { force: true }); // incompatible -> reindex
+			return null;
+		}
+		try {
+			transcodeCacheToDb(cache, dbPath);
+		} catch {
+			// transcodeCacheToDb cleans up its own private tmp on failure.
+			await fs.promises.rm(jsonPath, { force: true });
+			return null; // transcode failure -> reindex
+		}
+		// Ensure a sidecar exists even if the legacy json had none.
+		try {
+			await writeCacheMetaSidecar(repoKey, worktreeKey, deriveCacheMeta(cache));
+		} catch {
+			// sidecar is best-effort; the db is authoritative
+		}
+		await fs.promises.rm(jsonPath, { force: true });
+		return cache;
+	}
+
+	// 3. Nothing on disk: first index.
+	return null;
 }
