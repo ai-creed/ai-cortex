@@ -10,6 +10,7 @@ import type {
 	ImportBinding,
 	RawImportSite,
 } from "../lang-adapter.js";
+import { rangeFromNode } from "./_range.js";
 
 // createRequire needed because repo is "type": "module" — no bare require()
 const require = createRequire(import.meta.url);
@@ -83,7 +84,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 					file: filePath,
 					exported: !!isExport,
 					isDefaultExport: !!isDefault,
-					line: node.startPosition.row + 1,
+					...rangeFromNode(node),
 				});
 				break;
 			}
@@ -104,7 +105,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 							file: filePath,
 							exported: !!isExport,
 							isDefaultExport: false,
-							line: node.startPosition.row + 1,
+							...rangeFromNode(node),
 						});
 					}
 				}
@@ -123,7 +124,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 						file: filePath,
 						exported: !!isExport,
 						isDefaultExport: !!isDefault,
-						line: node.startPosition.row + 1,
+						...rangeFromNode(node),
 					});
 				}
 				// Walk class body for methods
@@ -142,7 +143,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 					file: filePath,
 					exported: classExported,
 					isDefaultExport: false,
-					line: node.startPosition.row + 1,
+					...rangeFromNode(node),
 				});
 				break;
 			}
@@ -163,7 +164,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 						file: filePath,
 						exported: true,
 						isDefaultExport: true,
-						line: valueChild.startPosition.row + 1,
+						...rangeFromNode(valueChild),
 					});
 					return; // Don't walk children — we handled it
 				}
@@ -244,6 +245,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 					callerFile: filePath,
 					rawCallee,
 					kind,
+					site: rangeFromNode(node),
 				});
 			}
 		} else if (node.type === "new_expression") {
@@ -256,6 +258,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 						callerFile: filePath,
 						rawCallee: ctorNode.text,
 						kind: "new",
+						site: rangeFromNode(node),
 					});
 				}
 			}

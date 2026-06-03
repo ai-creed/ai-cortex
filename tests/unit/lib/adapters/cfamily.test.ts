@@ -70,12 +70,14 @@ describe("c adapter — raw call extraction", () => {
 			"src/main.c",
 			"int foo(void); int main(void) { return foo(); }",
 		);
-		expect(r.rawCalls).toContainEqual({
-			callerQualifiedName: "main",
-			callerFile: "src/main.c",
-			rawCallee: "foo",
-			kind: "call",
-		});
+		expect(r.rawCalls).toContainEqual(
+			expect.objectContaining({
+				callerQualifiedName: "main",
+				callerFile: "src/main.c",
+				rawCallee: "foo",
+				kind: "call",
+			}),
+		);
 	});
 
 	it("treats . and -> member access as kind 'method'", async () => {
@@ -265,5 +267,42 @@ describe("cfamily adapter — boot", () => {
 		const r = await cppAdapter.extractCallGraph!("", "x.cpp", "");
 		expect(r).toEqual({ functions: [], rawCalls: [], importBindings: [] });
 		expect(await cppAdapter.extractImports("", "x.cpp", "")).toEqual([]);
+	});
+});
+
+describe("c/c++ adapter — range and site emission (unit)", () => {
+	it("populates column/endLine/endColumn on a multi-line function", async () => {
+		const r = await cAdapter.extractCallGraph!(
+			"",
+			"src/r.c",
+			"int multi(void) {\n  return 0;\n}",
+		);
+		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		expect(fn?.column).toBeGreaterThanOrEqual(1);
+		expect(fn?.endLine).toBeGreaterThan(fn!.line);
+		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
+	});
+
+	it("populates site on a plain call expression", async () => {
+		const r = await cAdapter.extractCallGraph!(
+			"",
+			"src/c.c",
+			"void callee(void);\nvoid caller(void) {\n  callee();\n}",
+		);
+		const call = r.rawCalls.find(
+			(c) => c.rawCallee === "callee" && c.kind === "call",
+		);
+		expect(call?.site).toBeDefined();
+		expect(call?.site?.line).toBe(3);
+	});
+
+	it("populates site on a C++ new expression", async () => {
+		const r = await cppAdapter.extractCallGraph!(
+			"",
+			"src/n.cpp",
+			"struct Thing {};\nvoid caller() {\n  new Thing();\n}",
+		);
+		const ctor = r.rawCalls.find((c) => c.kind === "new");
+		expect(ctor?.site).toBeDefined();
 	});
 });

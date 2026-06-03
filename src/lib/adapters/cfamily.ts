@@ -9,6 +9,7 @@ import type {
 	RawImportSite,
 } from "../lang-adapter.js";
 import type { FunctionNode } from "../models.js";
+import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
 
@@ -128,7 +129,7 @@ function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
 			file: filePath,
 			exported: !isStatic,
 			isDefaultExport: false,
-			line: node.startPosition.row + 1,
+			...rangeFromNode(node),
 			isDeclarationOnly: isDecl,
 		});
 	}
@@ -293,6 +294,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 						callerFile: filePath,
 						rawCallee,
 						kind,
+						site: rangeFromNode(node),
 					});
 				}
 			}
@@ -310,6 +312,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 						callerFile: filePath,
 						rawCallee: typeNode.text,
 						kind: "new",
+						site: rangeFromNode(node),
 					});
 				}
 			}

@@ -116,6 +116,12 @@ function companionSourceFiles(
 	return SRC_EXTS.map((e) => `${base}${e}`).filter((p) => known.has(p));
 }
 
+function makeEdge(from: string, to: string, raw: RawCallSite): CallEdge {
+	const edge: CallEdge = { from, to, kind: raw.kind };
+	if (raw.site) edge.site = raw.site;
+	return edge;
+}
+
 export function resolveCallSites(
 	rawCalls: RawCallSite[],
 	allFunctions: FunctionNode[],
@@ -178,11 +184,13 @@ export function resolveCallSites(
 						funcsByFile.get(targetFile)?.get(member),
 					);
 					if (targetFunc) {
-						edges.push({
-							from: fromKey,
-							to: `${targetFile}::${targetFunc.qualifiedName}`,
-							kind: raw.kind,
-						});
+						edges.push(
+							makeEdge(
+								fromKey,
+								`${targetFile}::${targetFunc.qualifiedName}`,
+								raw,
+							),
+						);
 						resolved = true;
 					}
 				}
@@ -194,16 +202,18 @@ export function resolveCallSites(
 					funcsByFile.get(raw.callerFile)?.get(raw.rawCallee),
 				);
 				if (sameFileQual) {
-					edges.push({
-						from: fromKey,
-						to: `${raw.callerFile}::${sameFileQual.qualifiedName}`,
-						kind: raw.kind,
-					});
+					edges.push(
+						makeEdge(
+							fromKey,
+							`${raw.callerFile}::${sameFileQual.qualifiedName}`,
+							raw,
+						),
+					);
 					resolved = true;
 				}
 			}
 			if (!resolved) {
-				edges.push({ from: fromKey, to: `::${member}`, kind: raw.kind });
+				edges.push(makeEdge(fromKey, `::${member}`, raw));
 				resolved = true;
 			}
 		}
@@ -237,11 +247,13 @@ export function resolveCallSites(
 						(f) => f.file === targetFile && f.isDefaultExport,
 					);
 					if (defaultFunc) {
-						edges.push({
-							from: fromKey,
-							to: `${targetFile}::${defaultFunc.qualifiedName}`,
-							kind: raw.kind,
-						});
+						edges.push(
+							makeEdge(
+								fromKey,
+								`${targetFile}::${defaultFunc.qualifiedName}`,
+								raw,
+							),
+						);
 						resolved = true;
 					}
 				} else {
@@ -249,11 +261,13 @@ export function resolveCallSites(
 						funcsByFile.get(targetFile)?.get(binding.importedName),
 					);
 					if (targetFunc) {
-						edges.push({
-							from: fromKey,
-							to: `${targetFile}::${targetFunc.qualifiedName}`,
-							kind: raw.kind,
-						});
+						edges.push(
+							makeEdge(
+								fromKey,
+								`${targetFile}::${targetFunc.qualifiedName}`,
+								raw,
+							),
+						);
 						resolved = true;
 					}
 				}
@@ -266,11 +280,9 @@ export function resolveCallSites(
 		if (sameFile) {
 			const match = pickUnique(sameFile.get(raw.rawCallee));
 			if (match) {
-				edges.push({
-					from: fromKey,
-					to: `${raw.callerFile}::${match.qualifiedName}`,
-					kind: raw.kind,
-				});
+				edges.push(
+					makeEdge(fromKey, `${raw.callerFile}::${match.qualifiedName}`, raw),
+				);
 				continue;
 			}
 		}
@@ -286,11 +298,9 @@ export function resolveCallSites(
 						true,
 					);
 					if (match) {
-						edges.push({
-							from: fromKey,
-							to: `${incFile}::${match.qualifiedName}`,
-							kind: raw.kind,
-						});
+						edges.push(
+							makeEdge(fromKey, `${incFile}::${match.qualifiedName}`, raw),
+						);
 						resolved = true;
 						break;
 					}
@@ -300,11 +310,13 @@ export function resolveCallSites(
 							true,
 						);
 						if (compMatch) {
-							edges.push({
-								from: fromKey,
-								to: `${companion}::${compMatch.qualifiedName}`,
-								kind: raw.kind,
-							});
+							edges.push(
+								makeEdge(
+									fromKey,
+									`${companion}::${compMatch.qualifiedName}`,
+									raw,
+								),
+							);
 							resolved = true;
 							break outer;
 						}
@@ -324,17 +336,19 @@ export function resolveCallSites(
 					langOf(f.file) === "cfamily",
 			);
 			if (liveDefs.length === 1) {
-				edges.push({
-					from: fromKey,
-					to: `${liveDefs[0].file}::${liveDefs[0].qualifiedName}`,
-					kind: raw.kind,
-				});
+				edges.push(
+					makeEdge(
+						fromKey,
+						`${liveDefs[0].file}::${liveDefs[0].qualifiedName}`,
+						raw,
+					),
+				);
 				resolved = true;
 			}
 		}
 		if (resolved) continue;
 
-		edges.push({ from: fromKey, to: `::${raw.rawCallee}`, kind: raw.kind });
+		edges.push(makeEdge(fromKey, `::${raw.rawCallee}`, raw));
 	}
 
 	return edges;

@@ -374,3 +374,44 @@ describe("typescript adapter — import sites", () => {
 		expect(sites[0].candidate).toBe("src/util");
 	});
 });
+
+describe("typescript adapter — range and site emission (unit)", () => {
+	it("populates column/endLine/endColumn on a multi-line function", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/r.ts",
+			"function multi() {\n  return 1;\n}",
+		);
+		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		expect(fn?.column).toBe(1);
+		expect(fn?.endLine).toBeGreaterThan(fn!.line);
+		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
+	});
+
+	it("populates site on a plain call expression", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/c.ts",
+			"function caller() {\n  callee();\n}",
+		);
+		const call = r.rawCalls.find(
+			(c) => c.rawCallee === "callee" && c.kind === "call",
+		);
+		expect(call?.site).toBeDefined();
+		expect(call?.site?.line).toBe(2);
+		expect(call?.site?.column).toBeGreaterThanOrEqual(1);
+		expect(call?.site?.endColumn).toBeGreaterThanOrEqual(1);
+	});
+
+	it("populates site on a method call and a new expression", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/m.ts",
+			"function caller() {\n  obj.method();\n  new Thing();\n}",
+		);
+		const method = r.rawCalls.find((c) => c.kind === "method");
+		const ctor = r.rawCalls.find((c) => c.kind === "new");
+		expect(method?.site).toBeDefined();
+		expect(ctor?.site).toBeDefined();
+	});
+});
