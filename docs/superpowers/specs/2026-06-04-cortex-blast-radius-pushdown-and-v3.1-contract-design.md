@@ -112,17 +112,30 @@ onto this branch from the v3.1 branch, describing `site`/`Range` and the reserve
 
 ### Section B1: lean freshness handle
 
-Extract from `resolveCacheWithFreshness` (src/lib/cache-coordinator.ts:21):
+This requires factoring the validity/migration logic out of
+`readCacheForWorktree` (src/lib/cache-store.ts) so both the whole-load and the
+handle paths share it WITHOUT materializing:
+
+```
+ensureValidDb(repoKey, worktreeKey) -> string | null
+```
+- Performs exactly what `readCacheForWorktree` does today MINUS the final
+  `assembleCache`: if a `.db` exists, version-gate it (`user_version` +
+  `majorOf(schemaVersion)`), discarding on mismatch; else if a legacy `.json`
+  exists, run the transcode-or-reindex-fallback migration; returns the valid
+  `dbPath` or `null` (cache miss). `readCacheForWorktree` is then
+  `ensureValidDb` + `readFromDb(dbPath)` so its behavior is unchanged.
 
 ```
 ensureFreshDb(identity, { stale }) -> { dbPath: string; cacheStatus: "fresh" | "reindexed" | "stale" }
 ```
-
-- Runs the SAME freshness logic: `readCacheForWorktree` existence check via the
-  db, `buildRepoFingerprint` + `isWorktreeDirty`, dirty-revert detection, and the
-  reindex-if-stale path (which still calls `writeCache`, writing the `.db`).
-- Returns the worktree's `dbPath` (via `getCacheDbFilePath`) once the `.db` is
-  guaranteed fresh-or-rebuilt, WITHOUT materializing a `RepoCache`.
+- Calls `ensureValidDb`. On `null` -> reindex (`indexRepo`, which writes the
+  `.db`) -> `{ dbPath, "reindexed" }`. On a valid path, runs the SAME freshness
+  logic as the coordinator: `buildRepoFingerprint` + `isWorktreeDirty`,
+  dirty-revert detection, and the reindex-if-stale path (which calls `writeCache`,
+  writing the `.db`). Returns the worktree's `dbPath` (via `getCacheDbFilePath`)
+  once the `.db` is guaranteed fresh-or-rebuilt, WITHOUT materializing a
+  `RepoCache`.
 - `resolveCacheWithFreshness` becomes a thin wrapper: call `ensureFreshDb`, then
   `readFromDb(dbPath)` to materialize, preserving its exact external contract for
   whole-load consumers (`rehydrate`, `suggest`).
@@ -130,7 +143,8 @@ ensureFreshDb(identity, { stale }) -> { dbPath: string; cacheStatus: "fresh" | "
 Note on the freshness internals: today's coordinator reads the cached `RepoCache`
 to compare `cached.fingerprint` / `cached.dirtyAtIndex`. `ensureFreshDb` needs
 those two scalar fields without a full load; it reads them cheaply from the db
-`meta` table (a tiny SELECT), not by assembling the whole cache.
+`meta` table (a tiny SELECT, with `dirtyAtIndex` absent -> undefined, matching
+the optional), not by assembling the whole cache.
 
 ### Section B2: recursive CTE
 
@@ -140,13 +154,21 @@ the `.db` readonly, runs the query, closes (no memoization). The CTE reproduces
 
 - `targetKey = target.file || '::' || target.qualifiedName`.
 - Recursive reverse walk: from a visited callee key K, callers are
-  `SELECT from_key, site_* FROM calls WHERE to_key = K AND to_key NOT LIKE ':_%'`;
-  recurse with `depth + 1 <= maxHops`; dedup callers (UNION + a visited set);
-  record the MINIMUM hop at which each caller is reached.
-- Unresolved edges are skipped in the traversal (mirrors the
-  `edge.to.startsWith("::")` guard) but counted separately for confidence:
-  `unresolvedEdges = COUNT(calls WHERE to_key = '::'||qualifiedName OR to_key =
-  '::'||<method portion after last '.'>)`.
+  `SELECT from_key, site_* FROM calls WHERE to_key = K`. The seed `targetKey` and
+  every recursed `from_key` are resolved (`file::name`) keys, so an edge with an
+  unresolved (`::`-prefixed) `to_key` can never match `to_key = K`; unresolved
+  edges are thus excluded from the traversal naturally (mirroring the in-memory
+  `edge.to.startsWith("::")` guard) with no extra predicate needed.
+- Recurse with `depth + 1 <= maxHops`. CYCLE SAFETY: the call graph can contain
+  cycles; `maxHops` bounds recursion depth so the CTE always terminates, and the
+  final result takes `MIN(depth)` per caller (group by caller key) so a node
+  reached by multiple paths lands in its nearest tier, matching the BFS
+  `visited`-set semantics. (No SQLite `cycle` clause is required.)
+- Unresolved edges are counted separately for confidence (NOT traversed). Mirror
+  the in-memory metric exactly: let `m` = the substring of `qualifiedName` after
+  its last `.` (only when `qualifiedName` contains a `.`; otherwise no method
+  clause). `unresolvedEdges = COUNT(calls WHERE to_key = '::'||qualifiedName` plus,
+  when `m` exists, `OR to_key = '::'||m)`.
 - Join `functions` on `(file, qualified_name)` for `exported`, the overload count
   (`COUNT(*) > 1` of matching functions -> `overloadCount`), and the range fields.
 - `confidence = unresolvedEdges === 0 ? "full" : "partial"`.
@@ -162,8 +184,12 @@ logging. The 140K-edge array never enters JS; only reachable rows are read.
 Additive optional fields on `models.ts` types (non-breaking):
 - `BlastRadiusResult.target` gains `range?: Range` (the target function's range).
 - `BlastHit` gains `range?: Range` (the caller function's range) and
-  `callSite?: Range` (the `site` of the specific edge by which this caller reaches
-  the next callee toward the target; carried through the CTE alongside `from_key`).
+  `callSite?: Range` (the `site` of the edge by which this caller reaches the next
+  callee toward the target; carried through the CTE alongside `from_key`).
+- Determinism: when a caller reaches its callee via more than one edge (multiple
+  call sites), `callSite` is the edge with the lexicographically smallest
+  `(site_line, site_col)` among the edges at that caller's `MIN(depth)` hop. This
+  keeps results reproducible and testable.
 - Hits whose underlying edge has no `site` (pre-v3.1 `.db` not yet reindexed, or an
   adapter that captured none) omit `callSite`; readers tolerate absent per the
   contract. Likewise `range` is omitted when the joined function row has NULL range
@@ -184,11 +210,15 @@ Part B:
   on a shared fixture must produce identical `tiers`, `totalAffected`,
   `unresolvedEdges`, `confidence`, and `overloadCount`. This proves the CTE
   preserves semantics.
-- `maxHops` bound; unresolved-edge counting; overload (same name twice); readonly
-  open leaves no `-wal`/`-shm` residue.
+- `maxHops` bound; unresolved-edge counting (incl. the method-portion clause only
+  firing for dotted names); overload (same name twice); readonly open leaves no
+  `-wal`/`-shm` residue.
+- Cycle safety: a fixture with a call cycle (A->B->A) terminates and yields the
+  correct nearest-hop tiers (parity with the in-memory BFS).
 - Enrichment: a fixture with known positions asserts `target.range`, each
-  `BlastHit.range`, and `callSite` map to the right line/col; an absent-site edge
-  omits `callSite`.
+  `BlastHit.range`, and `callSite` map to the right line/col; a caller with two
+  call sites yields the deterministic smallest-`(line,col)` `callSite`; an
+  absent-site edge omits `callSite`.
 
 Integration:
 - MCP blast path (`ensureFreshDb` + `queryBlastRadiusDb`) over a real fixture repo
@@ -208,8 +238,10 @@ Part A:
 - Store round-trip test addition.
 
 Part B:
-- src/lib/cache-coordinator.ts (extract `ensureFreshDb`, rewrap
-  `resolveCacheWithFreshness`).
+- src/lib/cache-store.ts (factor `ensureValidDb` out of `readCacheForWorktree`;
+  the latter becomes `ensureValidDb` + `readFromDb`).
+- src/lib/cache-coordinator.ts (add `ensureFreshDb` using `ensureValidDb`; rewrap
+  `resolveCacheWithFreshness` as `ensureFreshDb` + `readFromDb`).
 - src/lib/blast-radius.ts (`queryBlastRadiusDb` + enriched result assembly).
 - src/mcp/server.ts (blast_radius handler swap).
 
