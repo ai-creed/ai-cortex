@@ -38,7 +38,9 @@ Non-goals (deferred):
 - Row-level incremental writes (DELETE+INSERT only changed files). Stage 1 ships
   bulk-replace; the write path leaves a seam (`applyFileDelta`) so this drops in
   later without a schema reshape.
-- Any change to the freshness algorithm, the indexer, or the dashboard data path.
+- Any change to the freshness algorithm or the indexer. The dashboard data path
+  is unchanged EXCEPT one scoped `cacheMeta()` worktree-discovery fix required
+  because the structural `.json` is deleted (Section 4a).
 
 ## Decisions (locked during brainstorming)
 
@@ -54,18 +56,33 @@ Non-goals (deferred):
 5. Existing JSON caches migrate via in-place transcode (no forced reindex) with
    a reindex fallback.
 
-### Dashboard-safety verification (why per-worktree DBs cost the dashboard nothing)
+### Dashboard interaction (per-worktree DBs plus one scoped discovery change)
 
-The dashboard (src/tui/readAll.ts) never opens the structural store:
+The dashboard (src/tui/readAll.ts) never opens the structural store for its
+graph data:
 - `projects[].calls` is `aggregate(rk).total` from the stats DB
   (tool-call count, not call-graph edges) - src/tui/readAll.ts:52.
-- `name` / `fileCount` / `indexedAt` come from the `.meta.json` sidecar via
-  `cacheMeta()` - src/lib/stats/query.ts:380.
+- `name` / `fileCount` / `indexedAt` / `fingerprint` / `worktreePath` come from
+  the `.meta.json` sidecar via `cacheMeta()` - src/lib/stats/query.ts:380.
 - `storageFootprint()` is `dirSize()` over the cache dir - src/lib/stats/query.ts:271,
   format-agnostic (counts `.db` the same as `.json`).
 
-The sidecar keeps being written on every `writeCache`, so per-worktree DBs add
-zero dashboard work. If a per-project function/call count is ever wanted on the
+One required correction (caught in review): although `cacheMeta()` READS the
+sidecar, it DISCOVERS worktrees by enumerating the non-sidecar `.json` manifests
+and deriving each sidecar path from the JSON filename
+(src/lib/stats/query.ts:390-406). After this migration deletes the structural
+`.json` (Section 4), that loop iterates zero entries and `cacheMeta()` returns
+`EMPTY_CACHE_META`, so name / fileCount / indexedAt / fingerprint / worktreePath
+go null even though the sidecar exists. So Stage 1 MUST include a scoped
+`cacheMeta()` discovery change: enumerate worktrees by their `.meta.json`
+sidecars (and `.db` files), not by the structural `.json` manifest. This is in
+scope for Stage 1 (see Section 4a and the Section 6 tests). The rest of the
+dashboard data path stays unchanged.
+
+To keep that discovery total, every `.db` must have a sidecar: `writeCache`
+already writes one, and the transcode path (Section 4) writes
+`deriveCacheMeta(cache)` before deleting the `.json`, so a migrated worktree is
+never left DB-only. If a per-project function/call count is ever wanted on the
 dashboard, it is added to the sidecar (one tiny write), not a fan-out over DBs.
 
 ## Section 1: schema
@@ -190,10 +207,12 @@ forced reindex):
 - `.json` present and `majorOf(json.schemaVersion)` compatible: transcode. Parse
   the JSON once, build a `<worktreeKey>.db.tmp`, write all rows in a single
   transaction, `wal_checkpoint(TRUNCATE)` and strip `-wal` / `-shm`
-  (`checkpointAndVerify`), atomic rename `.tmp` to `.db`, then delete the
-  `.json`. Return the assembled cache. No source re-parse; freshness state
-  (`fingerprint`, `dirtyAtIndex`) is preserved exactly, so the next
-  `resolveCacheWithFreshness` still sees "fresh" with no spurious reindex.
+  (`checkpointAndVerify`), atomic rename `.tmp` to `.db`, write the
+  `<worktreeKey>.meta.json` sidecar via `deriveCacheMeta(cache)` (so the migrated
+  worktree is dashboard-discoverable even if the legacy JSON had no sidecar),
+  then delete the `.json`. Return the assembled cache. No source re-parse;
+  freshness state (`fingerprint`, `dirtyAtIndex`) is preserved exactly, so the
+  next `resolveCacheWithFreshness` still sees "fresh" with no spurious reindex.
 - `.json` present but incompatible / old schema: delete it, return `null` so the
   coordinator reindexes.
 - Parse / transcode error (corrupt JSON): discard the JSON and any `.tmp`, return
@@ -207,6 +226,27 @@ This covers parallel worktrees and two clients on one worktree.
 `resolveCacheWithFreshness` is unchanged: it still does the git fingerprint plus
 dirty check and, when stale, `buildIncrementalIndex` then `writeCache` (now
 bulk-replace into the DB).
+
+## Section 4a: `cacheMeta()` discovery change (required by review)
+
+`cacheMeta()` (src/lib/stats/query.ts:380) currently discovers worktrees by
+enumerating non-sidecar `.json` manifests (src/lib/stats/query.ts:390-406) and
+deriving each `.meta.json` path from the JSON filename. Because Section 4 deletes
+the structural `.json`, that enumeration would find nothing and the dashboard's
+per-project name / fileCount / indexedAt / fingerprint / worktreePath would go
+null despite a present sidecar. Stage 1 therefore changes discovery to be
+structural-format-independent:
+- Enumerate worktree keys from the union of `*.meta.json` sidecars (strip the
+  `.meta.json` suffix) and any remaining non-sidecar `.json` manifests (strip
+  `.json`). De-duplicate keys.
+- For each key, prefer the sidecar (`readSidecarSync`); fall back to
+  `readFromMainJson` only when a legacy `.json` still exists and no sidecar is
+  present (preserving the existing self-heal that writes the sidecar). Keep the
+  same "most recent `indexedAt` wins" selection.
+
+This is the only dashboard-code change in Stage 1; `storageFootprint`,
+`readAll`, and the rest of the data path are untouched. It must ship with the
+tests in Section 6.
 
 ## Section 5: GC / hygiene
 
@@ -229,10 +269,19 @@ Unit:
 Migration (explicit):
 - Valid `.json` transcodes to `.db`, JSON deleted, parity (assembled cache equals
   the JSON's content).
+- Transcode writes the `.meta.json` sidecar (a legacy JSON with no sidecar still
+  yields a discoverable sidecar after migration).
 - Freshness preserved after transcode (no reindex triggered).
 - Incompatible `.json` triggers reindex.
 - Corrupt `.json` triggers reindex.
 - Concurrent transcode yields a single valid `.db`, no corruption.
+
+Dashboard discovery (`cacheMeta()`, Section 4a):
+- A worktree with only `.db` + `.meta.json` (no structural `.json`) is discovered
+  with correct name / fileCount / indexedAt / fingerprint / worktreePath.
+- A legacy `.json`-only worktree still resolves (via `readFromMainJson` self-heal).
+- Mixed cache dir (one migrated `.db` worktree, one legacy `.json` worktree)
+  discovers both; "most recent `indexedAt` wins" selection unchanged.
 
 Integration:
 - Index a fixture repo: `.db` exists and is queryable.
@@ -246,10 +295,15 @@ Integration:
   `replaceAll` / schema / transcode helpers (likely a new `cache-store-sqlite.ts`
   module to keep `cache-store.ts` focused).
 - src/lib/cache-store-migrate.ts: reuse `checkpointAndVerify` / WAL helpers.
-- Tests: unit + migration + integration per Section 6.
+- src/lib/stats/query.ts: the `cacheMeta()` discovery change only (Section 4a);
+  `storageFootprint` and the rest are untouched.
+- Tests: unit + migration + discovery + integration per Section 6.
 
 Out of scope (no changes in Stage 1): the indexer, the coordinator algorithm,
-all consumers, the dashboard data path.
+all structural consumers (`queryBlastRadius`, suggest rankers, `rehydrate`,
+`briefing`), and the dashboard data path EXCEPT the scoped `cacheMeta()`
+discovery change in Section 4a (`readAll`, `storageFootprint`, aggregation, and
+all rendering stay unchanged).
 
 ## Risks and mitigations
 
@@ -260,3 +314,7 @@ all consumers, the dashboard data path.
 - WAL sidecars inflating `dirSize` / breaking single-file GC: mitigated by
   `wal_checkpoint(TRUNCATE)` and sidecar strip on close.
 - Schema churn when v3.1 lands: mitigated by nullable forward-compat columns.
+- Dashboard metadata going null after the `.json` is deleted (discovery keyed off
+  the structural manifest): mitigated by the Section 4a `cacheMeta()` discovery
+  change (enumerate by sidecar / `.db`) plus the transcode writing a sidecar, both
+  covered by the Section 6 discovery tests.
