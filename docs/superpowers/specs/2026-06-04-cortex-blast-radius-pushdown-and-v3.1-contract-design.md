@@ -48,8 +48,10 @@ Non-goals (deferred):
    + location enrichment). B's value depends on A's data; the Stage 1 schema
    already bridges them.
 2. Lean freshness handle: extract `ensureFreshDb(identity, opts) -> { dbPath,
-   cacheStatus }`; `resolveCacheWithFreshness` becomes a thin wrapper so whole-load
-   consumers are behaviorally unchanged.
+   cacheStatus, rebuiltCache? }`; `resolveCacheWithFreshness` becomes a thin
+   wrapper so whole-load consumers are behaviorally unchanged. No-materialization
+   is scoped to the fresh/`options.stale` paths; the stale incremental rebuild
+   materializes transiently (it needs the prior graph) and returns `rebuiltCache`.
 3. blast_radius bypasses `rehydrateRepo`; opens the `.db` readonly per-call, runs
    the CTE, closes. No memoization of the parsed graph (the Stage 1 memory trap).
 4. Enrich `BlastHit`/`BlastRadiusResult.target` with optional location fields
@@ -127,24 +129,44 @@ ensureValidDb(repoKey, worktreeKey) -> string | null
   `ensureValidDb` + `readFromDb(dbPath)` so its behavior is unchanged.
 
 ```
-ensureFreshDb(identity, { stale }) -> { dbPath: string; cacheStatus: "fresh" | "reindexed" | "stale" }
+ensureFreshDb(identity, { stale }) -> { dbPath: string; cacheStatus: "fresh" | "reindexed" | "stale"; rebuiltCache?: RepoCache }
 ```
-- Calls `ensureValidDb`. On `null` -> reindex (`indexRepo`, which writes the
-  `.db`) -> `{ dbPath, "reindexed" }`. On a valid path, runs the SAME freshness
-  logic as the coordinator: `buildRepoFingerprint` + `isWorktreeDirty`,
-  dirty-revert detection, and the reindex-if-stale path (which calls `writeCache`,
-  writing the `.db`). Returns the worktree's `dbPath` (via `getCacheDbFilePath`)
-  once the `.db` is guaranteed fresh-or-rebuilt, WITHOUT materializing a
-  `RepoCache`.
-- `resolveCacheWithFreshness` becomes a thin wrapper: call `ensureFreshDb`, then
-  `readFromDb(dbPath)` to materialize, preserving its exact external contract for
-  whole-load consumers (`rehydrate`, `suggest`).
 
-Note on the freshness internals: today's coordinator reads the cached `RepoCache`
-to compare `cached.fingerprint` / `cached.dirtyAtIndex`. `ensureFreshDb` needs
-those two scalar fields without a full load; it reads them cheaply from the db
-`meta` table (a tiny SELECT, with `dirtyAtIndex` absent -> undefined, matching
-the optional), not by assembling the whole cache.
+The no-materialization guarantee is scoped to the FRESH path (the hot path Stage 2
+targets), because the stale INCREMENTAL rebuild genuinely needs the prior graph:
+`diffChangedFiles(identity, cached)` reads `cached.files`
+(src/lib/diff-files.ts:36) and `buildIncrementalIndex(identity, cached, ...)`
+reads `existingCache.files/imports/docs/calls/functions/packageMeta`
+(src/lib/indexer.ts:120-177). That input is unavoidable, so the contract is:
+
+- Freshness DECISION is meta-only (no materialization): read `fingerprint` and
+  `dirtyAtIndex` from the db `meta` table (a tiny SELECT; `dirtyAtIndex` absent ->
+  undefined, matching the optional), then compute `fingerprintStale` /
+  `dirty` / `dirtyReverted` exactly as the coordinator does today.
+- `ensureValidDb` returned `null` (cache miss) -> full `indexRepo` (writes the
+  `.db`) -> `{ dbPath, "reindexed", rebuiltCache }`.
+- FRESH (`!isStale`) -> `{ dbPath, "fresh" }` with NO materialization. This is the
+  path blast_radius hits in the common case and where the whole-graph load is
+  eliminated.
+- `options.stale` AND stale -> `{ dbPath, "stale" }` with NO materialization
+  (blast reads the existing, valid-but-outdated `.db`).
+- stale AND not `options.stale` -> materialize the cached `RepoCache`
+  (`readFromDb(dbPath)`) ONLY here, run the existing `diffChangedFiles` +
+  `buildIncrementalIndex` + `writeCache`, and return `{ dbPath, "reindexed",
+  rebuiltCache: <the just-built cache> }`. This transient materialization is
+  acceptable: it is the rare path that is already re-parsing changed files, and
+  the materialized cache is not retained past the rebuild.
+- `resolveCacheWithFreshness` becomes a thin wrapper that preserves its exact
+  external contract: `const r = ensureFreshDb(...); return { cache: r.rebuiltCache
+  ?? readFromDb(r.dbPath), cacheStatus: r.cacheStatus }`. Using `rebuiltCache` on
+  rebuild paths avoids a double materialization (build -> write -> re-read), so
+  whole-load consumers (`rehydrate`, `suggest`) are byte-for-byte unchanged,
+  including on reindex.
+
+blast_radius ignores `rebuiltCache` entirely and always runs its CTE against
+`dbPath`; it therefore pays zero materialization on the fresh/stale paths and only
+the normal (unavoidable, transient) reindex cost on a stale rebuild — identical to
+what any consumer pays today when the cache is stale.
 
 ### Section B2: recursive CTE
 
@@ -223,9 +245,17 @@ Part B:
 Integration:
 - MCP blast path (`ensureFreshDb` + `queryBlastRadiusDb`) over a real fixture repo
   across `fresh` / `reindexed` / `stale`.
+- Fresh-path no-materialization: on a `fresh` `.db`, `ensureFreshDb` returns
+  without assembling a `RepoCache` (spy/assert `assembleCache` / `readFromDb` is
+  NOT called on the fresh and `options.stale` paths), proving blast skips the
+  whole-graph load in the common case.
+- Stale-rebuild contract: on a stale (non-`options.stale`) refresh, `ensureFreshDb`
+  returns `rebuiltCache`, and `resolveCacheWithFreshness` reuses it (assert no
+  second `readFromDb` after the rebuild) so whole-load reindex behavior is
+  unchanged.
 - Regression guard for the Section B1 refactor: `resolveCacheWithFreshness`
   whole-load consumers (`rehydrate`, `suggest`) behave identically (status +
-  returned cache) after the extraction.
+  returned cache) across fresh/reindexed/stale after the extraction.
 
 ## Files in scope
 
@@ -256,6 +286,12 @@ incremental path, row-level writes (`applyFileDelta` seam stays deferred).
   `resolveCacheWithFreshness` regression test and keeping it a thin wrapper.
 - Reading freshness scalars (fingerprint/dirtyAtIndex) without a full load:
   mitigated by a tiny `meta`-table SELECT rather than `assembleCache`.
+- Stale-refresh needs the prior graph: the incremental rebuild
+  (`diffChangedFiles` + `buildIncrementalIndex`) requires the full cached
+  `RepoCache`, so the no-materialization guarantee is intentionally scoped to the
+  fresh/`options.stale` paths; the stale rebuild materializes transiently (the
+  rare, already-expensive path) and returns `rebuiltCache` so the whole-load
+  wrapper does not double-read.
 - Merge friction with the parked v3.1 branch: the v3.1 `cache-store.ts` change is
   superseded by Stage 1's SQLite rewrite (already does `majorOf`), so it is
   dropped, not carried; only emission + the version bump + the contract doc come
