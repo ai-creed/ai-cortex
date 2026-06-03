@@ -385,22 +385,31 @@ export function cacheMeta(repoKey: string): CacheMeta {
 	} catch {
 		return { ...EMPTY_CACHE_META };
 	}
-	// Sidecars end in .meta.json which also matches .endsWith(".json").
-	// Skip them explicitly so the loop iterates only worktree manifests.
-	const jsons = entries.filter(
-		(e) =>
-			e.isFile() &&
-			e.name.endsWith(".json") &&
-			!e.name.endsWith(SIDECAR_SUFFIX),
-	);
+
+	// Discover worktree keys independent of the structural format: from sidecars
+	// (.meta.json), the SQLite store (.db), and legacy manifests (.json). The
+	// structural store is now a .db, so enumerating only .json would miss every
+	// migrated worktree (its .json is deleted) even though its sidecar exists.
+	const keys = new Set<string>();
+	for (const e of entries) {
+		if (!e.isFile()) continue;
+		if (e.name.endsWith(SIDECAR_SUFFIX)) {
+			keys.add(e.name.slice(0, -SIDECAR_SUFFIX.length));
+		} else if (e.name.endsWith(".db")) {
+			keys.add(e.name.slice(0, -".db".length));
+		} else if (e.name.endsWith(".json")) {
+			keys.add(e.name.slice(0, -".json".length));
+		}
+	}
+
 	let best: CacheMeta = { ...EMPTY_CACHE_META };
-	for (const e of jsons) {
-		const jsonPath = path.join(dir, e.name);
-		const sidecarPath =
-			jsonPath.slice(0, -".json".length) + SIDECAR_SUFFIX;
+	for (const key of keys) {
+		const sidecarPath = path.join(dir, key + SIDECAR_SUFFIX);
+		const jsonPath = path.join(dir, key + ".json");
 
 		let meta = readSidecarSync(sidecarPath);
-		if (!meta) {
+		if (!meta && fs.existsSync(jsonPath)) {
+			// Legacy manifest with no sidecar: read and self-heal the sidecar.
 			meta = readFromMainJson(jsonPath);
 			if (meta) writeSidecarSync(sidecarPath, meta);
 		}
