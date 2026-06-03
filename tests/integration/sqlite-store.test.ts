@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { indexRepo } from "../../src/lib/indexer.js";
 import {
@@ -13,7 +13,11 @@ import {
 } from "../../src/lib/cache-store.js";
 import { queryBlastRadius } from "../../src/lib/blast-radius.js";
 import { rankSuggestions } from "../../src/lib/suggest-ranker.js";
-import { resolveCacheWithFreshness } from "../../src/lib/cache-coordinator.js";
+import {
+	ensureFreshDb,
+	resolveCacheWithFreshness,
+} from "../../src/lib/cache-coordinator.js";
+import * as sqlite from "../../src/lib/cache-store-sqlite.js";
 import { resolveRepoIdentity } from "../../src/lib/repo-identity.js";
 
 // Global setup pins AI_CORTEX_CACHE_HOME; override per-test and restore it.
@@ -138,5 +142,57 @@ describe("SQLite structural store (integration)", () => {
 		fs.appendFileSync(path.join(repo, "src/a.ts"), "\n// dirty edit\n");
 		const third = await resolveCacheWithFreshness(identity, { stale: true });
 		expect(third.cacheStatus).toBe("stale");
+	});
+
+	it("ensureFreshDb: fresh path does NOT call readFromDb/assembleCache", async () => {
+		const identity = resolveRepoIdentity(repo);
+		await resolveCacheWithFreshness(identity, {}); // cold -> writes db
+
+		const readSpy = vi.spyOn(sqlite, "readFromDb");
+		const asmSpy = vi.spyOn(sqlite, "assembleCache");
+		const r = await ensureFreshDb(identity, {});
+		expect(r.cacheStatus).toBe("fresh");
+		expect(r.dbPath).toBe(
+			getCacheDbFilePath(identity.repoKey, identity.worktreeKey),
+		);
+		expect(r.rebuiltCache).toBeUndefined();
+		expect(readSpy).not.toHaveBeenCalled();
+		expect(asmSpy).not.toHaveBeenCalled();
+		readSpy.mockRestore();
+		asmSpy.mockRestore();
+	});
+
+	it("ensureFreshDb: options.stale path does NOT call readFromDb/assembleCache", async () => {
+		const identity = resolveRepoIdentity(repo);
+		await resolveCacheWithFreshness(identity, {}); // cold -> fresh db
+		fs.appendFileSync(path.join(repo, "src/a.ts"), "\nexport const extra = 1;\n"); // dirty
+
+		const readSpy = vi.spyOn(sqlite, "readFromDb");
+		const asmSpy = vi.spyOn(sqlite, "assembleCache");
+		const r = await ensureFreshDb(identity, { stale: true });
+		expect(r.cacheStatus).toBe("stale");
+		expect(r.rebuiltCache).toBeUndefined();
+		expect(readSpy).not.toHaveBeenCalled();
+		expect(asmSpy).not.toHaveBeenCalled();
+		readSpy.mockRestore();
+		asmSpy.mockRestore();
+	});
+
+	it("stale rebuild: ensureFreshDb returns rebuiltCache and the wrapper reuses it (no second readFromDb)", async () => {
+		const identity = resolveRepoIdentity(repo);
+		await resolveCacheWithFreshness(identity, {}); // cold -> fresh db
+		fs.appendFileSync(path.join(repo, "src/a.ts"), "\nexport const extra = 1;\n");
+		execFileSync("git", ["-C", repo, "commit", "-am", "change"], {
+			stdio: "ignore",
+		});
+
+		// On a stale rebuild, ensureFreshDb materializes the prior graph ONCE (needed
+		// by diffChangedFiles/buildIncrementalIndex), then resolveCacheWithFreshness
+		// must REUSE rebuiltCache -> readFromDb called exactly once across the call.
+		const readSpy = vi.spyOn(sqlite, "readFromDb");
+		const result = await resolveCacheWithFreshness(identity, {});
+		expect(result.cacheStatus).toBe("reindexed");
+		expect(readSpy).toHaveBeenCalledTimes(1);
+		readSpy.mockRestore();
 	});
 });
