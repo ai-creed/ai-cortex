@@ -9,6 +9,7 @@ import type { RepoCache } from "./models.js";
 import {
 	transcodeCacheToDb,
 	readFromDb,
+	dbSchemaValid,
 	majorOf,
 } from "./cache-store-sqlite.js";
 
@@ -137,22 +138,24 @@ export async function writeCacheMetaSidecar(
 	await fs.promises.rename(tmp, filePath);
 }
 
-export async function readCacheForWorktree(
+/** Ensure a valid (current-version) .db exists for the worktree and return its
+ *  path, performing legacy-JSON migration, WITHOUT assembling a RepoCache.
+ *  Returns null on a cache miss (caller reindexes). */
+export async function ensureValidDb(
 	repoKey: string,
 	worktreeKey: string,
-): Promise<RepoCache | null> {
+): Promise<string | null> {
 	const dbPath = getCacheDbFilePath(repoKey, worktreeKey);
 	const jsonPath = getCacheFilePath(repoKey, worktreeKey);
 
 	// 1. Canonical db present.
 	if (fs.existsSync(dbPath)) {
-		const cache = readFromDb(dbPath);
-		if (cache) {
+		if (dbSchemaValid(dbPath)) {
 			// Drop any stale legacy json now that the db is authoritative.
 			await fs.promises.rm(jsonPath, { force: true });
-			return cache;
+			return dbPath;
 		}
-		// Version mismatch: discard the db (and sidecars) so the coordinator reindexes.
+		// Version mismatch: discard the db (and sidecars) so the caller reindexes.
 		for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
 			await fs.promises.rm(p, { force: true });
 		}
@@ -191,9 +194,17 @@ export async function readCacheForWorktree(
 			// sidecar is best-effort; the db is authoritative
 		}
 		await fs.promises.rm(jsonPath, { force: true });
-		return cache;
+		return dbPath;
 	}
 
 	// 3. Nothing on disk: first index.
 	return null;
+}
+
+export async function readCacheForWorktree(
+	repoKey: string,
+	worktreeKey: string,
+): Promise<RepoCache | null> {
+	const dbPath = await ensureValidDb(repoKey, worktreeKey);
+	return dbPath ? readFromDb(dbPath) : null;
 }

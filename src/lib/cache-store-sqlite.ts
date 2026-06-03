@@ -264,6 +264,22 @@ export function majorOf(v: string): string {
 	return v.split(".")[0] ?? "";
 }
 
+/** True iff the db's store format + content major version are current. Used to
+ *  validate a db WITHOUT assembling the whole RepoCache. */
+export function dbSchemaValid(dbPath: string): boolean {
+	const db = new Database(dbPath, { readonly: true });
+	try {
+		if (db.pragma("user_version", { simple: true }) !== STORE_FORMAT_VERSION)
+			return false;
+		const row = db
+			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
+			.get() as { value: string } | undefined;
+		return majorOf(row?.value ?? "") === majorOf(SCHEMA_VERSION);
+	} finally {
+		db.close();
+	}
+}
+
 /** Open read-only, gate on store format + content major version, assemble. */
 export function readFromDb(dbPath: string): RepoCache | null {
 	const db = new Database(dbPath, { readonly: true });

@@ -21,6 +21,7 @@ import { exec } from "node:child_process";
 import {
 	assertHashedRepoKey,
 	buildRepoFingerprint,
+	ensureValidDb,
 	getCacheDbFilePath,
 	getCacheDir,
 	getCacheMetaFilePath,
@@ -337,6 +338,53 @@ describe("readCacheForWorktree (SQLite + migration)", () => {
 		expect(await readCacheForWorktree(repoKey, worktreeKey)).toBeNull();
 		expect(fs.existsSync(dbPath)).toBe(false);
 		stderrSpy.mockRestore();
+	});
+});
+
+describe("ensureValidDb", () => {
+	const repoKey = "aabbccdd11223344";
+	const worktreeKey = "eeff00112233aabb";
+	beforeEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = tmpDir;
+	});
+	afterEach(() => {
+		process.env.AI_CORTEX_CACHE_HOME = SESSION_CACHE_HOME;
+	});
+
+	it("returns the db path for a valid db", async () => {
+		await writeCache(makeCache());
+		const p = await ensureValidDb(repoKey, worktreeKey);
+		expect(p).toBe(getCacheDbFilePath(repoKey, worktreeKey));
+	});
+
+	it("returns null when nothing exists", async () => {
+		expect(await ensureValidDb(repoKey, worktreeKey)).toBeNull();
+	});
+
+	it("returns null and clears a store-format-mismatched db", async () => {
+		await writeCache(makeCache());
+		const dbPath = getCacheDbFilePath(repoKey, worktreeKey);
+		const db = new Database(dbPath);
+		db.pragma("user_version = 999");
+		db.close();
+		const stderrSpy = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
+		expect(await ensureValidDb(repoKey, worktreeKey)).toBeNull();
+		expect(fs.existsSync(dbPath)).toBe(false);
+		stderrSpy.mockRestore();
+	});
+
+	it("migrates a compatible legacy json and returns the db path", async () => {
+		const dir = getCacheDir(repoKey);
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(
+			path.join(dir, `${worktreeKey}.json`),
+			JSON.stringify(makeCache(), null, 2),
+		);
+		const p = await ensureValidDb(repoKey, worktreeKey);
+		expect(p).toBe(getCacheDbFilePath(repoKey, worktreeKey));
+		expect(fs.existsSync(path.join(dir, `${worktreeKey}.json`))).toBe(false);
 	});
 });
 
