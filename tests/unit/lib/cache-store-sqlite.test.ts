@@ -262,3 +262,52 @@ describe("transcodeCacheToDb", () => {
 		expect(residue).toEqual([]);
 	}, 30_000);
 });
+
+describe("v3.1 site/range round-trip", () => {
+	it("persists and reconstructs CallEdge.site and FunctionNode ranges", () => {
+		const dbPath = path.join(tmpDir, "wk.db");
+		const db = openStructuralDb(dbPath);
+		try {
+			const input = richCache({
+				calls: [
+					{
+						from: "src/a.ts::foo",
+						to: "src/b.ts::bar",
+						kind: "call",
+						site: { line: 2, column: 3, endLine: 2, endColumn: 18 },
+					},
+				],
+				functions: [
+					{
+						qualifiedName: "foo",
+						file: "src/a.ts",
+						exported: true,
+						isDefaultExport: false,
+						line: 1,
+						column: 1,
+						endLine: 4,
+						endColumn: 2,
+					},
+				],
+			});
+			replaceAll(db, input);
+			expect(assembleCache(db)).toEqual(input);
+		} finally {
+			db.close();
+		}
+	});
+
+	it("major-only invalidation: an EXACT Stage 1 schemaVersion '3' db is still read, not nuked", () => {
+		// A v3 db (no site/range columns populated) written by Stage 1 must remain
+		// readable under v3.1 because invalidation keys off the MAJOR version only.
+		// Use the literal "3", not `${major}.999`, to catch a regression that
+		// rejects the exact Stage 1 value.
+		const dbPath = path.join(tmpDir, "wk.db");
+		const db = openStructuralDb(dbPath);
+		replaceAll(db, richCache({ schemaVersion: "3" as RepoCache["schemaVersion"] }));
+		db.close();
+		const read = readFromDb(dbPath);
+		expect(read).not.toBeNull();
+		expect(read!.schemaVersion).toBe("3");
+	});
+});
