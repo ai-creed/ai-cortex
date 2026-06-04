@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## Unreleased
+
+### Added
+- `cortex graph`: an interactive, terminal-styled WebGL "galaxy" of memories and
+  indexed codebases, served locally in the browser across all cached projects.
+  Three modes (memory, code, bridge) over one canvas with click drill-down and
+  semantic zoom; `--semantic` adds embedding-similarity memory edges; `--flat`
+  renders a whole repo's files at once; `--export` writes the graph as JSON. The
+  graph builder is pure and store-namespaces every node id for cross-project
+  safety; the server is read-only and reads only from `~/.cache/ai-cortex`.
+
+---
+
 ## v0.13.0 — 2026-06-04
 
 ### Added

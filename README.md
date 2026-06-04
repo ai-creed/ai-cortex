@@ -171,6 +171,32 @@ select it with `j/k` and press:
 - `a` — archive (move cache to `~/.cache/ai-cortex/v1/_archived/<repoKey>/`)
 - `x` — clean (prompts y/n; deletes the cache dir, irreversible)
 
+## The Galaxy (`cortex graph`)
+
+`cortex graph` opens an interactive, terminal-styled galaxy of your memories
+and indexed codebases in the browser, spanning every cached project at once. It
+is read-only and reads only from `~/.cache/ai-cortex`; it never writes into your
+repositories.
+
+```
+cortex graph [--project <path>] [--mode code|memory|bridge] [--flat]
+             [--semantic] [--export <file>] [--port <n>] [--no-open]
+```
+
+Three lenses over one canvas, switchable at any zoom level:
+
+- `memory` (default): the cross-project knowledge graph. Nodes are memories;
+  edges come from explicit links, shared scope (tags/files), and, with
+  `--semantic`, embedding similarity.
+- `code`: a project's structure. Click a project to drop in, expand a directory
+  to its files, and open a file to its symbols and call graph. `--flat` renders
+  every file of a repo at once.
+- `bridge`: memories woven onto the code they scope, via each memory's file
+  scope.
+
+`--export <file>` writes the graph as JSON and exits (no server), for use in
+external graph tools.
+
 ## Where To Go Next
 
 - [Getting started](./docs/getting-started.md): install, connect an agent, index a repo, capture sessions, and record a first memory.
