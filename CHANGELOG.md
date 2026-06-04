@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.13.0 — 2026-06-04
+
+### Added
+- Per-worktree SQLite structural store, replacing the per-worktree JSON cache.
+  A WAL-mode `.db` with a queryable schema (files, docs, imports, functions,
+  calls, meta). Legacy `.json` caches transcode to SQLite in place on first
+  read, with a reindex fallback for incompatible/corrupt caches. The `memory/`,
+  `history/`, and `stats/` stores are untouched by the migration.
+- v3.1 index contract: call edges carry a `site` Range and functions carry full
+  ranges (`column` / `endLine` / `endColumn`); `SCHEMA_VERSION` is now `3.1`
+  (additive, major-compatible — existing v3 caches stay valid). Documented in
+  `docs/architecture/cortex-index-contract.md`.
+- `blast_radius` runs a read-only recursive-CTE query over the SQLite store,
+  avoiding whole-graph materialization on the fresh path, and returns
+  `callSite` / `range` location data on each hit and the target.
+
+### Changed
+- Dashboard worktree discovery (`cacheMeta`) keys off `.meta.json` sidecars and
+  `.db` files instead of the old `.json` manifest.
+- Failed tool calls now record the error message and code in stats (the `meta`
+  column), so the *why* of a failure is queryable instead of just its class.
+- `record_memory` / `rewrite_memory` tool docs surface the registered memory
+  types (`decision`, `gotcha`, `pattern`, `how-to`, plus project-custom) and
+  `gotcha`'s required `severity` upfront.
+
+### Fixed
+- `search_memories` no longer throws `SqliteError` on queries containing
+  FTS5-special characters (unbalanced quotes, `*`, `AND`/`OR`/`NEAR`, parens).
+
 ## v0.12.1 — 2026-05-28
 
 ### Changed
