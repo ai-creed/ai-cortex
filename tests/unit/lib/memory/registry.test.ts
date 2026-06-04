@@ -6,8 +6,19 @@ import {
 	ensureRegistry,
 	readRegistry,
 	validateRegistration,
+	typeContractHint,
 	BUILT_IN_TYPES,
 } from "../../../../src/lib/memory/registry.js";
+
+describe("typeContractHint", () => {
+	it("lists the built-in types and the gotcha severity requirement, not internal 'capture'", () => {
+		const h = typeContractHint();
+		for (const t of BUILT_IN_TYPES) expect(h).toContain(t);
+		expect(h).not.toContain("capture");
+		expect(h.toLowerCase()).toContain("severity");
+		for (const s of ["info", "warning", "critical"]) expect(h).toContain(s);
+	});
+});
 
 let tmp: string;
 

@@ -74,6 +74,21 @@ describe("MCP memory read tools — registration", () => {
 		expect(names).toContain("sweep_aging");
 		expect(names).toContain("promote_to_global");
 	});
+
+	it("record_memory/rewrite_memory descriptions surface the type contract upfront", async () => {
+		const client = await makeClient();
+		const { tools } = await client.listTools();
+		for (const name of ["record_memory", "rewrite_memory"]) {
+			const t = tools.find((x: { name: string }) => x.name === name) as {
+				description: string;
+			};
+			expect(t).toBeDefined();
+			for (const ty of ["decision", "gotcha", "pattern", "how-to"]) {
+				expect(t.description).toContain(ty);
+			}
+			expect(t.description.toLowerCase()).toContain("severity");
+		}
+	});
 });
 
 describe("MCP list_memories", () => {
