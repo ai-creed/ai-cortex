@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.12.1",
+	"version": "0.13.0",
 	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
 	"type": "module",
 	"license": "MIT",
@@ -112,6 +112,6 @@
 		"vitest": "^3.2.4"
 	},
 	"aiCortex": {
-		"releaseHeadline": "Two verdict bands in cortex stats"
+		"releaseHeadline": "SQLite structural store + location-aware blast_radius"
 	}
 }
