@@ -3,7 +3,7 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { Database as DB, Statement } from "better-sqlite3";
 import { statsDir, statsDbPath } from "./paths.js";
-import { safeTag } from "./sanitize.js";
+import { safeTag, safeMessage } from "./sanitize.js";
 import type { StatsEvent } from "./types.js";
 
 const SCHEMA_SQL = `
@@ -113,7 +113,8 @@ export function writeEvent(sink: StatsSink, ev: StatsEvent): void {
 			mode: ev.mode ?? null,
 			result_count: ev.result_count ?? null,
 			query_len: ev.query_len ?? null,
-			meta: null,
+			// `meta` carries the sanitized error message (the "why") for failures.
+			meta: safeMessage(ev.err_message),
 			synthetic: ev.synthetic ?? 0,
 		};
 		sink.insert.run(

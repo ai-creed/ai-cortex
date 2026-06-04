@@ -64,7 +64,7 @@ import { matchMemoriesCrossTier, type SuggestMode } from "../lib/memory/surface.
 import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js";
 import { getSink } from "../lib/stats/registry.js";
 import { writeEvent } from "../lib/stats/sink.js";
-import { errClassOf } from "../lib/stats/sanitize.js";
+import { errClassOf, errMessageOf, errCodeOf } from "../lib/stats/sanitize.js";
 
 function logCall(
 	tool: string,
@@ -127,7 +127,13 @@ function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
 				dur_ms: args.dur_ms,
 				status: args.status,
 				session_id: resolveLoggedSessionId(),
-				...(args.status === "error" ? { err_class: errClassOf(args.err) } : {}),
+				...(args.status === "error"
+					? {
+							err_class: errClassOf(args.err),
+							err_code: errCodeOf(args.err),
+							err_message: errMessageOf(args.err),
+						}
+					: {}),
 				...sParams,
 				...sResult,
 			});

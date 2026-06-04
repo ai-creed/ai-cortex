@@ -23,6 +23,8 @@ export type StatsEvent = {
 	status: ToolStatus;
 	err_class?: string | null;
 	err_code?: string | null;
+	/** Sanitized error message (the "why" of a failure); stored in `meta`. */
+	err_message?: string | null;
 	/**
 	 * 1 = row synthesized from session-history (no live timing). 0 = live MCP call.
 	 * When omitted, sink writes 0. Synthetic rows are excluded from latency
