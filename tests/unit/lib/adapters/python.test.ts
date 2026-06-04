@@ -85,12 +85,14 @@ describe("python adapter — call extraction", () => {
 			"pkg/foo.py",
 			"def foo():\n  bar()\n",
 		);
-		expect(r.rawCalls).toContainEqual({
-			callerQualifiedName: "foo",
-			callerFile: "pkg/foo.py",
-			rawCallee: "bar",
-			kind: "call",
-		});
+		expect(r.rawCalls).toContainEqual(
+			expect.objectContaining({
+				callerQualifiedName: "foo",
+				callerFile: "pkg/foo.py",
+				rawCallee: "bar",
+				kind: "call",
+			}),
+		);
 	});
 
 	it("maps self.method() to ClassName.method", async () => {
@@ -99,12 +101,14 @@ describe("python adapter — call extraction", () => {
 			"pkg/models.py",
 			"class Model:\n  def save(self):\n    self.finalize()\n",
 		);
-		expect(r.rawCalls).toContainEqual({
-			callerQualifiedName: "Model.save",
-			callerFile: "pkg/models.py",
-			rawCallee: "Model.finalize",
-			kind: "method",
-		});
+		expect(r.rawCalls).toContainEqual(
+			expect.objectContaining({
+				callerQualifiedName: "Model.save",
+				callerFile: "pkg/models.py",
+				rawCallee: "Model.finalize",
+				kind: "method",
+			}),
+		);
 	});
 
 	it("maps cls.method() to ClassName.method", async () => {
@@ -286,5 +290,42 @@ describe("python adapter — import site extraction", () => {
 	it("returns empty array for empty file without throwing", async () => {
 		const sites = await adapter.extractImports("", "pkg/empty.py", "");
 		expect(sites).toEqual([]);
+	});
+});
+
+describe("python adapter — range and site emission (unit)", () => {
+	it("populates column/endLine/endColumn on a multi-line function", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"pkg/r.py",
+			"def multi():\n    return 1\n",
+		);
+		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		expect(fn?.column).toBe(1);
+		expect(fn?.endLine).toBeGreaterThan(fn!.line);
+		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
+	});
+
+	it("populates site on a plain call", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"pkg/c.py",
+			"def caller():\n    callee()\n",
+		);
+		const call = r.rawCalls.find(
+			(c) => c.rawCallee === "callee" && c.kind === "call",
+		);
+		expect(call?.site).toBeDefined();
+		expect(call?.site?.line).toBe(2);
+	});
+
+	it("populates site on a self.method() method call", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"pkg/m.py",
+			"class C:\n    def save(self):\n        self.finalize()\n",
+		);
+		const method = r.rawCalls.find((c) => c.kind === "method");
+		expect(method?.site).toBeDefined();
 	});
 });

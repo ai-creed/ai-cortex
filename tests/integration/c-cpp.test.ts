@@ -49,6 +49,26 @@ afterAll(() => {
 });
 
 describe("C/C++ + TS mixed indexing", () => {
+	it("emits FunctionNode ranges and RawCallSite.site for C/C++", async () => {
+		const { functions, calls } = await extractCallGraph(FIXTURE, FILES);
+		const def = functions.find(
+			(f) => !f.isDeclarationOnly && f.endLine && f.endLine > f.line,
+		);
+		expect(def).toBeDefined();
+		expect(def?.column).toBeGreaterThanOrEqual(1);
+		expect(def?.endColumn).toBeGreaterThanOrEqual(1);
+
+		const cppCall = calls.find((c) => c.site);
+		expect(cppCall?.site?.line).toBeGreaterThanOrEqual(1);
+	});
+
+	it("never emits the reserved FunctionNode.id key at v3.1 (c/c++)", async () => {
+		const { functions } = await extractCallGraph(FIXTURE, FILES);
+		for (const fn of functions) {
+			expect(Object.prototype.hasOwnProperty.call(fn, "id")).toBe(false);
+		}
+	});
+
 	it("extracts functions from all files", async () => {
 		const { functions } = await extractCallGraph(FIXTURE, FILES);
 		const names = functions.map((f) => f.qualifiedName);

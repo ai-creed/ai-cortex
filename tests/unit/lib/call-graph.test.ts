@@ -22,6 +22,78 @@ import {
 } from "../../../src/lib/call-graph.js";
 
 describe("resolveCallSites", () => {
+	it("threads RawCallSite.site onto a resolved CallEdge", () => {
+		const raw: RawCallSite[] = [
+			{
+				callerQualifiedName: "foo",
+				callerFile: "src/a.ts",
+				rawCallee: "helper",
+				kind: "call",
+				site: { line: 2, column: 10, endLine: 2, endColumn: 18 },
+			},
+		];
+		const funcs = [
+			...functions,
+			{
+				qualifiedName: "helper",
+				file: "src/a.ts",
+				exported: false,
+				isDefaultExport: false,
+				line: 10,
+			},
+		];
+		const edges = resolveCallSites(raw, funcs, new Map(), new Map());
+		expect(edges[0].site).toEqual({
+			line: 2,
+			column: 10,
+			endLine: 2,
+			endColumn: 18,
+		});
+	});
+
+	it("omits site key entirely when RawCallSite.site is absent", () => {
+		const raw: RawCallSite[] = [
+			{
+				callerQualifiedName: "foo",
+				callerFile: "src/a.ts",
+				rawCallee: "helper",
+				kind: "call",
+			},
+		];
+		const funcs = [
+			...functions,
+			{
+				qualifiedName: "helper",
+				file: "src/a.ts",
+				exported: false,
+				isDefaultExport: false,
+				line: 10,
+			},
+		];
+		const edges = resolveCallSites(raw, funcs, new Map(), new Map());
+		expect("site" in edges[0]).toBe(false);
+	});
+
+	it("attaches site to the unresolved-fallback edge (to starts with ::)", () => {
+		const raw: RawCallSite[] = [
+			{
+				callerQualifiedName: "foo",
+				callerFile: "src/a.ts",
+				rawCallee: "totallyUnknownFn",
+				kind: "call",
+				site: { line: 7, column: 3, endLine: 7, endColumn: 20 },
+			},
+		];
+		const edges = resolveCallSites(raw, functions, new Map(), new Map());
+		expect(edges[0].to.startsWith("::")).toBe(true);
+		expect(edges[0].site).toEqual({
+			line: 7,
+			column: 3,
+			endLine: 7,
+			endColumn: 20,
+		});
+	});
+
 	const functions: FunctionNode[] = [
 		{
 			qualifiedName: "foo",

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	getCachedIndex,
@@ -21,6 +22,28 @@ function resolvedCacheDir(repoKey: string): string {
 		process.env.AI_CORTEX_CACHE_HOME ??
 		path.join(os.homedir(), ".cache", "ai-cortex", "v1");
 	return path.join(home, repoKey);
+}
+
+// Tamper with a value in the persisted SQLite cache (the structural store is a
+// per-worktree .db now, not a .json). Checkpoint + strip sidecars so the .db is
+// a clean self-contained file with no stale -wal to collide with later writes.
+function patchCacheMeta(
+	repoKey: string,
+	worktreeKey: string,
+	key: string,
+	value: string,
+): void {
+	const dbPath = path.join(resolvedCacheDir(repoKey), `${worktreeKey}.db`);
+	const db = new Database(dbPath);
+	try {
+		db.prepare("UPDATE meta SET value = ? WHERE key = ?").run(value, key);
+		db.pragma("wal_checkpoint(TRUNCATE)");
+	} finally {
+		db.close();
+	}
+	for (const sfx of ["-wal", "-shm"]) {
+		fs.rmSync(dbPath + sfx, { force: true });
+	}
 }
 
 let tmpDir: string;
@@ -345,11 +368,12 @@ describe("incremental refresh (real disk + real git)", () => {
 		const cache = await indexRepo(tmpDir);
 
 		// Tamper with persisted cache to set fingerprint to nonexistent SHA
-		const cacheDir = resolvedCacheDir(cache.repoKey);
-		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
-		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-		raw.fingerprint = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-		fs.writeFileSync(cacheFile, JSON.stringify(raw));
+		patchCacheMeta(
+			cache.repoKey,
+			cache.worktreeKey,
+			"fingerprint",
+			"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		);
 
 		// Modify a file so there's something to detect
 		fs.writeFileSync(
@@ -417,12 +441,8 @@ describe("incremental refresh (real disk + real git)", () => {
 		// Build current cache
 		const cache = await indexRepo(tmpDir);
 
-		// Tamper with cache file to simulate v1 schema
-		const cacheDir = resolvedCacheDir(cache.repoKey);
-		const cacheFile = path.join(cacheDir, `${cache.worktreeKey}.json`);
-		const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-		raw.schemaVersion = "1";
-		fs.writeFileSync(cacheFile, JSON.stringify(raw));
+		// Tamper with cache meta to simulate an old (v1) schema.
+		patchCacheMeta(cache.repoKey, cache.worktreeKey, "schemaVersion", "1");
 
 		const result = await rehydrateRepo(tmpDir);
 

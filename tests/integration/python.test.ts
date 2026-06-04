@@ -51,6 +51,24 @@ afterAll(() => {
 });
 
 describe("Python indexing — function extraction", () => {
+	it("emits FunctionNode ranges and RawCallSite.site for Python", async () => {
+		const { functions, calls } = await extractCallGraph(FIXTURE, FILES);
+		const multi = functions.find((f) => f.endLine && f.endLine > f.line);
+		expect(multi).toBeDefined();
+		expect(multi?.column).toBeGreaterThanOrEqual(1);
+		expect(multi?.endColumn).toBeGreaterThanOrEqual(1);
+
+		const withSite = calls.find((c) => c.site);
+		expect(withSite?.site?.line).toBeGreaterThanOrEqual(1);
+	});
+
+	it("never emits the reserved FunctionNode.id key at v3.1 (python)", async () => {
+		const { functions } = await extractCallGraph(FIXTURE, FILES);
+		for (const fn of functions) {
+			expect(Object.prototype.hasOwnProperty.call(fn, "id")).toBe(false);
+		}
+	});
+
 	it("extracts all expected function names", async () => {
 		const { functions } = await extractCallGraph(FIXTURE, FILES);
 		const names = functions.map((f: FunctionNode) => f.qualifiedName);

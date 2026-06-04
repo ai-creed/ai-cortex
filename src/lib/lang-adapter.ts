@@ -1,10 +1,11 @@
-import type { FunctionNode } from "./models.js";
+import type { FunctionNode, Range } from "./models.js";
 
 export type RawCallSite = {
 	callerQualifiedName: string;
 	callerFile: string;
 	rawCallee: string;
 	kind: "call" | "new" | "method";
+	site?: Range; // NEW: internal only, never serialized; mapped onto CallEdge.site by the resolver
 };
 
 export type ImportBinding = {

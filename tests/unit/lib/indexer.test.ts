@@ -93,8 +93,8 @@ beforeEach(async () => {
 	vi.mocked(ensureAdapters).mockResolvedValue(undefined);
 });
 
-it("uses schema version 3", () => {
-	expect(SCHEMA_VERSION).toBe("3");
+it("uses schema version 3.1", () => {
+	expect(SCHEMA_VERSION).toBe("3.1");
 });
 
 describe("buildIndex", () => {

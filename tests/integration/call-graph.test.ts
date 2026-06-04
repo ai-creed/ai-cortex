@@ -63,6 +63,27 @@ afterAll(() => {
 });
 
 describe("call graph integration", () => {
+	it("emits FunctionNode ranges and CallEdge.site for TS", () => {
+		const main = cache.functions.find((f) => f.qualifiedName === "main");
+		expect(main).toBeDefined();
+		expect(main?.column).toBeGreaterThanOrEqual(1);
+		expect(main?.endLine).toBeGreaterThanOrEqual(main!.line);
+		expect(main?.endColumn).toBeGreaterThanOrEqual(1);
+
+		const edge = cache.calls.find(
+			(c) => c.from.includes("main") && c.to.includes("helper"),
+		);
+		expect(edge?.site).toBeDefined();
+		expect(edge?.site?.line).toBeGreaterThanOrEqual(1);
+		expect(edge?.site?.column).toBeGreaterThanOrEqual(1);
+	});
+
+	it("never emits the reserved FunctionNode.id key at v3.1", () => {
+		for (const fn of cache.functions) {
+			expect(Object.prototype.hasOwnProperty.call(fn, "id")).toBe(false);
+		}
+	});
+
 	it("extracts call edges and functions from real files", async () => {
 		expect(cache.functions.length).toBeGreaterThan(0);
 		expect(cache.calls.length).toBeGreaterThan(0);

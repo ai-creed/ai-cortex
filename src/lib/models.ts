@@ -1,6 +1,6 @@
 // src/lib/models.ts
 
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "3.1";
 
 export class RepoIdentityError extends Error {
 	constructor(message: string) {
@@ -69,10 +69,21 @@ export type DocInput = {
 	body: string;
 };
 
+export type Position = {
+	line: number; // 1-indexed
+	column: number; // 1-indexed
+};
+
+export type Range = Position & {
+	endLine: number; // 1-indexed, inclusive
+	endColumn: number; // 1-indexed, inclusive
+};
+
 export type CallEdge = {
 	from: string;
 	to: string;
 	kind: "call" | "new" | "method";
+	site?: Range; // NEW: callsite location in `from`'s file
 };
 
 export type FunctionNode = {
@@ -80,8 +91,13 @@ export type FunctionNode = {
 	file: string;
 	exported: boolean;
 	isDefaultExport: boolean;
-	line: number;
+	line: number; // unchanged: start line, 1-indexed
+	column?: number; // NEW: start column, 1-indexed
+	endLine?: number; // NEW: end line, 1-indexed inclusive
+	endColumn?: number; // NEW: end column, 1-indexed inclusive
 	isDeclarationOnly?: boolean;
+	id?: string; // RESERVED for future rename-stable symbol ID.
+	// Writers MUST NOT emit at v3.1. Readers MUST tolerate present or absent.
 };
 
 export type BlastHit = {
@@ -89,6 +105,8 @@ export type BlastHit = {
 	file: string;
 	hop: number;
 	exported: boolean;
+	range?: Range; // NEW: caller function range (v3.1)
+	callSite?: Range; // NEW: edge site reaching the next callee toward the target
 };
 
 export type RepoCache = {

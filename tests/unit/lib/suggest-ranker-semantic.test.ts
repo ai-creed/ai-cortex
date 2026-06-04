@@ -1,6 +1,7 @@
 // tests/unit/lib/suggest-ranker-semantic.test.ts
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { RepoCache } from "../../../src/lib/models.js";
+import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 
 vi.mock("../../../src/lib/embed-provider.js", () => ({
 	MODEL_NAME: "Xenova/all-MiniLM-L6-v2",
@@ -21,7 +22,7 @@ vi.mock("../../../src/lib/vector-builder.js", () => ({
 
 function makeCache(filePaths: string[]): RepoCache {
 	return {
-		schemaVersion: "3",
+		schemaVersion: SCHEMA_VERSION,
 		repoKey: "test-repo",
 		worktreeKey: "test-worktree",
 		worktreePath: "/tmp/test-repo",

@@ -199,7 +199,7 @@ describe("App two-verdicts wiring", () => {
 		projects: [],
 		projectNames: {},
 	};
-	const readEmpty: AppProps["read"] = (_w, _focus) => EMPTY;
+	const readEmpty: AppProps["read"] = () => EMPTY;
 
 	it("App.det === null: omits the per-project band entirely", async () => {
 		const { lastFrame } = render(
