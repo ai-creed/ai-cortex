@@ -1,10 +1,20 @@
 // src/lib/graph/builder.ts
-import { fileNodes, importEdges, projectNode } from "./edges/code.js";
+import {
+	callEdges,
+	fileNodes,
+	importEdges,
+	projectNode,
+	symbolNodes,
+} from "./edges/code.js";
 import { dirRollup, narrowToDir } from "./aggregate.js";
 import type { BuildOpts, GraphPayload, RepoStores } from "./types.js";
 
 function isDirFocus(focus: string | undefined, repoKey: string): boolean {
 	return typeof focus === "string" && focus.startsWith(`dir:${repoKey}:`);
+}
+
+function isFileFocus(focus: string | undefined, repoKey: string): boolean {
+	return typeof focus === "string" && focus.startsWith(`file:${repoKey}:`);
 }
 
 function memCountByRepo(stores: RepoStores): Map<string, number> {
@@ -42,6 +52,17 @@ export function buildGraph(stores: RepoStores, opts: BuildOpts): GraphPayload {
 		};
 	}
 
+	// file focus => descend to that file's symbols and their resolved calls.
+	if (isFileFocus(opts.focus, repoKey)) {
+		const filePath = opts.focus!.slice(`file:${repoKey}:`.length);
+		return {
+			mode: opts.mode,
+			scope: opts.scope,
+			level: "symbol",
+			nodes: symbolNodes(store, filePath),
+			edges: callEdges(store, filePath),
+		};
+	}
 	// flat => the whole project at file level (the spectacle).
 	if (opts.flat === true) {
 		return {
