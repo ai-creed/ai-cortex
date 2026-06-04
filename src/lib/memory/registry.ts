@@ -52,6 +52,21 @@ const SEED: TypeRegistry = {
 	},
 };
 
+/**
+ * One-line contract hint for the record_memory / rewrite_memory tool docs:
+ * the registered (user-facing) types and the gotcha->severity requirement,
+ * sourced from the seed so it stays accurate. Excludes internal 'capture'.
+ */
+export function typeContractHint(): string {
+	const sev = SEED.types.gotcha?.extraFrontmatter?.severity;
+	const sevList = Array.isArray(sev) ? sev.join(", ") : "";
+	return (
+		`type must be one of the registered memory types: ${BUILT_IN_TYPES.join(", ")} ` +
+		"(or a project-custom type registered in types.json). " +
+		`gotcha requires typeFields.severity (one of: ${sevList}).`
+	);
+}
+
 // Reserved built-in name. The seed-merge force-writes this spec even over a
 // same-named user entry, because the gate's createMemory(type:"capture",
 // body:<raw>) requires capture to accept any body.

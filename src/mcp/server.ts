@@ -59,12 +59,13 @@ import {
 	addEvidence,
 	rewriteMemory,
 } from "../lib/memory/lifecycle.js";
+import { typeContractHint } from "../lib/memory/registry.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
 import { matchMemoriesCrossTier, type SuggestMode } from "../lib/memory/surface.js";
 import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js";
 import { getSink } from "../lib/stats/registry.js";
 import { writeEvent } from "../lib/stats/sink.js";
-import { errClassOf } from "../lib/stats/sanitize.js";
+import { errClassOf, errMessageOf, errCodeOf } from "../lib/stats/sanitize.js";
 
 function logCall(
 	tool: string,
@@ -127,7 +128,13 @@ function scheduleSinkWrite<P, R>(args: SafeWriteArgs<P, R>): void {
 				dur_ms: args.dur_ms,
 				status: args.status,
 				session_id: resolveLoggedSessionId(),
-				...(args.status === "error" ? { err_class: errClassOf(args.err) } : {}),
+				...(args.status === "error"
+					? {
+							err_class: errClassOf(args.err),
+							err_code: errCodeOf(args.err),
+							err_message: errMessageOf(args.err),
+						}
+					: {}),
 				...sParams,
 				...sResult,
 			});
@@ -951,17 +958,22 @@ export function createServer(): McpServer {
 		"record_memory",
 		{
 			description:
-				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks).",
+				"Record a new memory when the user states a rule, expresses a preference, or describes a constraint. Good memories are specific, actionable, and scoped (pass scopeFiles when the rule is file-bound, scopeTags for cross-cutting concerns). Set globalScope=true for cross-project rules (universal language patterns, tool quirks). " + typeContractHint(),
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
-				type: z.string().min(1),
+				type: z.string().min(1).describe(typeContractHint()),
 				title: z.string().min(1),
 				body: z.string().min(1),
 				scopeFiles: z.array(z.string()).optional(),
 				scopeTags: z.array(z.string()).optional(),
 				source: z.enum(["explicit", "extracted"]).optional(),
 				confidence: z.number().min(0).max(1).optional(),
-				typeFields: z.record(z.unknown()).optional(),
+				typeFields: z
+					.record(z.unknown())
+					.optional()
+					.describe(
+						"Type-specific fields. e.g. a gotcha requires { severity: 'info' | 'warning' | 'critical' }.",
+					),
 				globalScope: z.boolean().optional(),
 			},
 		},
@@ -1680,7 +1692,7 @@ export function createServer(): McpServer {
 		"rewrite_memory",
 		{
 			description:
-				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it).",
+				"Apply a cleaned-up rewrite to a memory. The body should follow a soft rule card structure (rule + rationale + when-applies). rewrite_memory auto-promotes a candidate to active — your investment in rewriting is the endorsement signal. Errors on memories in terminal states (merged_into, trashed, purged_redacted). Already-active and deprecated memories keep their existing status (rewriting a deprecated memory does not auto-restore it). " + typeContractHint(),
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
@@ -1688,8 +1700,13 @@ export function createServer(): McpServer {
 				body: z.string().min(1),
 				scopeFiles: z.array(z.string()),
 				scopeTags: z.array(z.string()),
-				type: z.string().optional(),
-				typeFields: z.record(z.unknown()).optional(),
+				type: z.string().optional().describe(typeContractHint()),
+				typeFields: z
+					.record(z.unknown())
+					.optional()
+					.describe(
+						"Type-specific fields. e.g. a gotcha requires { severity: 'info' | 'warning' | 'critical' }.",
+					),
 			},
 		},
 		logged(

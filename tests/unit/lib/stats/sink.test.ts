@@ -184,6 +184,30 @@ describe("writeEvent", () => {
 			sink.close();
 		}
 	});
+
+	it("stores the sanitized error message (the why) in the meta column", () => {
+		const sink = openSink(padded);
+		try {
+			writeEvent(sink, {
+				ts: 1_700_000_000_003,
+				tool: "record_memory",
+				dur_ms: 2,
+				status: "error",
+				err_class: "Error",
+				err_code: "SQLITE_ERROR",
+				err_message: "unregistered type:\n  constraint",
+			});
+			const row = sink.db
+				.prepare(
+					"SELECT meta, err_code FROM tool_calls WHERE tool='record_memory'",
+				)
+				.get() as { meta: unknown; err_code: unknown };
+			expect(row.meta).toBe("unregistered type: constraint");
+			expect(row.err_code).toBe("SQLITE_ERROR");
+		} finally {
+			sink.close();
+		}
+	});
 });
 
 describe("openSink prune", () => {

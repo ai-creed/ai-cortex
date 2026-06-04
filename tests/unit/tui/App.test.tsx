@@ -9,6 +9,19 @@ const ANSI = /\x1b\[[0-9;]*m/g;
 const strip = (s: string | undefined): string => (s ?? "").replace(ANSI, "");
 const flush = () => new Promise((r) => setTimeout(r, 80));
 
+// Poll the rendered frame until `cond` holds (or timeout). Robust against
+// full-suite scheduling jitter that a fixed-delay flush() can lose the race to.
+const waitFor = async (
+	cond: () => boolean,
+	timeoutMs = 2000,
+): Promise<void> => {
+	const start = Date.now();
+	while (!cond()) {
+		if (Date.now() - start >= timeoutMs) return; // let the assertion report
+		await new Promise((r) => setTimeout(r, 10));
+	}
+};
+
 // App calls read twice per tick (cross-project, then selected repoKey).
 // The fake returns a snapshot keyed off the focus arg so the detail header
 // reflects the selected project.
@@ -116,10 +129,10 @@ describe("App memory-browser view", () => {
 		stdin.write("3");
 		await flush();
 		stdin.write("\r"); // Enter on Memory tab
-		await flush();
+		await waitFor(() => strip(lastFrame()).includes("memory browser"));
 		expect(strip(lastFrame())).toContain("memory browser");
 		stdin.write("\x1b"); // Esc
-		await flush();
+		await waitFor(() => !strip(lastFrame()).includes("memory browser"));
 		expect(strip(lastFrame())).not.toContain("memory browser");
 	});
 
