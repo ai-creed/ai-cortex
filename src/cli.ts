@@ -41,6 +41,7 @@ Commands:
   stats sessions [--window 7d] [--json]   Per-session memory-adoption report
   history <subcommand>             Manage session history capture
   memory <subcommand>              Manage the memory store
+  graph [--project P] [--mode m] [--flat] [--semantic] [--export f]   Open/export the memory+code galaxy
   help, --help, -h                 Show this help
   version, --version, -v           Show version
 
@@ -1199,6 +1200,10 @@ async function main(): Promise<void> {
 			const once = args.includes("--once");
 			const { bootStats } = await import("./tui/index.js");
 			bootStats({ window, project, once });
+		} else if (command === "graph") {
+			const { runGraphCommand } = await import("./cli/graph.js");
+			const code = await runGraphCommand(args);
+			process.exit(code);
 		} else {
 			process.stderr.write(`ai-cortex: unknown command: ${command}\n`);
 			process.exit(1);
