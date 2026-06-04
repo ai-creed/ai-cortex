@@ -9,6 +9,7 @@ import {
 import { dirRollup, narrowToDir } from "./aggregate.js";
 import { linkEdges, memoryNodes, scopeEdges } from "./edges/memory.js";
 import { semanticEdges } from "./edges/semantic.js";
+import { anchorEdges } from "./edges/bridge.js";
 import type {
 	BuildOpts,
 	GraphLevel,
@@ -55,6 +56,24 @@ export function buildGraph(stores: RepoStores, opts: BuildOpts): GraphPayload {
 			nodes: memoryNodes(mems),
 			edges,
 		};
+	}
+
+	if (opts.mode === "bridge" && opts.scope !== "all") {
+		const bridgeRepo = opts.scope.project;
+		const bstore = stores.code.find((s) => s.repoKey === bridgeRepo);
+		const bmems = stores.memories.filter((m) => m.repoKey === bridgeRepo);
+		if (!bstore) {
+			return {
+				mode: "bridge",
+				scope: opts.scope,
+				level: "file",
+				nodes: memoryNodes(bmems),
+				edges: [],
+			};
+		}
+		const nodes = [...fileNodes(bstore), ...memoryNodes(bmems)];
+		const edges = [...importEdges(bstore), ...anchorEdges(bstore, bmems)];
+		return { mode: "bridge", scope: opts.scope, level: "file", nodes, edges };
 	}
 
 	if (opts.scope === "all") {
