@@ -7,7 +7,15 @@ import {
 	symbolNodes,
 } from "./edges/code.js";
 import { dirRollup, narrowToDir } from "./aggregate.js";
-import type { BuildOpts, GraphPayload, RepoStores } from "./types.js";
+import { linkEdges, memoryNodes, scopeEdges } from "./edges/memory.js";
+import { semanticEdges } from "./edges/semantic.js";
+import type {
+	BuildOpts,
+	GraphLevel,
+	GraphPayload,
+	MemoryRecord,
+	RepoStores,
+} from "./types.js";
 
 function isDirFocus(focus: string | undefined, repoKey: string): boolean {
 	return typeof focus === "string" && focus.startsWith(`dir:${repoKey}:`);
@@ -26,6 +34,29 @@ function memCountByRepo(stores: RepoStores): Map<string, number> {
 }
 
 export function buildGraph(stores: RepoStores, opts: BuildOpts): GraphPayload {
+	if (opts.mode === "memory") {
+		const scope = opts.scope;
+		let mems: MemoryRecord[];
+		let level: GraphLevel;
+		if (scope === "all") {
+			mems = stores.memories;
+			level = "project";
+		} else {
+			const p = scope.project;
+			mems = stores.memories.filter((m) => m.repoKey === p);
+			level = "file";
+		}
+		const edges = [...linkEdges(mems), ...scopeEdges(mems)];
+		if (opts.semantic) edges.push(...semanticEdges(mems, opts));
+		return {
+			mode: "memory",
+			scope: opts.scope,
+			level,
+			nodes: memoryNodes(mems),
+			edges,
+		};
+	}
+
 	if (opts.scope === "all") {
 		const counts = memCountByRepo(stores);
 		const nodes = stores.code.map((s) =>
