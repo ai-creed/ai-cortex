@@ -1,11 +1,11 @@
 // src/lib/graph/builder.ts
 import { fileNodes, importEdges, projectNode } from "./edges/code.js";
-import type {
-	BuildOpts,
-	GraphLevel,
-	GraphPayload,
-	RepoStores,
-} from "./types.js";
+import { dirRollup, narrowToDir } from "./aggregate.js";
+import type { BuildOpts, GraphPayload, RepoStores } from "./types.js";
+
+function isDirFocus(focus: string | undefined, repoKey: string): boolean {
+	return typeof focus === "string" && focus.startsWith(`dir:${repoKey}:`);
+}
 
 function memCountByRepo(stores: RepoStores): Map<string, number> {
 	const m = new Map<string, number>();
@@ -32,16 +32,39 @@ export function buildGraph(stores: RepoStores, opts: BuildOpts): GraphPayload {
 
 	const repoKey = opts.scope.project;
 	const store = stores.code.find((s) => s.repoKey === repoKey);
-	// Code mode, single project. Dir rollup arrives in a later task; emit files.
-	const level: GraphLevel = "file";
 	if (!store) {
-		return { mode: opts.mode, scope: opts.scope, level, nodes: [], edges: [] };
+		return {
+			mode: opts.mode,
+			scope: opts.scope,
+			level: "file",
+			nodes: [],
+			edges: [],
+		};
 	}
-	return {
-		mode: opts.mode,
-		scope: opts.scope,
-		level,
-		nodes: fileNodes(store),
-		edges: importEdges(store),
-	};
+
+	// flat => the whole project at file level (the spectacle).
+	if (opts.flat === true) {
+		return {
+			mode: opts.mode,
+			scope: opts.scope,
+			level: "file",
+			nodes: fileNodes(store),
+			edges: importEdges(store),
+		};
+	}
+	// dir focus => expand ONLY that directory's files and intra-dir imports.
+	if (isDirFocus(opts.focus, repoKey)) {
+		const dir = opts.focus!.slice(`dir:${repoKey}:`.length);
+		const narrowed = narrowToDir(store, dir);
+		return {
+			mode: opts.mode,
+			scope: opts.scope,
+			level: "file",
+			nodes: fileNodes(narrowed),
+			edges: importEdges(narrowed),
+		};
+	}
+	// default => dir rollup (bounded).
+	const { nodes, edges } = dirRollup(store);
+	return { mode: opts.mode, scope: opts.scope, level: "dir", nodes, edges };
 }
