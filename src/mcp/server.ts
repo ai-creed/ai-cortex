@@ -3,12 +3,7 @@ import fs from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import {
-	indexRepo,
-	rehydrateRepo,
-	suggestRepo,
-	queryBlastRadius,
-} from "../lib/index.js";
+import { indexRepo, rehydrateRepo, suggestRepo } from "../lib/index.js";
 import type {
 	DeepSuggestResult,
 	SemanticSuggestResult,
@@ -25,6 +20,8 @@ import {
 	resolveTranscriptPath,
 } from "../lib/history/session-detect.js";
 import { resolveRepoIdentity, validateWorktreePath } from "../lib/repo-identity.js";
+import { ensureFreshDb } from "../lib/cache-coordinator.js";
+import { queryBlastRadiusDb } from "../lib/blast-radius.js";
 import { runRepoKeyMigrationIfNeeded } from "../lib/cache-store-migrate.js";
 import { getProvider, MODEL_NAME } from "../lib/embed-provider.js";
 import { VERSION as SERVER_VERSION } from "../version.js";
@@ -680,20 +677,21 @@ export function createServer(): McpServer {
 			(p) => ({ qualifiedName: p.qualifiedName, file: p.file, path: p.path }),
 			NO_STATS_PARAMS,
 			rkFromPath,
-			NO_STATS_RESULT,
+			(r) => ({ cache_status: r.structuredContent.cacheStatus }),
 			async ({ qualifiedName, file, path, maxHops, stale }) => {
 				const repoPath = path ?? process.cwd();
-				const { cache } = await rehydrateRepo(repoPath, { stale });
-				const result = queryBlastRadius(
+				const identity = resolveRepoIdentity(repoPath);
+				const { dbPath, cacheStatus } = await ensureFreshDb(identity, { stale });
+				const result = queryBlastRadiusDb(
+					dbPath,
 					{ qualifiedName, file },
-					cache.calls ?? [],
-					cache.functions ?? [],
 					maxHops ? { maxHops } : undefined,
 				);
 				return {
 					content: [
 						{ type: "text" as const, text: JSON.stringify(result, null, 2) },
 					],
+					structuredContent: { cacheStatus },
 				};
 			},
 		),

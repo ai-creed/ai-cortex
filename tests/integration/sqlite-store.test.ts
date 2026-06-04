@@ -11,7 +11,10 @@ import {
 	readCacheForWorktree,
 	getCacheDbFilePath,
 } from "../../src/lib/cache-store.js";
-import { queryBlastRadius } from "../../src/lib/blast-radius.js";
+import {
+	queryBlastRadius,
+	queryBlastRadiusDb,
+} from "../../src/lib/blast-radius.js";
 import { rankSuggestions } from "../../src/lib/suggest-ranker.js";
 import {
 	ensureFreshDb,
@@ -194,5 +197,45 @@ describe("SQLite structural store (integration)", () => {
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(readSpy).toHaveBeenCalledTimes(1);
 		readSpy.mockRestore();
+	});
+
+	it("MCP blast composition covers reindexed/fresh/stale and matches whole-load", async () => {
+		const identity = resolveRepoIdentity(repo);
+		const target = { qualifiedName: "foo", file: "src/a.ts" };
+
+		// 1. reindexed (cold)
+		const cold = await ensureFreshDb(identity, {});
+		expect(cold.cacheStatus).toBe("reindexed");
+		const viaDb = queryBlastRadiusDb(cold.dbPath, target);
+
+		// parity with the whole-load path on the same (now fresh) cache
+		const whole = await resolveCacheWithFreshness(identity, {});
+		const viaMem = queryBlastRadius(
+			target,
+			whole.cache.calls,
+			whole.cache.functions,
+		);
+		expect(
+			viaDb.tiers.map((t) =>
+				t.hits.map((h) => `${h.file}::${h.qualifiedName}@${h.hop}`),
+			),
+		).toEqual(
+			viaMem.tiers.map((t) =>
+				t.hits.map((h) => `${h.file}::${h.qualifiedName}@${h.hop}`),
+			),
+		);
+		expect(viaDb.totalAffected).toBe(viaMem.totalAffected);
+		expect(viaDb.confidence).toBe(viaMem.confidence);
+
+		// 2. fresh (warm, clean worktree)
+		const warm = await ensureFreshDb(identity, {});
+		expect(warm.cacheStatus).toBe("fresh");
+		expect(queryBlastRadiusDb(warm.dbPath, target)).toBeDefined();
+
+		// 3. stale (dirty worktree + stale:true)
+		fs.appendFileSync(path.join(repo, "src/a.ts"), "\nexport const z = 1;\n");
+		const stale = await ensureFreshDb(identity, { stale: true });
+		expect(stale.cacheStatus).toBe("stale");
+		expect(queryBlastRadiusDb(stale.dbPath, target)).toBeDefined();
 	});
 });
