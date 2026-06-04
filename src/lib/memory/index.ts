@@ -27,6 +27,23 @@ export type ScopeRow = { kind: "file" | "tag"; value: string };
 
 export type FtsHit = { memoryId: string; rank: number };
 
+/**
+ * Build a safe FTS5 MATCH expression from arbitrary user input. FTS5 throws a
+ * SqliteError on raw input containing its syntax (unbalanced quotes, a bare `*`,
+ * operators like AND/OR/NEAR, parentheses, etc.). We tokenize on whitespace,
+ * drop tokens with no letters/digits, and wrap each remaining token as a quoted
+ * FTS5 string (doubling embedded quotes) — turning any query into a valid
+ * implicit-AND search over its literal terms. Returns "" when nothing usable
+ * remains (callers should skip MATCH and return no hits).
+ */
+export function ftsQuery(raw: string): string {
+	return raw
+		.split(/\s+/)
+		.filter((t) => /[\p{L}\p{N}]/u.test(t))
+		.map((t) => `"${t.replace(/"/g, '""')}"`)
+		.join(" ");
+}
+
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -255,6 +272,8 @@ export class MemoryIndex {
 	}
 
 	searchFts(query: string, limit: number): FtsHit[] {
+		const match = ftsQuery(query);
+		if (match.length === 0) return [];
 		return this.db
 			.prepare(
 				`
@@ -263,7 +282,7 @@ export class MemoryIndex {
 			ORDER BY rank LIMIT ?
 		`,
 			)
-			.all(query, limit) as FtsHit[];
+			.all(match, limit) as FtsHit[];
 	}
 
 	rawDb(): DB {

@@ -134,6 +134,37 @@ describe("upsertMemory", () => {
 		expect(hits.map((h) => h.memoryId)).toContain("mem-x");
 		idx.close();
 	});
+
+	it("does not throw SqliteError on FTS5-special characters in the query", () => {
+		const idx = openMemoryIndex(repoKey);
+		idx.upsertMemory(fm("mem-x", { title: "How to" }), {
+			bodyHash: "h",
+			bodyExcerpt: "e",
+			body: "alpha foo(bar) beta gamma template",
+		});
+		// Each of these is invalid raw FTS5 syntax and would throw a SqliteError
+		// if passed straight to MATCH (unbalanced quote, bare *, operators, parens).
+		for (const q of [
+			'foo(bar)',
+			'"unbalanced',
+			'alpha AND',
+			'NEAR/2',
+			'term*',
+			'(',
+			'a OR b NOT c',
+		]) {
+			expect(() => idx.searchFts(q, 5)).not.toThrow();
+		}
+		// Normal queries still match after sanitization.
+		expect(idx.searchFts("gamma", 5).map((h) => h.memoryId)).toContain("mem-x");
+		// A special-char query around a real token still finds it.
+		expect(idx.searchFts("foo(bar)", 5).map((h) => h.memoryId)).toContain(
+			"mem-x",
+		);
+		// An empty / punctuation-only query yields no hits (and no throw).
+		expect(idx.searchFts("   ", 5)).toEqual([]);
+		idx.close();
+	});
 });
 
 describe("appendAudit", () => {
