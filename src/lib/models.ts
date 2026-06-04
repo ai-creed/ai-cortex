@@ -105,6 +105,8 @@ export type BlastHit = {
 	file: string;
 	hop: number;
 	exported: boolean;
+	range?: Range; // NEW: caller function range (v3.1)
+	callSite?: Range; // NEW: edge site reaching the next callee toward the target
 };
 
 export type RepoCache = {
