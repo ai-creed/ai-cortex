@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import Database from "better-sqlite3";
 import { SCHEMA_VERSION } from "./models.js";
 import type { RepoCache } from "./models.js";
 import {
@@ -12,6 +13,10 @@ import {
 	dbSchemaValid,
 	majorOf,
 } from "./cache-store-sqlite.js";
+
+// Re-export so coordinator + tests share one seam (cache-store.js is the mock
+// boundary in unit tests; the coordinator gets all its cache deps from here).
+export { readFromDb } from "./cache-store-sqlite.js";
 
 const execAsync = promisify(exec);
 
@@ -136,6 +141,35 @@ export async function writeCacheMetaSidecar(
 	const tmp = filePath + ".tmp";
 	await fs.promises.writeFile(tmp, JSON.stringify(meta) + "\n");
 	await fs.promises.rename(tmp, filePath);
+}
+
+/** Read the two freshness scalars from the db meta table WITHOUT assembling the
+ *  whole RepoCache. Used by the coordinator to decide fresh-vs-stale cheaply. */
+export function readFreshnessMeta(dbPath: string): {
+	fingerprint: string | null;
+	dirtyAtIndex: boolean | undefined;
+} {
+	const db = new Database(dbPath, { readonly: true });
+	try {
+		const rows = db
+			.prepare(
+				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex')",
+			)
+			.all() as Array<{ key: string; value: string }>;
+		const m = new Map(rows.map((r) => [r.key, r.value]));
+		return {
+			fingerprint: m.get("fingerprint") ?? null,
+			dirtyAtIndex: m.has("dirtyAtIndex")
+				? m.get("dirtyAtIndex") === "1"
+				: undefined,
+		};
+	} finally {
+		db.close();
+		// Clean up the regenerable WAL sidecars left by a readonly open.
+		for (const sfx of ["-wal", "-shm"]) {
+			fs.rmSync(dbPath + sfx, { force: true });
+		}
+	}
 }
 
 /** Ensure a valid (current-version) .db exists for the worktree and return its

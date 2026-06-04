@@ -8,8 +8,9 @@ import {
 	rehydrateRepo,
 	suggestRepo,
 	indexRepo,
-	queryBlastRadius,
 } from "../../../src/lib/index.js";
+import { ensureFreshDb } from "../../../src/lib/cache-coordinator.js";
+import { queryBlastRadiusDb } from "../../../src/lib/blast-radius.js";
 import { IndexError, RepoIdentityError } from "../../../src/lib/models.js";
 import { createServer } from "../../../src/mcp/server.js";
 import { getBriefingNotice } from "../../../src/lib/update-notifier.js";
@@ -18,6 +19,8 @@ import { getHookMigrationNotice } from "../../../src/lib/migration-notifier.js";
 const _require = createRequire(import.meta.url);
 
 vi.mock("../../../src/lib/index.js");
+vi.mock("../../../src/lib/cache-coordinator.js");
+vi.mock("../../../src/lib/blast-radius.js");
 vi.mock("node:fs");
 vi.mock("../../../src/lib/update-notifier.js", () => ({
 	getBriefingNotice: vi.fn(),
@@ -729,14 +732,14 @@ describe("tool call logging", () => {
 	});
 
 	it("logs blast_radius call with qualifiedName", async () => {
-		vi.mocked(rehydrateRepo).mockResolvedValue({
-			briefingPath: "/cache/key.md",
+		vi.mocked(ensureFreshDb).mockResolvedValue({
+			dbPath: "/cache/key.db",
 			cacheStatus: "fresh",
-			cache: { calls: [], functions: [] } as any,
 		});
-		vi.mocked(queryBlastRadius).mockReturnValue({
+		vi.mocked(queryBlastRadiusDb).mockReturnValue({
 			target: { qualifiedName: "myFn", file: "src/a.ts" },
 			totalAffected: 0,
+			unresolvedEdges: 0,
 			confidence: "full",
 			tiers: [],
 		} as any);

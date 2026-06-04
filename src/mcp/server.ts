@@ -677,7 +677,9 @@ export function createServer(): McpServer {
 			(p) => ({ qualifiedName: p.qualifiedName, file: p.file, path: p.path }),
 			NO_STATS_PARAMS,
 			rkFromPath,
-			(r) => ({ cache_status: r.structuredContent.cacheStatus }),
+			(r: {
+				structuredContent: { cacheStatus: "fresh" | "reindexed" | "stale" };
+			}) => ({ cache_status: r.structuredContent.cacheStatus }),
 			async ({ qualifiedName, file, path, maxHops, stale }) => {
 				const repoPath = path ?? process.cwd();
 				const identity = resolveRepoIdentity(repoPath);

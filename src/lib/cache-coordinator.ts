@@ -1,13 +1,13 @@
 // src/lib/cache-coordinator.ts
-import Database from "better-sqlite3";
 import {
 	buildRepoFingerprint,
 	ensureValidDb,
 	getCacheDbFilePath,
 	isWorktreeDirty,
+	readFreshnessMeta,
+	readFromDb,
 	writeCache,
 } from "./cache-store.js";
-import { readFromDb } from "./cache-store-sqlite.js";
 import { diffChangedFiles } from "./diff-files.js";
 import { buildIncrementalIndex, indexRepo } from "./indexer.js";
 import type { RepoCache, RepoIdentity } from "./models.js";
@@ -22,30 +22,6 @@ export type FreshDbResult = {
 	cacheStatus: "fresh" | "reindexed" | "stale";
 	rebuiltCache?: RepoCache;
 };
-
-/** Read the two freshness scalars from the db meta table without assembling. */
-function readFreshnessMeta(dbPath: string): {
-	fingerprint: string | null;
-	dirtyAtIndex: boolean | undefined;
-} {
-	const db = new Database(dbPath, { readonly: true });
-	try {
-		const rows = db
-			.prepare(
-				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex')",
-			)
-			.all() as Array<{ key: string; value: string }>;
-		const m = new Map(rows.map((r) => [r.key, r.value]));
-		return {
-			fingerprint: m.get("fingerprint") ?? null,
-			dirtyAtIndex: m.has("dirtyAtIndex")
-				? m.get("dirtyAtIndex") === "1"
-				: undefined,
-		};
-	} finally {
-		db.close();
-	}
-}
 
 /** Ensure the worktree's .db is fresh-or-rebuilt and return its path WITHOUT
  *  materializing a RepoCache on the fresh / options.stale paths. The stale

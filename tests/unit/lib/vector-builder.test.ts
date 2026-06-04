@@ -1,6 +1,7 @@
 // tests/unit/lib/vector-builder.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepoCache } from "../../../src/lib/models.js";
+import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import { EMBEDDING_DIM, MODEL_NAME } from "../../../src/lib/embed-provider.js";
 import type { VectorIndex } from "../../../src/lib/vector-sidecar.js";
 
@@ -19,7 +20,7 @@ vi.mock("../../../src/lib/vector-sidecar.js", () => ({
 
 function makeCache(files: { path: string; hash?: string }[]): RepoCache {
 	return {
-		schemaVersion: "3",
+		schemaVersion: SCHEMA_VERSION,
 		repoKey: "test-repo",
 		worktreeKey: "abcdef1234567890",
 		worktreePath: "/tmp/test-repo",

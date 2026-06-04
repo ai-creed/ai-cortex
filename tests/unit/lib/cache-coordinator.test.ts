@@ -9,12 +9,16 @@ vi.mock("../../../src/lib/diff-files.js");
 import { resolveRepoIdentity } from "../../../src/lib/repo-identity.js";
 import {
 	buildRepoFingerprint,
+	ensureValidDb,
 	isWorktreeDirty,
-	readCacheForWorktree,
+	readFreshnessMeta,
+	readFromDb,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { diffChangedFiles } from "../../../src/lib/diff-files.js";
 import { buildIncrementalIndex, indexRepo } from "../../../src/lib/indexer.js";
+
+const DB_PATH = "/repo/.cache/wk.db";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
 import type { RepoCache } from "../../../src/lib/models.js";
 import { resolveCacheWithFreshness } from "../../../src/lib/cache-coordinator.js";
@@ -49,12 +53,18 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	vi.mocked(resolveRepoIdentity).mockReturnValue(mockIdentity);
 	vi.mocked(isWorktreeDirty).mockResolvedValue(false);
+	// Default: a valid db whose meta says fingerprint "abc123", clean at index.
+	vi.mocked(ensureValidDb).mockResolvedValue(DB_PATH);
+	vi.mocked(readFreshnessMeta).mockReturnValue({
+		fingerprint: "abc123",
+		dirtyAtIndex: undefined,
+	});
 });
 
 describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed and calls indexRepo when no cache exists", async () => {
 		const freshCache = makeCache();
-		vi.mocked(readCacheForWorktree).mockResolvedValue(null);
+		vi.mocked(ensureValidDb).mockResolvedValue(null);
 		vi.mocked(indexRepo).mockResolvedValue(freshCache);
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
@@ -68,7 +78,7 @@ describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed via incremental path when fingerprint is stale", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, fingerprint: "newfingerprint" };
-		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(readFromDb).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 		vi.mocked(diffChangedFiles).mockResolvedValue({
 			changed: ["src/app.ts"],
@@ -88,7 +98,7 @@ describe("resolveCacheWithFreshness", () => {
 	it("returns reindexed via incremental path when worktree is dirty", async () => {
 		const cache = makeCache();
 		const updated = { ...cache, dirtyAtIndex: true };
-		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(readFromDb).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 		vi.mocked(isWorktreeDirty).mockResolvedValue(true);
 		vi.mocked(diffChangedFiles).mockResolvedValue({
@@ -113,7 +123,12 @@ describe("resolveCacheWithFreshness", () => {
 	it("forces hash-compare incremental when dirtyAtIndex flag set and worktree is now clean", async () => {
 		const cache = makeCache({ dirtyAtIndex: true });
 		const updated = { ...cache, dirtyAtIndex: false };
-		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(readFromDb).mockReturnValue(cache);
+		// meta says the cache was built dirty; worktree is now clean -> dirty-revert.
+		vi.mocked(readFreshnessMeta).mockReturnValue({
+			fingerprint: "abc123",
+			dirtyAtIndex: true,
+		});
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 		vi.mocked(isWorktreeDirty).mockResolvedValue(false);
 		vi.mocked(diffChangedFiles).mockResolvedValue({
@@ -137,7 +152,7 @@ describe("resolveCacheWithFreshness", () => {
 
 	it("returns stale and no refresh when stale option is true and cache is stale", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(readFromDb).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("newfingerprint");
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {
@@ -152,7 +167,7 @@ describe("resolveCacheWithFreshness", () => {
 
 	it("returns fresh when fingerprint matches and worktree is clean", async () => {
 		const cache = makeCache();
-		vi.mocked(readCacheForWorktree).mockResolvedValue(cache);
+		vi.mocked(readFromDb).mockReturnValue(cache);
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 
 		const result = await resolveCacheWithFreshness(mockIdentity, {});
