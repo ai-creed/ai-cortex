@@ -62,7 +62,7 @@ export function typeContractHint(): string {
 	const sevList = Array.isArray(sev) ? sev.join(", ") : "";
 	return (
 		`type must be one of the registered memory types: ${BUILT_IN_TYPES.join(", ")} ` +
-		`(or a project-custom type registered in types.json). ` +
+		"(or a project-custom type registered in types.json). " +
 		`gotcha requires typeFields.severity (one of: ${sevList}).`
 	);
 }

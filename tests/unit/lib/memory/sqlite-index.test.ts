@@ -145,13 +145,13 @@ describe("upsertMemory", () => {
 		// Each of these is invalid raw FTS5 syntax and would throw a SqliteError
 		// if passed straight to MATCH (unbalanced quote, bare *, operators, parens).
 		for (const q of [
-			'foo(bar)',
+			"foo(bar)",
 			'"unbalanced',
-			'alpha AND',
-			'NEAR/2',
-			'term*',
-			'(',
-			'a OR b NOT c',
+			"alpha AND",
+			"NEAR/2",
+			"term*",
+			"(",
+			"a OR b NOT c",
 		]) {
 			expect(() => idx.searchFts(q, 5)).not.toThrow();
 		}
