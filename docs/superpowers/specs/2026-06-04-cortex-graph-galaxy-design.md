@@ -48,7 +48,10 @@ Public interface:
 type NodeKind = "project" | "dir" | "file" | "symbol" | "memory";
 
 type GraphNode = {
-  id: string;              // stable: e.g. "file:<repoKey>:<path>", "memory:<id>", "project:<repoKey>"
+  id: string;              // stable + store-namespaced. See "Node ID Namespacing".
+                           // e.g. "project:<repoKey>", "file:<repoKey>:<path>",
+                           //      "symbol:<repoKey>:<file>::<qualifiedName>",
+                           //      "memory:<repoKey>:<id>", "memory:global:<id>"
   kind: NodeKind;
   label: string;
   cluster: string;         // project key (or dir) — drives color
@@ -92,6 +95,32 @@ type BuildOpts = {
 
 function buildGraph(repoStores: RepoStores, opts: BuildOpts): GraphPayload;
 ```
+
+#### Node ID Namespacing (cross-project safety)
+
+Every node id MUST be namespaced by its origin store. This is load-bearing for the cross-project
+default view, not a cosmetic choice.
+
+Memory ids are only unique within a single store: they are generated with a 6-hex random suffix
+(`src/lib/memory/id.ts`) and uniqueness is enforced per `MemoryIndex` at creation
+(`src/lib/memory/lifecycle.ts`), never across stores. In an all-projects graph, two different
+projects can legitimately hold the same raw memory id. Likewise, file paths and symbol keys repeat
+across repos. Without a store prefix, the builder would merge distinct nodes and attach edges
+(scope, semantic, anchor, link) to the wrong target.
+
+The builder therefore prefixes every node id with the origin store key:
+
+- Project-store nodes: `<kind>:<repoKey>:<localId>` (e.g. `memory:<repoKey>:<id>`,
+  `file:<repoKey>:<path>`, `symbol:<repoKey>:<file>::<qualifiedName>`, `project:<repoKey>`).
+- Global-tier memories: the literal `global` stands in for `repoKey`, giving `memory:global:<id>`.
+
+Edges reference these fully-namespaced ids on both ends, so cross-project payloads cannot collide.
+Bridge `anchor` edges connect a memory to a file/symbol in the same store (a memory's `scope.files`
+point into its own repo), so both endpoints share one `repoKey`. The builder unit tests assert
+that a fixture with two stores sharing a raw memory id produces two distinct namespaced nodes.
+
+(The memory vector sidecar's internal `memory:<id>` entry key is a per-store storage detail and is
+unaffected: vectors are loaded within a store, then the resulting node is namespaced on emit.)
 
 ### Layer 2: Graph server
 
@@ -209,6 +238,9 @@ web/graph/            # frontend bundle source
 
 - **Builder unit tests** (fixture SQLite stores): one per mode, scope, and level; one per edge
   provider. Assert node/edge counts and ids for known fixtures.
+- **Node ID namespacing:** two fixture stores sharing a raw memory id (and a repeated file path)
+  produce two distinct, store-namespaced nodes with no collision, and edges attach to the correct
+  per-store endpoints.
 - **Semantic provider:** fixture with known vectors asserts top-K and threshold behavior, and that
   nothing is persisted.
 - **Aggregation:** a 10k-file fixture asserts the default payload stays bounded (dir level) and
