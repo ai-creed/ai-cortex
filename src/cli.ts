@@ -41,7 +41,7 @@ Commands:
   stats sessions [--window 7d] [--json]   Per-session memory-adoption report
   history <subcommand>             Manage session history capture
   memory <subcommand>              Manage the memory store
-  graph [--project P] [--mode m] [--flat] [--semantic] [--export f]   Open/export the memory+code galaxy
+  graph [--project P] [--mode m] [--flat] [--semantic] [--port N] [--no-open] [--export f]   Open/export the memory+code galaxy
   help, --help, -h                 Show this help
   version, --version, -v           Show version
 
