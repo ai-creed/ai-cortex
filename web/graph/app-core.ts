@@ -228,6 +228,19 @@ export class GraphController {
 		return this.lastSymbolInfo;
 	}
 
+	// Rendered-node tally by kind, for the on-screen stats readout.
+	counts(): { files: number; symbols: number; memories: number; total: number } {
+		let files = 0;
+		let symbols = 0;
+		let memories = 0;
+		for (const n of this.lastNodes) {
+			if (n.kind === "file") files++;
+			else if (n.kind === "symbol") symbols++;
+			else if (n.kind === "memory") memories++;
+		}
+		return { files, symbols, memories, total: this.lastNodes.length };
+	}
+
 	// Force function nodes on/off for the single-project code view and re-render.
 	async setSymbols(on: boolean): Promise<void> {
 		this.state = { ...this.state, symbols: on };

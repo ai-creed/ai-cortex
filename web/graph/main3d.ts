@@ -806,7 +806,49 @@ function syncControls(): void {
 			cnt.classList.toggle("warn", huge && !info.included);
 		}
 	}
+	updateStats();
 }
+
+// On-screen node counts + live FPS. A busy WebGL scene starves the rAF loop, so
+// the frame rate doubles as a "how laggy is it" gauge.
+let fpsFrames = 0;
+let fpsLast = performance.now();
+let fps = 0;
+function fpsClass(f: number): string {
+	return f >= 45 ? "fps" : f >= 25 ? "fps low" : "fps crit";
+}
+function updateStats(): void {
+	const el = document.getElementById("stats");
+	if (!el) return;
+	const mode = controller.current().mode;
+	const c = controller.counts();
+	const parts: string[] = [];
+	if (mode === "memory") {
+		parts.push(`memories ${c.memories}`);
+	} else if (controller.current().scope !== "all") {
+		const info = controller.symbolInfo();
+		parts.push(`files ${c.files}`);
+		parts.push(
+			info.included
+				? `functions ${c.symbols}`
+				: `functions ${formatCount(info.count ?? 0)} hidden`,
+		);
+	}
+	parts.push(`nodes ${c.total}`);
+	el.innerHTML = `${parts.join(" · ")} · <span class="${fpsClass(fps)}">${fps} fps</span>`;
+}
+function fpsTick(now: number): void {
+	fpsFrames++;
+	const dt = now - fpsLast;
+	if (dt >= 500) {
+		fps = Math.round((fpsFrames * 1000) / dt);
+		fpsFrames = 0;
+		fpsLast = now;
+		updateStats();
+	}
+	requestAnimationFrame(fpsTick);
+}
+requestAnimationFrame(fpsTick);
 
 Graph.onNodeClick((o: NodeObject) => {
 	const idx = asN(o).idx;

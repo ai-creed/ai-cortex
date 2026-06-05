@@ -20,6 +20,10 @@ body { background: #02060a; overflow: hidden; font-family: ui-monospace, Menlo, 
 #legend .chip.off { opacity: 0.3; text-decoration: line-through; }
 #legend .dim { color: #6c7a93; pointer-events: none; }
 #hint { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1; font: 11px ui-monospace, monospace; color: #6c7a93; pointer-events: none; white-space: nowrap; max-width: 66vw; overflow: hidden; text-overflow: ellipsis; }
+#stats { position: fixed; bottom: 8px; right: 12px; z-index: 3; font: 11px ui-monospace, monospace; color: #6c7a93; pointer-events: none; white-space: nowrap; background: rgba(2,6,10,0.7); padding: 3px 8px; border-radius: 4px; }
+#stats .fps { color: #4dff88; }
+#stats .fps.low { color: #f0b132; }
+#stats .fps.crit { color: #ff6b6b; }
 #controls { position: fixed; top: 10px; right: 14px; z-index: 2; display: flex; gap: 8px; }
 #controls select, #controls input { background: #04140a; color: #4dff88; border: 1px solid #1f5a33; padding: 2px 6px; font-family: inherit; }
 #controls #fnsToggle { display: flex; align-items: center; gap: 4px; color: #4dff88; border: 1px solid #1f5a33; padding: 2px 6px; cursor: pointer; user-select: none; white-space: nowrap; }

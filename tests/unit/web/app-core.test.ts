@@ -127,4 +127,63 @@ describe("app-core controller", () => {
 		await c.zoomDrill(0, 10); // above threshold => drill into central node
 		expect(c.current().scope).toEqual({ project: "r" });
 	});
+
+	it("queryFor serializes the symbols flag only when set", () => {
+		const base: ViewState = { mode: "code", scope: { project: "r" }, full: true };
+		expect(queryFor(base)).toBe("/graph?mode=code&scope=r&full=1");
+		expect(queryFor({ ...base, symbols: false })).toBe(
+			"/graph?mode=code&scope=r&full=1&symbols=0",
+		);
+		expect(queryFor({ ...base, symbols: true })).toBe(
+			"/graph?mode=code&scope=r&full=1&symbols=1",
+		);
+	});
+
+	it("captures symbolInfo and tallies node counts by kind", async () => {
+		const payload = {
+			mode: "code",
+			level: "symbol",
+			nodes: [
+				node("file:r:a.ts", "file", "r"),
+				node("file:r:b.ts", "file", "r"),
+				node("symbol:r:a.ts::foo", "symbol", "r"),
+			],
+			edges: [],
+			symbolCount: 5,
+			symbolsIncluded: true,
+		};
+		const c = new GraphController({ setData: () => {} }, jsonFetch(payload));
+		await c.render();
+		expect(c.symbolInfo()).toEqual({ count: 5, included: true });
+		expect(c.counts()).toEqual({ files: 2, symbols: 1, memories: 0, total: 3 });
+	});
+
+	it("setSymbols re-fetches with the explicit flag", async () => {
+		const calls: string[] = [];
+		const c = new GraphController(
+			{ setData: () => {} },
+			jsonFetch({ mode: "code", level: "file", nodes: [], edges: [] }, calls),
+			undefined,
+			undefined,
+			{ mode: "code", scope: { project: "r" }, full: true },
+		);
+		await c.setSymbols(true);
+		expect(calls.at(-1)).toBe("/graph?mode=code&scope=r&full=1&symbols=1");
+		await c.setSymbols(false);
+		expect(calls.at(-1)).toBe("/graph?mode=code&scope=r&full=1&symbols=0");
+	});
+
+	it("switching scope resets symbols to auto (no symbols param)", async () => {
+		const calls: string[] = [];
+		const c = new GraphController(
+			{ setData: () => {} },
+			jsonFetch({ mode: "code", level: "file", nodes: [], edges: [] }, calls),
+			undefined,
+			undefined,
+			{ mode: "code", scope: { project: "r" }, full: true, symbols: false },
+		);
+		await c.setScope({ project: "x" });
+		expect(calls.at(-1)).toBe("/graph?mode=code&scope=x&full=1");
+		expect(c.current().symbols).toBeUndefined();
+	});
 });
