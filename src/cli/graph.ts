@@ -57,10 +57,26 @@ function hasFlag(args: string[], name: string): boolean {
 	return args.includes(name);
 }
 
+// The web bundle (app3d.js + index.html) is emitted to dist/web/graph by
+// scripts/build-web.mjs. Resolve it for both run layouts and pick whichever
+// actually contains the built bundle:
+//   built: dist/src/cli  -> ../../web/graph       (= dist/web/graph)
+//   dev:   src/cli (tsx) -> ../../dist/web/graph
+// The source web/graph holds only TS sources (no app3d.js), so running from
+// source must reach into dist for the bundle.
+export function resolveWebDir(here: string): string {
+	const candidates = [
+		path.resolve(here, "../../web/graph"),
+		path.resolve(here, "../../dist/web/graph"),
+	];
+	return (
+		candidates.find((d) => fs.existsSync(path.join(d, "app3d.js"))) ??
+		candidates[0]!
+	);
+}
+
 function webDir(): string {
-	// Built bundle ships under dist/web/graph (see scripts/build-web.mjs).
-	const here = path.dirname(fileURLToPath(import.meta.url)); // dist/src/cli
-	return path.resolve(here, "../../web/graph");
+	return resolveWebDir(path.dirname(fileURLToPath(import.meta.url)));
 }
 
 export async function runGraphCommand(
