@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.14.0",
+	"version": "0.14.1",
 	"description": "Structural code intelligence and persistent memory for AI coding agents, served over MCP (Claude Code, Codex).",
 	"type": "module",
 	"license": "MIT",
@@ -123,6 +123,6 @@
 		"vitest": "^3.2.4"
 	},
 	"aiCortex": {
-		"releaseHeadline": "cortex graph: 3D code + memory viewer with live retrieval"
+		"releaseHeadline": "cortex graph: functions toggle + node/FPS stats"
 	}
 }
