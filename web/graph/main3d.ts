@@ -6,7 +6,20 @@
 // galaxy feels alive via slow camera auto-rotation + user orbit/zoom.
 import ForceGraph3D, { type NodeObject } from "3d-force-graph";
 import SpriteText from "three-spritetext";
-import { Vector2 } from "three";
+import {
+	Vector2,
+	Mesh,
+	MeshBasicMaterial,
+	SphereGeometry,
+	OctahedronGeometry,
+	CylinderGeometry,
+	BufferGeometry,
+	BufferAttribute,
+	Points,
+	PointsMaterial,
+	Color,
+	AdditiveBlending,
+} from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import {
 	GraphController,
@@ -21,6 +34,8 @@ type N3 = {
 	id: string;
 	idx: number;
 	color: string;
+	category: string;
+	size: number;
 	val: number;
 	label: string;
 	x: number;
@@ -31,6 +46,38 @@ type N3 = {
 	fz: number;
 };
 const asN = (o: NodeObject): N3 => o as unknown as N3;
+
+// Shape encodes CATEGORY (alongside color), restricted to three clean forms:
+// sphere, hexagonal prism, octahedron.
+function geometryFor(category: string, r: number): BufferGeometry {
+	switch (category) {
+		case "gotcha":
+		case "symbol":
+			return new OctahedronGeometry(r);
+		case "pattern":
+		case "dir":
+			return new CylinderGeometry(r, r, r * 1.2, 6); // hexagonal prism
+		default: // decision, how-to, capture, file, project, other
+			return new SphereGeometry(r, 14, 14);
+	}
+}
+function nodeMesh(n: N3): Mesh {
+	const r = Math.max(1, n.size * 0.5);
+	return new Mesh(geometryFor(n.category, r), new MeshBasicMaterial({ color: n.color }));
+}
+
+// Legend glyph per category, matching the 3D geometry.
+const CAT_GLYPH: Record<string, string> = {
+	decision: "●",
+	gotcha: "◆",
+	pattern: "⬡",
+	"how-to": "●",
+	capture: "●",
+	file: "●",
+	dir: "⬡",
+	symbol: "◆",
+	project: "●",
+};
 
 const container = document.getElementById("graph") as HTMLElement;
 
@@ -132,12 +179,34 @@ const SHAPE_ORDER3 = shuffle(SHAPES3.map((_, i) => i));
 const sprites: SpriteText[] = [];
 let firstRender = true;
 
+// Per-dot micro-motion: each mesh oscillates around its fixed base position.
+type Anim = {
+	o: Mesh;
+	bx: number;
+	by: number;
+	bz: number;
+	a: number; // amplitude
+	fx: number;
+	fy: number;
+	fz: number; // per-axis frequency
+	px: number;
+	py: number;
+	pz: number; // per-axis phase
+};
+let animated: Anim[] = [];
+
 const Graph = new ForceGraph3D(container, { controlType: "orbit" })
 	.backgroundColor("#02060a")
 	.nodeRelSize(0.5)
 	.nodeColor((o: NodeObject) => asN(o).color)
 	.nodeVal((o: NodeObject) => asN(o).val)
 	.nodeLabel((o: NodeObject) => asN(o).label)
+	.nodeThreeObject((o: NodeObject) => {
+		const n = asN(o);
+		const mesh = nodeMesh(n);
+		(n as unknown as { __mesh?: Mesh }).__mesh = mesh;
+		return mesh;
+	})
 	.nodeOpacity(0.95)
 	.linkColor(() => "rgba(80,170,110,0.18)")
 	.linkWidth(0.3)
@@ -209,8 +278,9 @@ const renderer: Renderer = {
 					id: node.id,
 					idx,
 					color: dimColor(node.color, node.alpha),
-					// 3d-force-graph sizes spheres by cbrt(val); cube so radius is
-					// linear in our size score and differences actually show.
+					category: node.category,
+					size: node.size,
+					// kept for fallback; nodeThreeObject controls actual geometry.
 					val: node.size * node.size * node.size,
 					label: node.label,
 					x,
@@ -261,6 +331,26 @@ const renderer: Renderer = {
 					);
 				}, 760);
 			}
+			// Capture each node's mesh + base position for per-dot motion.
+			animated = [];
+			for (const nn of n3) {
+				const mesh = (nn as unknown as { __mesh?: Mesh }).__mesh;
+				if (!mesh) continue;
+				const s = nn.idx;
+				animated.push({
+					o: mesh,
+					bx: nn.x,
+					by: nn.y,
+					bz: nn.z,
+					a: 1.5 + hash(s) * 2.5,
+					fx: 0.0008 + hash(s + 1) * 0.0009,
+					fy: 0.0008 + hash(s + 2) * 0.0009,
+					fz: 0.0008 + hash(s + 3) * 0.0009,
+					px: hash(s + 4) * 6.283,
+					py: hash(s + 5) * 6.283,
+					pz: hash(s + 6) * 6.283,
+				});
+			}
 		}, 60);
 	},
 };
@@ -270,12 +360,12 @@ function updateLegend(catColor: Map<string, string>): void {
 	const chips = [...catColor]
 		.map(
 			([cat, color]) =>
-				`<span class="chip" style="color:${color}">● ${cat}</span>`,
+				`<span class="chip" style="color:${color}">${CAT_GLYPH[cat] ?? "●"} ${cat}</span>`,
 		)
 		.join("");
 	el.innerHTML =
 		chips +
-		'<span class="chip dim">· size = importance · brightness = confidence · drag to orbit · scroll to zoom · click to inspect</span>';
+		'<span class="chip dim">· color = type · shape = family · size = importance · brightness = confidence · drag to orbit · scroll to zoom · click to inspect</span>';
 }
 
 function showCard(node: Node): void {
@@ -321,5 +411,85 @@ const modeSel = document.getElementById("mode") as HTMLSelectElement;
 modeSel.addEventListener("change", () => {
 	void controller.setMode(modeSel.value as GraphMode);
 });
+
+// Background ambiance: a tinted starfield + faint nebula glow so the galaxy
+// doesn't float in a pure-black void.
+function addBackground(): void {
+	const scene = Graph.scene();
+
+	const N = 900;
+	const pos = new Float32Array(N * 3);
+	const col = new Float32Array(N * 3);
+	const tints = [
+		new Color(0x9fb4ff),
+		new Color(0x7fe0d0),
+		new Color(0xcaa6ff),
+		new Color(0xc7d2e8),
+	];
+	for (let i = 0; i < N; i++) {
+		const th = hash(i * 3.1) * Math.PI * 2;
+		const ph = Math.acos(2 * hash(i * 3.1 + 1) - 1);
+		const rr = 1300 + hash(i * 3.1 + 2) * 1700;
+		pos[i * 3] = rr * Math.sin(ph) * Math.cos(th);
+		pos[i * 3 + 1] = rr * Math.sin(ph) * Math.sin(th);
+		pos[i * 3 + 2] = rr * Math.cos(ph);
+		const c = tints[Math.floor(hash(i * 5 + 9) * tints.length)]!;
+		const b = 0.2 + hash(i * 7 + 3) * 0.55;
+		col[i * 3] = c.r * b;
+		col[i * 3 + 1] = c.g * b;
+		col[i * 3 + 2] = c.b * b;
+	}
+	const geo = new BufferGeometry();
+	geo.setAttribute("position", new BufferAttribute(pos, 3));
+	geo.setAttribute("color", new BufferAttribute(col, 3));
+	scene.add(
+		new Points(
+			geo,
+			new PointsMaterial({
+				size: 2.4,
+				sizeAttenuation: true,
+				vertexColors: true,
+				transparent: true,
+				opacity: 0.85,
+				depthWrite: false,
+			}),
+		),
+	);
+
+	const nebula: { c: number; r: number; p: [number, number, number] }[] = [
+		{ c: 0x123a4a, r: 520, p: [600, 200, -400] },
+		{ c: 0x2a1840, r: 460, p: [-520, -300, 320] },
+		{ c: 0x103a2a, r: 480, p: [120, 520, 480] },
+	];
+	for (const nb of nebula) {
+		const m = new Mesh(
+			new SphereGeometry(nb.r, 24, 24),
+			new MeshBasicMaterial({
+				color: nb.c,
+				transparent: true,
+				opacity: 0.05,
+				blending: AdditiveBlending,
+				depthWrite: false,
+			}),
+		);
+		m.position.set(nb.p[0], nb.p[1], nb.p[2]);
+		scene.add(m);
+	}
+}
+addBackground();
+
+// Each dot gently oscillates around its base so clusters feel alive. Bounded
+// by amplitude, so nothing can drift away.
+function animate(t: number): void {
+	for (const m of animated) {
+		m.o.position.set(
+			m.bx + m.a * Math.sin(t * m.fx + m.px),
+			m.by + m.a * Math.sin(t * m.fy + m.py),
+			m.bz + m.a * Math.sin(t * m.fz + m.pz),
+		);
+	}
+	requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
 
 void controller.render();
