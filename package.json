@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.13.0",
+	"version": "0.14.0",
 	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
 	"type": "module",
 	"license": "MIT",
@@ -121,6 +121,6 @@
 		"vitest": "^3.2.4"
 	},
 	"aiCortex": {
-		"releaseHeadline": "SQLite structural store + location-aware blast_radius"
+		"releaseHeadline": "cortex graph: 3D code + memory viewer with live retrieval"
 	}
 }
