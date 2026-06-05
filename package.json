@@ -58,6 +58,7 @@
 		"format": "prettier --check .",
 		"format:write": "prettier --write .",
 		"cortex": "tsx src/cli.ts",
+		"cortex:graph": "pnpm build:web && tsx src/cli.ts graph",
 		"release": "bash scripts/release.sh",
 		"bench": "tsx benchmarks/runner.ts",
 		"bench:perf": "tsx benchmarks/runner.ts --suite perf",
