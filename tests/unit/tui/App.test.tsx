@@ -74,7 +74,11 @@ describe("App", () => {
 		const { lastFrame } = render(
 			<App read={makeRead() as AppProps["read"]} initialWindow="7d" once={true} />,
 		);
-		await flush();
+		await waitFor(
+			() =>
+				strip(lastFrame()).includes("ai-whisper") &&
+				/Effectiveness\*/.test(strip(lastFrame())),
+		);
 		const frame = strip(lastFrame());
 		expect(frame).toContain("ai-cortex");
 		expect(frame).toContain("ai-whisper");
@@ -87,20 +91,21 @@ describe("App", () => {
 		const { stdin, lastFrame } = render(
 			<App read={makeRead() as AppProps["read"]} initialWindow="7d" />,
 		);
-		await flush();
+		await flush(); // let the initial read + ink useInput handler register
 		stdin.write("j");
-		await flush();
-		const frame = strip(lastFrame());
-		expect(frame).toContain("── ai-whisper ──");
+		// Selection re-reads stats for the focused project; poll until the detail
+		// header reflects it rather than racing a fixed delay.
+		await waitFor(() => strip(lastFrame()).includes("── ai-whisper ──"));
+		expect(strip(lastFrame())).toContain("── ai-whisper ──");
 	});
 
 	it("switches the detail tab with '3' (Memory is now index 3 in new order)", async () => {
 		const { stdin, lastFrame } = render(
 			<App read={makeRead() as AppProps["read"]} initialWindow="7d" />,
 		);
-		await flush();
+		await flush(); // let the initial read + ink useInput handler register
 		stdin.write("3");
-		await flush();
+		await waitFor(() => /Memory\*/.test(strip(lastFrame())));
 		expect(strip(lastFrame())).toMatch(/Memory\*/);
 	});
 
