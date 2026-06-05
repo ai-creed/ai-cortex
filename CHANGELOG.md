@@ -9,14 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+---
+
+## v0.14.0 (2026-06-05)
+
 ### Added
-- `cortex graph`: an interactive, terminal-styled WebGL "galaxy" of memories and
-  indexed codebases, served locally in the browser across all cached projects.
-  Three modes (memory, code, bridge) over one canvas with click drill-down and
-  semantic zoom; `--semantic` adds embedding-similarity memory edges; `--flat`
-  renders a whole repo's files at once; `--export` writes the graph as JSON. The
-  graph builder is pure and store-namespaces every node id for cross-project
-  safety; the server is read-only and reads only from `~/.cache/ai-cortex`.
+- `cortex graph`: an interactive, terminal-styled 3D viewer of your memories and
+  indexed codebases, served read-only in the browser from `~/.cache/ai-cortex`
+  (it never touches the target repo). Two views over one canvas:
+  - Code (the default): a static "brain graph" of a project's files, imports,
+    and calls, colored by module, with a blast-radius highlight (click a file to
+    see what a change would affect) and a clickable legend to show/hide modules.
+  - Memory: a force-directed galaxy of memories across all cached projects,
+    encoded by category (color and shape), importance (size), and confidence
+    (brightness).
+- Live ai-cortex retrieval behind the search box, demonstrating how an agent
+  sees your code and knowledge. In code view, `find` matches files and functions
+  by name or path, and `suggest_files` runs the real task-to-files ranking; in
+  memory view, search runs `recall_memory`. Results highlight in the graph and
+  list in a side panel.
+- `cortex graph` flags: `--project`, `--mode`, `--flat`, `--semantic`, `--port`,
+  `--no-open`, and `--export` (writes the graph as JSON instead of serving).
+- `pnpm cortex:graph` dev script, which builds the web bundle before serving.
+
+### Notes
+- The graph builder is pure and store-namespaces every node id, so memories and
+  files from different projects never collide on one canvas. The server is
+  read-only and reads only from `~/.cache/ai-cortex`.
 
 ---
 
