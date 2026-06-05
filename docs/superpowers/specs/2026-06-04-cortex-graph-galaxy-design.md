@@ -24,15 +24,16 @@ the browser. Cross-project by default. The primary purpose is a showcase: the fl
 - The graph builder is a pure, independently testable unit: SQLite in, `{nodes, edges}` out. No
   rendering or server concerns leak into it.
 - The data and server layers are renderer-agnostic, so the WebGL frontend can be swapped later
-  without touching them.
+  without touching them. (This paid off: the shipped viewer replaced the original 2D Cosmograph
+  renderer with a 3D `3d-force-graph` one without any builder or server change.)
 
 ## Architecture
 
 Three layers, each a separable unit with one responsibility:
 
 ```
-SQLite stores ─► graph builder ─► graph server ─► WebGL galaxy (browser)
-(~/.cache only)   {nodes,edges}    cortex graph    Cosmograph + CSS overlay
+SQLite stores ─► graph builder ─► graph server ─► 3D graph (browser)
+(~/.cache only)   {nodes,edges}    cortex graph    3d-force-graph + CSS overlay
 ```
 
 ### Layer 1: Graph builder (pure)
@@ -137,15 +138,20 @@ Endpoints:
 The server reads from `~/.cache/ai-cortex` only. It discovers projects by enumerating repoKey
 directories in the cache (the same store layout `rehydrate`/`stats` already use).
 
-### Layer 3: WebGL frontend
+### Layer 3: browser frontend (3D)
 
-- Cosmograph (`@cosmograph/cosmos`): GPU force simulation and additive-blend point rendering.
-  Additive blending is the phosphor bloom, so the aesthetic and the performance come from the
-  same place.
-- A thin CSS/DOM overlay: faint grid, scanlines, a `$ cortex graph` prompt line with a blinking
-  cursor, a control bar (mode, scope, filter, search), and a node-detail card.
-- Fallback path noted for the plan: sigma.js v3 if a heavier interaction framework is needed.
-  Not used in v1.
+- `3d-force-graph` (Three.js / WebGL): a 3D force-directed graph. `UnrealBloomPass`
+  post-processing is the phosphor glow, tuned per mode (bright for the memory galaxy, calm for
+  the code brain). Code (`mode=code`) is the default view because a codebase always exists, while
+  memories accumulate over time.
+- Two render shapes share one controller: the memory **galaxy** (deterministic fixed layout,
+  per-dot motion, cluster sprites) and the code **brain graph** (static force-directed network of
+  files, imports, and calls, colored by project/module, with blast-radius highlighting).
+- A thin CSS/DOM overlay: scanlines, a `$ cortex graph` prompt line with a blinking cursor, a
+  control bar (mode, scope, search-mode, search), a clickable legend, a top hint line, a side
+  panel (blast radius / `suggest_files` / `recall_memory` results), and a node-detail card.
+- Originally specced on Cosmograph (`@cosmograph/cosmos`, 2D); that renderer and its bundle were
+  dropped once the 3D viewer landed.
 
 ## Edge Providers
 
@@ -227,11 +233,11 @@ src/server/
   discover.ts         # enumerate repoKey stores in ~/.cache
 src/cli/
   graph.ts            # cortex graph command wiring
-web/graph/            # frontend bundle source
-  index.html
-  main.ts             # Cosmograph setup, data fetch, mode/scope/zoom controls
-  overlay.css         # grid, scanlines, prompt, control bar, node card
-  terminal-theme.ts   # palette, glow params
+web/graph/            # frontend bundle source (esbuild -> dist/web/graph/app3d.js)
+  index.html          # the 3D viewer page (served at /)
+  main3d.ts           # 3d-force-graph setup, galaxy + brain renderers, search/panel wiring
+  app-core.ts         # renderer-agnostic GraphController (state, fetch, drill, encodings)
+  overlay.css         # scanlines, prompt, control bar, legend, hint, panel, node card
 ```
 
 ## Testing
@@ -263,13 +269,14 @@ The implementation plan will sequence these as independently testable tasks:
 6. Bridge mode (anchor edges).
 7. Graph server + discovery + endpoints.
 8. CLI wiring, including `--export`.
-9. Frontend: Cosmograph mount, data fetch, mode/scope switch, semantic zoom.
+9. Frontend: 3d-force-graph mount, data fetch, mode/scope switch, galaxy + brain renderers.
 10. Aesthetic overlay: palette, bloom, grid, scanlines, starfield, prompt chrome.
 
 ## Open Questions Resolved During Brainstorming
 
 - Surface: browser WebGL (not TUI). A symbol graph at repo scale is unviewable in a terminal.
-- Renderer: Cosmograph, for GPU force layout and additive bloom.
+- Renderer: specced on Cosmograph (2D, GPU force layout + additive bloom); shipped on
+  3d-force-graph (3D, Three.js force layout + UnrealBloom) after the 2D version was dropped.
 - Memory edges: layered providers; semantic is a v1 toggle because memory bodies are already
   embedded.
 - Scale: flat full-galaxy is a first-class feature (the showcase), so WebGL is required and
