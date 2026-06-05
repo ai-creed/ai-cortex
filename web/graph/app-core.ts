@@ -1,20 +1,36 @@
 // web/graph/app-core.ts
 export type GraphMode = "code" | "memory" | "bridge";
-export type Node = { id: string; kind: string; label: string; cluster: string };
+export type Node = {
+	id: string;
+	kind: string;
+	label: string;
+	cluster: string;
+	meta?: Record<string, unknown>;
+};
 export type Edge = {
 	source: string;
 	target: string;
 	rel: string;
 	weight?: number;
 };
+export type ClusterLabel = { key: string; label: string };
 export type Payload = {
 	nodes: Node[];
 	edges: Edge[];
 	mode: string;
 	level: string;
+	clusters?: ClusterLabel[];
 };
 
-export type RNode = { id: string; color: string };
+export type RNode = {
+	id: string;
+	label: string; // node title (for hover / detail)
+	color: string; // deterministic fallback; the shell may recolor by category
+	category: string; // memory type, or code node kind
+	size: number;
+	alpha: number;
+	cluster: string;
+};
 export type RLink = { source: string; target: string };
 export interface Renderer {
 	setData(nodes: RNode[], links: RLink[]): void;
@@ -37,10 +53,81 @@ export function colorFor(cluster: string): string {
 	return PALETTE[h % PALETTE.length]!;
 }
 
+// Color encodes CATEGORY (position + label already encode project). Sharp
+// phosphor/ANSI hues to match the terminal aesthetic: memory by type, code by
+// kind. Capture is a muted phosphor and is further dimmed via alpha.
+const TYPE_COLORS: Record<string, string> = {
+	decision: "#39d0ff", // sharp cyan-blue
+	gotcha: "#ff3b5c", // sharp red
+	pattern: "#33ff77", // phosphor green
+	"how-to": "#ffd11a", // sharp amber
+	capture: "#4f7a66", // muted phosphor (background dust)
+};
+const KIND_COLORS: Record<string, string> = {
+	project: "#ffd11a",
+	dir: "#2ee6e6",
+	file: "#39d0ff",
+	symbol: "#c77dff",
+};
+
+export function nodeColor(n: Node): string {
+	if (n.kind === "memory") {
+		const t = (n.meta?.type as string | undefined) ?? "";
+		return TYPE_COLORS[t] ?? "#8aa0b6";
+	}
+	return KIND_COLORS[n.kind] ?? "#8aa0b6";
+}
+
+// The category a node is colored by: memory type, or code node kind.
+export function nodeCategory(n: Node): string {
+	if (n.kind === "memory") {
+		return (n.meta?.type as string | undefined) ?? "other";
+	}
+	return n.kind;
+}
+
+// Brightness encodes CONFIDENCE, like a star's magnitude: high-confidence
+// memories burn bright; low-confidence and raw captures fade to dim dust.
+export function nodeAlpha(n: Node): number {
+	if (n.kind !== "memory") return 0.95;
+	const type = n.meta?.type as string | undefined;
+	if (type === "capture") return 0.16; // raw, unreviewed -> background dust
+	const confidence = Math.max(0, Math.min(1, Number(n.meta?.confidence ?? 0.5)));
+	return 0.4 + 0.6 * confidence;
+}
+
+// Size encodes IMPORTANCE: pinned memories are largest, then frequently used,
+// then high-confidence. Captures stay tiny; code nodes size by kind.
+export function nodeSize(n: Node): number {
+	if (n.kind === "memory") {
+		if ((n.meta?.type as string | undefined) === "capture") return 2.5;
+		const pinned = n.meta?.pinned ? 1 : 0;
+		const getCount = Number(n.meta?.getCount ?? 0);
+		const confidence = Number(n.meta?.confidence ?? 0.5);
+		const s = 2 + pinned * 7 + Math.log2(getCount + 1) * 2.2 + confidence * 6;
+		return Math.min(18, Math.max(2.5, s));
+	}
+	return n.kind === "project"
+		? 12
+		: n.kind === "dir"
+			? 8
+			: n.kind === "file"
+				? 5
+				: 4;
+}
+
 export function toCosmos(p: Payload): { nodes: RNode[]; links: RLink[] } {
 	const present = new Set(p.nodes.map((n) => n.id));
 	return {
-		nodes: p.nodes.map((n) => ({ id: n.id, color: colorFor(n.cluster) })),
+		nodes: p.nodes.map((n) => ({
+			id: n.id,
+			label: n.label,
+			color: nodeColor(n),
+			category: nodeCategory(n),
+			size: nodeSize(n),
+			alpha: nodeAlpha(n),
+			cluster: n.cluster,
+		})),
 		links: p.edges
 			.filter((e) => present.has(e.source) && present.has(e.target))
 			.map((e) => ({ source: e.source, target: e.target })),
@@ -84,6 +171,7 @@ export class GraphController {
 	// to the renderer (toCosmos preserves order), so a click/zoom index maps back
 	// to its source node. This is what makes drill-down wireable from the shell.
 	private lastNodes: Node[] = [];
+	private lastClusters: ClusterLabel[] = [];
 	constructor(
 		private renderer: Renderer,
 		private fetchFn: typeof fetch,
@@ -91,7 +179,10 @@ export class GraphController {
 		// Optional shell hook fired after each render with the source nodes (e.g.
 		// for labels/breadcrumb); the controller itself owns index->node mapping.
 		private onRender?: (nodes: Node[]) => void,
-	) {}
+		initial?: ViewState,
+	) {
+		if (initial) this.state = initial;
+	}
 
 	current(): ViewState {
 		return this.state;
@@ -104,6 +195,7 @@ export class GraphController {
 		const res = await this.fetchFn(queryFor(this.state));
 		const payload = (await res.json()) as Payload;
 		this.lastNodes = payload.nodes;
+		this.lastClusters = payload.clusters ?? [];
 		const data = toCosmos(payload);
 		this.renderer.setData(data.nodes, data.links);
 		this.onRender?.(payload.nodes);
@@ -111,6 +203,10 @@ export class GraphController {
 
 	nodeAt(index: number): Node | undefined {
 		return this.lastNodes[index];
+	}
+
+	clusters(): ClusterLabel[] {
+		return this.lastClusters;
 	}
 
 	// Click seam: the shell forwards a rendered node index; we resolve it to its

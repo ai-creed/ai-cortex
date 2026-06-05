@@ -8,7 +8,13 @@ export function memoryNodes(mems: MemoryRecord[]): GraphNode[] {
 		kind: "memory" as const,
 		label: m.title,
 		cluster: m.repoKey,
-		meta: { type: m.type, status: m.status },
+		meta: {
+			type: m.type,
+			status: m.status,
+			confidence: m.confidence,
+			getCount: m.getCount,
+			pinned: m.pinned,
+		},
 	}));
 }
 

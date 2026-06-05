@@ -31,12 +31,16 @@ export type GraphMode = "code" | "memory" | "bridge";
 export type GraphScope = "all" | { project: string };
 export type GraphLevel = "project" | "dir" | "file" | "symbol";
 
+export type ClusterLabel = { key: string; label: string };
+
 export type GraphPayload = {
 	mode: GraphMode;
 	scope: GraphScope;
 	level: GraphLevel;
 	nodes: GraphNode[];
 	edges: GraphEdge[];
+	// repoKey -> human label (project basename / "global"); drives cluster labels.
+	clusters?: ClusterLabel[];
 };
 
 export type BuildOpts = {
@@ -80,6 +84,9 @@ export type MemoryRecord = {
 	scopeTags: string[];
 	links: { dstId: string; relType: string }[];
 	vector?: Float32Array; // present only when semantic edges are requested
+	confidence?: number; // 0..1
+	getCount?: number; // how often get_memory has been called on it
+	pinned?: number; // 0 | 1
 };
 
 export type RepoStores = {

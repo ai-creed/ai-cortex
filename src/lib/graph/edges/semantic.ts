@@ -3,8 +3,8 @@ import { dot } from "../cosine.js";
 import { memoryNodeId } from "../types.js";
 import type { BuildOpts, GraphEdge, MemoryRecord } from "../types.js";
 
-const DEFAULT_TOPK = 4;
-const DEFAULT_THRESHOLD = 0.55;
+const DEFAULT_TOPK = 2;
+const DEFAULT_THRESHOLD = 0.65;
 
 export function semanticEdges(
 	mems: MemoryRecord[],

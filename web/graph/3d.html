@@ -3,11 +3,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>cortex graph</title>
+		<title>cortex graph · 3D</title>
 		<link rel="stylesheet" href="overlay.css" />
 	</head>
 	<body>
-		<div id="prompt">$ cortex graph --galaxy<span id="cursor">&#9611;</span></div>
+		<div id="prompt">$ cortex graph --3d<span id="cursor">&#9611;</span></div>
 		<div id="breadcrumb"></div>
 		<div id="controls">
 			<select id="mode">
@@ -15,16 +15,12 @@
 				<option value="code">code</option>
 				<option value="bridge">bridge</option>
 			</select>
-			<input id="search" placeholder="filter" />
 		</div>
-		<div id="graph"></div>
-		<div id="grid"></div>
-		<div id="scanlines"></div>
-		<div id="labels"></div>
 		<div id="legend"></div>
 		<div id="card" hidden></div>
+		<div id="graph"></div>
+		<div id="scanlines"></div>
 		<script>
-			// On-page error surface (no devtools needed during bring-up).
 			(function () {
 				function box() {
 					var el = document.getElementById("err");
@@ -50,6 +46,6 @@
 				});
 			})();
 		</script>
-		<script type="module" src="app.js"></script>
+		<script type="module" src="app3d.js"></script>
 	</body>
 </html>

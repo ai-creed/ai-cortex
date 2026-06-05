@@ -58,9 +58,23 @@ async function loadMemories(
 	const lookup = semantic ? await openMemoryVectorIndex(repoKey) : null;
 	try {
 		const items = listMemories(rh, { limit: 100000 });
+		// One query for the importance scalars (used for node sizing).
+		const scoreRows = rh.index
+			.rawDb()
+			.prepare(
+				"SELECT id, confidence, get_count AS getCount, pinned FROM memories",
+			)
+			.all() as Array<{
+			id: string;
+			confidence: number;
+			getCount: number;
+			pinned: number;
+		}>;
+		const scoreById = new Map(scoreRows.map((r) => [r.id, r]));
 		return items.map((it) => {
 			const scope = rh.index.scopeRows(it.id);
 			const vec = lookup ? lookup(it.id) : null;
+			const score = scoreById.get(it.id);
 			const rec: MemoryRecord = {
 				repoKey,
 				id: it.id,
@@ -72,6 +86,9 @@ async function loadMemories(
 				links: rh.index
 					.linksFrom(it.id)
 					.map((e) => ({ dstId: e.dstId, relType: e.relType })),
+				confidence: score?.confidence,
+				getCount: score?.getCount,
+				pinned: score?.pinned,
 			};
 			if (vec) rec.vector = vec.vector;
 			return rec;

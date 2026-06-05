@@ -35,6 +35,29 @@ function memCountByRepo(stores: RepoStores): Map<string, number> {
 }
 
 export function buildGraph(stores: RepoStores, opts: BuildOpts): GraphPayload {
+	const payload = buildGraphInner(stores, opts);
+	payload.clusters = clusterLabels(stores);
+	return payload;
+}
+
+function clusterLabels(stores: RepoStores): { key: string; label: string }[] {
+	const labels = new Map<string, string>();
+	for (const s of stores.code) {
+		const base = s.worktreePath.split("/").filter(Boolean).pop();
+		labels.set(s.repoKey, base && base.length > 0 ? base : s.repoKey.slice(0, 8));
+	}
+	for (const m of stores.memories) {
+		if (!labels.has(m.repoKey)) {
+			labels.set(
+				m.repoKey,
+				m.repoKey === "global" ? "global" : m.repoKey.slice(0, 8),
+			);
+		}
+	}
+	return [...labels].map(([key, label]) => ({ key, label }));
+}
+
+function buildGraphInner(stores: RepoStores, opts: BuildOpts): GraphPayload {
 	if (opts.mode === "memory") {
 		const scope = opts.scope;
 		let mems: MemoryRecord[];
