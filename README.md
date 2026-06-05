@@ -177,6 +177,10 @@ select it with `j/k` and press:
 memories in the browser. It is read-only and reads only from
 `~/.cache/ai-cortex`; it never writes into your repositories.
 
+<p align="center">
+  <img src="docs/assets/graph-demo.gif" alt="cortex graph 3D viewer: a force-directed graph with a highlighted blast radius, a side panel of retrieval results, and a node-detail card" width="800" />
+</p>
+
 ```
 cortex graph [--project <path>] [--mode code|memory] [--flat]
              [--semantic] [--port <n>] [--no-open] [--export <file>]
