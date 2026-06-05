@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+---
+
+## v0.14.1 (2026-06-05)
+
 ### Added
 - `cortex graph`: a "functions" toggle for the single-project code view. Large
   repos (thousands of files) produced tens of thousands of function nodes and
