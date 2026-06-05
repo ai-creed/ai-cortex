@@ -51,6 +51,7 @@
 		"build:web": "node scripts/build-web.mjs",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:web": "tsc --noEmit -p tsconfig.web.json",
 		"typecheck:bench": "tsc --noEmit -p benchmarks/tsconfig.json",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",

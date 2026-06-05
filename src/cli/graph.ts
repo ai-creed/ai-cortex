@@ -1,6 +1,7 @@
 // src/cli/graph.ts
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadRepoStores } from "../lib/graph/load.js";
 import { buildGraph } from "../lib/graph/builder.js";
@@ -12,6 +13,40 @@ import type { RunningServer } from "../server/graph-server.js";
 export type GraphDeps = {
 	startServer: typeof startGraphServer;
 	openBrowser: (url: string) => Promise<void>;
+	// Resolves when the user ends the session (Ctrl-C); injectable so tests do
+	// not block on the real signal wait.
+	keepAlive: (srv: RunningServer) => Promise<void>;
+};
+
+// Real default: open the URL in the OS browser. Best-effort and detached so the
+// CLI does not depend on the child.
+function defaultOpenBrowser(url: string): Promise<void> {
+	const [cmd, args] =
+		process.platform === "darwin"
+			? ["open", [url]]
+			: process.platform === "win32"
+				? ["cmd", ["/c", "start", "", url]]
+				: ["xdg-open", [url]];
+	try {
+		spawn(cmd, args as string[], { detached: true, stdio: "ignore" }).unref();
+	} catch {
+		// Opening is best-effort; the served URL is already printed to stdout.
+	}
+	return Promise.resolve();
+}
+
+function waitForSigint(srv: RunningServer): Promise<void> {
+	return new Promise<void>((resolve) => {
+		process.once("SIGINT", () => {
+			void srv.stop().then(resolve);
+		});
+	});
+}
+
+const DEFAULT_DEPS: GraphDeps = {
+	startServer: startGraphServer,
+	openBrowser: defaultOpenBrowser,
+	keepAlive: waitForSigint,
 };
 
 function flagValue(args: string[], name: string): string | undefined {
@@ -30,11 +65,10 @@ function webDir(): string {
 
 export async function runGraphCommand(
 	args: string[],
-	deps: GraphDeps = {
-		startServer: startGraphServer,
-		openBrowser: async () => {},
-	},
+	deps: Partial<GraphDeps> = {},
 ): Promise<number> {
+	const { startServer, openBrowser, keepAlive } = { ...DEFAULT_DEPS, ...deps };
+
 	const project = flagValue(args, "--project");
 	const scope: GraphScope = project
 		? { project: resolveRepoIdentity(project).repoKey }
@@ -54,18 +88,15 @@ export async function runGraphCommand(
 	}
 
 	const portStr = flagValue(args, "--port");
-	const srv: RunningServer = await deps.startServer({
+	const srv: RunningServer = await startServer({
 		webDir: webDir(),
 		host: "127.0.0.1",
 		port: portStr ? Number(portStr) : 0,
 	});
 	process.stdout.write(`cortex graph serving at ${srv.url}\n`);
-	if (!hasFlag(args, "--no-open")) await deps.openBrowser(srv.url);
+	// Default behavior opens the browser; --no-open suppresses it.
+	if (!hasFlag(args, "--no-open")) await openBrowser(srv.url);
 	// Keep the process alive until Ctrl-C; shut the server down cleanly.
-	await new Promise<void>((resolve) => {
-		process.once("SIGINT", () => {
-			void srv.stop().then(resolve);
-		});
-	});
+	await keepAlive(srv);
 	return 0;
 }

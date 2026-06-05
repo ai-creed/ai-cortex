@@ -59,3 +59,39 @@ describe("cortex graph --export", () => {
 		fs.rmSync(out, { force: true });
 	});
 });
+
+describe("cortex graph server mode", () => {
+	function fakeServer() {
+		return {
+			startServer: async () => ({
+				url: "http://127.0.0.1:1234",
+				port: 1234,
+				stop: async () => {},
+			}),
+			keepAlive: async () => {}, // do not block on Ctrl-C in tests
+		};
+	}
+
+	it("opens the browser at the served url by default", async () => {
+		const opened: string[] = [];
+		const code = await runGraphCommand([], {
+			...fakeServer(),
+			openBrowser: async (u) => {
+				opened.push(u);
+			},
+		});
+		expect(code).toBe(0);
+		expect(opened).toEqual(["http://127.0.0.1:1234"]);
+	});
+
+	it("--no-open suppresses the browser", async () => {
+		let opened = false;
+		await runGraphCommand(["--no-open"], {
+			...fakeServer(),
+			openBrowser: async () => {
+				opened = true;
+			},
+		});
+		expect(opened).toBe(false);
+	});
+});
