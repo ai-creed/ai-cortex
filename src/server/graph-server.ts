@@ -6,7 +6,52 @@ import { spawn } from "node:child_process";
 import { loadRepoStores } from "../lib/graph/load.js";
 import { buildGraph } from "../lib/graph/builder.js";
 import { loadNodeDetail } from "../lib/graph/detail.js";
+import { fileId } from "../lib/graph/types.js";
+import { discoverStoreKeys, discoverDbFiles } from "../lib/graph/discover.js";
+import { getCacheDir } from "../lib/cache-store.js";
+import { readFromDb } from "../lib/cache-store-sqlite.js";
+import { suggestRepo } from "../lib/suggest.js";
+import { openRetrieve, recallMemory } from "../lib/memory/retrieve.js";
 import type { BuildOpts, GraphScope } from "../lib/graph/types.js";
+
+// Resolve a project's on-disk worktree path (needed by suggest_files).
+function worktreePathFor(repoKey: string): string | null {
+	for (const dbPath of discoverDbFiles(getCacheDir(repoKey))) {
+		const cache = readFromDb(dbPath);
+		if (cache) return cache.worktreePath;
+	}
+	return null;
+}
+
+// recall_memory across stores; node ids are namespaced to match the graph.
+async function recallAcross(
+	query: string,
+	project: string | null,
+): Promise<{ nodeId: string; title: string; type: string; score: number }[]> {
+	const keys =
+		!project || project === "all" ? discoverStoreKeys() : [project];
+	const out: { nodeId: string; title: string; type: string; score: number }[] =
+		[];
+	for (const key of keys) {
+		if (!fs.existsSync(`${getCacheDir(key)}/memory/index.sqlite`)) continue;
+		const rh = openRetrieve(key);
+		try {
+			const results = await recallMemory(rh, query, { limit: 8 });
+			for (const r of results) {
+				out.push({
+					nodeId: `memory:${key}:${r.id}`,
+					title: r.title,
+					type: r.type,
+					score: r.score,
+				});
+			}
+		} finally {
+			rh.close();
+		}
+	}
+	out.sort((a, b) => b.score - a.score);
+	return out.slice(0, 30);
+}
 
 export type GraphServerOpts = {
 	webDir: string;
@@ -116,6 +161,50 @@ export async function startGraphServer(
 				: false;
 			res.writeHead(200, { "content-type": CONTENT_TYPE[".json"]! });
 			res.end(JSON.stringify({ opened }));
+			return;
+		}
+		if (url.pathname === "/suggest") {
+			const project = url.searchParams.get("project");
+			const task = url.searchParams.get("task");
+			const wt = project ? worktreePathFor(project) : null;
+			if (!project || !task || !wt) {
+				res.writeHead(400, { "content-type": CONTENT_TYPE[".json"]! });
+				res.end(JSON.stringify({ error: "project (with worktree) + task required" }));
+				return;
+			}
+			suggestRepo(wt, task, { mode: "deep", limit: 20, stale: true })
+				.then((r) => {
+					const results = r.results.map((it) => ({
+						id: fileId(project, it.path),
+						path: it.path,
+						score: it.score,
+						reason: it.reason,
+					}));
+					res.writeHead(200, { "content-type": CONTENT_TYPE[".json"]! });
+					res.end(JSON.stringify({ task, results }));
+				})
+				.catch((err: unknown) => {
+					res.writeHead(500, { "content-type": CONTENT_TYPE[".json"]! });
+					res.end(JSON.stringify({ error: String(err) }));
+				});
+			return;
+		}
+		if (url.pathname === "/recall") {
+			const query = url.searchParams.get("query");
+			if (!query) {
+				res.writeHead(400, { "content-type": CONTENT_TYPE[".json"]! });
+				res.end(JSON.stringify({ error: "query required" }));
+				return;
+			}
+			recallAcross(query, url.searchParams.get("project"))
+				.then((results) => {
+					res.writeHead(200, { "content-type": CONTENT_TYPE[".json"]! });
+					res.end(JSON.stringify({ query, results }));
+				})
+				.catch((err: unknown) => {
+					res.writeHead(500, { "content-type": CONTENT_TYPE[".json"]! });
+					res.end(JSON.stringify({ error: String(err) }));
+				});
 			return;
 		}
 		serveStatic(opts.webDir, url.pathname, res);

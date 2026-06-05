@@ -276,6 +276,10 @@ let blastActive: Set<string> | null = null;
 // Group show/hide: which groups are hidden, and node-id -> group lookup.
 const hiddenGroups = new Set<string>();
 let groupOf = new Map<string, string>();
+// Nodes of the current render (memory or code) + the base link color, used by
+// the highlight overlay (blast / suggest_files / recall_memory).
+let currentN3: N3[] = [];
+let baseLinkColor = "#9fc4e6";
 
 // Code "brain graph": one force-directed network of all files + imports, laid
 // out by physics (no fixed positions). Static, no auto-rotate or per-dot
@@ -336,6 +340,8 @@ function renderBrain(nodes: RNode[], links: RLink[]): void {
 		.linkWidth(0.7)
 		.linkOpacity(0.55);
 	brainLabel = { n3, group, label };
+	currentN3 = n3;
+	baseLinkColor = "#9fc4e6";
 	groupOf = new Map();
 	for (let i = 0; i < n3.length; i++) groupOf.set(n3[i]!.id, group[i]!);
 	hiddenGroups.clear();
@@ -422,27 +428,157 @@ function linkColorForBlast(l: unknown): string {
 		? "#bfe3ff"
 		: "rgba(90,110,130,0.03)";
 }
-function applyBlast(selectedId: string): void {
-	if (!brainLabel) return;
-	const set = blastSet(selectedId);
-	blastActive = set;
-	for (const nn of brainLabel.n3) {
+// "file:<repo>:<path>" -> "path"; "symbol:<repo>:<file>::<qn>" -> "qn  ·  file".
+function displayName(id: string): string {
+	const k = id.indexOf(":");
+	const kind = id.slice(0, k);
+	const rest = id.slice(id.indexOf(":", k + 1) + 1);
+	if (kind === "symbol") {
+		const i = rest.indexOf("::");
+		return i >= 0 ? `${rest.slice(i + 2)}  ·  ${rest.slice(0, i)}` : rest;
+	}
+	return rest;
+}
+function applyHighlight(ids: Set<string>): void {
+	blastActive = ids;
+	for (const nn of currentN3) {
 		const mat = matOf(nn);
-		if (!mat) continue;
-		mat.transparent = true;
-		mat.opacity = set.has(nn.id) ? 1 : 0.05;
+		if (mat) mat.opacity = ids.has(nn.id) ? 1 : 0.05;
 	}
 	Graph.linkColor(linkColorForBlast);
 }
-function clearBlast(): void {
+function clearHighlight(): void {
 	blastActive = null;
-	if (brainLabel) {
-		for (const nn of brainLabel.n3) {
-			const mat = matOf(nn);
-			if (mat) mat.opacity = 1;
+	for (const nn of currentN3) {
+		const mat = matOf(nn);
+		if (mat) mat.opacity = 1;
+	}
+	Graph.linkColor(() => baseLinkColor);
+	const panel = document.getElementById("panel");
+	if (panel) panel.hidden = true;
+}
+function esc(s: string): string {
+	return s.replace(
+		/[&<>"]/g,
+		(c) =>
+			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+	);
+}
+function panelLoading(title: string): void {
+	const panel = document.getElementById("panel")!;
+	panel.hidden = false;
+	panel.innerHTML = `<div class="panel-h">${esc(title)}<span class="panel-x">esc</span></div><div class="panel-meta">…</div>`;
+}
+function showPanel(
+	title: string,
+	rows: { id: string; primary: string; secondary?: string }[],
+	ids: Set<string>,
+): void {
+	applyHighlight(ids);
+	const panel = document.getElementById("panel")!;
+	panel.hidden = false;
+	const list = rows
+		.slice(0, 600)
+		.map(
+			(r) =>
+				`<li data-id="${esc(r.id)}"><span class="p1">${esc(r.primary)}</span>${
+					r.secondary ? `<span class="p2">${esc(r.secondary)}</span>` : ""
+				}</li>`,
+		)
+		.join("");
+	panel.innerHTML =
+		`<div class="panel-h">${esc(title)}<span class="panel-x">esc</span></div>` +
+		`<div class="panel-meta">${rows.length} results</div>` +
+		`<ul class="panel-list">${list}</ul>`;
+}
+function showBlast(selectedId: string): void {
+	if (!brainLabel) return;
+	const si = document.getElementById("search") as HTMLInputElement | null;
+	if (si) si.value = ""; // selecting a node supersedes a search
+	const set = blastSet(selectedId);
+	const rows = [...set]
+		.sort(
+			(a, b) =>
+				(a.startsWith("file:") ? 0 : 1) - (b.startsWith("file:") ? 0 : 1) ||
+				displayName(a).localeCompare(displayName(b)),
+		)
+		.map((id) => ({ id, primary: displayName(id) }));
+	showPanel(`blast radius · ${displayName(selectedId)}`, rows, set);
+}
+// suggest_files: a real ai-cortex call — given a task, the files an agent opens.
+async function runSuggest(task: string): Promise<void> {
+	const scope = controller.current().scope;
+	if (scope === "all") {
+		panelLoading("suggest_files — pick a project first");
+		return;
+	}
+	panelLoading(`suggest_files · "${task}"`);
+	const res = await fetch(
+		`/suggest?project=${scope.project}&task=${encodeURIComponent(task)}`,
+	);
+	const data = (await res.json()) as {
+		error?: string;
+		results?: { id: string; path: string; score: number; reason: string }[];
+	};
+	if (data.error || !data.results) {
+		panelLoading(`suggest_files: ${data.error ?? "no results"}`);
+		return;
+	}
+	const rows = data.results.map((r) => ({
+		id: r.id,
+		primary: r.path,
+		secondary: `${Math.round(r.score)} · ${r.reason}`,
+	}));
+	showPanel(`suggest_files · "${task}"`, rows, new Set(rows.map((r) => r.id)));
+}
+// recall_memory: a real ai-cortex call — given a query, the memories an agent recalls.
+async function runRecall(query: string): Promise<void> {
+	const scope = controller.current().scope;
+	const proj = scope === "all" ? "all" : scope.project;
+	panelLoading(`recall_memory · "${query}"`);
+	const res = await fetch(
+		`/recall?query=${encodeURIComponent(query)}&project=${proj}`,
+	);
+	const data = (await res.json()) as {
+		error?: string;
+		results?: { nodeId: string; title: string; type: string; score: number }[];
+	};
+	if (data.error || !data.results) {
+		panelLoading(`recall_memory: ${data.error ?? "no results"}`);
+		return;
+	}
+	const rows = data.results.map((r) => ({
+		id: r.nodeId,
+		primary: r.title,
+		secondary: `${r.type} · ${r.score.toFixed(2)}`,
+	}));
+	showPanel(`recall_memory · "${query}"`, rows, new Set(rows.map((r) => r.id)));
+}
+function currentSearchMode(): "find" | "suggest" {
+	const el = document.getElementById("searchmode") as HTMLSelectElement | null;
+	return el?.value === "suggest" ? "suggest" : "find";
+}
+// The full path (or file::symbol) portion of a node id, after the store prefix.
+function pathOf(id: string): string {
+	const k = id.indexOf(":");
+	return id.slice(id.indexOf(":", k + 1) + 1);
+}
+// find: name + full-path search over the current code nodes -> highlight + list;
+// click a result for its blast radius.
+function runFind(query: string): void {
+	const q = query.toLowerCase();
+	const set = new Set<string>();
+	const rows: { id: string; primary: string; secondary?: string }[] = [];
+	for (const nn of currentN3) {
+		const p = pathOf(nn.id);
+		const hay = `${p}\n${displayName(nn.id)}`.toLowerCase();
+		if (hay.includes(q)) {
+			set.add(nn.id);
+			rows.push({ id: nn.id, primary: displayName(nn.id), secondary: p });
 		}
 	}
-	Graph.linkColor(() => "#9fc4e6");
+	rows.sort((a, b) => a.primary.localeCompare(b.primary));
+	showPanel(`find "${query}"`, rows, set);
 }
 
 const renderer: Renderer = {
@@ -523,6 +659,8 @@ const renderer: Renderer = {
 			.map((l) => ({ source: l.source, target: l.target }));
 
 		Graph.graphData({ nodes: n3, links: linkObjs });
+		currentN3 = n3;
+		baseLinkColor = "rgba(80,170,110,0.18)";
 
 		// Cluster labels as camera-facing sprites at each cluster center.
 		for (const s of sprites) Graph.scene().remove(s);
@@ -613,15 +751,32 @@ const controller = new GraphController(
 	() => {
 		renderBreadcrumb();
 		populateProjects();
+		syncControls();
 	},
 	{ mode: "memory", scope: "all", semantic: true },
 );
+
+// Search demonstrates a real ai-cortex call: suggest_files in code, recall_memory
+// in the galaxy. Placeholder reflects the mode.
+function syncControls(): void {
+	const code = controller.current().mode === "code";
+	const sm = document.getElementById("searchmode") as HTMLElement | null;
+	if (sm) sm.style.display = code ? "" : "none";
+	const search = document.getElementById("search") as HTMLInputElement | null;
+	if (search) {
+		search.placeholder = !code
+			? "query → recall_memory (Enter)"
+			: currentSearchMode() === "suggest"
+				? "task → suggest_files (Enter)"
+				: "file / function name";
+	}
+}
 
 Graph.onNodeClick((o: NodeObject) => {
 	const idx = asN(o).idx;
 	if (controller.current().mode === "code") {
 		// brain graph: highlight the blast radius + inspect; don't drill.
-		applyBlast(asN(o).id);
+		showBlast(asN(o).id);
 		const node = controller.nodeAt(idx);
 		if (node) showCard(node);
 		return;
@@ -646,12 +801,53 @@ modeSel.addEventListener("change", () => {
 	void controller.setMode(modeSel.value as GraphMode);
 });
 
-// Esc clears the blast-radius selection (and the detail card).
+// Esc clears the highlight (blast/search), the search box, and the card.
 window.addEventListener("keydown", (e) => {
 	if (e.key !== "Escape") return;
-	clearBlast();
+	clearHighlight();
+	const si = document.getElementById("search") as HTMLInputElement | null;
+	if (si) si.value = "";
 	const card = document.getElementById("card");
 	if (card) card.hidden = true;
+});
+
+// File search (code brain): highlight + list matching nodes.
+const searchInput = document.getElementById("search") as HTMLInputElement | null;
+// Live "find" filtering as you type (code + find mode).
+searchInput?.addEventListener("input", () => {
+	if (controller.current().mode !== "code" || currentSearchMode() !== "find") {
+		return;
+	}
+	const v = searchInput.value.trim();
+	if (!v) clearHighlight();
+	else runFind(v);
+});
+// Enter runs the heavier retrieval: suggest_files (code) or recall_memory (memory).
+searchInput?.addEventListener("keydown", (e) => {
+	if (e.key !== "Enter") return;
+	const v = searchInput.value.trim();
+	if (!v) {
+		clearHighlight();
+		return;
+	}
+	if (controller.current().mode === "memory") void runRecall(v);
+	else if (currentSearchMode() === "suggest") void runSuggest(v);
+	else runFind(v);
+});
+// Switching code search mode (find / suggest_files) resets the box + highlight.
+const searchModeSel = document.getElementById(
+	"searchmode",
+) as HTMLSelectElement | null;
+searchModeSel?.addEventListener("change", () => {
+	if (searchInput) searchInput.value = "";
+	clearHighlight();
+	syncControls();
+});
+
+// Click an item in the side panel to blast-focus it.
+document.getElementById("panel")!.addEventListener("click", (e) => {
+	const li = (e.target as HTMLElement).closest("[data-id]") as HTMLElement | null;
+	if (li) showBlast(li.getAttribute("data-id")!);
 });
 
 // Click a legend chip to show/hide that group's nodes (code brain).
