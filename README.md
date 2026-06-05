@@ -173,26 +173,29 @@ select it with `j/k` and press:
 
 ## The Galaxy (`cortex graph`)
 
-`cortex graph` opens an interactive, terminal-styled galaxy of your memories
-and indexed codebases in the browser, spanning every cached project at once. It
-is read-only and reads only from `~/.cache/ai-cortex`; it never writes into your
-repositories.
+`cortex graph` opens an interactive, terminal-styled 3D view of your code and
+memories in the browser. It is read-only and reads only from
+`~/.cache/ai-cortex`; it never writes into your repositories.
 
 ```
-cortex graph [--project <path>] [--mode code|memory|bridge] [--flat]
-             [--semantic] [--export <file>] [--port <n>] [--no-open]
+cortex graph [--project <path>] [--mode code|memory] [--flat]
+             [--semantic] [--port <n>] [--no-open] [--export <file>]
 ```
 
-Three lenses over one canvas, switchable at any zoom level:
+Two views over one canvas:
 
-- `memory` (default): the cross-project knowledge graph. Nodes are memories;
-  edges come from explicit links, shared scope (tags/files), and, with
-  `--semantic`, embedding similarity.
-- `code`: a project's structure. Click a project to drop in, expand a directory
-  to its files, and open a file to its symbols and call graph. `--flat` renders
-  every file of a repo at once.
-- `bridge`: memories woven onto the code they scope, via each memory's file
-  scope.
+- `code` (default): a project's structure as a static "brain graph" of files,
+  imports, and calls, colored by module. Click a file for its blast radius (what
+  a change would affect); use the clickable legend to show or hide modules.
+  `--flat` renders every file of a repo at once.
+- `memory`: a force-directed galaxy of memories across every cached project,
+  encoded by category (color and shape), importance (size), and confidence
+  (brightness). `--semantic` adds embedding-similarity edges between memories.
+
+The search box runs real ai-cortex retrieval, so you can watch how an agent sees
+your work: in code view, `find` matches files and functions by name or path and
+`suggest_files` ranks the files for a task; in memory view, search runs
+`recall_memory`. Matches highlight in the graph and list in a side panel.
 
 `--export <file>` writes the graph as JSON and exits (no server), for use in
 external graph tools.
