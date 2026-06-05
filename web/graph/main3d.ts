@@ -202,6 +202,7 @@ type Anim = {
 let animated: Anim[] = [];
 
 const Graph = new ForceGraph3D(container, { controlType: "orbit" })
+	.showNavInfo(false) // hide the lib's built-in "Left-click: rotate…" overlay
 	.backgroundColor("#02060a")
 	.nodeRelSize(0.5)
 	.nodeColor((o: NodeObject) => asN(o).color)
@@ -370,9 +371,9 @@ function renderBrain(nodes: RNode[], links: RLink[]): void {
 		)
 		.join("");
 	const grouping = allProjects ? "project" : "module";
-	document.getElementById("legend")!.innerHTML =
-		chips +
-		`<span class="chip dim">· color = ${grouping} · click a chip to show/hide · click a file for blast radius · Esc to reset</span>`;
+	document.getElementById("legend")!.innerHTML = chips;
+	document.getElementById("hint")!.textContent =
+		`color = ${grouping} · click a chip to show/hide · click a file for blast radius · Esc to reset`;
 }
 
 // --- group show/hide (clickable legend) ---
@@ -725,17 +726,26 @@ function updateLegend(catColor: Map<string, string>): void {
 				`<span class="chip" style="color:${color}">${CAT_GLYPH[cat] ?? "●"} ${cat}</span>`,
 		)
 		.join("");
-	el.innerHTML =
-		chips +
-		'<span class="chip dim">· color = type · shape = family · size = importance · brightness = confidence · drag to orbit · scroll to zoom · click to inspect</span>';
+	el.innerHTML = chips;
+	document.getElementById("hint")!.textContent =
+		"color = type · shape = family · size = importance · brightness = confidence · drag to orbit · scroll to zoom · click to inspect";
 }
 
-function showCard(node: Node): void {
-	void fetch(`/node/${encodeURIComponent(node.id)}`).then(async (r) => {
+function showCardById(id: string): void {
+	void fetch(`/node/${encodeURIComponent(id)}`).then(async (r) => {
 		const card = document.getElementById("card")!;
 		card.hidden = false;
 		card.textContent = JSON.stringify(await r.json(), null, 2);
 	});
+}
+function showCard(node: Node): void {
+	showCardById(node.id);
+}
+// Click a recall_memory result -> select that memory: isolate it in the galaxy
+// (dim the rest) and show its detail card. No camera move; zooming in adds nothing.
+function selectMemory(id: string): void {
+	applyHighlight(new Set([id]));
+	showCardById(id);
 }
 
 function renderBreadcrumb(): void {
@@ -753,7 +763,9 @@ const controller = new GraphController(
 		populateProjects();
 		syncControls();
 	},
-	{ mode: "memory", scope: "all", semantic: true },
+	// Code is the default view: a codebase always exists, while memories
+	// accumulate over time (an empty galaxy is a poor first impression).
+	{ mode: "code", scope: "all", semantic: true, full: true },
 );
 
 // Search demonstrates a real ai-cortex call: suggest_files in code, recall_memory
@@ -844,10 +856,13 @@ searchModeSel?.addEventListener("change", () => {
 	syncControls();
 });
 
-// Click an item in the side panel to blast-focus it.
+// Click a side-panel item: code -> blast radius; memory -> select that memory.
 document.getElementById("panel")!.addEventListener("click", (e) => {
 	const li = (e.target as HTMLElement).closest("[data-id]") as HTMLElement | null;
-	if (li) showBlast(li.getAttribute("data-id")!);
+	if (!li) return;
+	const id = li.getAttribute("data-id")!;
+	if (controller.current().mode === "code") showBlast(id);
+	else selectMemory(id);
 });
 
 // Click a legend chip to show/hide that group's nodes (code brain).
