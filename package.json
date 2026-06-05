@@ -1,7 +1,7 @@
 {
 	"name": "ai-cortex",
 	"version": "0.14.0",
-	"description": "Local project rehydration, file discovery, and session-history MCP server for AI agents (Claude Code, Codex)",
+	"description": "Structural code intelligence and persistent memory for AI coding agents, served over MCP (Claude Code, Codex).",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -12,6 +12,7 @@
 	"keywords": [
 		"ai-agent",
 		"mcp",
+		"model-context-protocol",
 		"codebase-indexing",
 		"file-discovery",
 		"call-graph",
@@ -20,7 +21,8 @@
 		"claude-code",
 		"codex",
 		"context-recovery",
-		"session-history"
+		"session-history",
+		"memory"
 	],
 	"engines": {
 		"node": ">=20"
