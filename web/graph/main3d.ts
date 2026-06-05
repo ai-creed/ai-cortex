@@ -770,6 +770,11 @@ const controller = new GraphController(
 
 // Search demonstrates a real ai-cortex call: suggest_files in code, recall_memory
 // in the galaxy. Placeholder reflects the mode.
+// Function-node counts above this warn the user that toggling them on may lag.
+const FNS_WARN = 10000;
+function formatCount(n: number): string {
+	return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : `${n}`;
+}
 function syncControls(): void {
 	const code = controller.current().mode === "code";
 	const sm = document.getElementById("searchmode") as HTMLElement | null;
@@ -781,6 +786,25 @@ function syncControls(): void {
 			: currentSearchMode() === "suggest"
 				? "task → suggest_files (Enter)"
 				: "file / function name";
+	}
+	// "functions" toggle only applies to a single-project code view (cross-project
+	// code is a dir rollup with no function nodes).
+	const single = code && controller.current().scope !== "all";
+	const wrap = document.getElementById("fnsToggle") as HTMLElement | null;
+	if (wrap) wrap.style.display = single ? "" : "none";
+	if (single) {
+		const info = controller.symbolInfo();
+		const cb = document.getElementById("fns") as HTMLInputElement | null;
+		if (cb) cb.checked = info.included ?? false;
+		const cnt = document.getElementById("fnsCount");
+		if (cnt) {
+			const n = info.count ?? 0;
+			const huge = n > FNS_WARN;
+			// Warn before loading: large + currently hidden.
+			const slow = huge && !info.included ? ", may be slow" : "";
+			cnt.textContent = n ? `(${formatCount(n)}${slow})` : "";
+			cnt.classList.toggle("warn", huge && !info.included);
+		}
 	}
 }
 
@@ -811,6 +835,11 @@ controls.enableDamping = true;
 const modeSel = document.getElementById("mode") as HTMLSelectElement;
 modeSel.addEventListener("change", () => {
 	void controller.setMode(modeSel.value as GraphMode);
+});
+
+// Toggle function nodes for the single-project code brain (re-fetches).
+document.getElementById("fns")?.addEventListener("change", (e) => {
+	void controller.setSymbols((e.target as HTMLInputElement).checked);
 });
 
 // Esc clears the highlight (blast/search), the search box, and the card.

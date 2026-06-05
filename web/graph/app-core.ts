@@ -20,6 +20,8 @@ export type Payload = {
 	mode: string;
 	level: string;
 	clusters?: ClusterLabel[];
+	symbolCount?: number;
+	symbolsIncluded?: boolean;
 };
 
 export type RNode = {
@@ -43,6 +45,9 @@ export type ViewState = {
 	semantic?: boolean;
 	flat?: boolean;
 	full?: boolean;
+	// Single-project code view: force function nodes on/off. Undefined = auto
+	// (server hides them past the node threshold).
+	symbols?: boolean;
 };
 
 // ANSI-ish phosphor palette; one hue per cluster, amber for global.
@@ -143,6 +148,7 @@ export function queryFor(s: ViewState): string {
 	if (s.semantic) params.set("semantic", "1");
 	if (s.flat) params.set("flat", "1");
 	if (s.full) params.set("full", "1");
+	if (s.symbols !== undefined) params.set("symbols", s.symbols ? "1" : "0");
 	return `/graph?${params.toString()}`;
 }
 
@@ -174,6 +180,7 @@ export class GraphController {
 	// to its source node. This is what makes drill-down wireable from the shell.
 	private lastNodes: Node[] = [];
 	private lastClusters: ClusterLabel[] = [];
+	private lastSymbolInfo: { count?: number; included?: boolean } = {};
 	constructor(
 		private renderer: Renderer,
 		private fetchFn: typeof fetch,
@@ -198,6 +205,10 @@ export class GraphController {
 		const payload = (await res.json()) as Payload;
 		this.lastNodes = payload.nodes;
 		this.lastClusters = payload.clusters ?? [];
+		this.lastSymbolInfo = {
+			count: payload.symbolCount,
+			included: payload.symbolsIncluded,
+		};
 		const data = toCosmos(payload);
 		this.renderer.setData(data.nodes, data.links);
 		this.onRender?.(payload.nodes);
@@ -209,6 +220,18 @@ export class GraphController {
 
 	clusters(): ClusterLabel[] {
 		return this.lastClusters;
+	}
+
+	// Symbol-node info from the last render: how many function nodes the project
+	// has and whether they were drawn. Drives the "functions" toggle UI.
+	symbolInfo(): { count?: number; included?: boolean } {
+		return this.lastSymbolInfo;
+	}
+
+	// Force function nodes on/off for the single-project code view and re-render.
+	async setSymbols(on: boolean): Promise<void> {
+		this.state = { ...this.state, symbols: on };
+		await this.render();
 	}
 
 	// Click seam: the shell forwards a rendered node index; we resolve it to its
@@ -235,7 +258,9 @@ export class GraphController {
 	// (memory, bridge) simply do not use it; the leftover is harmless.
 	// Picker: switch the project scope (or "all") and re-render from the top.
 	async setScope(scope: "all" | { project: string }): Promise<void> {
-		this.state = { ...this.state, scope, focus: undefined };
+		// New project -> re-evaluate the function-node auto-threshold (symbols
+		// reset to auto).
+		this.state = { ...this.state, scope, focus: undefined, symbols: undefined };
 		this.stack = [];
 		await this.render();
 	}
@@ -247,6 +272,7 @@ export class GraphController {
 			...this.state,
 			mode,
 			full: mode === "code" ? true : undefined,
+			symbols: undefined,
 		};
 		await this.render();
 	}

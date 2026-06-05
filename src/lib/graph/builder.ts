@@ -6,6 +6,7 @@ import {
 	fileNodes,
 	importEdges,
 	projectNode,
+	symbolCountFor,
 	symbolNodes,
 	symbolNodesAll,
 } from "./edges/code.js";
@@ -13,6 +14,7 @@ import { dirRollup, narrowToDir } from "./aggregate.js";
 import { linkEdges, memoryNodes, scopeEdges } from "./edges/memory.js";
 import { semanticEdges } from "./edges/semantic.js";
 import { anchorEdges } from "./edges/bridge.js";
+import { CODE_SYMBOL_NODE_THRESHOLD } from "./types.js";
 import type {
 	BuildOpts,
 	GraphEdge,
@@ -97,19 +99,35 @@ function buildGraphInner(stores: RepoStores, opts: BuildOpts): GraphPayload {
 		for (const s of code) {
 			nodes.push(...fileNodes(s));
 			edges.push(...importEdges(s));
-			if (proj !== null) {
-				// Single-project brain also includes the function call graph.
-				nodes.push(...symbolNodesAll(s));
-				edges.push(...callEdgesAll(s));
-				edges.push(...containsEdges(s));
+		}
+		// Single-project brain can also include the function call graph. For huge
+		// repos that overwhelms the renderer, so auto-hide functions past the
+		// threshold (still toggleable via opts.symbols). Cross-project (proj ===
+		// null) never carries symbols.
+		let symbolCount: number | undefined;
+		let symbolsIncluded = false;
+		if (proj !== null) {
+			symbolCount = code.reduce((n, s) => n + symbolCountFor(s), 0);
+			const includeSymbols =
+				opts.symbols ??
+				nodes.length + symbolCount <= CODE_SYMBOL_NODE_THRESHOLD;
+			if (includeSymbols) {
+				for (const s of code) {
+					nodes.push(...symbolNodesAll(s));
+					edges.push(...callEdgesAll(s));
+					edges.push(...containsEdges(s));
+				}
+				symbolsIncluded = true;
 			}
 		}
 		return {
 			mode: "code",
 			scope: opts.scope,
-			level: proj !== null ? "symbol" : "file",
+			level: symbolsIncluded ? "symbol" : "file",
 			nodes,
 			edges,
+			symbolCount,
+			symbolsIncluded,
 		};
 	}
 

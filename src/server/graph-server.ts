@@ -106,6 +106,10 @@ function parseBuildOpts(url: URL): BuildOpts {
 	if (url.searchParams.get("flat") === "1") opts.flat = true;
 	if (url.searchParams.get("semantic") === "1") opts.semantic = true;
 	if (url.searchParams.get("full") === "1") opts.full = true;
+	// symbols: "1"/"0" force function nodes on/off; absent = auto (threshold).
+	const symbols = url.searchParams.get("symbols");
+	if (symbols === "1") opts.symbols = true;
+	else if (symbols === "0") opts.symbols = false;
 	return opts;
 }
 

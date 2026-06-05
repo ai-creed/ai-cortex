@@ -41,7 +41,17 @@ export type GraphPayload = {
 	edges: GraphEdge[];
 	// repoKey -> human label (project basename / "global"); drives cluster labels.
 	clusters?: ClusterLabel[];
+	// Single-project code "brain graph": how many function (symbol) nodes the
+	// project has, and whether they were included in this payload. Lets the
+	// viewer offer a "functions" toggle and auto-hide them on huge graphs.
+	symbolCount?: number;
+	symbolsIncluded?: boolean;
 };
+
+// Above this many total code nodes (files + functions), the single-project code
+// graph auto-hides function nodes by default (still toggleable) so huge repos
+// stay viewable. Tunable; the viewer renders files + imports either way.
+export const CODE_SYMBOL_NODE_THRESHOLD = 3500;
 
 export type BuildOpts = {
 	mode: GraphMode;
@@ -54,6 +64,10 @@ export type BuildOpts = {
 	// code mode: return the whole connected file+import graph at once (the
 	// "brain graph"), instead of the drill-down levels.
 	full?: boolean;
+	// Single-project code "brain graph": include function (symbol) nodes and
+	// their call/contains edges. Undefined = auto (include only when the total
+	// node count stays under CODE_SYMBOL_NODE_THRESHOLD).
+	symbols?: boolean;
 };
 
 // Pure inputs to the builder; produced by load.ts, never read from disk here.

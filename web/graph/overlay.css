@@ -22,6 +22,10 @@ body { background: #02060a; overflow: hidden; font-family: ui-monospace, Menlo, 
 #hint { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1; font: 11px ui-monospace, monospace; color: #6c7a93; pointer-events: none; white-space: nowrap; max-width: 66vw; overflow: hidden; text-overflow: ellipsis; }
 #controls { position: fixed; top: 10px; right: 14px; z-index: 2; display: flex; gap: 8px; }
 #controls select, #controls input { background: #04140a; color: #4dff88; border: 1px solid #1f5a33; padding: 2px 6px; font-family: inherit; }
+#controls #fnsToggle { display: flex; align-items: center; gap: 4px; color: #4dff88; border: 1px solid #1f5a33; padding: 2px 6px; cursor: pointer; user-select: none; white-space: nowrap; }
+#controls #fnsToggle input { border: none; padding: 0; }
+#controls #fnsCount { color: #6c7a93; }
+#controls #fnsCount.warn { color: #f0b132; }
 #card { position: fixed; bottom: 14px; left: 14px; z-index: 2; max-width: 360px; max-height: 60vh; overflow: auto; padding: 10px; background: #04140a; border: 1px solid #1f5a33; color: #cdd6f4; font: 11px ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 #panel { position: fixed; top: 56px; right: 10px; z-index: 4; width: 320px; max-height: 78vh; overflow: auto; padding: 8px 10px; background: rgba(4,16,10,0.92); border: 1px solid #1f5a33; color: #cdd6f4; font: 11px ui-monospace, monospace; }
 #panel .panel-h { display: flex; justify-content: space-between; color: #4dff88; margin-bottom: 4px; }

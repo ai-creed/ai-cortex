@@ -128,6 +128,32 @@ describe("cortex graph e2e: data + retrieval endpoints", () => {
 		).toBe(true);
 	});
 
+	it("single-project code graph reports symbol info and honors ?symbols=0", async () => {
+		const repoKey = await mkRepoKey("graph-e2e-symbols");
+		keys.push(repoKey);
+		transcodeCacheToDb(
+			cache(repoKey),
+			getCacheDbFilePath(repoKey, "wt00000000000000"),
+		);
+		const srv = await serve();
+
+		// auto: small project -> functions included, fields present.
+		const auto = await (
+			await fetch(`${srv.url}/graph?mode=code&scope=${repoKey}&full=1`)
+		).json();
+		expect(auto.symbolsIncluded).toBe(true);
+		expect(typeof auto.symbolCount).toBe("number");
+
+		// explicit off -> functions excluded.
+		const off = await (
+			await fetch(`${srv.url}/graph?mode=code&scope=${repoKey}&full=1&symbols=0`)
+		).json();
+		expect(off.symbolsIncluded).toBe(false);
+		expect(off.nodes.some((n: { kind: string }) => n.kind === "symbol")).toBe(
+			false,
+		);
+	});
+
 	it("/suggest returns 400 without a usable project and task", async () => {
 		const repoKey = await mkRepoKey("graph-e2e-suggest");
 		keys.push(repoKey);
