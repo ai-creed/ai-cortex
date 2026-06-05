@@ -14,9 +14,17 @@ import { suggestRepo } from "../lib/suggest.js";
 import { openRetrieve, recallMemory } from "../lib/memory/retrieve.js";
 import type { BuildOpts, GraphScope } from "../lib/graph/types.js";
 
-// Resolve a project's on-disk worktree path (needed by suggest_files).
+// Resolve a project's on-disk worktree path (needed by suggest_files). An
+// invalid or unknown repoKey resolves to null (getCacheDir throws on a malformed
+// key) so the endpoint can answer 400 instead of crashing the request.
 function worktreePathFor(repoKey: string): string | null {
-	for (const dbPath of discoverDbFiles(getCacheDir(repoKey))) {
+	let dbFiles: string[];
+	try {
+		dbFiles = discoverDbFiles(getCacheDir(repoKey));
+	} catch {
+		return null;
+	}
+	for (const dbPath of dbFiles) {
 		const cache = readFromDb(dbPath);
 		if (cache) return cache.worktreePath;
 	}
@@ -33,7 +41,13 @@ async function recallAcross(
 	const out: { nodeId: string; title: string; type: string; score: number }[] =
 		[];
 	for (const key of keys) {
-		if (!fs.existsSync(`${getCacheDir(key)}/memory/index.sqlite`)) continue;
+		let memIndex: string;
+		try {
+			memIndex = `${getCacheDir(key)}/memory/index.sqlite`;
+		} catch {
+			continue; // invalid/unknown repoKey -> no memory store
+		}
+		if (!fs.existsSync(memIndex)) continue;
 		const rh = openRetrieve(key);
 		try {
 			const results = await recallMemory(rh, query, { limit: 8 });
