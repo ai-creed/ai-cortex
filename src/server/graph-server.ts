@@ -46,6 +46,7 @@ function parseBuildOpts(url: URL): BuildOpts {
 	if (focus) opts.focus = focus;
 	if (url.searchParams.get("flat") === "1") opts.flat = true;
 	if (url.searchParams.get("semantic") === "1") opts.semantic = true;
+	if (url.searchParams.get("full") === "1") opts.full = true;
 	return opts;
 }
 

@@ -51,6 +51,9 @@ export type BuildOpts = {
 	semantic?: boolean;
 	semanticTopK?: number;
 	semanticThreshold?: number;
+	// code mode: return the whole connected file+import graph at once (the
+	// "brain graph"), instead of the drill-down levels.
+	full?: boolean;
 };
 
 // Pure inputs to the builder; produced by load.ts, never read from disk here.

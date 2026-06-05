@@ -31,7 +31,7 @@ export type RNode = {
 	alpha: number;
 	cluster: string;
 };
-export type RLink = { source: string; target: string };
+export type RLink = { source: string; target: string; rel: string };
 export interface Renderer {
 	setData(nodes: RNode[], links: RLink[]): void;
 }
@@ -42,6 +42,7 @@ export type ViewState = {
 	focus?: string;
 	semantic?: boolean;
 	flat?: boolean;
+	full?: boolean;
 };
 
 // ANSI-ish phosphor palette; one hue per cluster, amber for global.
@@ -130,7 +131,7 @@ export function toCosmos(p: Payload): { nodes: RNode[]; links: RLink[] } {
 		})),
 		links: p.edges
 			.filter((e) => present.has(e.source) && present.has(e.target))
-			.map((e) => ({ source: e.source, target: e.target })),
+			.map((e) => ({ source: e.source, target: e.target, rel: e.rel })),
 	};
 }
 
@@ -141,6 +142,7 @@ export function queryFor(s: ViewState): string {
 	if (s.focus) params.set("focus", s.focus);
 	if (s.semantic) params.set("semantic", "1");
 	if (s.flat) params.set("flat", "1");
+	if (s.full) params.set("full", "1");
 	return `/graph?${params.toString()}`;
 }
 
@@ -231,8 +233,21 @@ export class GraphController {
 	// only the mode and preserves the current scope, focus, and breadcrumb so
 	// the user stays at their current drill level. Modes that ignore `focus`
 	// (memory, bridge) simply do not use it; the leftover is harmless.
+	// Picker: switch the project scope (or "all") and re-render from the top.
+	async setScope(scope: "all" | { project: string }): Promise<void> {
+		this.state = { ...this.state, scope, focus: undefined };
+		this.stack = [];
+		await this.render();
+	}
+
 	async setMode(mode: GraphMode): Promise<void> {
-		this.state = { ...this.state, mode };
+		// Code mode is the full connected "brain graph"; memory/bridge are the
+		// drill-down galaxy.
+		this.state = {
+			...this.state,
+			mode,
+			full: mode === "code" ? true : undefined,
+		};
 		await this.render();
 	}
 

@@ -1,10 +1,13 @@
 // src/lib/graph/builder.ts
 import {
 	callEdges,
+	callEdgesAll,
+	containsEdges,
 	fileNodes,
 	importEdges,
 	projectNode,
 	symbolNodes,
+	symbolNodesAll,
 } from "./edges/code.js";
 import { dirRollup, narrowToDir } from "./aggregate.js";
 import { linkEdges, memoryNodes, scopeEdges } from "./edges/memory.js";
@@ -12,7 +15,9 @@ import { semanticEdges } from "./edges/semantic.js";
 import { anchorEdges } from "./edges/bridge.js";
 import type {
 	BuildOpts,
+	GraphEdge,
 	GraphLevel,
+	GraphNode,
 	GraphPayload,
 	MemoryRecord,
 	RepoStores,
@@ -81,6 +86,33 @@ function buildGraphInner(stores: RepoStores, opts: BuildOpts): GraphPayload {
 		};
 	}
 
+	// Code "brain graph": the whole connected file + import graph at once.
+	if (opts.mode === "code" && opts.full) {
+		const proj = opts.scope === "all" ? null : opts.scope.project;
+		const code = proj
+			? stores.code.filter((s) => s.repoKey === proj)
+			: stores.code;
+		const nodes: GraphNode[] = [];
+		const edges: GraphEdge[] = [];
+		for (const s of code) {
+			nodes.push(...fileNodes(s));
+			edges.push(...importEdges(s));
+			if (proj !== null) {
+				// Single-project brain also includes the function call graph.
+				nodes.push(...symbolNodesAll(s));
+				edges.push(...callEdgesAll(s));
+				edges.push(...containsEdges(s));
+			}
+		}
+		return {
+			mode: "code",
+			scope: opts.scope,
+			level: proj !== null ? "symbol" : "file",
+			nodes,
+			edges,
+		};
+	}
+
 	if (opts.mode === "bridge" && opts.scope !== "all") {
 		const bridgeRepo = opts.scope.project;
 		const bstore = stores.code.find((s) => s.repoKey === bridgeRepo);
@@ -100,6 +132,19 @@ function buildGraphInner(stores: RepoStores, opts: BuildOpts): GraphPayload {
 	}
 
 	if (opts.scope === "all") {
+		if (opts.mode === "code") {
+			// Cross-project code: each project's directory structure as its own
+			// constellation (project hub + dirs + intra-project dir imports), so
+			// the landing shows real shape instead of one lone dot per project.
+			const nodes: GraphNode[] = [];
+			const edges: GraphEdge[] = [];
+			for (const s of stores.code) {
+				const r = dirRollup(s);
+				nodes.push(...r.nodes);
+				edges.push(...r.edges);
+			}
+			return { mode: opts.mode, scope: opts.scope, level: "dir", nodes, edges };
+		}
 		const counts = memCountByRepo(stores);
 		const nodes = stores.code.map((s) =>
 			projectNode(s, counts.get(s.repoKey) ?? 0),

@@ -38,12 +38,13 @@ type N3 = {
 	size: number;
 	val: number;
 	label: string;
-	x: number;
-	y: number;
-	z: number;
-	fx: number;
-	fy: number;
-	fz: number;
+	// Fixed for the memory galaxy; omitted for the code brain (physics places it).
+	x?: number;
+	y?: number;
+	z?: number;
+	fx?: number;
+	fy?: number;
+	fz?: number;
 };
 const asN = (o: NodeObject): N3 => o as unknown as N3;
 
@@ -63,7 +64,12 @@ function geometryFor(category: string, r: number): BufferGeometry {
 }
 function nodeMesh(n: N3): Mesh {
 	const r = Math.max(1, n.size * 0.5);
-	return new Mesh(geometryFor(n.category, r), new MeshBasicMaterial({ color: n.color }));
+	// transparent from creation so runtime opacity changes (blast dimming) take
+	// effect without a shader recompile.
+	return new Mesh(
+		geometryFor(n.category, r),
+		new MeshBasicMaterial({ color: n.color, transparent: true }),
+	);
 }
 
 // Legend glyph per category, matching the 3D geometry.
@@ -211,11 +217,14 @@ const Graph = new ForceGraph3D(container, { controlType: "orbit" })
 	.linkColor(() => "rgba(80,170,110,0.18)")
 	.linkWidth(0.3)
 	.linkOpacity(0.22)
-	.cooldownTicks(0)
+	.cooldownTicks(0) // overridden per render (0 = galaxy, >0 = code force layout)
 	.warmupTicks(0)
-	// Positions are fixed, so dragging is pointless — and its DragControls
-	// conflicts with OrbitControls on pointer-up (throws on click). Disable it.
+	// DragControls conflicts with OrbitControls on pointer-up (throws on click).
 	.enableNodeDrag(false)
+	// After the code brain's force layout settles, frame it.
+	.onEngineStop(() => {
+		if (controller.current().mode === "code") Graph.zoomToFit(600, 50);
+	})
 	.width(window.innerWidth)
 	.height(window.innerHeight);
 
@@ -234,8 +243,223 @@ window.addEventListener("resize", () => {
 	bloom.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Group coloring for the code brain (project or module): distinct hues via the
+// golden angle so even many modules stay distinguishable.
+const groupIdx = new Map<string, number>();
+let nextGroupIdx = 0;
+function groupColor(key: string): string {
+	let i = groupIdx.get(key);
+	if (i === undefined) {
+		i = nextGroupIdx++;
+		groupIdx.set(key, i);
+	}
+	return `hsl(${(i * 137.5) % 360}, 75%, 62%)`;
+}
+
+// "file:<repoKey>:<path>" -> top-level directory (module) of the file.
+function moduleOf(id: string): string {
+	const a = id.indexOf(":");
+	const b = id.indexOf(":", a + 1);
+	const p = b >= 0 ? id.slice(b + 1) : id;
+	const s = p.indexOf("/");
+	return s === -1 ? "." : p.slice(0, s);
+}
+
+// Stored after each brain render so labels can be placed once the force layout
+// settles (we need the final node positions to compute group centroids).
+let brainLabel: { n3: N3[]; group: string[]; label: Map<string, string> } | null =
+	null;
+// Blast-radius: impact adjacency (what's affected if a node changes) + the
+// currently highlighted set.
+let brainImpact = new Map<string, string[]>();
+let blastActive: Set<string> | null = null;
+// Group show/hide: which groups are hidden, and node-id -> group lookup.
+const hiddenGroups = new Set<string>();
+let groupOf = new Map<string, string>();
+
+// Code "brain graph": one force-directed network of all files + imports, laid
+// out by physics (no fixed positions). Static, no auto-rotate or per-dot
+// motion; structure emerges from the topology. Color = project, size = how
+// many files import it (hubs stand out).
+function renderBrain(nodes: RNode[], links: RLink[]): void {
+	const allProjects = controller.current().scope === "all";
+	const indeg = new Map<string, number>();
+	for (const l of links) indeg.set(l.target, (indeg.get(l.target) ?? 0) + 1);
+	const projLabel = new Map(controller.clusters().map((c) => [c.key, c.label]));
+
+	const group: string[] = [];
+	const label = new Map<string, string>();
+	const n3: N3[] = nodes.map((node, i) => {
+		// All projects -> group by project; single project -> group by module.
+		const g = allProjects ? node.cluster : moduleOf(node.id);
+		group[i] = g;
+		if (!label.has(g)) {
+			label.set(g, allProjects ? (projLabel.get(g) ?? g.slice(0, 8)) : g);
+		}
+		const deg = indeg.get(node.id) ?? 0;
+		const size = 3 + Math.sqrt(deg) * 2.4;
+		return {
+			id: node.id,
+			idx: i,
+			color: groupColor(g),
+			category: node.category,
+			size,
+			val: size * size * size,
+			label: node.label,
+		};
+	});
+	const idset = new Set(n3.map((n) => n.id));
+	const filtered = links.filter(
+		(l) => idset.has(l.source) && idset.has(l.target),
+	);
+	const linkObjs = filtered.map((l) => ({ source: l.source, target: l.target }));
+	// Impact adjacency for blast-radius: changing X affects its importers/callers
+	// (reverse imports/calls) and its own functions (forward contains).
+	brainImpact = new Map<string, string[]>();
+	for (const l of filtered) {
+		const a = l.rel === "contains" ? l.source : l.target;
+		const b = l.rel === "contains" ? l.target : l.source;
+		const arr = brainImpact.get(a);
+		if (arr) arr.push(b);
+		else brainImpact.set(a, [b]);
+	}
+	blastActive = null;
+
+	for (const s of sprites) Graph.scene().remove(s);
+	sprites.length = 0;
+	animated = [];
+	controls.autoRotate = false;
+	setBgVisible(false); // starfield/nebula off for the code brain
+	bloom.strength = 0.25; // calm the glow; the brain is a map, not a starscape
+	// Make the dependency lines clearly visible.
+	Graph.linkColor(() => "#9fc4e6")
+		.linkWidth(0.7)
+		.linkOpacity(0.55);
+	brainLabel = { n3, group, label };
+	groupOf = new Map();
+	for (let i = 0; i < n3.length; i++) groupOf.set(n3[i]!.id, group[i]!);
+	hiddenGroups.clear();
+
+	// Tighten the force layout so the brain reads densely (default repulsion
+	// spreads ~1600 nodes too far to take in at once).
+	const charge = Graph.d3Force("charge") as
+		| { strength(v: number): unknown; distanceMax(v: number): unknown }
+		| undefined;
+	if (charge) {
+		charge.strength(-7);
+		charge.distanceMax(70);
+	}
+	const linkF = Graph.d3Force("link") as
+		| { distance(v: number): unknown }
+		| undefined;
+	linkF?.distance(9);
+
+	Graph.cooldownTicks(220); // run the force layout, then settle
+	Graph.graphData({ nodes: n3, links: linkObjs });
+
+	const chips = [...label]
+		.map(
+			([k, l]) =>
+				`<span class="chip clickable" data-group="${k}" style="color:${groupColor(k)}">● ${l}</span>`,
+		)
+		.join("");
+	const grouping = allProjects ? "project" : "module";
+	document.getElementById("legend")!.innerHTML =
+		chips +
+		`<span class="chip dim">· color = ${grouping} · click a chip to show/hide · click a file for blast radius · Esc to reset</span>`;
+}
+
+// --- group show/hide (clickable legend) ---
+function applyGroupVisibility(): void {
+	if (!brainLabel) return;
+	for (let i = 0; i < brainLabel.n3.length; i++) {
+		const mesh = (brainLabel.n3[i] as unknown as { __mesh?: Mesh }).__mesh;
+		if (mesh) mesh.visible = !hiddenGroups.has(brainLabel.group[i]!);
+	}
+	Graph.linkVisibility(linkVisibleForGroups);
+}
+function linkVisibleForGroups(l: unknown): boolean {
+	if (hiddenGroups.size === 0) return true;
+	const link = l as {
+		source: string | { id: string };
+		target: string | { id: string };
+	};
+	const s = typeof link.source === "object" ? link.source.id : link.source;
+	const t = typeof link.target === "object" ? link.target.id : link.target;
+	return (
+		!hiddenGroups.has(groupOf.get(s) ?? "") &&
+		!hiddenGroups.has(groupOf.get(t) ?? "")
+	);
+}
+
+// --- blast-radius highlight ---
+function blastSet(start: string): Set<string> {
+	const seen = new Set<string>([start]);
+	const q = [start];
+	while (q.length) {
+		const x = q.shift()!;
+		for (const y of brainImpact.get(x) ?? []) {
+			if (!seen.has(y)) {
+				seen.add(y);
+				q.push(y);
+			}
+		}
+	}
+	return seen;
+}
+function matOf(nn: N3): MeshBasicMaterial | undefined {
+	const m = (nn as unknown as { __mesh?: Mesh }).__mesh;
+	return m ? (m.material as MeshBasicMaterial) : undefined;
+}
+function linkColorForBlast(l: unknown): string {
+	const link = l as {
+		source: string | { id: string };
+		target: string | { id: string };
+	};
+	const s = typeof link.source === "object" ? link.source.id : link.source;
+	const t = typeof link.target === "object" ? link.target.id : link.target;
+	return blastActive && blastActive.has(s) && blastActive.has(t)
+		? "#bfe3ff"
+		: "rgba(90,110,130,0.03)";
+}
+function applyBlast(selectedId: string): void {
+	if (!brainLabel) return;
+	const set = blastSet(selectedId);
+	blastActive = set;
+	for (const nn of brainLabel.n3) {
+		const mat = matOf(nn);
+		if (!mat) continue;
+		mat.transparent = true;
+		mat.opacity = set.has(nn.id) ? 1 : 0.05;
+	}
+	Graph.linkColor(linkColorForBlast);
+}
+function clearBlast(): void {
+	blastActive = null;
+	if (brainLabel) {
+		for (const nn of brainLabel.n3) {
+			const mat = matOf(nn);
+			if (mat) mat.opacity = 1;
+		}
+	}
+	Graph.linkColor(() => "#9fc4e6");
+}
+
 const renderer: Renderer = {
 	setData(nodes: RNode[], links: RLink[]) {
+		if (controller.current().mode === "code") {
+			renderBrain(nodes, links);
+			return;
+		}
+		// --- memory galaxy: deterministic layout, no physics, auto-rotate on ---
+		Graph.cooldownTicks(0);
+		controls.autoRotate = true;
+		setBgVisible(true);
+		bloom.strength = 0.8; // full glow for the memory galaxy stars
+		// Faint threads for the galaxy (semantic links should stay subtle).
+		Graph.linkColor(() => "rgba(80,170,110,0.18)")
+			.linkWidth(0.3)
+			.linkOpacity(0.22);
 		// Group by cluster, build a category->color map for the legend.
 		const groups = new Map<string, number[]>();
 		const catColor = new Map<string, string>();
@@ -339,9 +563,9 @@ const renderer: Renderer = {
 				const s = nn.idx;
 				animated.push({
 					o: mesh,
-					bx: nn.x,
-					by: nn.y,
-					bz: nn.z,
+					bx: nn.x ?? 0,
+					by: nn.y ?? 0,
+					bz: nn.z ?? 0,
 					a: 1.5 + hash(s) * 2.5,
 					fx: 0.0008 + hash(s + 1) * 0.0009,
 					fy: 0.0008 + hash(s + 2) * 0.0009,
@@ -386,12 +610,22 @@ const controller = new GraphController(
 	renderer,
 	fetch.bind(window),
 	showCard,
-	() => renderBreadcrumb(),
+	() => {
+		renderBreadcrumb();
+		populateProjects();
+	},
 	{ mode: "memory", scope: "all", semantic: true },
 );
 
 Graph.onNodeClick((o: NodeObject) => {
 	const idx = asN(o).idx;
+	if (controller.current().mode === "code") {
+		// brain graph: highlight the blast radius + inspect; don't drill.
+		applyBlast(asN(o).id);
+		const node = controller.nodeAt(idx);
+		if (node) showCard(node);
+		return;
+	}
 	// Defer so the pointer event fully resolves before graphData is replaced
 	// (avoids an OrbitControls pointer-up race on re-render).
 	setTimeout(() => void controller.clickIndex(idx), 0);
@@ -412,8 +646,59 @@ modeSel.addEventListener("change", () => {
 	void controller.setMode(modeSel.value as GraphMode);
 });
 
-// Background ambiance: a tinted starfield + faint nebula glow so the galaxy
-// doesn't float in a pure-black void.
+// Esc clears the blast-radius selection (and the detail card).
+window.addEventListener("keydown", (e) => {
+	if (e.key !== "Escape") return;
+	clearBlast();
+	const card = document.getElementById("card");
+	if (card) card.hidden = true;
+});
+
+// Click a legend chip to show/hide that group's nodes (code brain).
+document.getElementById("legend")!.addEventListener("click", (e) => {
+	const el = (e.target as HTMLElement).closest("[data-group]") as
+		| HTMLElement
+		| null;
+	if (!el) return;
+	const g = el.getAttribute("data-group")!;
+	if (hiddenGroups.has(g)) {
+		hiddenGroups.delete(g);
+		el.classList.remove("off");
+	} else {
+		hiddenGroups.add(g);
+		el.classList.add("off");
+	}
+	applyGroupVisibility();
+});
+
+// Project picker: populated once from the first payload's clusters.
+let projectsPopulated = false;
+function populateProjects(): void {
+	if (projectsPopulated) return;
+	const clusters = controller.clusters();
+	if (clusters.length === 0) return;
+	projectsPopulated = true;
+	const sel = document.getElementById("project") as HTMLSelectElement;
+	for (const c of clusters) {
+		if (c.key === "global") continue; // global has no code
+		const opt = document.createElement("option");
+		opt.value = c.key;
+		opt.textContent = c.label;
+		sel.appendChild(opt);
+	}
+}
+const projSel = document.getElementById("project") as HTMLSelectElement;
+projSel.addEventListener("change", () => {
+	const v = projSel.value;
+	void controller.setScope(v === "all" ? "all" : { project: v });
+});
+
+// Background ambiance (memory galaxy only; hidden for the code brain so it does
+// not pollute the dependency read).
+const bgObjects: { visible: boolean }[] = [];
+function setBgVisible(v: boolean): void {
+	for (const o of bgObjects) o.visible = v;
+}
 function addBackground(): void {
 	const scene = Graph.scene();
 
@@ -442,19 +727,19 @@ function addBackground(): void {
 	const geo = new BufferGeometry();
 	geo.setAttribute("position", new BufferAttribute(pos, 3));
 	geo.setAttribute("color", new BufferAttribute(col, 3));
-	scene.add(
-		new Points(
-			geo,
-			new PointsMaterial({
-				size: 2.4,
-				sizeAttenuation: true,
-				vertexColors: true,
-				transparent: true,
-				opacity: 0.85,
-				depthWrite: false,
-			}),
-		),
+	const stars = new Points(
+		geo,
+		new PointsMaterial({
+			size: 2.4,
+			sizeAttenuation: true,
+			vertexColors: true,
+			transparent: true,
+			opacity: 0.85,
+			depthWrite: false,
+		}),
 	);
+	scene.add(stars);
+	bgObjects.push(stars);
 
 	const nebula: { c: number; r: number; p: [number, number, number] }[] = [
 		{ c: 0x123a4a, r: 520, p: [600, 200, -400] },
@@ -474,6 +759,7 @@ function addBackground(): void {
 		);
 		m.position.set(nb.p[0], nb.p[1], nb.p[2]);
 		scene.add(m);
+		bgObjects.push(m);
 	}
 }
 addBackground();

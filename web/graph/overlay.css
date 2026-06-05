@@ -14,9 +14,11 @@ body { background: #02060a; overflow: hidden; font-family: ui-monospace, Menlo, 
 #breadcrumb { position: fixed; top: 30px; left: 14px; z-index: 3; color: #2ee6e6; cursor: pointer; }
 #labels { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 #labels .clabel { position: absolute; transform: translate(-50%, -50%); color: #cdd6f4; font: 11px ui-monospace, monospace; text-shadow: 0 0 6px #000, 0 0 6px #000; white-space: nowrap; letter-spacing: 0.5px; }
-#legend { position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 3; font: 11px ui-monospace, monospace; pointer-events: none; white-space: nowrap; }
-#legend .chip { margin: 0 5px; }
-#legend .dim { color: #6c7a93; }
+#legend { position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 3; font: 11px ui-monospace, monospace; pointer-events: auto; white-space: normal; max-width: 96vw; text-align: center; }
+#legend .chip { margin: 0 5px; display: inline-block; }
+#legend .chip.clickable { cursor: pointer; user-select: none; }
+#legend .chip.off { opacity: 0.3; text-decoration: line-through; }
+#legend .dim { color: #6c7a93; pointer-events: none; }
 #controls { position: fixed; top: 10px; right: 14px; z-index: 2; display: flex; gap: 8px; }
 #controls select, #controls input { background: #04140a; color: #4dff88; border: 1px solid #1f5a33; padding: 2px 6px; font-family: inherit; }
 #card { position: fixed; bottom: 14px; left: 14px; z-index: 2; max-width: 360px; padding: 10px; background: #04140a; border: 1px solid #1f5a33; color: #cdd6f4; white-space: pre-wrap; }

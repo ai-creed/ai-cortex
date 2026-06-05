@@ -20,11 +20,43 @@ const stores: RepoStores = {
 };
 
 describe("buildGraph code mode", () => {
-	it("scope=all emits one project node per code store", () => {
+	it("scope=all (code) emits each project's directory structure", () => {
 		const g = buildGraph(stores, { mode: "code", scope: "all" });
-		expect(g.level).toBe("project");
+		expect(g.level).toBe("dir");
 		expect(g.nodes.map((n) => n.id)).toContain("project:repoA");
-		expect(g.nodes.every((n) => n.kind === "project")).toBe(true);
+		expect(g.nodes.some((n) => n.kind === "dir")).toBe(true);
+	});
+
+	it("resolves extensionless and /index imports to real files; drops externals", () => {
+		const s: RepoStores = {
+			code: [
+				{
+					repoKey: "r",
+					worktreePath: "/r",
+					files: [
+						{ path: "src/a.ts", kind: "source" },
+						{ path: "src/b.ts", kind: "source" },
+						{ path: "src/c/index.ts", kind: "source" },
+					],
+					imports: [
+						{ from: "src/a.ts", to: "src/b" }, // extensionless
+						{ from: "src/a.ts", to: "src/c" }, // resolves to /index.ts
+						{ from: "src/a.ts", to: "src/b" }, // duplicate -> deduped
+						{ from: "src/a.ts", to: "react" }, // external -> dropped
+					],
+					functions: [],
+					calls: [],
+				},
+			],
+			memories: [],
+		};
+		const g = buildGraph(s, { mode: "code", scope: { project: "r" }, flat: true });
+		const imp = g.edges
+			.filter((e) => e.rel === "imports")
+			.map((e) => `${e.source}->${e.target}`);
+		expect(imp).toContain("file:r:src/a.ts->file:r:src/b.ts");
+		expect(imp).toContain("file:r:src/a.ts->file:r:src/c/index.ts");
+		expect(imp).toHaveLength(2);
 	});
 
 	it("scope=project flat emits file nodes and import edges, namespaced", () => {
