@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- `cortex graph`: a "functions" toggle for the single-project code view. Large
+  repos (thousands of files) produced tens of thousands of function nodes and
+  bogged the viewer down, so function nodes now auto-hide once a project exceeds
+  ~3500 total nodes (files + functions), leaving the files-and-imports graph
+  responsive. A checkbox brings them back on demand, with a "may be slow" hint
+  when the hidden set is very large. `?symbols=1|0` forces it server-side.
+- `cortex graph`: an on-screen stats readout (node counts and a live FPS gauge),
+  so you can see how much is rendered and how smoothly. The FPS color-codes from
+  green to red as the scene gets heavier.
+
 ---
 
 ## v0.14.0 (2026-06-05)
