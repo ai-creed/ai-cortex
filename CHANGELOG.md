@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.14.2 (2026-06-08)
+
+### Fixed
+- Bump `better-sqlite3` to `^12` (12.10.0) so global install works on Node 26.
+  The pinned 11.x shipped no prebuilt binary for Node 26 and failed to compile
+  from source against its V8 (removed `Object::GetPrototype`,
+  `Context::GetIsolate`, and `PropertyCallbackInfo::This`). 12.x supports Node
+  20/22/23/24/25/26.
+
+---
+
 ## v0.14.1 (2026-06-05)
 
 ### Added
