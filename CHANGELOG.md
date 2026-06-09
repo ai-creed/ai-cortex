@@ -11,7 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## v0.14.3 (2026-06-10)
+## v0.15.0 (2026-06-10)
+
+### Added
+- `capture_session` MCP tool: host-agnostic session capture. Any host that
+  writes a Claude-format transcript JSONL can call it to run the capture
+  pipeline (parse, evidence, chunks, extractor) against the history cache,
+  deriving repo identity from `worktreePath`. Also adds a projection-evidence
+  round-trip.
 
 ### Fixed
 - History capture no longer re-embeds the whole session on every capture. It
