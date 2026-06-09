@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.14.3 (2026-06-10)
+
+### Fixed
+- History capture no longer re-embeds the whole session on every capture. It
+  reuses vectors for chunks whose text is unchanged and embeds only new or
+  changed chunks. On the Codex hook path (capture fires every turn) this drops
+  per-session capture from an O(n^2) embedding cost, with a model round-trip
+  each turn, to O(new chunks).
+- History capture now detects in-place edits and shrinks of a transcript via a
+  content hash over turn text and tool uses, instead of keying only on turn
+  number. Such changes were previously skipped as up-to-date, leaving stale
+  chunks and vectors on disk. Memory extraction reads these records, so this
+  keeps extracted memory in sync with the real transcript.
+
+---
+
 ## v0.14.2 (2026-06-08)
 
 ### Fixed
