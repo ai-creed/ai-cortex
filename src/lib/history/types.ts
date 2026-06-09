@@ -43,6 +43,11 @@ export type SessionRecord = {
 	summary: string;
 	evidence: EvidenceLayer;
 	chunks: ChunkMeta[];
+	// Hash of the parsed transcript content (turn text + tool uses). Lets capture
+	// detect in-place edits and shrinks that leave turn numbers unchanged — those
+	// keep `lastProcessedTurn` static, so without this they'd be skipped as
+	// up-to-date. Optional: records written before this field reprocess once.
+	contentHash?: string;
 };
 
 export type RawTurn = {
