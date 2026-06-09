@@ -1602,6 +1602,51 @@ export function createServer(): McpServer {
 		),
 	);
 
+	server.registerTool(
+		"capture_session",
+		{
+			description:
+				"Capture a host-written transcript JSONL into the session history cache (parse → evidence → chunks → extractor). Host-agnostic: any host that writes a Claude-format transcript can call it.",
+			inputSchema: {
+				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
+				sessionId: z.string().min(1),
+				transcriptPath: z.string().min(1).describe("Absolute path to the transcript JSONL the host wrote."),
+				embed: z.boolean().optional(),
+			},
+		},
+		logged(
+			"capture_session",
+			(p) => ({ worktreePath: p.worktreePath, sessionId: p.sessionId }),
+			NO_STATS_PARAMS,
+			rkFromWorktree,
+			(r) => {
+				try {
+					const m = JSON.parse((r as { content: { text: string }[] }).content[0].text) as {
+						turnsProcessed?: unknown;
+					};
+					const n =
+						typeof m.turnsProcessed === "number" && Number.isFinite(m.turnsProcessed)
+							? m.turnsProcessed
+							: 0;
+					return { result_count: n };
+				} catch {
+					return { result_count: 0 };
+				}
+			},
+			async (p) =>
+				withRepoIdentity(p.worktreePath, async (repoKey) => {
+					const { captureSession } = await import("../lib/history/capture.js");
+					const result = await captureSession({
+						repoKey,
+						sessionId: p.sessionId,
+						transcriptPath: p.transcriptPath,
+						embed: p.embed !== false,
+					});
+					return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+				}),
+		),
+	);
+
 	// ─── Subagent-driven cleanup ────────────────────────────────────────────────
 
 	server.registerTool(
