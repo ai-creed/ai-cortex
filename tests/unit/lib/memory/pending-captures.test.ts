@@ -259,4 +259,50 @@ describe("reviewPendingCaptures", () => {
 			lc.close();
 		}
 	});
+
+	it("hides low-signal captures by default and exposes them via includeLowSignal", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "capture",
+				title: "low",
+				body: "push it and prepare a new patch release",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			await createMemory(lc, {
+				type: "capture",
+				title: "high",
+				body: "always run pnpm build before tagging",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const def = await reviewPendingCaptures(repoKey);
+		expect(def.map((p) => p.title)).toEqual(["high"]);
+		expect(def[0]!.tier).toBe("high");
+
+		const all = await reviewPendingCaptures(repoKey, { includeLowSignal: true });
+		expect(all.map((p) => p.title).sort()).toEqual(["high", "low"]);
+		expect(all.find((p) => p.title === "low")!.tier).toBe("low");
+	});
+
+	it("never returns non-capture extracted candidates (queue disjointness, capture side)", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "decision",
+				title: "legacy extracted decision",
+				body: "always do X because Y",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const out = await reviewPendingCaptures(repoKey, { includeLowSignal: true });
+		expect(out).toEqual([]);
+	});
 });

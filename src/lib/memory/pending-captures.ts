@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import Database from "better-sqlite3";
 import { indexDbPath } from "./paths.js";
-import { signalScore } from "./gate.js";
+import { signalScore, captureTier, type CaptureTierValue } from "./gate.js";
 import { readMemoryFile } from "./store.js";
 import { readSession } from "../history/store.js";
 import { parseTranscript } from "../history/compact.js";
@@ -16,6 +16,7 @@ export type PendingCapture = {
 	title: string;
 	body: string;
 	signalScore: number;
+	tier: CaptureTierValue;
 	source: { sessionId: string | null; turn: number | null };
 	context: CaptureContext;
 };
@@ -24,7 +25,7 @@ type EligibleRow = { id: string; title: string; updated_at: string };
 
 export async function reviewPendingCaptures(
 	repoKey: string,
-	opts: { limit?: number; since?: string } = {},
+	opts: { limit?: number; since?: string; includeLowSignal?: boolean } = {},
 ): Promise<PendingCapture[]> {
 	const limit = opts.limit ?? 15;
 	const dbp = indexDbPath(repoKey);
@@ -42,6 +43,7 @@ export async function reviewPendingCaptures(
 			.prepare(
 				`SELECT id, title, updated_at FROM memories
 				 WHERE source='extracted' AND status='candidate'
+				   AND type='capture'
 				 ${opts.since ? "AND updated_at > @since" : ""}`,
 			)
 			.all({ since: opts.since ?? null }) as EligibleRow[];
@@ -64,18 +66,24 @@ export async function reviewPendingCaptures(
 			title: r.title,
 			body: rec.body,
 			signalScore: signalScore(rec.body),
+			tier: captureTier(rec.body),
 			source: { sessionId, turn },
 			context: await resolveContext(repoKey, sessionId, turn, rec.body),
 			_updatedAt: r.updated_at, // sort key only; strip before returning
 		});
 	}
+	// Low-signal captures are hidden by default: they auto-expire via the
+	// aging sweep and only surface when explicitly audited.
+	const visible = opts.includeLowSignal
+		? out
+		: out.filter((p) => p.tier === "high");
 	// signalScore desc, then recency (updated_at) desc — over the FULL set.
-	out.sort(
+	visible.sort(
 		(a, b) =>
 			b.signalScore - a.signalScore ||
 			b._updatedAt.localeCompare(a._updatedAt),
 	);
-	return out.slice(0, limit).map(({ _updatedAt: _drop, ...p }) => p);
+	return visible.slice(0, limit).map(({ _updatedAt: _drop, ...p }) => p);
 }
 
 async function resolveContext(
