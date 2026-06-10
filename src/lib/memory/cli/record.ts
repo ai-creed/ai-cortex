@@ -6,6 +6,7 @@ import {
 	GLOBAL_REPO_KEY,
 	createMemory,
 } from "../lifecycle.js";
+import { applyTypeFieldDefaults } from "../registry.js";
 import { reconcileStore } from "../reconcile.js";
 
 type RecordArgs = {
@@ -121,6 +122,9 @@ export async function runMemoryRecord(
 			scope: { files: parsed.scopeFiles, tags: parsed.tags },
 			source: parsed.source,
 			confidence: parsed.confidence,
+			// CLI has no --type-field flag; fill tool-layer defaults (e.g.
+			// gotcha severity) so the call passes validation.
+			typeFields: applyTypeFieldDefaults(parsed.type, undefined),
 		});
 		(opts.stdout ?? process.stdout).write(`${id}\n`);
 		return 0;

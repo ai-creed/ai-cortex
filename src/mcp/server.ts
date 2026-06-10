@@ -59,7 +59,10 @@ import {
 	addEvidence,
 	rewriteMemory,
 } from "../lib/memory/lifecycle.js";
-import { typeContractHint } from "../lib/memory/registry.js";
+import {
+	typeContractHint,
+	applyTypeFieldDefaults,
+} from "../lib/memory/registry.js";
 import { reconcileStore } from "../lib/memory/reconcile.js";
 import { matchMemoriesCrossTier, type SuggestMode } from "../lib/memory/surface.js";
 import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js";
@@ -972,7 +975,7 @@ export function createServer(): McpServer {
 					.record(z.unknown())
 					.optional()
 					.describe(
-						"Type-specific fields. e.g. a gotcha requires { severity: 'info' | 'warning' | 'critical' }.",
+						"Type-specific fields. e.g. a gotcha takes { severity: 'info' | 'warning' | 'critical' } — defaults to 'warning' when omitted.",
 					),
 				globalScope: z.boolean().optional(),
 			},
@@ -997,7 +1000,7 @@ export function createServer(): McpServer {
 							scope: { files: p.scopeFiles ?? [], tags: p.scopeTags ?? [] },
 							source: p.source ?? "explicit",
 							confidence: p.confidence,
-							typeFields: p.typeFields,
+							typeFields: applyTypeFieldDefaults(p.type, p.typeFields),
 						});
 						return { content: [{ type: "text" as const, text: `${id}\n` }] };
 					} finally {
@@ -1757,7 +1760,7 @@ export function createServer(): McpServer {
 					.record(z.unknown())
 					.optional()
 					.describe(
-						"Type-specific fields. e.g. a gotcha requires { severity: 'info' | 'warning' | 'critical' }.",
+						"Type-specific fields. e.g. a gotcha takes { severity: 'info' | 'warning' | 'critical' } — defaults to 'warning' when omitted.",
 					),
 			},
 		},
@@ -1777,7 +1780,11 @@ export function createServer(): McpServer {
 							scopeFiles: p.scopeFiles,
 							scopeTags: p.scopeTags,
 							type: p.type,
-							typeFields: p.typeFields,
+							// Defaulting applies only when the caller retypes; with type
+							// omitted the existing type and typeFields persist.
+							typeFields: p.type
+								? applyTypeFieldDefaults(p.type, p.typeFields)
+								: p.typeFields,
 						});
 						return { content: [{ type: "text" as const, text: "ok\n" }] };
 					} finally {
