@@ -1,5 +1,7 @@
 // src/lib/memory/briefing-digest.ts
 import { openRetrieve } from "./retrieve.js";
+import { readMemoryFile } from "./store.js";
+import { captureTier } from "./gate.js";
 
 type DigestRow = {
 	id: string;
@@ -73,11 +75,14 @@ export async function renderMemoryDigest(
 			lines.push("");
 		}
 
+		// Disjoint queues: capture rows are owned exclusively by the
+		// "Captures pending confirmation" section + review_pending_captures.
 		const pendingCount = (
 			db
 				.prepare(
 					`SELECT COUNT(*) AS n FROM memories
-					 WHERE status = 'candidate' AND rewritten_at IS NULL`,
+					 WHERE status = 'candidate' AND rewritten_at IS NULL
+					   AND type != 'capture'`,
 				)
 				.get() as { n: number }
 		).n;
@@ -105,21 +110,38 @@ export async function renderMemoryDigest(
 			lines.push("");
 		}
 
-		const captureCount = (
-			db
-				.prepare(
-					`SELECT COUNT(*) AS c FROM memories
-					 WHERE source='extracted' AND status='candidate'`,
-				)
-				.get() as { c: number }
-		).c;
+		const captureIds = db
+			.prepare(
+				`SELECT id FROM memories
+				 WHERE source='extracted' AND status='candidate'
+				   AND type='capture'`,
+			)
+			.all() as { id: string }[];
+		let highCount = 0;
+		let lowCount = 0;
+		for (const r of captureIds) {
+			try {
+				const rec = await readMemoryFile(repoKey, r.id, "memories");
+				if (captureTier(rec.body) === "high") highCount++;
+				else lowCount++;
+			} catch {
+				continue; // index/file drift — a digest render never crashes on one bad row
+			}
+		}
 
-		if (captureCount > 0) {
-			lines.push(`## Captures pending confirmation — ${captureCount}`);
+		if (highCount > 0 || lowCount > 0) {
+			const suffix =
+				lowCount > 0 ? ` (+${lowCount} low-signal, auto-expiring)` : "";
+			lines.push(`## Captures pending confirmation — ${highCount}${suffix}`);
 			lines.push("");
 			lines.push(
 				"Freshly extracted, unjudged. Most are noise — keep only durable, generalizable rules.",
 			);
+			if (highCount > 0) {
+				lines.push(
+					"Action now: dispatch `review_pending_captures` now (batch ≤5) and resolve each item before starting task work.",
+				);
+			}
 			lines.push(
 				"- `review_pending_captures({worktreePath, limit?})` — batch + source context + signalScore order",
 			);

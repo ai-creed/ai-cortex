@@ -58,11 +58,62 @@ describe("briefing captures section", () => {
 		}
 		const md = await renderMemoryDigest(repoKey);
 		expect(md).not.toBeNull();
-		const cleanupIdx = md!.indexOf("## Pending review");
 		const capturesIdx = md!.indexOf("## Captures pending confirmation");
 		const howIdx = md!.indexOf("### How to consult");
-		expect(cleanupIdx).toBeGreaterThanOrEqual(0);
-		expect(capturesIdx).toBeGreaterThan(cleanupIdx);
+		expect(capturesIdx).toBeGreaterThanOrEqual(0);
 		expect(howIdx).toBeGreaterThan(capturesIdx);
+	});
+
+	it("counts only high-tier captures and discloses the low tier", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "capture", title: "high",
+				body: "always run pnpm build before tagging",
+				scope: { files: [], tags: [] }, source: "extracted",
+			});
+			await createMemory(lc, {
+				type: "capture", title: "low",
+				body: "push it and prepare a new patch release",
+				scope: { files: [], tags: [] }, source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const md = await renderMemoryDigest(repoKey);
+		expect(md!).toMatch(/## Captures pending confirmation — 1 \(\+1 low-signal, auto-expiring\)/);
+		expect(md!).toContain("dispatch `review_pending_captures` now");
+	});
+
+	it("excludes captures from the generic Pending review section", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "capture", title: "cap",
+				body: "always run pnpm build before tagging",
+				scope: { files: [], tags: [] }, source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const md = await renderMemoryDigest(repoKey);
+		expect(md!).toContain("## Captures pending confirmation");
+		expect(md!).not.toContain("## Pending review");
+	});
+
+	it("keeps non-capture extracted candidates in Pending review and out of the captures section", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "legacy extracted decision",
+				body: "always do X because Y",
+				scope: { files: [], tags: [] }, source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const md = await renderMemoryDigest(repoKey);
+		expect(md!).toContain("## Pending review — 1");
+		expect(md!).not.toContain("## Captures pending confirmation");
 	});
 });

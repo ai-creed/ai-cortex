@@ -133,6 +133,7 @@ export function listMemoriesPendingRewrite(
 			 FROM memories
 			 WHERE status = 'candidate'
 			   AND rewritten_at IS NULL
+			   AND type != 'capture'
 			   ${sinceClause}
 			 ORDER BY confidence DESC, updated_at DESC
 			 LIMIT ?`,

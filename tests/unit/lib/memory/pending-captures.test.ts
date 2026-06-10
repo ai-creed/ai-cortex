@@ -11,6 +11,10 @@ import {
 import { writeSession } from "../../../../src/lib/history/store.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import { reviewPendingCaptures } from "../../../../src/lib/memory/pending-captures.js";
+import {
+	openRetrieve,
+	listMemoriesPendingRewrite,
+} from "../../../../src/lib/memory/retrieve.js";
 import type {
 	SessionRecord,
 	UserPromptEvidence,
@@ -304,5 +308,34 @@ describe("reviewPendingCaptures", () => {
 		}
 		const out = await reviewPendingCaptures(repoKey, { includeLowSignal: true });
 		expect(out).toEqual([]);
+	});
+
+	it("listMemoriesPendingRewrite returns non-capture candidates only (queue disjointness, generic side)", async () => {
+		const lc = await openLifecycle(repoKey);
+		try {
+			await createMemory(lc, {
+				type: "capture",
+				title: "cap",
+				body: "always run pnpm build before tagging",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+			await createMemory(lc, {
+				type: "decision",
+				title: "legacy candidate",
+				body: "some extracted decision body",
+				scope: { files: [], tags: [] },
+				source: "extracted",
+			});
+		} finally {
+			lc.close();
+		}
+		const rh = openRetrieve(repoKey);
+		try {
+			const rows = listMemoriesPendingRewrite(rh);
+			expect(rows.map((r) => r.title)).toEqual(["legacy candidate"]);
+		} finally {
+			rh.close();
+		}
 	});
 });
