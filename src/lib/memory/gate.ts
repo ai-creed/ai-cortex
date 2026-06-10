@@ -69,6 +69,13 @@ const RULES: { name: string; test: (b: string) => boolean }[] = [
 				b.replace(/\[Image #\d+\]/g, "").trim().length < b.length * 0.5),
 	},
 	{
+		// Machine-generated relay prompts from agent-orchestration workflows
+		// (ai-whisper et al.) — boilerplate, never a human-stated rule.
+		name: "workflow-handoff",
+		test: (b) =>
+			/\bThis is an autonomous workflow\b|\bno human will respond\b/i.test(b),
+	},
+	{
 		name: "findings-dump",
 		test: (b) =>
 			/^\s*(?:[-*]\s*)?(\d+\.\s*)?(High|Medium|Critical|Major|Low|P[12]):/im.test(
@@ -137,7 +144,7 @@ export function structuralReject(body: string): string | null {
 }
 
 const RATIONALE =
-	/\b(because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|reads better)\b|\bas .{0,30}(more|better|efficiently)\b/i;
+	/\b(because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|reads better)\b|\bas .{0,30}(more|better|efficiently)\b|\bshould(n'?t| not)? (be|not|fix|own|live|stay|go)\b|\bmust(n'?t| not)? \w|\bneeds? to be\b|\bdoesn'?t need to\b|\bdon'?t (want|need)\b|\bi (don'?t )?(like|prefer|want)\b|\bwhy we (need|use|chose|keep)\b|\bmeaning that\b|^\s*(diagnosis|root cause|conclusion)\s*:|^\s*[\w'-]+(\s[\w'-]+){0,3}\s*=\s+\S/im;
 const CORRECTION_SHAPE = /^\s*(no,?\s|stop\b|don'?t\b|actually,|instead\b)/i;
 
 export function signalScore(body: string): number {
@@ -146,4 +153,13 @@ export function signalScore(body: string): number {
 	if (RATIONALE.test(body)) s += 1;
 	if (CORRECTION_SHAPE.test(body)) s += 1;
 	return Math.min(3, s);
+}
+
+export type CaptureTierValue = "high" | "low";
+
+// Derived, never persisted: tier is recomputed from the body wherever needed
+// (pending-captures view, briefing digest, aging sweep) so scoring
+// improvements re-tier the whole store retroactively with no migration.
+export function captureTier(body: string): CaptureTierValue {
+	return signalScore(body) >= 1 ? "high" : "low";
 }
