@@ -6,6 +6,9 @@ export const BUILT_IN_TYPES = [
 	"gotcha",
 	"pattern",
 	"how-to",
+	"constraint",
+	"preference",
+	"deferred",
 ] as const;
 export type BuiltInType = (typeof BUILT_IN_TYPES)[number];
 
@@ -23,7 +26,7 @@ export type TypeRegistry = {
 	types: Record<string, TypeSpec>;
 };
 
-export const REGISTRY_VERSION = 2;
+export const REGISTRY_VERSION = 3;
 
 const SEED: TypeRegistry = {
 	version: REGISTRY_VERSION,
@@ -46,6 +49,19 @@ const SEED: TypeRegistry = {
 			builtIn: true,
 			bodySections: ["Goal", "Steps", "Verification"],
 		},
+		constraint: {
+			builtIn: true,
+			bodySections: ["Rule", "Scope", "Consequences if violated"],
+			auditPreserveBody: true,
+		},
+		preference: {
+			builtIn: true,
+			bodySections: ["Preference", "Applies when"],
+		},
+		deferred: {
+			builtIn: true,
+			bodySections: ["What was deferred", "Why", "Revisit when"],
+		},
 		capture: {
 			builtIn: true,
 		},
@@ -62,9 +78,26 @@ export function typeContractHint(): string {
 	const sevList = Array.isArray(sev) ? sev.join(", ") : "";
 	return (
 		`type must be one of the registered memory types: ${BUILT_IN_TYPES.join(", ")} ` +
-		"(or a project-custom type registered in types.json). " +
-		`gotcha requires typeFields.severity (one of: ${sevList}).`
+		"(or a project-custom type registered in types.json). Picking: " +
+		"decision = chose A over B with rationale; constraint = non-negotiable, no B exists; " +
+		"preference = user taste, violating disappoints rather than breaks; " +
+		"gotcha = surprising behavior, typeFields.severity " +
+		`(one of: ${sevList}) defaults to warning when omitted; ` +
+		"pattern = codebase convention; how-to = procedure; " +
+		"deferred = parked work + revisit condition."
 	);
+}
+
+// Tool-layer defaulting (NOT registry validation): callers fill defaults
+// before validateRegistration so the enum check stays intact.
+export function applyTypeFieldDefaults(
+	type: string,
+	typeFields: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+	if (type === "gotcha" && (typeFields?.severity ?? null) == null) {
+		return { ...(typeFields ?? {}), severity: "warning" };
+	}
+	return typeFields;
 }
 
 // Reserved built-in name. The seed-merge force-writes this spec even over a

@@ -15,14 +15,14 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe("registry seed-merge", () => {
-	it("REGISTRY_VERSION is 2", () => {
-		expect(REGISTRY_VERSION).toBe(2);
+	it("REGISTRY_VERSION is 3", () => {
+		expect(REGISTRY_VERSION).toBe(3);
 	});
 
 	it("brand-new repo is seeded with capture present", async () => {
 		await ensureRegistry(dir);
 		const reg = await readRegistry(dir);
-		expect(reg.version).toBe(2);
+		expect(reg.version).toBe(3);
 		expect(reg.types.capture).toBeDefined();
 		expect(reg.types.capture.bodySections).toBeUndefined();
 		expect(reg.types.capture.extraFrontmatter).toBeUndefined();
@@ -43,7 +43,7 @@ describe("registry seed-merge", () => {
 		);
 		await ensureRegistry(dir);
 		let reg = await readRegistry(dir);
-		expect(reg.version).toBe(2);
+		expect(reg.version).toBe(3);
 		expect(reg.types.capture).toBeDefined();
 		expect(reg.types["my-custom"]).toEqual({
 			builtIn: false,
@@ -52,8 +52,34 @@ describe("registry seed-merge", () => {
 		// idempotent
 		await ensureRegistry(dir);
 		reg = await readRegistry(dir);
-		expect(reg.version).toBe(2);
+		expect(reg.version).toBe(3);
 		expect(reg.types["my-custom"]).toBeDefined();
+	});
+
+	it("v2 -> v3 merge adds the three new types and preserves user entries", async () => {
+		const p = path.join(dir, "types.json");
+		// seed a v2 registry containing a user custom type and a user 'constraint'
+		fs.writeFileSync(
+			p,
+			JSON.stringify({
+				version: 2,
+				types: {
+					decision: { builtIn: true },
+					mytype: { builtIn: false, bodySections: ["X"] },
+					constraint: { builtIn: false, bodySections: ["UserOwned"] },
+				},
+			}),
+		);
+		const reg = await readRegistry(dir);
+		expect(reg.version).toBe(3);
+		expect(reg.types.preference).toBeDefined();
+		expect(reg.types.deferred).toBeDefined();
+		expect(reg.types.mytype).toEqual({ builtIn: false, bodySections: ["X"] });
+		// user-registered same-named entry wins (only 'capture' is force-reserved)
+		expect(reg.types.constraint).toEqual({
+			builtIn: false,
+			bodySections: ["UserOwned"],
+		});
 	});
 
 	it("same-name user 'capture' is force-overwritten with the built-in spec + diagnostic", async () => {

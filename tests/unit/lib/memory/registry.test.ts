@@ -7,6 +7,7 @@ import {
 	readRegistry,
 	validateRegistration,
 	typeContractHint,
+	applyTypeFieldDefaults,
 	BUILT_IN_TYPES,
 } from "../../../../src/lib/memory/registry.js";
 
@@ -32,10 +33,13 @@ describe("ensureRegistry", () => {
 		const reg = await readRegistry(tmp);
 		expect(Object.keys(reg.types).sort()).toEqual([
 			"capture",
+			"constraint",
 			"decision",
+			"deferred",
 			"gotcha",
 			"how-to",
 			"pattern",
+			"preference",
 		]);
 		for (const t of BUILT_IN_TYPES) {
 			expect(reg.types[t].builtIn).toBe(true);
@@ -102,6 +106,48 @@ describe("validateRegistration", () => {
 		expect(result.ok).toBe(false);
 		expect((result as { ok: false; errors: string[] }).errors[0]).toMatch(
 			/unregistered type/,
+		);
+	});
+});
+
+describe("v3 types", () => {
+	it("registers constraint, preference, deferred as built-ins", () => {
+		expect(BUILT_IN_TYPES).toContain("constraint");
+		expect(BUILT_IN_TYPES).toContain("preference");
+		expect(BUILT_IN_TYPES).toContain("deferred");
+	});
+	it("contract hint carries the decision tree and the severity default", () => {
+		const hint = typeContractHint();
+		expect(hint).toContain("constraint");
+		expect(hint).toContain("preference");
+		expect(hint).toContain("deferred");
+		expect(hint).toContain("defaults to warning");
+	});
+});
+
+describe("applyTypeFieldDefaults", () => {
+	it("fills severity=warning for gotcha when absent", () => {
+		expect(applyTypeFieldDefaults("gotcha", undefined)).toEqual({ severity: "warning" });
+		expect(applyTypeFieldDefaults("gotcha", { severity: "critical" })).toEqual({ severity: "critical" });
+		expect(applyTypeFieldDefaults("decision", undefined)).toBeUndefined();
+	});
+});
+
+describe("validateRegistration — v3 types", () => {
+	it("accepts constraint, preference, deferred with no typeFields", async () => {
+		await ensureRegistry(tmp);
+		const reg = await readRegistry(tmp);
+		for (const type of ["constraint", "preference", "deferred"]) {
+			expect(validateRegistration(reg, { type })).toEqual({ ok: true });
+		}
+	});
+	it("still rejects unregistered types", async () => {
+		await ensureRegistry(tmp);
+		const reg = await readRegistry(tmp);
+		const res = validateRegistration(reg, { type: "constraintz" });
+		expect(res.ok).toBe(false);
+		expect((res as { ok: false; errors: string[] }).errors[0]).toContain(
+			"unregistered type",
 		);
 	});
 });
