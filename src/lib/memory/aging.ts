@@ -1,6 +1,8 @@
 // src/lib/memory/aging.ts
 import { openLifecycle, trashMemory, purgeMemory } from "./lifecycle.js";
 import { loadMemoryConfig } from "./config.js";
+import { readMemoryFile } from "./store.js";
+import { captureTier } from "./gate.js";
 
 export type AgingAction = {
   id: string;
@@ -53,9 +55,40 @@ export async function sweepAging(
       WHERE status = 'trashed' AND updated_at < ?
     `).all(cutoff(a.trashedToPurgedDays)) as AgingRow[];
 
+    const lowSignalCandidates = db.prepare(`
+      SELECT id, title, status, updated_at, confidence FROM memories
+      WHERE type = 'capture' AND status = 'candidate' AND updated_at < ?
+    `).all(cutoff(a.lowSignalCaptureToTrashedDays)) as AgingRow[];
+
     const actions: AgingAction[] = [];
 
+    // Low-signal captures expire fast: tier is computed from the body (never
+    // stored), so scoring improvements re-tier retroactively.
+    const handled = new Set<string>();
+    for (const row of lowSignalCandidates) {
+      let body: string;
+      try {
+        body = (await readMemoryFile(repoKey, row.id, "memories")).body;
+      } catch {
+        continue; // index/file drift — never abort the sweep on one bad row
+      }
+      if (captureTier(body) !== "low") continue;
+      const reason = `aging: low-signal capture untouched >${a.lowSignalCaptureToTrashedDays}d`;
+      actions.push({
+        id: row.id,
+        title: row.title,
+        currentStatus: row.status,
+        newStatus: "trashed",
+        reason,
+      });
+      handled.add(row.id);
+      if (!dryRun) {
+        await trashMemory(lc, row.id, reason);
+      }
+    }
+
     for (const row of toTrash) {
+      if (handled.has(row.id)) continue;
       const threshold =
         row.status === "deprecated"
           ? a.deprecatedToTrashedDays

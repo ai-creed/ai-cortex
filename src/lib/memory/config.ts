@@ -10,6 +10,7 @@ export type MemoryConfig = {
 		mergedIntoToTrashedDays: number;
 		trashedToPurgedDays: number;
 		lowConfidenceThreshold: number;
+		lowSignalCaptureToTrashedDays: number;
 	};
 	promotion: Record<string, { reExtractionPromoteCount: number }>;
 	extractor: {
@@ -45,6 +46,7 @@ export const DEFAULT_CONFIG: MemoryConfig = {
 		mergedIntoToTrashedDays: 90,
 		trashedToPurgedDays: 90,
 		lowConfidenceThreshold: 0.4,
+		lowSignalCaptureToTrashedDays: 14,
 	},
 	promotion: {
 		decision: { reExtractionPromoteCount: 5 },

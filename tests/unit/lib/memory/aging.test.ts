@@ -1,5 +1,8 @@
 // tests/unit/lib/memory/aging.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { memoriesDir } from "../../../../src/lib/memory/paths.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import {
   openLifecycle,
@@ -216,5 +219,56 @@ describe("sweepAging — dryRun", () => {
     } finally {
       lc.close();
     }
+  });
+});
+
+describe("low-signal capture expiry", () => {
+  async function makeCapture(body: string, ageDays: number): Promise<string> {
+    const lc = await openLifecycle(repoKey, { agentId: "test" });
+    try {
+      const id = await createMemory(lc, {
+        type: "capture",
+        title: body.slice(0, 24),
+        body,
+        scope: { files: [], tags: [] },
+        source: "extracted",
+      });
+      const old = new Date(Date.now() - ageDays * 86_400_000).toISOString();
+      lc.index.rawDb().prepare("UPDATE memories SET updated_at=? WHERE id=?").run(old, id);
+      return id;
+    } finally {
+      lc.close();
+    }
+  }
+
+  it("trashes low-tier captures untouched >14d, leaves high-tier and young ones", async () => {
+    const lowOld = await makeCapture("push it and prepare a new patch release", 20);
+    const highOld = await makeCapture("always run pnpm build before tagging", 20);
+    const lowYoung = await makeCapture("rebuild dist and confirm version tests pass", 2);
+
+    const report = await sweepAging(repoKey);
+    const trashedIds = report.actionsApplied
+      .filter((a) => a.newStatus === "trashed")
+      .map((a) => a.id);
+    expect(trashedIds).toContain(lowOld);
+    expect(trashedIds).not.toContain(highOld);
+    expect(trashedIds).not.toContain(lowYoung);
+    const action = report.actionsApplied.find((a) => a.id === lowOld)!;
+    expect(action.reason).toBe("aging: low-signal capture untouched >14d");
+  });
+
+  it("skips drifted rows (indexed but markdown file missing) without aborting the sweep", async () => {
+    const drifted = await makeCapture("push the branch and rerun the workflow", 20);
+    const lowOld = await makeCapture("push it and prepare a new patch release", 20);
+
+    // Simulate index/file drift: row exists in SQLite, markdown is gone.
+    await fsp.rm(path.join(memoriesDir(repoKey), `${drifted}.md`), { force: true });
+
+    const report = await sweepAging(repoKey);
+    const trashedIds = report.actionsApplied
+      .filter((a) => a.newStatus === "trashed")
+      .map((a) => a.id);
+    expect(trashedIds).toContain(lowOld); // sweep continued past the drifted row
+    expect(trashedIds).not.toContain(drifted); // drifted row silently skipped
   });
 });
