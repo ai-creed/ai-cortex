@@ -1653,7 +1653,7 @@ export function createServer(): McpServer {
 		"list_memories_pending_rewrite",
 		{
 			description:
-				"List candidate memories eligible for cleanup. A candidate is eligible when it is `status=candidate` and has not yet been rewritten (`rewritten_at IS NULL`). Highest-confidence candidates are returned first. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each.",
+				"List candidate memories eligible for cleanup. A candidate is eligible when it is `status=candidate` and has not yet been rewritten (`rewritten_at IS NULL`). Highest-confidence candidates are returned first. Pass `since` (ISO timestamp) to filter to candidates updated after that time — useful for incremental cleanup passes. Use this to drive subagent-based cleanup: dispatch a subagent with the returned candidates as context, have it rewrite each into a rule card (title + rule + rationale + when-applies), then call rewrite_memory for each. Captures (type='capture') are excluded — they are owned by the review_pending_captures flow.",
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				limit: z.number().int().positive().max(100).optional(),
@@ -1696,7 +1696,7 @@ export function createServer(): McpServer {
 		"review_pending_captures",
 		{
 			description:
-				"List extracted memory captures pending agent confirmation (source=extracted, status=candidate) with source context and a signalScore ordering hint. Read-only. For each: rewrite_memory(id,{type,...}) ALONE to keep (assigns the real type + promotes), or deprecate_memory(id,reason) to reject. Never call confirm_memory on a type:'capture' row.",
+				"List extracted memory captures pending agent confirmation (source=extracted, status=candidate) with source context, a signalScore ordering hint, and a tier field. Low-signal captures (signalScore 0) are hidden by default and auto-expire after 14 days untouched — pass includeLowSignal to audit them. Read-only. For each returned item: rewrite_memory(id,{type,...}) ALONE to keep (assigns the real type + promotes), or deprecate_memory(id,reason) to reject. Never call confirm_memory on a type:'capture' row.",
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				limit: z.number().int().positive().max(50).optional(),
@@ -1705,6 +1705,12 @@ export function createServer(): McpServer {
 					.optional()
 					.describe(
 						"ISO timestamp; if provided, returns only captures with updated_at > since",
+					),
+				includeLowSignal: z
+					.boolean()
+					.optional()
+					.describe(
+						"Include low-signal (signalScore 0) captures, which are hidden by default and auto-expire after 14 days untouched.",
 					),
 			},
 		},
@@ -1722,6 +1728,7 @@ export function createServer(): McpServer {
 					const items = await reviewPendingCaptures(repoKey, {
 						limit: p.limit,
 						since: p.since,
+						includeLowSignal: p.includeLowSignal,
 					});
 					return {
 						content: [
