@@ -12,7 +12,7 @@ ai-cortex exposes MCP tools in four groups:
 |---|---|
 | Project orientation | `rehydrate_project`, `index_project` |
 | File discovery and impact | `suggest_files`, `suggest_files_deep`, `suggest_files_semantic`, `blast_radius` |
-| Session continuity | `search_history` |
+| Session continuity | `search_history`, `capture_session` |
 | Memory | `recall_memory`, `get_memory`, `record_memory`, lifecycle, cleanup, and audit tools |
 
 Most agents should start with project orientation, use file discovery before reading broadly, and consult memory before non-trivial edits.
@@ -122,6 +122,7 @@ For class methods, use `Class.method` format.
 | Tool | Use When |
 |---|---|
 | `search_history` | Recover context from previous or compacted agent sessions |
+| `capture_session` | Ingest a host-written transcript into the session history cache |
 
 ### `search_history`
 
@@ -134,6 +135,21 @@ History is populated by:
 ```bash
 ai-cortex history install-hooks
 ```
+
+### `capture_session`
+
+Captures a host-written transcript JSONL into the session history cache. The pipeline parses the transcript, extracts evidence, builds chunks, and feeds the extractor — the same path that `search_history` later reads from.
+
+This tool is host-agnostic: any host that writes a Claude-format transcript can call it, not just Claude Code. It is normally invoked by history hooks rather than directly by an agent.
+
+Parameters:
+
+- `worktreePath`: absolute path to a directory inside the project's git worktree; the server derives the repo identity from it.
+- `sessionId`: identifier for the session being captured.
+- `transcriptPath`: absolute path to the transcript JSONL the host wrote.
+- `embed` (optional): whether to compute chunk embeddings during capture; defaults to enabled.
+
+Capture is incremental and idempotent: it processes only new turns, reports `up-to-date` when nothing changed, and is a no-op (`disabled`) when history is turned off via `ai-cortex history off`.
 
 ## Memory Read Tools
 
