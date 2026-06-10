@@ -271,4 +271,39 @@ describe("low-signal capture expiry", () => {
     expect(trashedIds).toContain(lowOld); // sweep continued past the drifted row
     expect(trashedIds).not.toContain(drifted); // drifted row silently skipped
   });
+
+  it("skips drifted rows old enough for the 90d candidate rule too (capture and non-capture)", async () => {
+    // A drifted capture past 90d falls through the low-signal step into the
+    // generic candidate-aging loop; a drifted non-capture candidate hits that
+    // loop directly. Neither may abort the sweep.
+    const driftedCapture = await makeCapture("push the branch and rerun the workflow", 100);
+    const lc = await openLifecycle(repoKey, { agentId: "test" });
+    let driftedDecision = "";
+    try {
+      driftedDecision = await createMemory(lc, {
+        type: "decision",
+        title: "drifted decision",
+        body: "## Body\ntest",
+        scope: { files: [], tags: [] },
+        source: "extracted",
+      });
+      const old = new Date(Date.now() - 100 * 86_400_000).toISOString();
+      lc.index.rawDb()
+        .prepare("UPDATE memories SET updated_at=? WHERE id IN (?, ?)")
+        .run(old, driftedCapture, driftedDecision);
+    } finally {
+      lc.close();
+    }
+    const survivor = await makeCapture("push it and prepare a new patch release", 20);
+    await fsp.rm(path.join(memoriesDir(repoKey), `${driftedCapture}.md`), { force: true });
+    await fsp.rm(path.join(memoriesDir(repoKey), `${driftedDecision}.md`), { force: true });
+
+    const report = await sweepAging(repoKey); // must not throw ENOENT
+    const trashedIds = report.actionsApplied
+      .filter((a) => a.newStatus === "trashed")
+      .map((a) => a.id);
+    expect(trashedIds).toContain(survivor); // sweep ran to completion
+    expect(trashedIds).not.toContain(driftedCapture);
+    expect(trashedIds).not.toContain(driftedDecision);
+  });
 });

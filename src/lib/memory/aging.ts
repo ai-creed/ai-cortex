@@ -70,10 +70,22 @@ export async function sweepAging(
       try {
         body = (await readMemoryFile(repoKey, row.id, "memories")).body;
       } catch {
-        continue; // index/file drift — never abort the sweep on one bad row
+        // index/file drift — never abort the sweep on one bad row. Mark
+        // handled so the generic candidate loop below cannot trip on the
+        // same missing file (a drifted capture may also be past 90d).
+        handled.add(row.id);
+        continue;
       }
       if (captureTier(body) !== "low") continue;
       const reason = `aging: low-signal capture untouched >${a.lowSignalCaptureToTrashedDays}d`;
+      handled.add(row.id);
+      if (!dryRun) {
+        try {
+          await trashMemory(lc, row.id, reason);
+        } catch {
+          continue; // index/file drift — never abort the sweep on one bad row
+        }
+      }
       actions.push({
         id: row.id,
         title: row.title,
@@ -81,10 +93,6 @@ export async function sweepAging(
         newStatus: "trashed",
         reason,
       });
-      handled.add(row.id);
-      if (!dryRun) {
-        await trashMemory(lc, row.id, reason);
-      }
     }
 
     for (const row of toTrash) {
@@ -100,6 +108,13 @@ export async function sweepAging(
       const reason = isLowConf
         ? `aging: low-confidence candidate (${row.confidence.toFixed(2)} < ${a.lowConfidenceThreshold}) for >${threshold}d`
         : `aging: ${row.status} for >${threshold}d`;
+      if (!dryRun) {
+        try {
+          await trashMemory(lc, row.id, reason);
+        } catch {
+          continue; // index/file drift — never abort the sweep on one bad row
+        }
+      }
       actions.push({
         id: row.id,
         title: row.title,
@@ -107,12 +122,16 @@ export async function sweepAging(
         newStatus: "trashed",
         reason,
       });
-      if (!dryRun) {
-        await trashMemory(lc, row.id, reason);
-      }
     }
 
     for (const row of toPurge) {
+      if (!dryRun) {
+        try {
+          await purgeMemory(lc, row.id, `aging: trashed >${a.trashedToPurgedDays}d`);
+        } catch {
+          continue; // index/file drift — never abort the sweep on one bad row
+        }
+      }
       actions.push({
         id: row.id,
         title: row.title,
@@ -120,9 +139,6 @@ export async function sweepAging(
         newStatus: "purged",
         reason: `aging: trashed >${a.trashedToPurgedDays}d`,
       });
-      if (!dryRun) {
-        await purgeMemory(lc, row.id, `aging: trashed >${a.trashedToPurgedDays}d`);
-      }
     }
 
     return { actionsApplied: actions, dryRun };
