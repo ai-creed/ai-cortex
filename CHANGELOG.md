@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.15.1 (2026-06-10)
+
+This patch release makes the memory-capture queue practical to audit. The extractor still errs on the side of preserving potentially useful rules, but obvious low-signal captures no longer crowd the default review surfaces, and stale low-signal captures age out safely.
+
+### Added
+- **Tier-aware capture review.** `review_pending_captures` now returns high-signal captures by default, includes each capture's tier, and accepts `includeLowSignal` when you intentionally want to audit the hidden tail.
+- **Expanded memory taxonomy.** The built-in registry now includes `constraint`, `preference`, and `deferred`, giving agents clearer choices when rewriting captured memories into durable rules.
+
+### Changed
+- **Briefings now separate capture cleanup from generic memory cleanup.** High-signal captures get their own action nudge, low-signal counts are disclosed separately, and `list_memories_pending_rewrite` no longer double-surfaces raw captures.
+- **Low-signal captures auto-expire.** Untouched low-signal capture candidates are trashed after 14 days, while high-signal captures keep the existing candidate aging behavior.
+- **Gotcha recording is easier.** CLI and MCP memory writes now default missing `gotcha.severity` to `warning` at the tool layer.
+
+### Fixed
+- **Capture gating rejects more mechanical noise.** Resume prompts, interrupted requests, screenshot-only paths, structured blobs, workflow handoff boilerplate, and multiline error-log blobs are filtered before they become candidate memories.
+- **Aging sweep is drift-safe.** A missing or drifted memory file no longer aborts the whole sweep; the sweep skips the bad row and continues.
+
+### Internal
+- **Capture precision is covered by a labeled corpus.** The new regression fixture preserves all 11 audited keepers, suppresses 110 of 128 audited noise captures, and holds the triage ratio at about 2.6:1.
+- **Extraction-to-briefing integration is covered.** A real transcript fixture now verifies that extracted captures land in the tier-aware briefing flow and stay out of the generic pending-review queue.
+
+---
+
 ## v0.15.0 (2026-06-10)
 
 ### Added
