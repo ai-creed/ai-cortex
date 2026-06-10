@@ -41,6 +41,27 @@ export const NOISE: { bucket: string; body: string }[] = [
 		body: "What should be tested for the session attention feature?",
 	},
 	{ bucket: "filler", body: "nvm" },
+	{ bucket: "interrupt", body: "[Request interrupted by user]" },
+	{ bucket: "interrupt", body: "[Request interrupted by user for tool use]" },
+	{ bucket: "resume", body: "Continue from where you left off." },
+	{ bucket: "resume", body: "The workflow halted. Let resume with current phase." },
+	{ bucket: "resume", body: "Recap me what has been done." },
+	{
+		bucket: "screenshot",
+		body: "/Users/vuphan/Desktop/Screenshot\\ 2026-06-05\\ at\\ 11.12.36.png\n\nStill get the same",
+	},
+	{
+		bucket: "structured-blob",
+		body: '{"ezioVersion":"0.1.0-beta.2","haxBaseCommit":"8fd139b5db49"}',
+	},
+	{
+		bucket: "structured-blob",
+		body: "NODE_ENV=production\nPORT=4500\nDEBUG=app:*\nEZIO_BROKER=127.0.0.1:4500",
+	},
+	{
+		bucket: "error-log",
+		body: "Got this error when try running 0.8.0 after installed.\nUncaught Exception:\nError: Cannot find module",
+	},
 ];
 
 export const KEEPERS: string[] = [
@@ -50,6 +71,9 @@ export const KEEPERS: string[] = [
 	"Default should be scoped to current session, only extend if empty or explicitly asked for whole project.",
 	"any ai-* projects under ~/Dev/ should be candidates for the small repos",
 	"Don't need to care about migrations. Still under development, no users yet, tolerate stale db state.",
+	"Resume behavior should always restore the previous filter state, because users lose context otherwise.",
+	"Don't capture screenshots into the repo; they belong in the issue tracker since the repo must stay text-only.",
+	"Config precedence: user config overrides repo config because local machines differ.\nKeep that ordering when adding new keys.",
 ];
 
 // ── 2026-06-08 audit corpus (139 labeled rows; 1 untouched item excluded) ──

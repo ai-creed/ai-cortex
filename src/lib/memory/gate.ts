@@ -8,6 +8,51 @@ const STANDING_DIRECTIVE =
 
 const RULES: { name: string; test: (b: string) => boolean }[] = [
 	{
+		name: "interrupt-marker",
+		test: (b) => /^\s*\[Request interrupted by user( for tool use)?\]/.test(b),
+	},
+	{
+		name: "resume-kickoff",
+		test: (b) =>
+			b.trim().length < 200 &&
+			/^\s*(continue from where|let'?s? resume|resume (with|from) (the )?(current|previous|last)|recap me|the workflow halted)/i.test(
+				b,
+			) &&
+			!STANDING_DIRECTIVE.test(b),
+	},
+	{
+		name: "screenshot-path",
+		test: (b) => {
+			const m = /\S*[/\\][Ss]creenshot[^\n]*?\.(?:png|jpe?g)\b/.exec(b);
+			return m != null && m[0].length > b.trim().length * 0.5;
+		},
+	},
+	{
+		name: "structured-blob",
+		test: (b) => {
+			const t = b.trim();
+			// Branch 1: strict JSON blob.
+			if (/^[{[]/.test(t)) {
+				try {
+					JSON.parse(t);
+					return true;
+				} catch {
+					// not strict JSON — fall through to the dominance check
+				}
+			}
+			// Branch 2 (independent of JSON punctuation): body dominated by
+			// key:value / log-dump lines (env blobs, version contexts, logs).
+			const lines = t.split("\n").filter((l) => l.trim().length > 0);
+			if (lines.length < 3) return false;
+			const structured = lines.filter((l) =>
+				/^\s*"?[\w.@/-]+"?\s*[:=]\s*\S|^\s*\d{4}-\d{2}-\d{2}[T ]|\b(INFO|WARN|ERROR|DEBUG)\b/.test(
+					l,
+				),
+			).length;
+			return structured / lines.length > 0.6;
+		},
+	},
+	{
 		name: "pasted-doc",
 		test: (b) =>
 			/^\s*(#|<INSTRUCTIONS>|🧠)/.test(b) ||
@@ -36,7 +81,8 @@ const RULES: { name: string; test: (b: string) => boolean }[] = [
 	{
 		name: "error-log",
 		test: (b) =>
-			/Uncaught .*Error|TypeError|ENOENT|EISDIR|exited with code|npm error|API Error:\s*\d|-32601|UserWarning|build failed/i.test(
+			// `{0,200}?` bounds the newline-crossing match so huge bodies stay cheap.
+			/Uncaught [\s\S]{0,200}?(Error|Exception)|TypeError|ENOENT|EISDIR|exited with code|npm error|API Error:\s*\d|-32601|UserWarning|build failed/i.test(
 				b,
 			) ||
 			/^\s*(got (some )?error|still the same|saw this error|got this running|how about this error)/i.test(
