@@ -5,7 +5,7 @@
 // versioned HTML-comment markers so install/uninstall is idempotent and the
 // rule content can be revised by bumping PROMPT_GUIDE_VERSION.
 
-export const PROMPT_GUIDE_VERSION = "v2";
+export const PROMPT_GUIDE_VERSION = "v3";
 
 export const MEMORY_GUIDE_TEXT = `## Memory consultation (ai-cortex MCP)
 
@@ -21,7 +21,9 @@ This project uses ai-cortex's memory layer. Consult it to avoid repeating past m
 
 **The cardinal pattern:** \`recall_memory\` is browse-only — it does not signal usage. After picking a relevant hit, call \`get_memory(id)\` to actually use it. That's the "I am applying this rule" signal that drives cleanup eligibility.
 
-**When to write:** when the user states a rule, expresses a preference, or describes a constraint, call \`record_memory\` with \`scopeFiles\`/\`scopeTags\`. When a recalled memory contradicts current code or user direction, call \`deprecate_memory(id, reason)\`.`;
+**Session-start triage:** when the briefing shows pending high-signal captures, dispatch \`review_pending_captures\` (batch ≤5) and resolve each item — \`rewrite_memory\` keepers into rule cards, \`deprecate_memory\` noise — before starting task work. Low-signal captures are hidden and auto-expire; ignore them unless auditing.
+
+**When to write:** when the user states a rule, expresses a preference, or describes a constraint, call \`record_memory\` with \`scopeFiles\`/\`scopeTags\`. When a recalled memory contradicts current code or user direction, call \`deprecate_memory(id, reason)\`. Picking a type: decision = chose A over B with rationale; constraint = non-negotiable, no B exists; preference = user taste; gotcha = surprising behavior (severity defaults to warning); pattern = convention; how-to = procedure; deferred = parked work + revisit condition.`;
 
 const START_MARKER_RE = /<!--\s*ai-cortex:memory-rule:start\s+(v\d+)\s*-->/;
 const BLOCK_RE =

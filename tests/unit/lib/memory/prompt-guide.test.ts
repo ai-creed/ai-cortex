@@ -96,3 +96,11 @@ describe("extractGuideVersion", () => {
 		expect(extractGuideVersion(v0)).toBe("v0");
 	});
 });
+
+describe("v3 guide content", () => {
+	it("teaches capture triage and the type decision tree", () => {
+		expect(PROMPT_GUIDE_VERSION).toBe("v3");
+		expect(MEMORY_GUIDE_TEXT).toContain("review_pending_captures");
+		expect(MEMORY_GUIDE_TEXT).toContain("constraint = non-negotiable");
+	});
+});
