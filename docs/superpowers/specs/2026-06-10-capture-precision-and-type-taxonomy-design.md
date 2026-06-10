@@ -27,7 +27,7 @@ Agents are unsure which type to pick when recording valuable memories, and reach
 ## Goals
 
 1. Triage ratio drops from ~12:1 to ≤3:1 with **zero keeper loss**, measured against a labeled corpus built from the 140 audited captures.
-2. Zero-signal captures stop occupying the default triage view and auto-expire (recoverable) instead of rotting.
+2. Zero-signal captures stop occupying every default triage surface (the captures section, the generic "Pending review" section, `review_pending_captures`, and `list_memories_pending_rewrite`) and auto-expire (recoverable) instead of rotting.
 3. The briefing actively closes the triage loop by nudging the agent to dispatch `review_pending_captures`.
 4. Agents can type constraints, preferences, and deferred work first-try; `gotcha` calls stop failing on missing severity.
 
@@ -77,6 +77,7 @@ Pure, total, never stored. Consumers:
 - **`reviewPendingCaptures()`** (`src/lib/memory/pending-captures.ts`): after scoring the full eligible set (existing behavior), filter out low-tier rows by default. New option `includeLowSignal?: boolean` returns everything. Sort order unchanged (signalScore desc, then updated_at desc).
 - **MCP `review_pending_captures`** (`src/mcp/server.ts`): expose optional `includeLowSignal` boolean param; description documents the default ("low-signal captures are hidden and auto-expire; pass includeLowSignal to audit them").
 - **Briefing digest** (`src/lib/memory/briefing-digest.ts`, "Captures pending confirmation" section): count high tier only, with low tier disclosed: `## Captures pending confirmation — {high} (+{low} low-signal, auto-expiring)`. When `high > 0`, the section's guidance becomes directive: dispatch `review_pending_captures` now (batch ≤5), `rewrite_memory` keepers, `deprecate_memory` noise.
+- **Generic pending-review surface** (`briefing-digest.ts` "Pending review" section + `list_memories_pending_rewrite`): both currently match `status='candidate' AND rewritten_at IS NULL`, which includes capture rows — so captures are double-surfaced today, and low-signal captures would survive in this default view. Fix by making the two queues disjoint on type: the "Pending review" count query and the `list_memories_pending_rewrite` query add `AND type != 'capture'`. Capture triage is owned exclusively by the captures section + `review_pending_captures` flow (whose guidance differs — e.g. "never `confirm_memory` on a capture row"). This closes every default triage surface for low-signal captures and removes the existing double-counting of high-signal ones.
 
 Retroactivity is free: existing zero-score candidates demote on the next read, and every future scoring improvement re-tiers the whole store with no migration.
 
@@ -146,12 +147,12 @@ user turn ──► gate v2 ──reject──► never stored (reason logged in
 
 ## Testing (TDD — corpus first)
 
-1. **Labeled corpus (the red test).** Build a fixture from the 140 audited captures sourced from the four workspace stores (`status='deprecated'` captures = noise label; rewritten-to-active = keeper label), added next to the existing gate regression corpus. Curate when extracting: the bodies are the user's own prompts from their own machines, but strip anything secret-like before committing. Assertions:
-   - 0 keepers gate-rejected
-   - 0 keepers low-tier (if any keeper scores 0, tune `RATIONALE`/`CORRECTION_SHAPE` — the zero-loss constraint stands, the heuristic moves)
-   - ≥80% of noise gate-rejected OR low-tier
-2. **Unit.** Each new gate rule (hit + near-miss negative); `error-log` newline fix; `captureTier`; `reviewPendingCaptures` tier filter + `includeLowSignal`; aging step (low-tier 14d trashed, high-tier untouched, non-capture candidates keep 90d rule, drifted row skipped); registry v2→v3 migration (new types added, user custom types preserved, `capture` force-preserved); `validateRegistration` for the three new types; severity defaulting at MCP and CLI layers.
-3. **Integration.** Extraction over the existing fixture transcript → briefing shows tier-aware count; MCP `review_pending_captures` returns high tier by default and everything with `includeLowSignal`.
+1. **Labeled corpus (the red test).** Build a fixture from the audited captures sourced from the four workspace stores, added next to the existing gate regression corpus. The audit reviewed 140 items: 11 rewritten-to-active (= keeper label), 128 deprecated (= noise label), and **1 untouched** (ai-whisper) — still `status='candidate'`, never judged. The corpus is therefore **139 labeled rows**; the untouched row is excluded from all assertions (do not guess a label for it — if it gets triaged later it can join the corpus with its real label). Curate when extracting: the bodies are the user's own prompts from their own machines, but strip anything secret-like before committing. Assertions over the 139 labeled rows:
+   - 0 of the 11 keepers gate-rejected
+   - 0 of the 11 keepers low-tier (if any keeper scores 0, tune `RATIONALE`/`CORRECTION_SHAPE` — the zero-loss constraint stands, the heuristic moves)
+   - ≥80% of the 128 noise rows gate-rejected OR low-tier
+2. **Unit.** Each new gate rule (hit + near-miss negative); `error-log` newline fix; `captureTier`; `reviewPendingCaptures` tier filter + `includeLowSignal`; generic pending-review exclusion (a `type='capture'` candidate appears in neither the "Pending review" count nor `list_memories_pending_rewrite` results, regardless of tier, while a non-capture candidate still does); aging step (low-tier 14d trashed, high-tier untouched, non-capture candidates keep 90d rule, drifted row skipped); registry v2→v3 migration (new types added, user custom types preserved, `capture` force-preserved); `validateRegistration` for the three new types; severity defaulting at MCP and CLI layers.
+3. **Integration.** Extraction over the existing fixture transcript → briefing shows tier-aware capture count and a "Pending review" count that excludes capture rows; MCP `review_pending_captures` returns high tier by default and everything with `includeLowSignal`.
 4. **Suite stays green.** `pnpm build` then `CI=true pnpm test` before any tag (release rule; cli tests spawn dist).
 
 ## Rollout and measurement
