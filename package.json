@@ -90,7 +90,8 @@
 	},
 	"pnpm": {
 		"overrides": {
-			"protobufjs@<7.5.5": "^7.5.5"
+			"protobufjs@<7.5.5": "^7.5.5",
+			"fast-uri@<3.1.2": "^3.1.2"
 		},
 		"onlyBuiltDependencies": [
 			"better-sqlite3",
@@ -120,7 +121,7 @@
 		"tsx": "^4.20.3",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.0.0",
-		"vitest": "^3.2.4"
+		"vitest": "^3.2.6"
 	},
 	"aiCortex": {
 		"releaseHeadline": "Capture triage cleanup"
