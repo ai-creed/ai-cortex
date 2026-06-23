@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.16.0 (2026-06-24)
+
+This release adds the cross-project document library: an opt-in, cache-only retrieval layer that indexes documentation across all of your projects and returns cited passages, ranked current-project-first. It is fully separate from the memory store.
+
+### Added
+- **Cross-project document library.** Register any directory as a source and search cited passages across every project from one place. Every result carries full provenance (source, file, line range, heading path) and documents from the current project rank first.
+- **`cortex library` CLI.** New `register`, `list`, `reindex`, `search`, and `metrics` subcommands.
+- **Four MCP tools.** `library_search`, `library_register_source`, `library_list_sources`, and `library_reindex`, so agents can register sources and retrieve cited passages over MCP.
+- **Hybrid retrieval.** Lexical full-text search (FTS5) and semantic vector search are fused with reciprocal rank fusion, reranked for origin affinity and document value, and flagged for freshness. Search falls back to lexical-only when the embedder is unavailable.
+- **Incremental, model-aware indexing.** The indexer skips unchanged files by content hash and mtime, relinks moved content, stores resident vectors scanned with a bounded top-K heap (no whole-matrix load), and recovers from corrupt or locked indexes. A registered source whose root disappears is marked errored and skipped, never crashing search.
+- **Opt-in and cache-only.** Nothing is indexed until you register a source, and all index state lives under `~/.cache/ai-cortex/v1/library/`. The library never writes into a source repository.
+- **Utility instrumentation.** Library searches record visibility and a downstream-touch proxy so usefulness can be measured, never gated on whether a result is consulted.
+
+### Security
+- **Patched dependency advisories.** Updated `protobufjs`, `vite`, `hono`, `qs`, `ip-address`, `postcss`, `esbuild`, `fast-uri`, and `vitest` via pnpm overrides.
+
+---
+
 ## v0.15.1 (2026-06-10)
 
 This patch release makes the memory-capture queue practical to audit. The extractor still errs on the side of preserving potentially useful rules, but obvious low-signal captures no longer crowd the default review surfaces, and stale low-signal captures age out safely.
