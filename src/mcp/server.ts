@@ -69,6 +69,17 @@ import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js"
 import { getSink } from "../lib/stats/registry.js";
 import { writeEvent } from "../lib/stats/sink.js";
 import { errClassOf, errMessageOf, errCodeOf } from "../lib/stats/sanitize.js";
+import {
+	registerSource as libRegisterSource,
+	listSources as libListSources,
+	listSourceStatuses as libListSourceStatuses,
+	reindexLibrary,
+	searchLibrary,
+	LibrarySearchInput,
+	LibraryRegisterInput,
+	LibraryReindexInput,
+	LibrarySearchResultSchema,
+} from "../lib/library/index.js";
 
 function logCall(
 	tool: string,
@@ -227,6 +238,19 @@ function rkFromWorktree<P extends { worktreePath: string }>(p: P): string | null
 	} catch {
 		return null;
 	}
+}
+function rkFromOptionalWorktree<P extends { worktreePath?: string }>(
+	p: P,
+): string | null {
+	if (!p.worktreePath) return null;
+	try {
+		return resolveRepoIdentity(p.worktreePath).repoKey;
+	} catch {
+		return null;
+	}
+}
+function libraryNowIso(): string {
+	return new Date().toISOString();
 }
 const NO_STATS_PARAMS = (): null => null;
 const NO_STATS_RESULT = (): null => null;
@@ -1792,6 +1816,139 @@ export function createServer(): McpServer {
 					}
 				}),
 			),
+		),
+	);
+
+	server.registerTool(
+		"library_search",
+		{
+			description:
+				"Search the cross-project document library for cited passages about a topic. Ranks documents from the current project first (origin affinity). Read-only; never gates on whether a result is consulted.",
+			inputSchema: LibrarySearchInput,
+			outputSchema: LibrarySearchResultSchema.shape,
+		},
+		logged(
+			"library_search",
+			(p) => ({ query: p.query, worktreePath: p.worktreePath }),
+			(p) => ({ query_len: p.query.length }),
+			rkFromOptionalWorktree,
+			(r: { structuredContent: { hits: unknown[] } }) => ({
+				result_count: r.structuredContent.hits.length,
+			}),
+			async (p) => {
+				const currentRepoKey = rkFromOptionalWorktree(p) ?? undefined;
+				// Pass cwd (the worktree) so searchLibrary auto-stamps the search with the
+				// current session marker (sessionId + turn) for O6 downstream-touch.
+				const hits = await searchLibrary(p.query, {
+					ctx: { currentRepoKey, sourceFilter: p.sources, topN: p.topN },
+					nowIso: libraryNowIso(),
+					cwd: p.worktreePath,
+				});
+				const sourcesQueried =
+					p.sources?.length ??
+					libListSources().filter((s) => s.status === "ok").length;
+				const text = hits.length
+					? hits
+							.map(
+								(h) =>
+									`- ${h.citation.relPath}:${h.citation.lineStart} (${h.origin.name})${h.freshness === "stale" ? " [stale]" : ""} ${h.snippet.slice(0, 160)}`,
+							)
+							.join("\n")
+					: "No library results. Register a source with library_register_source.";
+				return {
+					content: [{ type: "text" as const, text }],
+					structuredContent: { hits, sourcesQueried },
+				};
+			},
+		),
+	);
+
+	server.registerTool(
+		"library_register_source",
+		{
+			description:
+				"Register a directory as a library source (opt-in). The library indexes nothing until a source is registered. Cache-only; never writes into the source.",
+			inputSchema: LibraryRegisterInput,
+		},
+		logged(
+			"library_register_source",
+			(p) => ({ rootPath: p.rootPath }),
+			NO_STATS_PARAMS,
+			() => null,
+			NO_STATS_RESULT,
+			async (p) => {
+				const { source, warnings } = libRegisterSource({
+					rootPath: p.rootPath,
+					label: p.label,
+					include: p.include,
+					exclude: p.exclude,
+					nowIso: libraryNowIso(),
+				});
+				const text = [
+					`registered ${source.origin.name} (${source.kind}) as ${source.id}`,
+					...warnings.map((w) => `warning: ${w}`),
+				].join("\n");
+				return { content: [{ type: "text" as const, text }] };
+			},
+		),
+	);
+
+	server.registerTool(
+		"library_list_sources",
+		{
+			description:
+				"List registered library sources with status, last-indexed time, document count, and staleness.",
+			inputSchema: {},
+		},
+		logged(
+			"library_list_sources",
+			() => ({}),
+			NO_STATS_PARAMS,
+			() => null,
+			NO_STATS_RESULT,
+			async () => {
+				const sources = libListSourceStatuses({ staleness: true });
+				const text = sources.length
+					? sources
+							.map(
+								(s) =>
+									`${s.id}  ${s.origin.name}  [${s.kind}]  ${s.status}  lastIndexed=${s.lastIndexedAt ?? "never"}  docs=${s.docCount}  stale=${s.staleCount ?? "n/a"}`,
+							)
+							.join("\n")
+					: "no sources registered";
+				return { content: [{ type: "text" as const, text }] };
+			},
+		),
+	);
+
+	server.registerTool(
+		"library_reindex",
+		{
+			description:
+				"Rebuild or refresh the library index for one source or all sources. Incremental by content hash and mtime.",
+			inputSchema: LibraryReindexInput,
+		},
+		logged(
+			"library_reindex",
+			(p) => ({ sourceId: p.sourceId }),
+			NO_STATS_PARAMS,
+			() => null,
+			NO_STATS_RESULT,
+			async (p) => {
+				const reports = await reindexLibrary({
+					sourceId: p.sourceId,
+					nowIso: libraryNowIso(),
+				});
+				const text = reports.length
+					? reports
+							.map(
+								(r) =>
+									`${r.name}: ${r.status} indexed=${r.docsIndexed} deleted=${r.docsDeleted} passages=${r.passages}${r.reason ? " reason=" + r.reason : ""}`,
+							)
+							.join("\n")
+					: "no sources to reindex";
+				return { content: [{ type: "text" as const, text }] };
+			},
 		),
 	);
 

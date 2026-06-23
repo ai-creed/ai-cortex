@@ -28,6 +28,12 @@ export {
 } from "./source-registry.js";
 export { computeO6Metrics } from "./telemetry.js";
 export type { SearchEvent, O6Metrics } from "./telemetry.js";
+export {
+	LibrarySearchInput,
+	LibraryRegisterInput,
+	LibraryReindexInput,
+	LibrarySearchResultSchema,
+} from "./mcp-schemas.js";
 
 export interface SourceStatus extends SourceRecord {
 	docCount: number;
