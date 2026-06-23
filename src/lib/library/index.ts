@@ -7,7 +7,12 @@ import { indexSource } from "./indexer.js";
 import { readManifest } from "./manifest.js";
 import { historyO6Source, type O6SessionSource } from "./o6.js";
 import { retrieve, type RetrieveCtx } from "./retriever.js";
-import { getSource, listSources, registerSource, updateSource } from "./source-registry.js";
+import {
+	getSource,
+	listSources,
+	registerSource,
+	updateSource,
+} from "./source-registry.js";
 import { recordSearch } from "./telemetry.js";
 import type { Embedder, LibraryHit, SourceRecord } from "./types.js";
 
@@ -131,7 +136,11 @@ function flagVal(args: string[], name: string): string | undefined {
 
 export async function runLibraryCli(
 	args: string[],
-	deps: { write?: (s: string) => void; embedder?: Embedder; nowIso?: string } = {},
+	deps: {
+		write?: (s: string) => void;
+		embedder?: Embedder;
+		nowIso?: string;
+	} = {},
 ): Promise<number> {
 	const write = deps.write ?? ((s: string) => void process.stdout.write(s));
 	const nowIso = deps.nowIso ?? new Date().toISOString();
@@ -141,9 +150,15 @@ export async function runLibraryCli(
 	switch (sub) {
 		case "register": {
 			const rootPath = rest.find((a) => !a.startsWith("--")) ?? process.cwd();
-			const { source, warnings } = registerSource({ rootPath, label: flagVal(rest, "--label"), nowIso });
+			const { source, warnings } = registerSource({
+				rootPath,
+				label: flagVal(rest, "--label"),
+				nowIso,
+			});
 			for (const w of warnings) write(`warning: ${w}\n`);
-			write(`registered ${source.origin.name} (${source.kind}) as ${source.id}\n`);
+			write(
+				`registered ${source.origin.name} (${source.kind}) as ${source.id}\n`,
+			);
 			return 0;
 		}
 		case "list": {
@@ -160,9 +175,15 @@ export async function runLibraryCli(
 			return 0;
 		}
 		case "reindex": {
-			const reports = await reindexLibrary({ sourceId: flagVal(rest, "--source"), embedder: deps.embedder, nowIso });
+			const reports = await reindexLibrary({
+				sourceId: flagVal(rest, "--source"),
+				embedder: deps.embedder,
+				nowIso,
+			});
 			for (const r of reports) {
-				write(`${r.name}: ${r.status} indexed=${r.docsIndexed} deleted=${r.docsDeleted} passages=${r.passages}${r.reason ? " reason=" + r.reason : ""}\n`);
+				write(
+					`${r.name}: ${r.status} indexed=${r.docsIndexed} deleted=${r.docsDeleted} passages=${r.passages}${r.reason ? " reason=" + r.reason : ""}\n`,
+				);
 			}
 			if (reports.length === 0) write("no sources to reindex\n");
 			return 0;
@@ -170,12 +191,17 @@ export async function runLibraryCli(
 		case "search": {
 			const query = rest.filter((a) => !a.startsWith("--")).join(" ");
 			if (!query) {
-				write("usage: cortex library search <query> [--repo-key <key>] [--top <n>]\n");
+				write(
+					"usage: cortex library search <query> [--repo-key <key>] [--top <n>]\n",
+				);
 				return 1;
 			}
 			const top = flagVal(rest, "--top");
 			const hits = await searchLibrary(query, {
-				ctx: { currentRepoKey: flagVal(rest, "--repo-key"), topN: top ? Number(top) : undefined },
+				ctx: {
+					currentRepoKey: flagVal(rest, "--repo-key"),
+					topN: top ? Number(top) : undefined,
+				},
 				embedder: deps.embedder,
 				nowIso,
 			});
@@ -184,7 +210,9 @@ export async function runLibraryCli(
 				return 0;
 			}
 			for (const h of hits) {
-				write(`${h.citation.relPath}:${h.citation.lineStart} (${h.origin.name})${h.freshness === "stale" ? " [stale]" : ""}  ${h.snippet.slice(0, 160)}\n`);
+				write(
+					`${h.citation.relPath}:${h.citation.lineStart} (${h.origin.name})${h.freshness === "stale" ? " [stale]" : ""}  ${h.snippet.slice(0, 160)}\n`,
+				);
 			}
 			return 0;
 		}
@@ -230,6 +258,29 @@ export async function searchLibrary(
 			embedder = null;
 		}
 	}
+
+	// Spec error-handling (Error handling: "Source path missing or unreadable"):
+	// a registered source whose root has gone missing/unreadable is marked errored
+	// so retrieve's status filter skips it and list_sources surfaces it. Detect this
+	// at search time too (not only on reindex), so a vanished root is handled even
+	// without a rebuild. Statting only "ok" sources keeps this a no-op once errored;
+	// the search itself never crashes.
+	const toCheck = opts.ctx?.sourceFilter
+		? opts.ctx.sourceFilter.map((id) => getSource(id))
+		: listSources();
+	for (const s of toCheck) {
+		if (!s || s.status !== "ok") continue;
+		try {
+			if (!fs.statSync(s.rootPath).isDirectory())
+				throw new Error("not a directory");
+		} catch {
+			updateSource(s.id, {
+				status: "errored",
+				statusReason: `source root missing or unreadable: ${s.rootPath}`,
+			});
+		}
+	}
+
 	const hits = await retrieve(query, embedder, opts.ctx);
 	const sourcesQueried =
 		opts.ctx?.sourceFilter?.length ??

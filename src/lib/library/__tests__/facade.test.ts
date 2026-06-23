@@ -170,4 +170,39 @@ describe("library facade", () => {
 		// without the staleness pass, staleCount is null (not computed)
 		expect(listSourceStatuses()[0].staleCount).toBeNull();
 	});
+
+	it("marks a source errored and skips it in search when its root vanishes (no reindex)", async () => {
+		const e = fakeEmbedder();
+		fs.writeFileSync(
+			path.join(dir, "live.md"),
+			"# Live\nshared keyword tangerine here\n",
+		);
+		const gone = fs.realpathSync(
+			fs.mkdtempSync(path.join(os.tmpdir(), "lib-fac-gone2-")),
+		);
+		fs.writeFileSync(
+			path.join(gone, "g.md"),
+			"# Gone\nshared keyword tangerine here\n",
+		);
+		registerSource({ rootPath: dir, label: "live", nowIso: "t" });
+		const goneSrc = registerSource({
+			rootPath: gone,
+			label: "gone",
+			nowIso: "t",
+		}).source;
+		await reindexLibrary({ embedder: e, nowIso: "t" }); // both indexed, both ok
+
+		// remove the root WITHOUT reindexing; the source is still status "ok"
+		fs.rmSync(gone, { recursive: true, force: true });
+		expect(getSource(goneSrc.id)?.status).toBe("ok"); // not yet detected
+
+		// search must detect the missing root, mark it errored, skip it, not crash
+		const hits = await searchLibrary("tangerine keyword", {
+			embedder: e,
+			nowIso: "t",
+		});
+		expect(getSource(goneSrc.id)?.status).toBe("errored"); // marked at search time
+		expect(hits.length).toBeGreaterThan(0); // live source still answers
+		expect(hits.every((h) => h.citation.sourceId !== goneSrc.id)).toBe(true);
+	});
 });
