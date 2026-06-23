@@ -317,6 +317,16 @@ Deferred (designed, not built):
 - Step-up to a 768-dim or longer-context embedding model, pending a corpus benchmark.
 - ANN vector backend (sqlite-vec) behind the vector-store interface, pending a latency benchmark.
 
+## Implementation planning note
+
+Splitting this spec into implementation plans is left to the spec-driven-development (SDD) workflow run. The recommended phasing is three plans, each independently testable and aligned with the component boundaries above:
+
+1. Foundation: types, store schema (index-store, annotation-store, manifest with modelId and dim), source-registry (opt-in, repo-kind detection), doc-walker (prune heuristic, includes, secret excludes, guards), doc-chunker (model-aware heading-window, citation anchors).
+2. Engine: indexer (build, incremental, content-hash relink, embed via embed-provider with the default model, vectors written resident in SQLite) and retriever (lexical FTS, semantic bounded per-source top-K over resident vectors, RRF fusion, origin-affinity and value rerank, freshness flag).
+3. Surface: library-mcp tools, cortex library CLI subcommands, telemetry (O6 visibility plus downstream-touch proxy), and integration tests across two sources.
+
+This keeps each plan within a reviewable scope. The SDD run may re-slice as needed, but should preserve the module boundary (single public entrypoint, sealed store layer) and the performance rules (resident vectors, bounded top-K, no monolith memoization).
+
 ## Open and unverified items
 
 - Embedding build cost on the corpus is unverified (roughly 4k to 12k chunks on CPU). Benchmark quality and throughput across MiniLM, bge-small, and bge-base before committing to a heavier model. The indexer must show progress and be resumable regardless.
