@@ -6,7 +6,7 @@
 // Code's built-ins like Read/Edit/Bash) down to just ai-cortex MCP calls.
 //
 // Keep this in lockstep with server.tool(...) / server.registerTool(...)
-// call sites. Verify count: 35.
+// call sites. Verify count: 39.
 
 export const AI_CORTEX_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"rehydrate_project",
@@ -44,6 +44,10 @@ export const AI_CORTEX_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"list_memories_pending_rewrite",
 	"review_pending_captures",
 	"rewrite_memory",
+	"library_register_source",
+	"library_list_sources",
+	"library_reindex",
+	"library_search",
 ]);
 
 export function isCortexTool(name: string): boolean {

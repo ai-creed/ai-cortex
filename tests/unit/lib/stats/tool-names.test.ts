@@ -7,8 +7,8 @@ import {
 } from "../../../../src/lib/stats/tool-names.js";
 
 describe("AI_CORTEX_TOOL_NAMES", () => {
-	it("contains 35 entries (matching src/mcp/server.ts registrations)", () => {
-		expect(AI_CORTEX_TOOL_NAMES.size).toBe(35);
+	it("contains 39 entries (matching src/mcp/server.ts registrations)", () => {
+		expect(AI_CORTEX_TOOL_NAMES.size).toBe(39);
 	});
 
 	it("matches every server.tool/server.registerTool call site in src/mcp/server.ts", () => {

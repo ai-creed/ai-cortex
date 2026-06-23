@@ -134,7 +134,7 @@ export class LibraryIndexStore {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			);
 			const insF = this.db.prepare(
-				`INSERT INTO passages_fts (passage_id, text, heading_path) VALUES (?, ?, ?)`,
+				"INSERT INTO passages_fts (passage_id, text, heading_path) VALUES (?, ?, ?)",
 			);
 			for (const { passage, vector } of passages) {
 				const info = insP.run(
