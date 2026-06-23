@@ -18,6 +18,8 @@ export const PRUNE_DIRS = new Set([
 	"target",
 	".cache",
 	".git",
+	".worktrees",
+	"release",
 	"tmp",
 ]);
 

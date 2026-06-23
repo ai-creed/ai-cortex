@@ -25,6 +25,8 @@ describe("walkDocs", () => {
 		write("node_modules/pkg/readme.md");
 		write("dist/out.md");
 		write(".git/config.md");
+		write("release/mac-arm64/app/license.md");
+		write(".worktrees/devel/docs/copy.md");
 		write("src/code.ts");
 		const { files } = await walkDocs(root);
 		expect(files).toContain("README.md");
@@ -33,6 +35,8 @@ describe("walkDocs", () => {
 		expect(files).not.toContain("node_modules/pkg/readme.md");
 		expect(files).not.toContain("dist/out.md");
 		expect(files).not.toContain(".git/config.md");
+		expect(files).not.toContain("release/mac-arm64/app/license.md"); // built output
+		expect(files).not.toContain(".worktrees/devel/docs/copy.md"); // git worktree dupes
 		expect(files).not.toContain("src/code.ts");
 		expect(files).toEqual([...files].sort()); // sorted
 	});
