@@ -68,3 +68,55 @@ function l2Normalize(vec: Float32Array): Float32Array {
 	}
 	return out;
 }
+
+// --- Additive: model-parametric, mean-pooled provider for the library module ---
+// Separate from getProvider() so existing sidecar vectors and the suggest ranker
+// keep their exact current behavior. Output length is the model's true dim.
+const pooledProviders = new Map<string, Promise<EmbedProvider>>();
+
+export async function getPooledProvider(
+	modelName: string,
+): Promise<EmbedProvider> {
+	let p = pooledProviders.get(modelName);
+	if (!p) {
+		p = _loadPooledProvider(modelName);
+		pooledProviders.set(modelName, p);
+	}
+	return p;
+}
+
+async function _loadPooledProvider(modelName: string): Promise<EmbedProvider> {
+	let pipe: (
+		text: string,
+		opts: { pooling: "mean"; normalize: boolean },
+	) => Promise<{ data: Float32Array }>;
+	try {
+		const { pipeline, env } = await import("@xenova/transformers");
+		env.allowLocalModels = false;
+		env.useBrowserCache = false;
+		pipe = (await pipeline("feature-extraction", modelName, {
+			quantized: true,
+		})) as typeof pipe;
+	} catch (err) {
+		throw new ModelLoadError(
+			`failed to load embedding model ${modelName}: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+	return {
+		async embed(texts: string[]): Promise<Float32Array[]> {
+			const out: Float32Array[] = [];
+			for (const text of texts) {
+				let r: { data: Float32Array };
+				try {
+					r = await pipe(text, { pooling: "mean", normalize: true });
+				} catch (err) {
+					throw new EmbeddingInferenceError(
+						`embedding inference failed: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+				out.push(Float32Array.from(r.data));
+			}
+			return out;
+		},
+	};
+}
