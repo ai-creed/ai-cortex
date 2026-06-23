@@ -1200,6 +1200,10 @@ async function main(): Promise<void> {
 			const once = args.includes("--once");
 			const { bootStats } = await import("./tui/index.js");
 			bootStats({ window, project, once });
+		} else if (command === "library") {
+			const { runLibraryCli } = await import("./lib/library/index.js");
+			const code = await runLibraryCli(args);
+			process.exit(code);
 		} else if (command === "graph") {
 			const { runGraphCommand } = await import("./cli/graph.js");
 			const code = await runGraphCommand(args);

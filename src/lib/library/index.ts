@@ -7,7 +7,7 @@ import { indexSource } from "./indexer.js";
 import { readManifest } from "./manifest.js";
 import { historyO6Source, type O6SessionSource } from "./o6.js";
 import { retrieve, type RetrieveCtx } from "./retriever.js";
-import { getSource, listSources, updateSource } from "./source-registry.js";
+import { getSource, listSources, registerSource, updateSource } from "./source-registry.js";
 import { recordSearch } from "./telemetry.js";
 import type { Embedder, LibraryHit, SourceRecord } from "./types.js";
 
@@ -120,6 +120,89 @@ export async function reindexLibrary(opts: {
 		}
 	}
 	return reports;
+}
+
+import { computeO6Metrics as computeMetrics } from "./telemetry.js";
+
+function flagVal(args: string[], name: string): string | undefined {
+	const i = args.indexOf(name);
+	return i >= 0 && i < args.length - 1 ? args[i + 1] : undefined;
+}
+
+export async function runLibraryCli(
+	args: string[],
+	deps: { write?: (s: string) => void; embedder?: Embedder; nowIso?: string } = {},
+): Promise<number> {
+	const write = deps.write ?? ((s: string) => void process.stdout.write(s));
+	const nowIso = deps.nowIso ?? new Date().toISOString();
+	const sub = args[0];
+	const rest = args.slice(1);
+
+	switch (sub) {
+		case "register": {
+			const rootPath = rest.find((a) => !a.startsWith("--")) ?? process.cwd();
+			const { source, warnings } = registerSource({ rootPath, label: flagVal(rest, "--label"), nowIso });
+			for (const w of warnings) write(`warning: ${w}\n`);
+			write(`registered ${source.origin.name} (${source.kind}) as ${source.id}\n`);
+			return 0;
+		}
+		case "list": {
+			const sources = listSourceStatuses({ staleness: true });
+			if (sources.length === 0) {
+				write("no sources registered\n");
+				return 0;
+			}
+			for (const s of sources) {
+				write(
+					`${s.id}  ${s.origin.name}  [${s.kind}]  ${s.status}  lastIndexed=${s.lastIndexedAt ?? "never"}  docs=${s.docCount}  stale=${s.staleCount ?? "n/a"}\n`,
+				);
+			}
+			return 0;
+		}
+		case "reindex": {
+			const reports = await reindexLibrary({ sourceId: flagVal(rest, "--source"), embedder: deps.embedder, nowIso });
+			for (const r of reports) {
+				write(`${r.name}: ${r.status} indexed=${r.docsIndexed} deleted=${r.docsDeleted} passages=${r.passages}${r.reason ? " reason=" + r.reason : ""}\n`);
+			}
+			if (reports.length === 0) write("no sources to reindex\n");
+			return 0;
+		}
+		case "search": {
+			const query = rest.filter((a) => !a.startsWith("--")).join(" ");
+			if (!query) {
+				write("usage: cortex library search <query> [--repo-key <key>] [--top <n>]\n");
+				return 1;
+			}
+			const top = flagVal(rest, "--top");
+			const hits = await searchLibrary(query, {
+				ctx: { currentRepoKey: flagVal(rest, "--repo-key"), topN: top ? Number(top) : undefined },
+				embedder: deps.embedder,
+				nowIso,
+			});
+			if (hits.length === 0) {
+				write("no results\n");
+				return 0;
+			}
+			for (const h of hits) {
+				write(`${h.citation.relPath}:${h.citation.lineStart} (${h.origin.name})${h.freshness === "stale" ? " [stale]" : ""}  ${h.snippet.slice(0, 160)}\n`);
+			}
+			return 0;
+		}
+		case "metrics": {
+			// Downstream-touch correlates recorded searches with session-history file
+			// evidence (per session + repoKey), gathered independently of any consult.
+			const m = await computeMetrics({
+				sessionFilePaths: (sid, rk) => historyO6Source.filePaths(sid, rk),
+			});
+			write(
+				`searches=${m.searches} nonempty=${m.returnedNonemptyRate.toFixed(2)} downstreamTouch=${m.downstreamTouchRate.toFixed(2)} inRepoHitRatio=${m.inRepoHitRatio.toFixed(2)}\n`,
+			);
+			return 0;
+		}
+		default:
+			write("usage: cortex library <register|list|reindex|search|metrics>\n");
+			return 1;
+	}
 }
 
 export async function searchLibrary(
