@@ -6,6 +6,7 @@ related:
 - seed: docs/ideas/cortex-knowledge-base.md
 - deliberation: docs/superpowers/deliberations/2026-06-22-cortex-knowledge-base.md
 - memory: mem-2026-06-23-doc-kb-o6-utility-metric-must-measure-b6f971 (O6 must measure visibility + downstream-touch, never consumption)
+- memory: mem-2026-06-23-library-ships-cross-project-from-v1-3ec8e5 (owner chose cross-project from v1, resolving the deliberation's open timing question)
 - memory: mem-2026-05-02 (ai-cortex never writes into the target repository)
 - memory: mem-2026-05-19 (proactive surfacing push-only, precision-first)
 
@@ -35,13 +36,23 @@ Non-goals:
 - No automatic writing into any source directory or repository.
 - No background daemon or file watcher shipped by ai-cortex.
 
+## Relationship to the deliberation (cross-project timing)
+
+The 2026-06-22 deliberation recommended a two-slice staging: Slice 1 current-repo only with no project registry and no fan-out, and Slice 2 cross-project gated on O6 evidence plus owner sign-off. That recommendation is explicitly labeled "Recommendation (PROPOSAL - overridable)" and the cross-project timing is posed as an open question for the owner: ship single-repo first, or take the cross-project capability sooner and accept the project-registry and fan-out build before O6 evidence. The deliberation states the decision is about when, not whether, and that cross-project remains the goal per O2.
+
+The owner resolved that open question during the 2026-06-23 brainstorming by choosing cross-project from v1. This spec records that resolution rather than the proposal's default. The ratified decision source is memory mem-2026-06-23-library-ships-cross-project-from-v1-3ec8e5.
+
+Rationale: origin-affinity ranking is the headline design of this library (a document from the project the agent is currently in outranks same-topic documents from other projects). That ranking has no behavior to exercise or test with a single source. It requires multiple registered sources to exist, so the source-registry and bounded fan-out are in v1 scope.
+
+O6 instrumentation still ships in v1. Its role changes: it no longer gates the cross-project transition (that decision is made), it gates further investment instead, namely the step-up to a heavier embedding model, the ANN vector backend, and any deeper curation spend. The owner accepted the risk of building the registry and fan-out before O6 evidence accrues; the deliberation's Slice-2 risks (cross-project precision and bleed, fan-out scale) are addressed in this spec by origin transparency on every hit, precision-first thresholding, and the bounded per-source top-K scan described under Performance and scalability.
+
 ## Key decisions
 
 | Area | Decision |
 |---|---|
 | Name | library (CLI `cortex library ...`, MCP `library_search` and friends) |
 | Gitignored docs | Include valuable ones via a new filesystem doc-walker; discriminate by location and file type, not by gitignore status |
-| Scope | Cross-project from v1 |
+| Scope | Cross-project from v1 (owner resolution of the deliberation's open cross-project-timing question; see Relationship to the deliberation) |
 | Taxonomy | Source/collection-based, user-global; provenance per document (origin, topic, value, content); origin-affinity ranking |
 | Retrieval engine | Hybrid: lexical (FTS5 BM25) plus semantic (embeddings), fused with Reciprocal Rank Fusion, then reranked |
 | Embedding model | bge-small-en-v1.5 or gte-small (384-dim, 512-token cap), drop-in via embed-provider; index records modelId and dim; chunker is model-aware |
@@ -222,7 +233,7 @@ The librarian is a future external agent (for example a nightly cheap-LLM cron) 
 Three seams make it possible without retrofitting:
 
 1. Stable document identity (see Doc identity). Everything curated keys off docId, so re-walking and re-embedding never orphan annotations.
-2. Annotations stored separately from the rebuildable index, in annotations.sqlite keyed by docId. A reindex rebuilds index.sqlite and vectors.bin and re-attaches annotations by docId; it never drops them.
+2. Annotations stored separately from the rebuildable index, in annotations.sqlite keyed by docId. A reindex rebuilds index.sqlite (FTS rows, passage metadata, and the resident passage vectors all live in it; there is no separate vector sidecar) and re-attaches annotations by docId; it never drops them.
 3. The retriever reads annotations when present and falls back to intrinsic signals when absent. The library works fully on day one with zero annotations and improves as curation accrues. No hard dependency.
 
 Reserved and not built in v1: the MCP tool library_annotate_document(docId, {...}) and the librarian cron. Schema reserved, write path designed, implementation deferred.
