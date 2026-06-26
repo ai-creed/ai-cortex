@@ -169,23 +169,24 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 
 		const perFile = new Map<string, string[]>();
 		for (const p of pointers) pushToGroup(perFile, p.path, p.id);
-		const { emit } = evaluateLedger(
+		const { fresh } = evaluateLedger(
 			repoKey,
 			input.session_id ?? "_nosession",
 			perFile,
 		);
-		if (emit) {
+		const shown = pointers.filter((p) => fresh.get(p.path)?.has(p.id));
+		if (shown.length > 0) {
 			try {
 				const { appendSurfaceEvent } = await import(
-					"../../stats/surface-events.js",
+					"../../stats/surface-events.js"
 				);
 				appendSurfaceEvent(repoKey, {
 					ts: Date.now(),
 					session_id:
 						typeof input.session_id === "string" ? input.session_id : null,
-					memoryIds: pointers.map((p) => p.id),
-					tiers: pointers.map((p) => p.tier ?? "file"),
-					count: pointers.length,
+					memoryIds: shown.map((p) => p.id),
+					tiers: shown.map((p) => p.tier ?? "file"),
+					count: shown.length,
 				});
 			} catch {
 				/* never block the edit on telemetry */
@@ -193,7 +194,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		}
 		allow(stdout, {
 			decision,
-			additionalContext: emit ? buildContext(pointers) : undefined,
+			additionalContext: shown.length > 0 ? buildContext(shown) : undefined,
 		});
 		return 0;
 	} catch {

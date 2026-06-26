@@ -1,7 +1,6 @@
 // src/lib/memory/surface-ledger.ts
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import { getCacheDir } from "../cache-store.js";
 
 const PRUNE_AGE_MS = 7 * 86_400_000;
@@ -15,23 +14,13 @@ function safeSessionId(sessionId: string): string {
 	return s.length > 0 ? s.slice(0, 128) : "_";
 }
 
-function setHash(ids: string[]): string {
-	const sorted = [...ids].sort();
-	return createHash("sha256").update(sorted.join(",")).digest("hex").slice(0, 16);
-}
-
-export type LedgerResult = { emit: boolean };
+export type LedgerResult = { emit: boolean; fresh: Map<string, Set<string>> };
 
 /**
- * Per-session dedup. Returns emit=true if ANY file's matched-memory set
- * differs from what was last surfaced this session, and persists the new
- * state for emitted files. All IO (read/parse/write/prune) is best-effort:
- * on any IO or parse error the function degrades to emit=true (never
- * suppresses incorrectly, never throws on IO). It does NOT guard against a
- * malformed `repoKey`: `getCacheDir` asserts a resolved 16-hex key, so
- * callers must pass a key from `resolveRepoIdentity` (the surface-hook
- * caller does, inside its own silent-allow try/catch — spec §8).
- * Cache-only — no repo writes (spec §3.3, §7).
+ * Per-session, per-(file, memoryId) dedup. Returns the ids freshly seen this
+ * session per file (`fresh`) and `emit` = any fresh ids exist. An id shown for a
+ * file once this session is never re-surfaced for that file again this session,
+ * even when the matched set churns. Cache-only; best-effort IO; never throws.
  */
 export function evaluateLedger(
 	repoKey: string,
@@ -41,24 +30,34 @@ export function evaluateLedger(
 	const dir = ledgerDir(repoKey);
 	const file = path.join(dir, `${safeSessionId(sessionId)}.json`);
 
-	let prev: Record<string, string> = {};
+	let prev: Record<string, string[]> = {};
 	try {
-		prev = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string>;
-		if (typeof prev !== "object" || prev === null) prev = {};
+		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+		if (parsed && typeof parsed === "object") {
+			for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+				if (Array.isArray(v))
+					prev[k] = v.filter((x): x is string => typeof x === "string");
+			}
+		}
 	} catch {
 		prev = {};
 	}
 
+	const fresh = new Map<string, Set<string>>();
+	const next: Record<string, string[]> = { ...prev };
 	let emit = false;
-	const next: Record<string, string> = { ...prev };
 	for (const [rel, ids] of perFile) {
-		const h = setHash(ids);
-		if (prev[rel] !== h) {
+		const seen = new Set(prev[rel] ?? []);
+		const freshIds = new Set<string>();
+		for (const id of ids) if (!seen.has(id)) freshIds.add(id);
+		if (freshIds.size > 0) {
 			emit = true;
-			next[rel] = h;
+			fresh.set(rel, freshIds);
+			for (const id of freshIds) seen.add(id);
+			next[rel] = [...seen];
 		}
 	}
-	if (!emit) return { emit: false };
+	if (!emit) return { emit: false, fresh };
 
 	try {
 		fs.mkdirSync(dir, { recursive: true });
@@ -69,7 +68,7 @@ export function evaluateLedger(
 	} catch {
 		// Degrade dedup, not correctness: still emit.
 	}
-	return { emit: true };
+	return { emit: true, fresh };
 }
 
 function pruneOld(dir: string): void {

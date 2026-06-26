@@ -248,6 +248,36 @@ describe("runSurfaceHook (integration)", () => {
 		);
 	});
 
+	it("re-surfaces only the newly-added memory on a later same-file edit (per-memory dedup)", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		let lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "rule ALPHA", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		const payload = {
+			session_id: "churn", cwd: worktreePath,
+			tool_name: "Edit" as const, tool_input: { file_path: `${worktreePath}/${rel}` },
+		};
+		const first = await run(payload);
+		expect(first.json.hookSpecificOutput.additionalContext as string).toContain("rule ALPHA");
+
+		lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "rule BETA", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		const second = await run(payload);
+		const ctx = second.json.hookSpecificOutput.additionalContext as string;
+		expect(ctx).toContain("rule BETA");
+		expect(ctx).not.toContain("rule ALPHA"); // already shown this session
+	});
+
 	it("emits a surface-events line when it surfaces", async () => {
 		const { worktreePath } = resolveRepoIdentity(process.cwd());
 		const rel = "src/lib/memory/store.ts";

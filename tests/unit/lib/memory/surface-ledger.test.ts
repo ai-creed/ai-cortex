@@ -46,4 +46,21 @@ describe("evaluateLedger", () => {
 		// Assert the FIRST call's result; calling again would dedup to false.
 		expect(res!.emit).toBe(true);
 	});
+
+	it("returns only newly-seen ids in fresh on a churned set, and still emits", () => {
+		const r1 = evaluateLedger(repoKey, "c", new Map([["src/a.ts", ["m1"]]]));
+		expect(r1.emit).toBe(true);
+		expect([...(r1.fresh.get("src/a.ts") ?? [])]).toEqual(["m1"]);
+
+		const r2 = evaluateLedger(repoKey, "c", new Map([["src/a.ts", ["m1", "m2"]]]));
+		expect(r2.emit).toBe(true);
+		expect([...(r2.fresh.get("src/a.ts") ?? [])]).toEqual(["m2"]); // m1 already shown
+	});
+
+	it("emits=false with empty fresh when nothing is new", () => {
+		evaluateLedger(repoKey, "d", new Map([["src/a.ts", ["m1"]]]));
+		const r = evaluateLedger(repoKey, "d", new Map([["src/a.ts", ["m1"]]]));
+		expect(r.emit).toBe(false);
+		expect(r.fresh.size).toBe(0);
+	});
 });
