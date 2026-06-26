@@ -321,4 +321,93 @@ describe("runSurfaceHook (integration)", () => {
 		expect(evs[0]!.session_id).toBe("se-sess");
 		expect(evs[0]!.count).toBeGreaterThan(0);
 	});
+
+	it("suppresses a memory once its (memory,file) pairing is dismissed K times", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		let memId = "";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			memId = await createMemory(lc, {
+				type: "decision", title: "suppressed rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+
+		// Seed K=2 dismissals at the memory's current version (1).
+		const { openMemoryIndex } = await import("../../src/lib/memory/index.js");
+		const idx = openMemoryIndex(repoKey);
+		try {
+			idx.recordDismissal(memId, rel, 1, 1000);
+			idx.recordDismissal(memId, rel, 1, 2000);
+		} finally { idx.close(); }
+
+		const { json } = await run({
+			session_id: "supp", cwd: worktreePath,
+			tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		expect(json.hookSpecificOutput.additionalContext).toBeUndefined(); // suppressed → silent
+	});
+
+	it("does NOT suppress below K (the memory still surfaces)", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		let memId = "";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			memId = await createMemory(lc, {
+				type: "decision", title: "below-K rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+
+		const { openMemoryIndex } = await import("../../src/lib/memory/index.js");
+		const idx = openMemoryIndex(repoKey);
+		try {
+			idx.recordDismissal(memId, rel, 1, 1000); // one dismissal; K=2 → not suppressed
+		} finally { idx.close(); }
+
+		const { json } = await run({
+			session_id: "belowk", cwd: worktreePath,
+			tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		expect(json.hookSpecificOutput.additionalContext as string).toContain("below-K rule");
+	});
+
+	it("recall_memory still returns a memory that is suppressed for edit-time surfacing", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		let memId = "";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			memId = await createMemory(lc, {
+				type: "decision", title: "atomic temp-file rename rule",
+				body: "## r\nUse atomic temp-file rename for writes.",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+
+		// Suppress for surfacing (K=2 dismissals at the current version).
+		const { openMemoryIndex } = await import("../../src/lib/memory/index.js");
+		const idx = openMemoryIndex(repoKey);
+		try {
+			idx.recordDismissal(memId, rel, 1, 1000);
+			idx.recordDismissal(memId, rel, 1, 2000);
+		} finally { idx.close(); }
+
+		// Edit-time surfacing is now silent...
+		const { json } = await run({
+			session_id: "recall", cwd: worktreePath,
+			tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		expect(json.hookSpecificOutput.additionalContext).toBeUndefined();
+
+		// ...but DELIBERATE recall_memory still returns it (suppression never touches recall).
+		const { recallMemory, openRetrieve } = await import("../../src/lib/memory/retrieve.js");
+		const rh = openRetrieve(repoKey);
+		try {
+			const hits = await recallMemory(rh, "atomic temp-file rename", { scope: { files: [rel] } });
+			expect(hits.some((h) => h.id === memId)).toBe(true);
+		} finally { rh.close(); }
+	}, 30_000);
 });

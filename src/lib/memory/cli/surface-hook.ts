@@ -5,6 +5,7 @@ import { resolveRepoIdentity } from "../../repo-identity.js";
 import { openRetrieve } from "../retrieve.js";
 import { matchSurfaceMemories, type SurfacePointer } from "../surface-core.js";
 import { evaluateLedger } from "../surface-ledger.js";
+import { reconcileDismissals } from "../surface-dismissal.js";
 import { parseApplyPatchPaths } from "../apply-patch-paths.js";
 import { loadMemoryConfig, DEFAULT_CONFIG } from "../config.js";
 
@@ -169,6 +170,27 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 				tier2: true,
 				tier2MinScore: cfg.surface.tier2MinScore,
 			});
+
+			if (pointers.length > 0 && now() - start <= DEADLINE_MS) {
+				const sessionId = input.session_id ?? "_nosession";
+				// Reconcile past closed sessions so counts are current (best-effort,
+				// budget-guarded), then drop suppressed (memory,file) pairings.
+				try {
+					reconcileDismissals(rh, {
+						currentSessionId: sessionId,
+						now: Date.now(),
+						graceMs: cfg.surface.reconcileGraceMs,
+					});
+				} catch {
+					/* reconciliation is best-effort; never block the edit */
+				}
+				const k = cfg.surface.dismissalThresholdK;
+				pointers = pointers.filter((p) => {
+					const row = rh.index.getMemory(p.id);
+					const version = row?.version ?? 0;
+					return !rh.index.isDismissed(p.id, p.path, version, k);
+				});
+			}
 		} finally {
 			rh.close();
 		}
