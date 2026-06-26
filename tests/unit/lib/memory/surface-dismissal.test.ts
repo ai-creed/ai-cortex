@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { it, expect, beforeEach, afterEach } from "vitest";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../../src/lib/memory/retrieve.js";

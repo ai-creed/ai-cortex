@@ -210,7 +210,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		if (shown.length > 0) {
 			try {
 				const { appendSurfaceEvent } = await import(
-					"../../stats/surface-events.js"
+					"../../stats/surface-events.js",
 				);
 				appendSurfaceEvent(repoKey, {
 					ts: Date.now(),
