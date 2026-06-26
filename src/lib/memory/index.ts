@@ -109,6 +109,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   body,
   tokenize='porter unicode61'
 );
+
+CREATE TABLE IF NOT EXISTS memory_dismissals (
+  memory_id TEXT NOT NULL,
+  file TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  last_ts INTEGER NOT NULL,
+  memory_version INTEGER NOT NULL,
+  PRIMARY KEY (memory_id, file)
+);
+
+CREATE TABLE IF NOT EXISTS dismissal_reconciled_sessions (
+  session_id TEXT PRIMARY KEY,
+  watermark_ts INTEGER NOT NULL
+);
 `;
 
 export class MemoryIndex {
@@ -303,6 +317,80 @@ export class MemoryIndex {
 				"UPDATE memories SET re_extract_count = re_extract_count + 1 WHERE id = ?",
 			)
 			.run(id);
+	}
+
+	recordDismissal(
+		memoryId: string,
+		file: string,
+		currentVersion: number,
+		ts: number,
+	): void {
+		const existing = this.db
+			.prepare(
+				"SELECT count, memory_version FROM memory_dismissals WHERE memory_id = ? AND file = ?",
+			)
+			.get(memoryId, file) as
+			| { count: number; memory_version: number }
+			| undefined;
+		if (!existing) {
+			this.db
+				.prepare(
+					"INSERT INTO memory_dismissals (memory_id, file, count, last_ts, memory_version) VALUES (?, ?, 1, ?, ?)",
+				)
+				.run(memoryId, file, ts, currentVersion);
+		} else if (existing.memory_version !== currentVersion) {
+			// Version bump: reset before increment so a stale count never tips to K+1.
+			this.db
+				.prepare(
+					"UPDATE memory_dismissals SET count = 1, last_ts = ?, memory_version = ? WHERE memory_id = ? AND file = ?",
+				)
+				.run(ts, currentVersion, memoryId, file);
+		} else {
+			this.db
+				.prepare(
+					"UPDATE memory_dismissals SET count = count + 1, last_ts = ? WHERE memory_id = ? AND file = ?",
+				)
+				.run(ts, memoryId, file);
+		}
+	}
+
+	isDismissed(
+		memoryId: string,
+		file: string,
+		currentVersion: number,
+		k: number,
+	): boolean {
+		const row = this.db
+			.prepare(
+				"SELECT count, memory_version FROM memory_dismissals WHERE memory_id = ? AND file = ?",
+			)
+			.get(memoryId, file) as
+			| { count: number; memory_version: number }
+			| undefined;
+		return !!row && row.memory_version === currentVersion && row.count >= k;
+	}
+
+	getWatermark(sessionId: string): number | null {
+		const row = this.db
+			.prepare(
+				"SELECT watermark_ts FROM dismissal_reconciled_sessions WHERE session_id = ?",
+			)
+			.get(sessionId) as { watermark_ts: number } | undefined;
+		return row ? row.watermark_ts : null;
+	}
+
+	setWatermark(sessionId: string, ts: number): void {
+		this.db
+			.prepare(
+				"INSERT INTO dismissal_reconciled_sessions (session_id, watermark_ts) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET watermark_ts = excluded.watermark_ts",
+			)
+			.run(sessionId, ts);
+	}
+
+	pruneReconciledSessions(beforeTs: number): void {
+		this.db
+			.prepare("DELETE FROM dismissal_reconciled_sessions WHERE watermark_ts < ?")
+			.run(beforeTs);
 	}
 }
 
