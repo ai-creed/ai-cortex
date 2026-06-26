@@ -69,6 +69,7 @@ import type { StatsParamFields, StatsResultFields } from "../lib/stats/types.js"
 import { getSink } from "../lib/stats/registry.js";
 import { writeEvent } from "../lib/stats/sink.js";
 import { errClassOf, errMessageOf, errCodeOf } from "../lib/stats/sanitize.js";
+import { appendGetEvent } from "../lib/stats/surface-events.js";
 import {
 	registerSource as libRegisterSource,
 	listSources as libListSources,
@@ -856,6 +857,15 @@ export function createServer(): McpServer {
 					const rh = openRetrieve(repoKey);
 					try {
 						const record = await getMemory(rh, p.id);
+						try {
+							appendGetEvent(repoKey, {
+								ts: Date.now(),
+								session_id: resolveLoggedSessionId(),
+								memoryId: p.id,
+							});
+						} catch {
+							/* telemetry is best-effort; never fail the read */
+						}
 						return {
 							content: [
 								{ type: "text" as const, text: JSON.stringify(record, null, 2) },
