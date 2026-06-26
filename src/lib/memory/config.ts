@@ -37,6 +37,11 @@ export type MemoryConfig = {
 		pinnedSoftWarn: number;
 		autoInjectTopK: number;
 	};
+	surface: {
+		tier2MinScore: number;
+		dismissalThresholdK: number;
+		reconcileGraceMs: number;
+	};
 };
 
 export const DEFAULT_CONFIG: MemoryConfig = {
@@ -77,6 +82,11 @@ export const DEFAULT_CONFIG: MemoryConfig = {
 		pinnedHardCap: 20,
 		pinnedSoftWarn: 10,
 		autoInjectTopK: 5,
+	},
+	surface: {
+		tier2MinScore: 1,
+		dismissalThresholdK: 2,
+		reconcileGraceMs: 600_000,
 	},
 };
 

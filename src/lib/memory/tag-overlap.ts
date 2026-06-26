@@ -26,19 +26,15 @@ export function normalize(s: string): string[] {
 export function tagOverlapScore(
 	pathTokens: Set<string>,
 	memoryTags: string[],
-	popularTagSet: Set<string>,
+	excludedTags: Set<string>,
 ): number {
 	let score = 0;
-	let popularHit = false;
 	for (const tag of memoryTags) {
+		// Generic/common tags do not discriminate; they were the engine of
+		// incidental Tier-2 matches, so they neither count nor boost (L3).
+		if (excludedTags.has(tag)) continue;
 		const tagTokens = new Set(normalize(tag));
-		for (const t of tagTokens) {
-			if (pathTokens.has(t)) {
-				score += 1;
-				if (popularTagSet.has(tag)) popularHit = true;
-			}
-		}
+		for (const t of tagTokens) if (pathTokens.has(t)) score += 1;
 	}
-	if (popularHit) score += 1;
 	return score;
 }

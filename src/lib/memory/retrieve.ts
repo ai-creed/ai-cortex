@@ -400,10 +400,7 @@ export async function recallMemoryCrossTier(
 	return merged.slice(0, limit);
 }
 
-const POPULAR_TAGS_LIMIT = 20;
-
-export function getPopularTags(rh: RetrieveHandle): Set<string> {
-	if (rh.popularTags) return rh.popularTags;
+export function getGenericTags(rh: RetrieveHandle, minCount: number): Set<string> {
 	const rows = rh.index
 		.rawDb()
 		.prepare(
@@ -413,11 +410,9 @@ export function getPopularTags(rh: RetrieveHandle): Set<string> {
             JOIN memories m ON m.id = s.memory_id
             WHERE s.kind = 'tag' AND m.status = 'active'
             GROUP BY s.value
-            ORDER BY COUNT(*) DESC
-            LIMIT ?
+            HAVING COUNT(*) >= ?
         `,
 		)
-		.all(POPULAR_TAGS_LIMIT) as { value: string }[];
-	rh.popularTags = new Set(rows.map((r) => r.value));
-	return rh.popularTags;
+		.all(minCount) as { value: string }[];
+	return new Set(rows.map((r) => r.value));
 }

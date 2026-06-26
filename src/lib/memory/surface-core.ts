@@ -1,6 +1,6 @@
 // src/lib/memory/surface-core.ts
 import type { RetrieveHandle } from "./retrieve.js";
-import { filterCandidates, getPopularTags } from "./retrieve.js";
+import { filterCandidates, getGenericTags } from "./retrieve.js";
 import { createMatchCache, patternSpecificity } from "./scope-match.js";
 import { normalize, tagOverlapScore } from "./tag-overlap.js";
 
@@ -16,10 +16,13 @@ export type SurfacePointer = {
 
 export type MatchSurfaceOpts = {
 	tier2?: boolean;
+	tier2MinScore?: number;
 };
 
 const POOL = 10_000;
 const CAP = 5;
+const DEFAULT_TIER2_MIN_SCORE = 1;
+const GENERIC_TAG_MIN_COUNT = 9;
 
 type Ranked = SurfacePointer & {
 	_spec: number;
@@ -111,7 +114,8 @@ export function matchSurfaceMemories(
 		candidatePoolSize: POOL,
 	}).filter((c) => !tier1Ids.has(c.id));
 
-	const popularTagSet = getPopularTags(rh);
+	const genericTagSet = getGenericTags(rh, GENERIC_TAG_MIN_COUNT);
+	const minScore = opts.tier2MinScore ?? DEFAULT_TIER2_MIN_SCORE;
 
 	type Tier2Ranked = SurfacePointer & {
 		_score: number;
@@ -125,8 +129,8 @@ export function matchSurfaceMemories(
 			.filter((s) => s.kind === "tag")
 			.map((s) => s.value);
 		if (tagValues.length === 0) continue;
-		const score = tagOverlapScore(pathTokens, tagValues, popularTagSet);
-		if (score <= 0) continue;
+		const score = tagOverlapScore(pathTokens, tagValues, genericTagSet);
+		if (score < minScore) continue;
 		tier2Ranked.push({
 			id: c.id,
 			title: c.title,

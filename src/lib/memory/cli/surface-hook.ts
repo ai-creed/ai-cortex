@@ -6,6 +6,7 @@ import { openRetrieve } from "../retrieve.js";
 import { matchSurfaceMemories, type SurfacePointer } from "../surface-core.js";
 import { evaluateLedger } from "../surface-ledger.js";
 import { parseApplyPatchPaths } from "../apply-patch-paths.js";
+import { loadMemoryConfig, DEFAULT_CONFIG } from "../config.js";
 
 const DEADLINE_MS = 250;
 
@@ -158,7 +159,16 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 		let pointers: SurfacePointer[] = [];
 		const rh = openRetrieve(repoKey);
 		try {
-			pointers = matchSurfaceMemories(rh, relPaths, { tier2: true });
+			let cfg = DEFAULT_CONFIG;
+			try {
+				cfg = await loadMemoryConfig(repoKey);
+			} catch {
+				/* best-effort: fall back to defaults, never block the edit */
+			}
+			pointers = matchSurfaceMemories(rh, relPaths, {
+				tier2: true,
+				tier2MinScore: cfg.surface.tier2MinScore,
+			});
 		} finally {
 			rh.close();
 		}

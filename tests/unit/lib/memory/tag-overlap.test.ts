@@ -61,24 +61,20 @@ describe("tagOverlapScore", () => {
 		expect(score).toBe(1);
 	});
 
-	it("adds +1 popular-tag bonus once when any matched tag is in the popular set", () => {
+	it("excludes excluded-set tags from the score (they no longer drive matches)", () => {
 		const pathTokens = new Set(["app", "test"]);
-		const score = tagOverlapScore(
-			pathTokens,
-			["unit-tests"],
-			new Set(["unit-tests"]),
-		);
-		expect(score).toBe(2);
+		const score = tagOverlapScore(pathTokens, ["unit-tests"], new Set(["unit-tests"]));
+		expect(score).toBe(0);
 	});
 
-	it("multiple matching tags each contribute their per-token overlap, popular bonus capped at +1", () => {
+	it("counts only non-excluded tags' token overlap (no popular bonus)", () => {
 		const pathTokens = new Set(["test", "git"]);
 		const score = tagOverlapScore(
 			pathTokens,
 			["unit-tests", "git-commits", "safety"],
 			new Set(["unit-tests"]),
 		);
-		expect(score).toBe(3);
+		expect(score).toBe(1); // unit-tests excluded; git-commits → {git}; safety → none
 	});
 
 	it("returns 0 when no tag tokens overlap", () => {

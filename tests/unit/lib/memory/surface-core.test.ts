@@ -3,6 +3,7 @@ import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import { openLifecycle, createMemory } from "../../../../src/lib/memory/lifecycle.js";
 import { openRetrieve } from "../../../../src/lib/memory/retrieve.js";
 import { matchSurfaceMemories } from "../../../../src/lib/memory/surface-core.js";
+import { getGenericTags } from "../../../../src/lib/memory/retrieve.js";
 
 let repoKey: string;
 beforeEach(async () => { repoKey = await mkRepoKey("surface-core"); });
@@ -288,5 +289,48 @@ describe("matchSurfaceMemories Tier 2", () => {
 		} finally {
 			rh.close();
 		}
+	});
+});
+
+describe("getGenericTags + Tier-2 threshold", () => {
+	it("getGenericTags returns only tags at or above minCount", async () => {
+		await addTagOnly(["common"], "a");
+		await addTagOnly(["common"], "b");
+		await addTagOnly(["rare"], "c");
+		const rh = openRetrieve(repoKey);
+		try {
+			const generic = getGenericTags(rh, 2);
+			expect(generic.has("common")).toBe(true);
+			expect(generic.has("rare")).toBe(false);
+		} finally { rh.close(); }
+	});
+
+	it("Tier 2 drops a score-1 overlap when tier2MinScore = 2", async () => {
+		const id = await addTagOnly(["unit-tests"], "single token");
+		const rh = openRetrieve(repoKey);
+		try {
+			const path = ["Services/foo.app-test.ts"]; // overlaps on {test} → score 1
+			const lo = matchSurfaceMemories(rh, path, { tier2: true });
+			const hi = matchSurfaceMemories(rh, path, { tier2: true, tier2MinScore: 2 });
+			expect(lo.some((p) => p.id === id)).toBe(true);
+			expect(hi.some((p) => p.id === id)).toBe(false);
+		} finally { rh.close(); }
+	});
+
+	it("Tier 2 excludes a generic-tag-only overlap at the matcher layer", async () => {
+		// Make "common" generic: it must appear in >= GENERIC_TAG_MIN_COUNT (9)
+		// active memories for matchSurfaceMemories to treat it as non-discriminating.
+		for (let i = 0; i < 9; i++) await addTagOnly(["common"], `seed ${i}`);
+		const genericOnly = await addTagOnly(["common"], "generic-only target");
+		const specific = await addTagOnly(["widget"], "specific target");
+		const rh = openRetrieve(repoKey);
+		try {
+			// Path tokens include both "common" (generic) and "widget" (non-generic).
+			const got = matchSurfaceMemories(rh, ["src/common/widget-helper.ts"], { tier2: true });
+			const ids = got.map((p) => p.id);
+			// Proves matchSurfaceMemories threads the generic set into tagOverlapScore:
+			expect(ids).not.toContain(genericOnly); // generic-tag-only overlap excluded
+			expect(ids).toContain(specific); // non-generic overlap still surfaces
+		} finally { rh.close(); }
 	});
 });
