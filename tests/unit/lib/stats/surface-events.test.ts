@@ -5,6 +5,8 @@ import path from "node:path";
 import {
 	appendSurfaceEvent,
 	readSurfaceEvents,
+	appendGetEvent,
+	readGetEvents,
 } from "../../../../src/lib/stats/surface-events.js";
 
 const KEY = "0123456789abcdef";
@@ -66,5 +68,40 @@ describe("surface-events", () => {
 
 	it("read on missing file returns []", () => {
 		expect(readSurfaceEvents(KEY)).toEqual([]);
+	});
+});
+
+describe("get-events", () => {
+	const now = Date.now();
+
+	it("appends and reads back get-events round-trip", () => {
+		appendGetEvent(KEY, { ts: now, session_id: "s1", memoryId: "mem-a" });
+		appendGetEvent(KEY, { ts: now + 1, session_id: null, memoryId: "mem-b" });
+		const evs = readGetEvents(KEY);
+		expect(evs.map((e) => e.memoryId)).toEqual(["mem-a", "mem-b"]);
+		expect(evs[0]!.session_id).toBe("s1");
+		expect(evs[1]!.session_id).toBeNull();
+	});
+
+	it("skips malformed lines and prunes stale (>90d) ones, rewriting the file", () => {
+		appendGetEvent(KEY, { ts: now, session_id: "s", memoryId: "fresh" });
+		const p = path.join(home, KEY, "adoption", "get-events.jsonl");
+		fs.appendFileSync(
+			p,
+			JSON.stringify({
+				ts: now - 91 * 24 * 3600 * 1000,
+				session_id: "old",
+				memoryId: "stale",
+			}) + "\n{not json\n\n",
+		);
+		expect(() => readGetEvents(KEY)).not.toThrow();
+		const evs = readGetEvents(KEY);
+		expect(evs.length).toBe(1);
+		expect(evs[0]!.memoryId).toBe("fresh");
+		expect(fs.readFileSync(p, "utf8").trim().split("\n").length).toBe(1);
+	});
+
+	it("read on missing file returns []", () => {
+		expect(readGetEvents("fedcba9876543210")).toEqual([]);
 	});
 });

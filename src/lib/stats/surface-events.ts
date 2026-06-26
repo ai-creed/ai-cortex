@@ -15,6 +15,12 @@ export type SurfaceEvent = {
 	 * Omitted for back-compat with pre-Track-B events.
 	 */
 	tiers?: ("file" | "tag")[];
+	/**
+	 * Optional per-pointer repo-relative paths, parallel to `memoryIds` (same
+	 * length/index). Enables per-(memory,file) dismissal attribution (L1).
+	 * Omitted by pre-L1 events.
+	 */
+	paths?: string[];
 	count: number;
 };
 
@@ -54,6 +60,58 @@ function appendJsonl(fp: string, ev: unknown): void {
 /** Best-effort append. Never throws (caller is the latency-critical hook). */
 export function appendSurfaceEvent(repoKey: string, ev: SurfaceEvent): void {
 	appendJsonl(filePath(repoKey), ev);
+}
+
+export type GetEvent = {
+	ts: number;
+	session_id: string | null;
+	memoryId: string;
+};
+
+function getEventsFilePath(repoKey: string): string {
+	return path.join(getCacheDir(repoKey), "adoption", "get-events.jsonl");
+}
+
+/** Best-effort append. Never throws (caller is the latency-critical MCP path). */
+export function appendGetEvent(repoKey: string, ev: GetEvent): void {
+	appendJsonl(getEventsFilePath(repoKey), ev);
+}
+
+/** Tolerant reader + lazy 90-day prune, mirroring readSurfaceEvents. */
+export function readGetEvents(repoKey: string): GetEvent[] {
+	const fp = getEventsFilePath(repoKey);
+	let raw: string;
+	try {
+		raw = fs.readFileSync(fp, "utf8");
+	} catch {
+		return [];
+	}
+	const cutoff = Date.now() - PRUNE_AGE_MS;
+	const kept: GetEvent[] = [];
+	let dropped = false;
+	for (const line of raw.split("\n")) {
+		if (line.trim().length === 0) continue;
+		try {
+			const e = JSON.parse(line) as GetEvent;
+			if (typeof e.ts === "number" && e.ts >= cutoff) kept.push(e);
+			else dropped = true;
+		} catch {
+			dropped = true;
+		}
+	}
+	if (dropped) {
+		try {
+			const tmp = fp + ".tmp";
+			fs.writeFileSync(
+				tmp,
+				kept.map((e) => JSON.stringify(e)).join("\n") + (kept.length ? "\n" : ""),
+			);
+			fs.renameSync(tmp, fp);
+		} catch {
+			/* prune is best-effort */
+		}
+	}
+	return kept;
 }
 
 /**

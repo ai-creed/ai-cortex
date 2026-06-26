@@ -195,6 +195,7 @@ export async function runSurfaceHook(opts: RunOpts = {}): Promise<number> {
 					session_id:
 						typeof input.session_id === "string" ? input.session_id : null,
 					memoryIds: shown.map((p) => p.id),
+					paths: shown.map((p) => p.path),
 					tiers: shown.map((p) => p.tier ?? "file"),
 					count: shown.length,
 				});

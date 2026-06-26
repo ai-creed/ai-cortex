@@ -278,6 +278,27 @@ describe("runSurfaceHook (integration)", () => {
 		expect(ctx).not.toContain("rule ALPHA"); // already shown this session
 	});
 
+	it("logs surface-event paths parallel to memoryIds for the shown pointers", async () => {
+		const { worktreePath } = resolveRepoIdentity(process.cwd());
+		const rel = "src/lib/memory/store.ts";
+		const lc = await openLifecycle(repoKey, { agentId: "t" });
+		try {
+			await createMemory(lc, {
+				type: "decision", title: "paths rule", body: "## r\nx",
+				scope: { files: [rel], tags: [] }, source: "explicit",
+			});
+		} finally { lc.close(); }
+		await run({
+			session_id: "paths-sess", cwd: worktreePath,
+			tool_name: "Edit", tool_input: { file_path: `${worktreePath}/${rel}` },
+		});
+		const { readSurfaceEvents } = await import("../../src/lib/stats/surface-events.js");
+		const ev = readSurfaceEvents(repoKey)[0]!;
+		expect(ev.paths).toBeDefined();                       // hook must emit paths
+		expect(ev.paths!.length).toBe(ev.memoryIds.length);   // parallel to memoryIds
+		expect(ev.paths).toEqual([rel]);                       // corresponds to the shown pointer
+	});
+
 	it("emits a surface-events line when it surfaces", async () => {
 		const { worktreePath } = resolveRepoIdentity(process.cwd());
 		const rel = "src/lib/memory/store.ts";
