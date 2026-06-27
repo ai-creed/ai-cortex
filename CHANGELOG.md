@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.16.1 (2026-06-27)
+
+This release teaches edit-time memory surfacing to stop re-suggesting memories you keep ignoring, and tightens fallback tag matching so fewer off-topic memories surface while you edit. Recall is unchanged — only the automatic edit-time surfacing is affected.
+
+### Added
+- **Dismissal-aware edit-time surfacing.** When a memory is repeatedly surfaced for a file but never consulted, ai-cortex learns to stop surfacing that (memory, file) pairing while editing. Dismissals are inferred implicitly from surfacing telemetry — no new tool or manual step — and reconciled incrementally with a version-aware watermark, so editing a memory re-arms its surfacing. `recall_memory` and `get_memory` are never suppressed.
+- **Per-session surface dedup.** Within a session, a memory already shown for a given file is not shown again on subsequent edits to that same file.
+
+### Changed
+- **Tighter Tier-2 tag matching.** Generic, high-frequency tags are excluded from the fallback tag-overlap score and a minimum overlap is now required, so broadly-tagged memories no longer surface on weak, incidental matches.
+
+---
+
 ## v0.16.0 (2026-06-24)
 
 This release adds the cross-project document library: an opt-in, cache-only retrieval layer that indexes documentation across all of your projects and returns cited passages, ranked current-project-first. It is fully separate from the memory store.
