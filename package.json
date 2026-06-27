@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.16.0",
+	"version": "0.16.1",
 	"description": "Structural code intelligence and persistent memory for AI coding agents, served over MCP (Claude Code, Codex).",
 	"type": "module",
 	"license": "MIT",
@@ -129,6 +129,6 @@
 		"vitest": "^3.2.6"
 	},
 	"aiCortex": {
-		"releaseHeadline": "Library: search cited docs across projects"
+		"releaseHeadline": "Surfacing: dismissed memories stop re-appearing"
 	}
 }
