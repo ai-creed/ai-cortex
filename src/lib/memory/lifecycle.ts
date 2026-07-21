@@ -17,7 +17,7 @@ import {
 } from "./registry.js";
 import type { TypeRegistry } from "./registry.js";
 import { bodyExcerpt, serializeMemoryMarkdown } from "./markdown.js";
-import { memoryRootDir, memoryFilePath } from "./paths.js";
+import { memoryRootDir, memoryFilePath, trashDir } from "./paths.js";
 import { loadMemoryConfig } from "./config.js";
 import type {
 	MemoryFrontmatter,
@@ -185,6 +185,87 @@ export async function createMemory(
 		},
 	);
 
+	return id;
+}
+
+export const INTAKE_DISCARD_REASON = "intake: zero-signal capture";
+
+export type CreateDiscardedCaptureInput = {
+	title: string;
+	body: string;
+	scope: { files: string[]; tags: string[] };
+	confidence?: number;
+	reason: string;
+};
+
+// Spec §4.1: zero-signal captures are born in the trash tier — a single
+// operation with NO vector upsert and no intermediate candidate state.
+// Ordering: trash file first, then the index tx; on tx failure the file
+// write is compensated so no divergent file/index state survives.
+export async function createDiscardedCapture(
+	lc: LifecycleHandle,
+	input: CreateDiscardedCaptureInput,
+): Promise<string> {
+	const id = generateUniqueMemoryId(lc, input.title);
+	const now = new Date().toISOString();
+	const fm: MemoryFrontmatter = {
+		id,
+		type: "capture",
+		status: "trashed",
+		title: input.title,
+		version: 1,
+		createdAt: now,
+		updatedAt: now,
+		source: "extracted",
+		confidence: input.confidence ?? 0.35,
+		pinned: false,
+		scope: { files: [...input.scope.files], tags: [...input.scope.tags] },
+		provenance: [],
+		supersedes: [],
+		mergedInto: null,
+		deprecationReason: null,
+		promotedFrom: [],
+		rewrittenAt: null,
+		typeFields: undefined,
+	};
+	const record: MemoryRecord = { frontmatter: fm, body: input.body };
+	const hash = bodyHash(fm.title, record.body);
+
+	await fsSync.mkdir(trashDir(lc.repoKey), { recursive: true });
+	const finalPath = memoryFilePath(lc.repoKey, id, "trash");
+	const tmpPath = `${finalPath}.tmp`;
+	const fh = await fsSync.open(tmpPath, "w");
+	try {
+		await fh.writeFile(serializeMemoryMarkdown(record));
+		await fh.sync();
+	} finally {
+		await fh.close();
+	}
+	await fsSync.rename(tmpPath, finalPath);
+
+	try {
+		const tx = lc.index.rawDb().transaction(() => {
+			lc.index.upsertMemory(fm, {
+				bodyHash: hash,
+				bodyExcerpt: bodyExcerpt(record.body),
+				body: record.body,
+			});
+			lc.index.appendAudit({
+				memoryId: id,
+				version: 1,
+				ts: now,
+				changeType: "create",
+				prevBodyHash: null,
+				prevBody: null,
+				reason: input.reason,
+				agentId: lc.agentId,
+			});
+		});
+		tx();
+	} catch (err) {
+		await fsSync.unlink(finalPath).catch(() => {});
+		throw err;
+	}
 	return id;
 }
 
