@@ -43,24 +43,24 @@ const LOW = "commit the changes and push them to the remote branch please";
 const HIGH =
 	"Always run the full gate before tagging because skipped gates burned v0.10.1";
 
+async function statuses(rk: string): Promise<{ status: string; id: string }[]> {
+	const idx = openMemoryIndex(rk);
+	try {
+		return idx
+			.rawDb()
+			.prepare("SELECT id, status FROM memories")
+			.all() as { status: string; id: string }[];
+	} finally {
+		idx.close();
+	}
+}
+
 describe("tier routing at extraction", () => {
 	let repoKey: string;
 	afterEach(async () => {
 		vi.restoreAllMocks();
 		if (repoKey) await cleanupRepo(repoKey);
 	});
-
-	async function statuses(rk: string): Promise<{ status: string; id: string }[]> {
-		const idx = openMemoryIndex(rk);
-		try {
-			return idx
-				.rawDb()
-				.prepare("SELECT id, status FROM memories")
-				.all() as { status: string; id: string }[];
-		} finally {
-			idx.close();
-		}
-	}
 
 	it("routes zero-signal to trash with reason, no vector; manifest records it", async () => {
 		repoKey = await mkRepoKey("intake-v2");
@@ -125,5 +125,35 @@ describe("tier routing at extraction", () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.status).toBe("candidate");
 		expect(errSpy).toHaveBeenCalled();
+	});
+});
+
+describe("workspace ignore-list", () => {
+	let repoKey: string;
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (repoKey) await cleanupRepo(repoKey);
+	});
+
+	it("skips extraction for sessions from an ignored worktree, with a manifest note", async () => {
+		repoKey = await mkRepoKey("intake-v2");
+		await writeSession(repoKey, sess("s5", [
+			{ turn: 1, text: HIGH, nextAssistantSnippet: "Noted." },
+		], { worktreePath: "/tmp/aiw-sdd-smoke" }));
+		const manifest = await extractFromSession(repoKey, "s5");
+		expect(manifest.skippedWorktree).toBe("/tmp/aiw-sdd-smoke");
+		expect(manifest.candidatesCreated).toBe(0);
+		expect(manifest.discardedCount ?? 0).toBe(0);
+		expect(await statuses(repoKey)).toHaveLength(0);
+	});
+
+	it("legacy session without origin fails open and extracts normally", async () => {
+		repoKey = await mkRepoKey("intake-v2");
+		await writeSession(repoKey, sess("s6", [
+			{ turn: 1, text: HIGH, nextAssistantSnippet: "Noted." },
+		])); // no worktreePath field
+		const manifest = await extractFromSession(repoKey, "s6");
+		expect(manifest.skippedWorktree).toBeUndefined();
+		expect(manifest.candidatesCreated).toBe(1);
 	});
 });

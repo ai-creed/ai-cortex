@@ -44,6 +44,7 @@ export type ExtractorManifest = {
 	appendedToMemoryIds: string[];
 	discardedCount?: number;
 	discardedCaptures?: { title: string; reason: string }[];
+	skippedWorktree?: string;
 };
 
 export type ExtractOptions = {
@@ -108,6 +109,30 @@ export async function extractFromSession(
 	const cfg = await loadMemoryConfig(repoKey);
 
 	const prior = allowReExtract ? null : await readManifest(repoKey, sessionId);
+
+	// Spec §4.3: sessions from ignored worktrees never produce memories.
+	// Missing origin (legacy record) fails OPEN — extract normally.
+	const origin = session.worktreePath;
+	if (
+		origin !== undefined &&
+		cfg.ignoreWorktreePrefixes.some((p) => origin.startsWith(p))
+	) {
+		const skipped: ExtractorManifest = {
+			version: EXTRACTOR_MANIFEST_VERSION,
+			sessionId,
+			runAt: new Date().toISOString(),
+			lastProcessedTurn: prior?.lastProcessedTurn ?? -1,
+			candidatesCreated: 0,
+			evidenceAppended: 0,
+			rejectedCandidates: [],
+			createdMemoryIds: [],
+			appendedToMemoryIds: [],
+			skippedWorktree: origin,
+		};
+		await writeManifest(repoKey, sessionId, skipped);
+		return skipped;
+	}
+
 	// Initial extraction (no prior manifest) must default to -1, NOT 0:
 	// parsed transcripts assign the first message turn:0 (compact.ts), and
 	// filterEvidenceAfterTurn keeps only `turn > afterTurn`. With a 0 default
