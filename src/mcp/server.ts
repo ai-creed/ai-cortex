@@ -503,7 +503,7 @@ export function createServer(): McpServer {
 					// never degrade the briefing response.
 					try {
 						const { runAutoSweepIfDue } = await import(
-							"../lib/memory/auto-sweep.js"
+							"../lib/memory/auto-sweep.js",
 						);
 						await runAutoSweepIfDue(repoKey);
 					} catch (err) {
