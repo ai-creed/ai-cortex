@@ -8,7 +8,10 @@ import { readMemoryVector } from "./embed.js";
 import type { EvidenceLayer } from "../history/types.js";
 import { readSession } from "../history/store.js";
 import { isHarnessInjection } from "../history/compact.js";
-import { structuralReject } from "./gate.js";
+import { structuralReject, captureTier } from "./gate.js";
+import type { CaptureTierValue } from "./gate.js";
+import { loadMemoryConfig } from "./config.js";
+import * as lifecycle from "./lifecycle.js";
 
 export const EXTRACTOR_MANIFEST_VERSION = 1;
 export const DEFAULT_DEDUP_COSINE = 0.85;
@@ -39,6 +42,8 @@ export type ExtractorManifest = {
 	rejectedCandidates: RejectedCandidate[];
 	createdMemoryIds: string[];
 	appendedToMemoryIds: string[];
+	discardedCount?: number;
+	discardedCaptures?: { title: string; reason: string }[];
 };
 
 export type ExtractOptions = {
@@ -100,6 +105,7 @@ export async function extractFromSession(
 	if (!session) {
 		throw new Error(`extractFromSession: no session at id=${sessionId}`);
 	}
+	const cfg = await loadMemoryConfig(repoKey);
 
 	const prior = allowReExtract ? null : await readManifest(repoKey, sessionId);
 	// Initial extraction (no prior manifest) must default to -1, NOT 0:
@@ -153,6 +159,29 @@ export async function extractFromSession(
 		const all = produceCaptureCandidates(sessionId, newEvidence);
 
 		for (const cand of all) {
+			if (cfg.intakeTierRouting && cand.tier === "low") {
+				try {
+					await lifecycle.createDiscardedCapture(lc, {
+						title: cand.title,
+						body: cand.body,
+						scope: { files: cand.scopeFiles, tags: cand.tags },
+						confidence: cand.confidence,
+						reason: lifecycle.INTAKE_DISCARD_REASON,
+					});
+					manifest.discardedCount = (manifest.discardedCount ?? 0) + 1;
+					(manifest.discardedCaptures ??= []).push({
+						title: cand.title,
+						reason: lifecycle.INTAKE_DISCARD_REASON,
+					});
+					continue;
+				} catch (err) {
+					// A capture must never be lost to a routing failure (§4.1.4):
+					// fall through to the normal candidate path.
+					console.error(
+						`[ai-cortex] intake discard failed, falling back to candidate: ${String(err)}`,
+					);
+				}
+			}
 			const dedupHit = await findDedupTarget(
 				lc,
 				{
@@ -290,6 +319,7 @@ export type ProducedCandidate = {
 	scopeFiles: string[];
 	tags: string[];
 	confidence: number;
+	tier: CaptureTierValue;
 	provenance: {
 		sessionId: string;
 		turn: number;
@@ -452,6 +482,7 @@ export function produceCaptureCandidates(
 			scopeFiles: filesNearTurn(evidence, u.turn, 3),
 			tags: extractTags(u.text),
 			confidence: BASE_CONFIDENCE,
+			tier: captureTier(u.text),
 			provenance: [
 				{
 					sessionId,
