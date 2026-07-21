@@ -29,6 +29,7 @@ export type CaptureInput = {
 	sessionId: string;
 	transcriptPath: string;
 	embed: boolean;
+	worktreePath?: string;
 };
 
 export type CaptureResult =
@@ -94,6 +95,7 @@ export async function captureSession(
 				preview: c.preview,
 			})),
 			contentHash,
+			worktreePath: input.worktreePath ?? existing?.worktreePath,
 		};
 
 		// Commit-last ordering: write side files first, session.json last.

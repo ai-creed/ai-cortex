@@ -48,6 +48,12 @@ export type SessionRecord = {
 	// keep `lastProcessedTurn` static, so without this they'd be skipped as
 	// up-to-date. Optional: records written before this field reprocess once.
 	contentHash?: string;
+	// Absolute path of the worktree this session ran in, recorded at capture
+	// time (resolveRepoIdentity already computes it). One repoKey is shared by
+	// every worktree of a repo, so this is the only reliable per-session
+	// origin. Optional: records written before this field simply lack it and
+	// are never prefix-skipped by the extraction ignore-list (fail-open).
+	worktreePath?: string;
 };
 
 export type RawTurn = {

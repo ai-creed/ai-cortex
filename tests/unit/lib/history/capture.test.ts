@@ -155,6 +155,49 @@ describe("captureSession", () => {
 		expect(second.status).toBe("captured"); // not "up-to-date" — completeness check forces re-run
 		expect((await readAllChunks("aabbccdd00112233", "s1")).length).toBeGreaterThan(0);
 	});
+
+	it("persists worktreePath on capture and preserves it on later captures without one", async () => {
+		const repoKey = "aabbccdd00112233";
+		const transcriptPath = path.join(tmp, "origin.jsonl");
+		fs.copyFileSync(FIXTURE, transcriptPath);
+		// Same content plus one appended turn, for the re-capture below — a
+		// legacy caller that omits worktreePath must not erase the recorded origin.
+		const transcriptPathWithExtraTurn = path.join(tmp, "origin-extra.jsonl");
+		fs.writeFileSync(
+			transcriptPathWithExtraTurn,
+			fs.readFileSync(FIXTURE, "utf8") +
+				JSON.stringify({
+					type: "user",
+					turn: 8,
+					message: { content: [{ type: "text", text: "one more turn" }] },
+				}) +
+				"\n",
+		);
+
+		const first = await captureSession({
+			repoKey,
+			sessionId: "s-origin",
+			transcriptPath,
+			embed: false,
+			worktreePath: "/tmp/smoke-ws",
+		});
+		expect(first.status).toBe("captured");
+		expect((await readSession(repoKey, "s-origin"))!.worktreePath).toBe(
+			"/tmp/smoke-ws",
+		);
+
+		// re-capture without the field (legacy caller): origin must survive
+		const again = await captureSession({
+			repoKey,
+			sessionId: "s-origin",
+			transcriptPath: transcriptPathWithExtraTurn,
+			embed: false,
+		});
+		expect(again.status).toBe("captured");
+		expect((await readSession(repoKey, "s-origin"))!.worktreePath).toBe(
+			"/tmp/smoke-ws",
+		);
+	});
 });
 
 describe("captureSession with embed:true", () => {

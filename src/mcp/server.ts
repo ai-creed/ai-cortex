@@ -331,12 +331,16 @@ export async function attachRelatedMemories<R extends { mode: SuggestMode; resul
 
 export async function withRepoIdentity<T>(
 	worktreePath: string,
-	fn: (repoKey: string) => Promise<T>,
+	// Second param is the resolved (git-toplevel-canonicalized) worktreePath —
+	// resolved once here and handed to callers that need it (e.g.
+	// capture_session, to persist session origin) alongside repoKey, instead
+	// of re-resolving identity a second time at the call site.
+	fn: (repoKey: string, resolvedWorktreePath: string) => Promise<T>,
 ): Promise<T> {
 	validateWorktreePath(worktreePath);
-	const { repoKey } = resolveRepoIdentity(worktreePath);
-	await runRepoKeyMigrationIfNeeded(repoKey, worktreePath);
-	return fn(repoKey);
+	const identity = resolveRepoIdentity(worktreePath);
+	await runRepoKeyMigrationIfNeeded(identity.repoKey, worktreePath);
+	return fn(identity.repoKey, identity.worktreePath);
 }
 
 function maybeNotice(): string {
@@ -359,6 +363,7 @@ async function embedQueryWithProvider(
 async function lazyCaptureCurrentSession(
 	repoKey: string,
 	cwd: string,
+	worktreePath: string,
 ): Promise<void> {
 	if (!isHistoryEnabled()) return;
 	const detected = detectCurrentSession({ cwd });
@@ -370,6 +375,7 @@ async function lazyCaptureCurrentSession(
 		sessionId: detected.sessionId,
 		transcriptPath,
 		embed: true,
+		worktreePath,
 	});
 }
 
@@ -386,8 +392,11 @@ export async function handleSearchHistory(
 ): Promise<{ content: { type: "text"; text: string }[] }> {
 	const cwd = args.path ?? process.cwd();
 	let repoKey: string;
+	let worktreePath: string;
 	try {
-		repoKey = resolveRepoIdentity(cwd).repoKey;
+		const identity = resolveRepoIdentity(cwd);
+		repoKey = identity.repoKey;
+		worktreePath = identity.worktreePath;
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		return {
@@ -402,7 +411,7 @@ export async function handleSearchHistory(
 
 	if (!args.sessionId) {
 		try {
-			await lazyCaptureCurrentSession(repoKey, cwd);
+			await lazyCaptureCurrentSession(repoKey, cwd, worktreePath);
 		} catch (err) {
 			process.stderr.write(
 				`[ai-cortex] history: lazy capture failed: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -1671,13 +1680,14 @@ export function createServer(): McpServer {
 				}
 			},
 			async (p) =>
-				withRepoIdentity(p.worktreePath, async (repoKey) => {
+				withRepoIdentity(p.worktreePath, async (repoKey, worktreePath) => {
 					const { captureSession } = await import("../lib/history/capture.js");
 					const result = await captureSession({
 						repoKey,
 						sessionId: p.sessionId,
 						transcriptPath: p.transcriptPath,
 						embed: p.embed !== false,
+						worktreePath,
 					});
 					return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
 				}),

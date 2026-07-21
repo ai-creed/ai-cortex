@@ -692,8 +692,26 @@ async function main(): Promise<void> {
 					const transcript =
 						transcriptOverride ??
 						(sessionId ? resolveTranscriptPath(cwd, sessionId) : null);
-					const repoKey =
-						await resolveRepoKeyFromFlagOrCwd(rest, cwd);
+					// Resolve identity once and reuse it for both repoKey and
+					// worktreePath — resolveRepoKeyFromFlagOrCwd alone would discard
+					// worktreePath. Only take this shortcut when no --repo-key
+					// override is in play; on override (or on git-resolution failure)
+					// fall back to the existing helper for identical behavior/exit.
+					let repoKey: string;
+					let worktreePath: string | undefined;
+					if (flagValue(rest, "--repo-key") !== undefined) {
+						repoKey = await resolveRepoKeyFromFlagOrCwd(rest, cwd);
+					} else {
+						const { resolveRepoIdentity } =
+							await import("./lib/repo-identity.js");
+						try {
+							const identity = resolveRepoIdentity(cwd);
+							repoKey = identity.repoKey;
+							worktreePath = identity.worktreePath;
+						} catch {
+							repoKey = await resolveRepoKeyFromFlagOrCwd(rest, cwd);
+						}
+					}
 					if (!sessionId || !transcript) {
 						process.stderr.write(
 							"usage: history capture --session <id> [--transcript <path>] [--cwd <dir>] [--repo-key <key>]\n",
@@ -711,6 +729,7 @@ async function main(): Promise<void> {
 						sessionId,
 						transcriptPath: transcript,
 						embed: true,
+						worktreePath,
 					});
 					process.stdout.write(
 						JSON.stringify(hookMode ? { continue: true } : result) + "\n",
