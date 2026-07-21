@@ -11,7 +11,10 @@ export type MemoryConfig = {
 		trashedToPurgedDays: number;
 		lowConfidenceThreshold: number;
 		lowSignalCaptureToTrashedDays: number;
+		autoSweep: boolean;
 	};
+	intakeTierRouting: boolean;
+	ignoreWorktreePrefixes: string[];
 	promotion: Record<string, { reExtractionPromoteCount: number }>;
 	extractor: {
 		dedupCosine: number;
@@ -52,7 +55,10 @@ export const DEFAULT_CONFIG: MemoryConfig = {
 		trashedToPurgedDays: 90,
 		lowConfidenceThreshold: 0.4,
 		lowSignalCaptureToTrashedDays: 14,
+		autoSweep: true,
 	},
+	intakeTierRouting: true,
+	ignoreWorktreePrefixes: ["/tmp/", "/private/tmp/"],
 	promotion: {
 		decision: { reExtractionPromoteCount: 5 },
 		gotcha: { reExtractionPromoteCount: 3 },
