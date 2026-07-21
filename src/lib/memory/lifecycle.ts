@@ -578,6 +578,12 @@ export async function untrashMemory(
 
 	await restoreFromTrash(lc.repoKey, id);
 
+	// Spec §4.5: `capture` is the unjudged provisional type and active+capture
+	// is a forbidden state (see the confirmMemory guard). Captures restore to
+	// the review queue; every other type keeps the existing behavior.
+	const restoredStatus: MemoryStatus =
+		current.frontmatter.type === "capture" ? "candidate" : "active";
+
 	const newVersion = current.frontmatter.version + 1;
 	const now = new Date().toISOString();
 
@@ -585,9 +591,9 @@ export async function untrashMemory(
 		lc.index
 			.rawDb()
 			.prepare(
-				"UPDATE memories SET status='active', version=?, updated_at=? WHERE id=?",
+				"UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
 			)
-			.run(newVersion, now, id);
+			.run(restoredStatus, newVersion, now, id);
 		lc.index.appendAudit({
 			memoryId: id,
 			version: newVersion,
@@ -604,7 +610,7 @@ export async function untrashMemory(
 	const next: MemoryRecord = {
 		frontmatter: {
 			...current.frontmatter,
-			status: "active",
+			status: restoredStatus,
 			version: newVersion,
 			updatedAt: now,
 		},

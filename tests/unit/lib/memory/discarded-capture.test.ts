@@ -3,18 +3,22 @@ import fs from "node:fs/promises";
 import {
 	openLifecycle,
 	createDiscardedCapture,
+	createMemory,
+	trashMemory,
+	untrashMemory,
 	INTAKE_DISCARD_REASON,
 } from "../../../../src/lib/memory/lifecycle.js";
 import { readMemoryVector } from "../../../../src/lib/memory/embed.js";
 import { memoryFilePath } from "../../../../src/lib/memory/paths.js";
+import { openRetrieve, listMemories } from "../../../../src/lib/memory/retrieve.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 
-describe("createDiscardedCapture", () => {
-	let repoKey: string;
-	afterEach(async () => {
-		if (repoKey) await cleanupRepo(repoKey);
-	});
+let repoKey: string;
+afterEach(async () => {
+	if (repoKey) await cleanupRepo(repoKey);
+});
 
+describe("createDiscardedCapture", () => {
 	it("is born in trash: trashed index row, file in trash/, audit reason, NO vector", async () => {
 		repoKey = await mkRepoKey("intake-v2");
 		const lc = await openLifecycle(repoKey);
@@ -77,6 +81,63 @@ describe("createDiscardedCapture", () => {
 			expect(files.filter((f) => f.endsWith(".md"))).toHaveLength(0);
 		} finally {
 			vi.restoreAllMocks();
+			lc.close();
+		}
+	});
+});
+
+describe("type-aware untrash", () => {
+	it("a routed capture restores to candidate, never active, and stays out of active retrieval", async () => {
+		repoKey = await mkRepoKey("intake-v2");
+		const lc = await openLifecycle(repoKey);
+		let id = "";
+		try {
+			id = await createDiscardedCapture(lc, {
+				title: "maybe a gem after all",
+				body: "maybe a gem after all",
+				scope: { files: [], tags: [] },
+				reason: INTAKE_DISCARD_REASON,
+			});
+			await untrashMemory(lc, id);
+			const row = lc.index.getMemory(id)!;
+			expect(row.status).toBe("candidate");
+			expect(row.type).toBe("capture");
+		} finally {
+			lc.close();
+		}
+		// Surfacing exclusion at the RETRIEVAL layer (spec §9.7): the restored
+		// capture must be absent from the active listing the surfacing paths
+		// select from, and present in the candidate review queue.
+		const rh = openRetrieve(repoKey);
+		try {
+			const activeIds = listMemories(rh, { status: ["active"] }).map(
+				(r) => r.id,
+			);
+			expect(activeIds).not.toContain(id);
+			const candidateIds = listMemories(rh, { status: ["candidate"] }).map(
+				(r) => r.id,
+			);
+			expect(candidateIds).toContain(id);
+		} finally {
+			rh.close();
+		}
+	});
+
+	it("non-capture untrash behavior is unchanged (restores to active)", async () => {
+		repoKey = await mkRepoKey("intake-v2");
+		const lc = await openLifecycle(repoKey);
+		try {
+			const id = await createMemory(lc, {
+				type: "decision",
+				title: "keep tabs not spaces",
+				body: "keep tabs not spaces",
+				scope: { files: [], tags: [] },
+				source: "explicit",
+			});
+			await trashMemory(lc, id, "test");
+			await untrashMemory(lc, id);
+			expect(lc.index.getMemory(id)!.status).toBe("active");
+		} finally {
 			lc.close();
 		}
 	});
