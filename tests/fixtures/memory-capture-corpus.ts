@@ -609,6 +609,14 @@ export const ROLEPLAY_NOISE: string[] = [
 // zero-signal floor, so CI proves the pass actually happened. gemsFound counts
 // gems the tier gate scores zero-signal — the blind spots that pressure
 // signalScore tuning; HARVEST_KEEPERS holds every gem body, any tier.
+//
+// Layer note: the populations below were recorded by the v1 body-layer harvest
+// tool (classifying the stored prompt+acknowledgement body). The tool now
+// measures the ROUTED-PROMPT layer, matching intake routing; these frozen
+// numbers are the historical body-layer record and are deliberately left
+// unchanged. A prompt-layer recount of zero-signal keepers pre-tuning was 12
+// (the 10 body-low gems + 2 acknowledgement-inflated keepers), which the
+// signalScore markers then rescued.
 export const HARVEST_COVERAGE = {
 	date: "2026-07-22",
 	highTierPopulation: 110,

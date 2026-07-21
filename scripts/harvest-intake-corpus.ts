@@ -41,12 +41,16 @@ rows.sort((a, b) => a.ref.localeCompare(b.ref));
 process.stdout.write(JSON.stringify(rows, null, 1) + "\n");
 
 // AGGREGATE tier populations to STDERR — needed to fill HARVEST_COVERAGE
-// without unblinding any individual row (stdout stays tier-free).
+// without unblinding any individual row (stdout stays tier-free). Classify on
+// the ROUTED PROMPT (routedPromptFromBody), the exact layer intake routing
+// decides on, so future harvest counts match the gate's decision layer rather
+// than the acknowledgement-inflated stored body.
 const { captureTier } = await import("../src/lib/memory/gate.js");
+const { routedPromptFromBody } = await import("../src/lib/memory/extract.js");
 let high = 0;
 let zero = 0;
 for (const r of rows) {
-	if (captureTier(r.body) === "high") high++;
+	if (captureTier(routedPromptFromBody(r.body)) === "high") high++;
 	else zero++;
 }
 process.stderr.write(

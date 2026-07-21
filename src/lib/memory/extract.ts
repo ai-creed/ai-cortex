@@ -512,6 +512,16 @@ export function nearestFile(
 
 const BASE_CONFIDENCE = 0.35;
 
+const ACK_MARKER = "\n\n_Acknowledged:_ ";
+
+// Inverse of produceCaptureCandidates' body composition: recover the routed
+// user prompt from a stored capture body. Kept adjacent to the composition
+// so the pair cannot drift apart.
+export function routedPromptFromBody(body: string): string {
+	const i = body.indexOf(ACK_MARKER);
+	return i === -1 ? body : body.slice(0, i);
+}
+
 // Mirror of CORRECTION_RE in src/lib/history/compact.ts. Kept local so the
 // provenance kind is computed from the prompt text directly without a reverse
 // lookup against evidence.corrections.
@@ -527,7 +537,7 @@ export function produceCaptureCandidates(
 		if (structuralReject(u.text) !== null) continue;
 		const correction = CORRECTION_PREFIX_RE.test(u.text);
 		const body = u.nextAssistantSnippet
-			? `${u.text}\n\n_Acknowledged:_ ${u.nextAssistantSnippet}`
+			? `${u.text}${ACK_MARKER}${u.nextAssistantSnippet}`
 			: u.text;
 		const title = sanitizeCaptureTitle(u.text, body);
 		out.push({

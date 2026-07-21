@@ -158,15 +158,18 @@ export function structuralReject(body: string): string | null {
 // intake chatter does not:
 //   - `i own` — an ownership/authority statement fixing a lasting constraint.
 //   - `we don't X, we Y` — the contrastive-decision idiom (rejecting A for B).
-//   - `not a good idea` / `doesn't make sense` — an evaluative judgment.
+//   - `not a good idea` / `doesn't make sense` / `doesn't fit` — an evaluative
+//     judgment (a considered rejection of an option or direction).
 //   - `is a … workflow|pattern|system|…` — a definitional statement (naming a
 //     concept), inherently durable knowledge.
 //   - `philosophy|principle|north star|vision` — explicit guiding-direction
 //     nouns; a stated principle is durable by construction.
 //   - `i'm more with` — a preference, alongside the existing `i like/prefer`.
 //   - leading `if i remember|recall` — recall of an established fact/procedure.
+//   - `the only way` — a necessity/justification idiom ("that's the only way to
+//     prove X"): asserting a path is the sole viable one is durable rationale.
 const RATIONALE =
-	/\b(because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|reads better)\b|\bas .{0,30}(more|better|efficiently)\b|\bshould(n'?t| not)? (be|not|fix|own|live|stay|go)\b|\bmust(n'?t| not)? \w|\bneeds? to be\b|\bdoesn'?t need to\b|\bdon'?t (want|need)\b|\bi (don'?t )?(like|prefer|want)\b|\bwhy we (need|use|chose|keep)\b|\bmeaning that\b|^\s*(diagnosis|root cause|conclusion)\s*:|^\s*[\w'-]+(\s[\w'-]+){0,3}\s*=\s+\S|\bi own\b|\bwe don'?t \w+, we\b|\b(not a good idea|doesn'?t make sense)\b|\bis an? [\w-]+ (workflow|pattern|system|approach|product|convention)\b|\b(philosophy|principle|north star|vision)\b|\bi'?m more with\b|^\s*if i (remember|recall)\b/im;
+	/\b(because|since|so that|to avoid|otherwise|too specific|we might (extend|need)|reads better)\b|\bas .{0,30}(more|better|efficiently)\b|\bshould(n'?t| not)? (be|not|fix|own|live|stay|go)\b|\bmust(n'?t| not)? \w|\bneeds? to be\b|\bdoesn'?t need to\b|\bdon'?t (want|need)\b|\bi (don'?t )?(like|prefer|want)\b|\bwhy we (need|use|chose|keep)\b|\bmeaning that\b|^\s*(diagnosis|root cause|conclusion)\s*:|^\s*[\w'-]+(\s[\w'-]+){0,3}\s*=\s+\S|\bi own\b|\bwe don'?t \w+, we\b|\b(not a good idea|doesn'?t make sense|doesn'?t fit)\b|\bis an? [\w-]+ (workflow|pattern|system|approach|product|convention)\b|\b(philosophy|principle|north star|vision)\b|\bi'?m more with\b|^\s*if i (remember|recall)\b|\bthe only way\b/im;
 // Leading redirection/correction openers. "actually" and "wait" begin a
 // course-correction the same way "no,"/"instead" do; broadened from the
 // comma-only "actually," so "Actually I already solved …" also counts.
