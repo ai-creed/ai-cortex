@@ -62,6 +62,20 @@ else
 	NEW_HEADLINE="$INPUT"
 fi
 
+# ─── Release gate ────────────────────────────────────────────────────────
+# Tagging must be impossible unless the full verification suite passes.
+# CI=true is required, not optional: env-var-gated paths (e.g. update-notifier
+# shouldCheck) diverge under CI, which is how v0.10.1 shipped broken.
+# `pnpm format` is intentionally absent: 213 files have pre-existing drift;
+# add it back once the tree is reformatted.
+echo "Running release gate..."
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm typecheck:web
+pnpm lint
+pnpm build
+CI=true pnpm test
+
 # ─── Now safe to mutate ──────────────────────────────────────────────────
 echo "Releasing $TAG..."
 
@@ -73,6 +87,11 @@ npm version "$VERSION" --no-git-tag-version
 # Forgetting this drift was the cause of the v0.5.0 ship-then-fix cycle.
 sed -i.bak "s|export const VERSION = \".*\";|export const VERSION = \"$VERSION\";|" src/version.ts
 rm -f src/version.ts.bak
+
+# Rebuild dist so it embeds the bumped VERSION. cli.test.ts spawns dist and
+# only rebuilds when the file is missing, so leaving a stale dist here makes
+# the next local test run fail its --version assertions.
+pnpm build
 
 # Persist the resolved headline (npm version already bumped package.json above;
 # this read-modify-write preserves the version bump and adds aiCortex.releaseHeadline).
