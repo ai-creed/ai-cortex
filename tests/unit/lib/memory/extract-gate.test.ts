@@ -7,6 +7,8 @@ import type {
 	SessionRecord,
 	UserPromptEvidence,
 } from "../../../../src/lib/history/types.js";
+import { ROLEPLAY_NOISE } from "../../../fixtures/memory-capture-corpus.js";
+import { structuralReject, signalScore } from "../../../../src/lib/memory/gate.js";
 
 // `sess(id, userPrompts)` mirrors the exact SessionRecord literal the existing
 // extract-*.test.ts files pass to writeSession, with the given userPrompts and
@@ -150,4 +152,24 @@ describe("extractFromSession with structural gate", () => {
 			lc.close();
 		}
 	}, 60_000);
+});
+
+describe("duo-roleplay reject rule", () => {
+	it.each(ROLEPLAY_NOISE)("rejects: %s", (body) => {
+		expect(structuralReject(body)).toBe("duo-roleplay");
+	});
+
+	it("rejection happens even though persona prompts look high-signal", () => {
+		// sanity: these bodies DO contain standing-directive markers, which is
+		// exactly why they must die at the gate, not at tier scoring
+		expect(ROLEPLAY_NOISE.some((b) => signalScore(b) >= 1)).toBe(true);
+	});
+
+	it("does not reject a genuine standing directive mentioning a persona-free rule", () => {
+		expect(
+			structuralReject(
+				"Always run the release gate before tagging because skipped gates burned three releases.",
+			),
+		).toBeNull();
+	});
 });

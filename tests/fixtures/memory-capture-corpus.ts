@@ -226,3 +226,12 @@ export const AUDIT_NOISE: { workspace: string; body: string }[] = [
 	{ workspace: "ai-ezio", body: "Publish and installed, let remove the symlink.\n\n_Acknowledged:_ Removing the dev symlink so `whisper` resolves to the global 0.5.0. Let me check the current state first, then fix it cleanly:" },
 	{ workspace: "ai-ezio", body: "Review the changes in feat/ezio-surface-extraction branch.\n\n_Acknowledged:_ Using `superpowers:using-superpowers` for skill discipline and `ai-14all-session-status` to publish task state while I review this worktree. I’ll inspect the branch diff against its base, then read the changed code in context before reporting findings." },
 ];
+
+// ── Duo/persona roleplay assignments (spec §4.2) — must be REJECTED by the
+// structural gate even though they contain standing-directive words.
+export const ROLEPLAY_NOISE: string[] = [
+	"You are SANCHO PANZA for this collab session — always answer in character.",
+	"[ai-whisper duo] You play IGOR this session; never break character in chat.",
+	"For this session act as ROBIN, the duo character. Stay in character for banter.",
+	"you are playing DON QUIXOTE persona for the whisper duo today",
+];

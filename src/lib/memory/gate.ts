@@ -12,6 +12,16 @@ const RULES: { name: string; test: (b: string) => boolean }[] = [
 		test: (b) => /^\s*\[Request interrupted by user( for tool use)?\]/.test(b),
 	},
 	{
+		// Duo-persona/session-roleplay assignments (SANCHO PANZA / IGOR class).
+		// Reject BEFORE tier concerns: these often contain "always"/"never" and
+		// would otherwise score as high-signal standing directives (spec §4.2).
+		name: "duo-roleplay",
+		test: (b) =>
+			/\[ai-whisper duo\]/i.test(b) ||
+			(/\b(you (are|play)|you'?re playing|act(ing)? as|play(ing)?)\b/i.test(b) &&
+				/\b(character|persona|duo|roleplay|in character)\b/i.test(b)),
+	},
+	{
 		name: "resume-kickoff",
 		test: (b) =>
 			b.trim().length < 200 &&
