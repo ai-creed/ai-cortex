@@ -1260,7 +1260,7 @@ export function createServer(): McpServer {
 	server.registerTool(
 		"untrash_memory",
 		{
-			description: "Restore a trashed memory back to active.",
+			description: "Restore a trashed memory. Captures return to candidate for re-review; all other types return to active.",
 			inputSchema: {
 				worktreePath: z.string().describe("Absolute path to a directory inside the project's git worktree. The server derives the repo identity from this path."),
 				id: z.string().min(1),
