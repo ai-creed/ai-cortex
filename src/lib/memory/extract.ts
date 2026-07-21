@@ -192,6 +192,7 @@ export async function extractFromSession(
 						scope: { files: cand.scopeFiles, tags: cand.tags },
 						confidence: cand.confidence,
 						reason: lifecycle.INTAKE_DISCARD_REASON,
+						provenance: cand.provenance,
 					});
 					manifest.discardedCount = (manifest.discardedCount ?? 0) + 1;
 					(manifest.discardedCaptures ??= []).push({

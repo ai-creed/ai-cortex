@@ -6,6 +6,7 @@ import * as lifecycle from "../../../../src/lib/memory/lifecycle.js";
 import { writeSession } from "../../../../src/lib/history/store.js";
 import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
 import { readMemoryVector } from "../../../../src/lib/memory/embed.js";
+import { readMemoryFile } from "../../../../src/lib/memory/store.js";
 import { memoryRootDir } from "../../../../src/lib/memory/paths.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import type {
@@ -77,6 +78,26 @@ describe("tier routing at extraction", () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.status).toBe("trashed");
 		expect(await readMemoryVector(repoKey, rows[0]!.id)).toBeNull();
+	});
+
+	it("routed (trashed) capture carries provenance from the evidence turn", async () => {
+		// Finding 2: the discard path must thread the candidate's provenance into
+		// the trashed file so an untrash recovers real session/turn context.
+		repoKey = await mkRepoKey("intake-v2");
+		await writeSession(repoKey, sess("s7", [
+			{ turn: 4, text: LOW, nextAssistantSnippet: "Done." },
+		]));
+		await extractFromSession(repoKey, "s7");
+		const rows = await statuses(repoKey);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]!.status).toBe("trashed");
+		const rec = await readMemoryFile(repoKey, rows[0]!.id, "trash");
+		expect(rec.frontmatter.provenance).toHaveLength(1);
+		expect(rec.frontmatter.provenance[0]).toMatchObject({
+			sessionId: "s7",
+			turn: 4,
+			kind: "user_prompt",
+		});
 	});
 
 	it("keeps high-signal captures as candidates", async () => {

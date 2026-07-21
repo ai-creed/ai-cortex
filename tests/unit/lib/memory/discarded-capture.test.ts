@@ -10,7 +10,9 @@ import {
 } from "../../../../src/lib/memory/lifecycle.js";
 import { readMemoryVector } from "../../../../src/lib/memory/embed.js";
 import { memoryFilePath } from "../../../../src/lib/memory/paths.js";
+import { readMemoryFile } from "../../../../src/lib/memory/store.js";
 import { openRetrieve, listMemories } from "../../../../src/lib/memory/retrieve.js";
+import { reviewPendingCaptures } from "../../../../src/lib/memory/pending-captures.js";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 
 let repoKey: string;
@@ -48,6 +50,77 @@ describe("createDiscardedCapture", () => {
 		} finally {
 			lc.close();
 		}
+	});
+
+	it("carries provenance entries into the trash file frontmatter", async () => {
+		// Regression (finding 2): routed captures must retain their evidence
+		// provenance so a later untrash surfaces real session/turn context, not
+		// a body-only stub. createDiscardedCapture must write the entries directly
+		// (single write, no vector) rather than hardcoding an empty list.
+		repoKey = await mkRepoKey("intake-v2");
+		const lc = await openLifecycle(repoKey);
+		try {
+			const id = await createDiscardedCapture(lc, {
+				title: "commit and push",
+				body: "commit and push\n\n_Acknowledged:_ Done.",
+				scope: { files: [], tags: ["commit"] },
+				reason: INTAKE_DISCARD_REASON,
+				provenance: [
+					{
+						sessionId: "sess-42",
+						turn: 7,
+						kind: "user_prompt",
+						excerpt: "commit and push",
+					},
+				],
+			});
+			const rec = await readMemoryFile(repoKey, id, "trash");
+			expect(rec.frontmatter.provenance).toEqual([
+				{
+					sessionId: "sess-42",
+					turn: 7,
+					kind: "user_prompt",
+					excerpt: "commit and push",
+				},
+			]);
+		} finally {
+			lc.close();
+		}
+	});
+
+	it("routed capture keeps provenance through untrash → review queue exposes session/turn", async () => {
+		// After untrash, reviewPendingCaptures resolves source from
+		// frontmatter.provenance[0]; without preserved provenance sessionId/turn
+		// are null and context degrades to body-only.
+		repoKey = await mkRepoKey("intake-v2");
+		const lc = await openLifecycle(repoKey);
+		let id = "";
+		try {
+			id = await createDiscardedCapture(lc, {
+				title: "maybe a gem after all",
+				body: "maybe a gem after all",
+				scope: { files: [], tags: [] },
+				reason: INTAKE_DISCARD_REASON,
+				provenance: [
+					{
+						sessionId: "sess-untrash",
+						turn: 3,
+						kind: "user_correction",
+						excerpt: "maybe a gem after all",
+					},
+				],
+			});
+			await untrashMemory(lc, id);
+		} finally {
+			lc.close();
+		}
+		const pending = await reviewPendingCaptures(repoKey, {
+			includeLowSignal: true,
+		});
+		const row = pending.find((p) => p.id === id);
+		expect(row).toBeDefined();
+		expect(row!.source.sessionId).toBe("sess-untrash");
+		expect(row!.source.turn).toBe(3);
 	});
 
 	it("fault injection after the file write: compensates the file, leaves no index row", async () => {

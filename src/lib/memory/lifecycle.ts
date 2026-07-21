@@ -196,6 +196,10 @@ export type CreateDiscardedCaptureInput = {
 	scope: { files: string[]; tags: string[] };
 	confidence?: number;
 	reason: string;
+	// Evidence provenance for the routed capture. Mirrors the entries
+	// addEvidence appends for normal candidates, written directly here so an
+	// untrash recovers real session/turn context instead of a body-only stub.
+	provenance?: ProvenanceEntry[];
 };
 
 // Spec §4.1: zero-signal captures are born in the trash tier — a single
@@ -220,7 +224,7 @@ export async function createDiscardedCapture(
 		confidence: input.confidence ?? 0.35,
 		pinned: false,
 		scope: { files: [...input.scope.files], tags: [...input.scope.tags] },
-		provenance: [],
+		provenance: [...(input.provenance ?? [])],
 		supersedes: [],
 		mergedInto: null,
 		deprecationReason: null,
