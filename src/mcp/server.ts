@@ -498,6 +498,17 @@ export function createServer(): McpServer {
 						.join("\n\n") || null;
 					const result = await rehydrateRepo(worktreePath, { notice });
 					const briefing = fs.readFileSync(result.briefingPath, "utf8");
+					// Spec §4.4: opportunistic aging sweep AFTER the briefing is
+					// assembled — rate-limited inside, isolated here so it can
+					// never degrade the briefing response.
+					try {
+						const { runAutoSweepIfDue } = await import(
+							"../lib/memory/auto-sweep.js"
+						);
+						await runAutoSweepIfDue(repoKey);
+					} catch (err) {
+						console.error(`[ai-cortex] auto-sweep failed: ${String(err)}`);
+					}
 					return {
 						content: [
 							{
