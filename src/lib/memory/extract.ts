@@ -403,6 +403,35 @@ const STOPWORDS = new Set([
 	"over",
 ]);
 
+const BARE_GIT_HASH = /^[0-9a-f]{7,40}$/i;
+
+// Spec §4.2: capture titles are always a single sanitized line. Newlines in
+// titles are what leaked YAML block scalars (`>-`) into frontmatter. The
+// fallback source is the COMPOSED body (prompt + `_Acknowledged:_` echo) so a
+// one-line hash prompt still yields a meaningful title.
+export function sanitizeCaptureTitle(text: string, body: string): string {
+	const lines = text.split("\n").map((l) => l.trim());
+	const first = lines.find((l) => l.length > 0) ?? "";
+	let title = first.replace(/^[#>*\-`\s]+/, "").replace(/\s+/g, " ").trim();
+	if (title.length === 0 || BARE_GIT_HASH.test(title)) {
+		const fallback = body
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((l) => l.length > 0 && !BARE_GIT_HASH.test(l))
+			.join(" ")
+			.replace(/_Acknowledged:_/g, " ");
+		const words = fallback
+			.toLowerCase()
+			.split(/[^a-z0-9_-]+/)
+			.filter(
+				(w) => w.length >= 4 && w !== "acknowledged" && !STOPWORDS.has(w),
+			);
+		title = words.slice(0, 8).join(" ");
+	}
+	if (title.length === 0) return "capture";
+	return title.length <= 80 ? title : title.slice(0, 77) + "…";
+}
+
 export function extractTags(text: string, max = 5): string[] {
 	const counts = new Map<string, number>();
 	for (const raw of text.toLowerCase().split(/[^a-z0-9_-]+/)) {
@@ -471,10 +500,10 @@ export function produceCaptureCandidates(
 	for (const u of evidence.userPrompts) {
 		if (structuralReject(u.text) !== null) continue;
 		const correction = CORRECTION_PREFIX_RE.test(u.text);
-		const title = u.text.length <= 80 ? u.text : u.text.slice(0, 77) + "…";
 		const body = u.nextAssistantSnippet
 			? `${u.text}\n\n_Acknowledged:_ ${u.nextAssistantSnippet}`
 			: u.text;
+		const title = sanitizeCaptureTitle(u.text, body);
 		out.push({
 			type: "capture",
 			title,
