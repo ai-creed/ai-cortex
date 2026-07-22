@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.17.0 (2026-07-22)
+
+This release ships the intake gate v2: session-extraction captures are now tier-routed at intake, so zero-signal noise is born straight into the reviewable trash instead of piling up as candidates, and the dormant aging sweep is switched on. This targets the ~90% junk rate and the diverging candidate backlog measured in the 2026-07-21 corpus re-audit.
+
+### Added
+- **Tier-routed intake.** Every extracted capture is scored by the existing signal heuristics at capture time; zero-signal captures are created directly in trash (reason `intake: zero-signal capture`) with no embedding work, full provenance preserved, and a 90-day restore window. High-signal captures land as candidates exactly as before. Controlled by the `intakeTierRouting` config flag (on by default).
+- **Automatic aging sweep.** After each session briefing, aged candidates are swept to trash at most once per 24 hours (`aging.autoSweep` config). Note: the first briefing after this release triggers the first sweep wave over the accumulated backlog — swept items are restorable for 90 days.
+- **Worktree ignore list.** Sessions whose worktree path matches `ignoreWorktreePrefixes` (e.g. throwaway smoke-test workspaces) are skipped by extraction, and session records now persist their worktree path to make this enforceable.
+- **Replay release gate.** A committed, labeled capture corpus plus replay harness (`scripts/harvest-intake-corpus.ts`, `scripts/replay-intake.ts`, replay-gate test suite) enforces zero known-gem loss and ≥80% noise suppression before the gate's heuristics can change.
+
+### Changed
+- **`untrash_memory` is type-aware.** Restoring a trashed capture returns it to `candidate` (the review queue) instead of promoting it to `active`; non-capture types restore to active as before.
+- **Extraction manifest reports routing.** `extract_session` results now include discarded-capture counts and titles alongside created candidates, so intake decisions stay visible.
+
 ## v0.16.1 (2026-06-27)
 
 This release teaches edit-time memory surfacing to stop re-suggesting memories you keep ignoring, and tightens fallback tag matching so fewer off-topic memories surface while you edit. Recall is unchanged — only the automatic edit-time surfacing is affected.
