@@ -75,7 +75,7 @@
 		"better-sqlite3": "^12",
 		"ink": "^7.0.3",
 		"ink-spinner": "^5.0.0",
-		"js-yaml": "^4.1.1",
+		"js-yaml": "^4.3.0",
 		"picomatch": "^4.0.4",
 		"react": "^19.2.6",
 		"three": "^0.184.0",
@@ -90,13 +90,18 @@
 	},
 	"pnpm": {
 		"overrides": {
-			"protobufjs@<7.6.3": "^7.6.3",
-			"fast-uri@<3.1.2": "^3.1.2",
-			"hono@<4.12.21": "^4.12.21",
+			"protobufjs@<7.6.5": "^7.6.5",
+			"fast-uri@<3.1.4": "^3.1.4",
+			"hono@<4.12.27": "^4.12.27",
+			"@hono/node-server@<2.0.5": "^2.0.5",
+			"body-parser@<2.3.0": "^2.3.0",
+			"brace-expansion@<1.1.16": "^1.1.16",
+			"brace-expansion@>=3.0.0 <5.0.7": "^5.0.7",
+			"sharp@<0.35.0": "^0.35.0",
 			"qs@<6.15.2": "^6.15.2",
 			"ip-address@<10.1.1": "^10.1.1",
 			"postcss@<8.5.10": "^8.5.10",
-			"vite@<7.3.5": "^7.3.5",
+			"vite@<7.3.6": "^7.3.6",
 			"ws@<8.21.0": "^8.21.0"
 		},
 		"onlyBuiltDependencies": [
@@ -124,7 +129,7 @@
 		"globals": "^16.0.0",
 		"ink-testing-library": "^4.0.0",
 		"prettier": "^3.0.0",
-		"tsx": "^4.20.3",
+		"tsx": "^4.23.1",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.0.0",
 		"vitest": "^3.2.6"
