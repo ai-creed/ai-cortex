@@ -610,15 +610,48 @@ Only steps 2 to 7 are serialized; parsing and the bulk insert stay
 concurrent. The `writeCache` wrapper remains the only production caller. The
 sidecar and its transient `-journal` file live beside the `.db`, `.db-wal`,
 and `.db-shm` files and are documented in the storage-shape section of the
-contract. `ensureValidDb`'s discard path removes the sidecar together with the
-store so a format reset restarts numbering at `1`.
+contract. The sidecar is never deleted by ai-cortex's own invalidation; it
+lives as long as the worktree's cache directory, so numbering continues
+across store-format resets and only restarts when the whole cache directory
+is removed.
+
+**Coordinated invalidation.** `ensureValidDb` step 1 today checks
+`dbSchemaValid(dbPath)` and, on failure, deletes the store and its WAL and
+SHM files, with no coordination against a writer. Two processes that both
+observe a `user_version = 1` store can interleave so that A deletes it and
+publishes a 3.2 store with `indexSeq = 1`, then B, acting on its stale
+judgment, deletes A's store and publishes another with `indexSeq = 1`. In
+3.2 the discard runs inside the same exclusion as the sequence commit:
+
+1. The unlocked `dbSchemaValid` check stays as a fast path: a valid store
+   returns immediately with no lock taken.
+2. On an invalid or absent store, open the sequence sidecar and
+   `BEGIN IMMEDIATE`, blocking behind any in-flight sequence commit.
+3. Under the lock, re-run `fs.existsSync(dbPath) && dbSchemaValid(dbPath)`.
+   If the store is now valid, another process upgraded it: `COMMIT` and
+   return `dbPath` without deleting anything.
+4. If it is still invalid, delete `dbPath`, `-wal`, and `-shm`, `COMMIT`,
+   print the existing "cache schema updated, reindexing" notice, and return
+   `null`. The sequence sidecar is left in place.
+
+Because a writer's rename (B4 step 6) and the invalidator's delete both
+happen only while holding the sidecar transaction, no process can delete a
+store that was published after its own validity check. The reindex that
+follows a `null` return is an ordinary `writeCache` with its own sequence
+commit, so two processes that both reindex publish distinct, increasing
+values. The legacy JSON branch needs no lock: the JSON file is read-only
+input, two processes transcoding it concurrently are just two sequence
+commits, and deleting it twice is harmless.
 
 **`cache-store.ts` upgrade gate.** `ensureValidDb` step 2 (legacy JSON)
 compares `cache.schemaVersion` to `SCHEMA_VERSION` exactly before
 transcoding and deletes the JSON on mismatch (A1). `dbSchemaValid` and
 `readFromDb` compare `meta.schemaVersion` to `SCHEMA_VERSION` exactly in
 addition to the `user_version` check. Both changes are single comparisons at
-existing gate sites. `container_key` is computed at insert time from
+existing gate sites. The sidecar open, `BEGIN IMMEDIATE`, and `COMMIT` are
+factored into one helper, `withSequenceLock(worktreeKey, fn)`, used by both
+`transcodeCacheToDb` and `ensureValidDb` so the two paths cannot drift onto
+different lock files. `container_key` is computed at insert time from
 `containerQualifiedName`. `assembleCache` reads both tables back. The lean
 `readFreshnessMeta` path gains `indexSeq` and `contentFingerprint` so the CLI
 JSON output does not need a full materialize.
@@ -714,7 +747,7 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   path only: two consecutive `writeCache` calls for the same worktree (each
   building a temp database and renaming it over the canonical path) yield
   `1` then `2`, a third call after an empty-diff incremental refresh yields
-  `3`, and a `writeCache` over a `user_version = 1` store restarts at `1`.
+  `3`, and a `writeCache` over a `user_version = 1` store with no sidecar present (the pre-3.2 layout) starts at `1`.
   Legacy JSON regression, beside the existing legacy-JSON transcode cases in
   `tests/unit/lib/cache-store.test.ts`: a
   `<worktreeKey>.json` cache with `schemaVersion: "3.1"` and the current major
@@ -735,7 +768,17 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   write while a third holds the sidecar lock for 200 ms; both wait, both
   succeed, and the published values are distinct and increasing. Also assert
   that a `writeCache` with the sidecar deleted continues from the store's
-  value, and with the store deleted continues from the sidecar's. Assert
+  value, and with the store deleted continues from the sidecar's.
+  Concurrent-upgrade interleaving, with a `user_version = 1` store on disk
+  and two child processes: child B runs `ensureValidDb` with a test hook that
+  pauses it after its unlocked validity check and before it takes the
+  sidecar lock; child A runs `ensureValidDb` to completion, then `writeCache`,
+  publishing a 3.2 store with `indexSeq = 1`; B is released. Assert B
+  returns A's `dbPath` without deleting it, A's store is byte-identical
+  before and after B's run, no second store with `indexSeq = 1` is ever
+  published, and if B subsequently writes it publishes `2`. Repeat with B
+  paused while A holds the sidecar lock mid-commit, asserting B blocks and
+  then observes A's store as valid. Assert
   `contentFingerprint` is unchanged when only `indexedAt` moves and changes when
   one `content_hash` changes. Assert `navCapabilities` parses and
   `referencesTable === "refs"`. Assert a `user_version = 1` store is rejected
