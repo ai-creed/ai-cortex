@@ -61,9 +61,12 @@ column intact, and fixes the freshness and CLI defects, in one release.
    keeps holding. The consumer's invariant that every `functions` row has a
    `symbols` row with the same key and declaration range holds by
    construction, not by test. See A2.2 for the projection rule.
-6. **`STORE_FORMAT_VERSION` bumps from 1 to 2.** Upgraded installs then fail
+6. **`STORE_FORMAT_VERSION` bumps from 1 to 2, and legacy JSON caches older
+   than the current schema are rejected.** Upgraded installs then fail
    `ensureValidDb` and reindex fully on first use, instead of serving a 3.1
-   store until HEAD moves.
+   store until HEAD moves. The `user_version` gate covers existing `.db`
+   stores; a separate exact-version gate on the legacy `.json` transcode path
+   covers pre-SQLite caches, which have no `user_version` to reject (A1).
 7. **`rehydrate --json` is extended additively.** It already exists and prints
    `briefingPath`, `cacheStatus`, `packageName`, `fileCount`, `docCount`. New
    fields are added; none are removed. `index --json` is new and prints the
@@ -79,6 +82,19 @@ column intact, and fixes the freshness and CLI defects, in one release.
 - `SCHEMA_VERSION` becomes `"3.2"`. Additive tables and meta keys only.
 - `STORE_FORMAT_VERSION` becomes `2` (decision 6). Readers that gate on
   `user_version` (ai-cortex itself) treat a `1` store as invalid and reindex.
+- **Legacy JSON caches.** `ensureValidDb` today transcodes a `<worktreeKey>.json`
+  cache into a `.db` whenever its `schemaVersion` shares the current major,
+  which would turn a 3.1 JSON cache into a `user_version = 2` store with
+  `schemaVersion = "3.1"`, no `symbols`, no `refs`, and no `navCapabilities`,
+  and then accept it as valid. In 3.2 the JSON path requires
+  `cache.schemaVersion === SCHEMA_VERSION` exactly; any other value deletes the
+  JSON and returns a cache miss so the caller reindexes. This is a
+  writer-internal gate on ai-cortex's own legacy format, not a change to the
+  consumer rule that readers accept any minor at or above their own.
+  Independently, `dbSchemaValid` and `readFromDb` also require
+  `meta.schemaVersion === SCHEMA_VERSION` for stores ai-cortex itself serves,
+  so a store written by a newer or older minor is reindexed rather than
+  served with a capability set this binary did not produce.
 - Readers written against 3.1 keep working. Readers written against 3.2
   feature-detect via `meta.navCapabilities` and fall back to `functions` when it
   is absent.
@@ -336,9 +352,12 @@ extended to symbols.
   ai-cortex processes may do so for the same worktree at once (the existing
   eight-process transcode test pins that as a supported path). Reading the
   prior value, stamping the new one, and renaming therefore happen inside a
-  per-store critical section (B4 "sequence commit"), so every successful write
-  observes a strictly larger value than the write before it. A path with no
-  valid prior store starts at `1`.
+  per-store critical section held through a `BEGIN IMMEDIATE` transaction on
+  a sequence sidecar database (B4 "sequence commit"). The exclusion is owned
+  by the operating system's file lock, released automatically on holder exit
+  or crash, so no process ever removes another process's lock. Every
+  successful write publishes a strictly larger value than the write before
+  it. A path with no valid prior store and no sidecar starts at `1`.
 - Stale `to_key` values pointing at a deleted or moved symbol are a contract
   violation. Part B4 covers how the incremental merge honors this.
 - Store stays WAL.
@@ -467,7 +486,8 @@ token.
   name tokens. `decorator` covers the identifier or call callee of a
   `decorator` node.
 - Existing `extractCallGraph` remains the single adapter entry point; it
-  returns `{ symbols, rawCalls, rawRefs, importBindings }`.
+  returns `RawCallData`, that is
+  `{ symbols, rawCalls, rawRefs, reexports, importBindings }`.
 
 **Python (`adapters/python.ts`)**, best effort: symbols `function`, `method`,
 `class`, module-level `variable`; refs `call`, `import`, `extends`. `self.m`
@@ -486,16 +506,38 @@ keeps reading `::` from source text and emits `Foo.bar`.
 A new module owns name resolution against the symbol set:
 
 ```ts
+export type ResolveSite = {
+  file: string;
+  name: string;
+  receiver?: string;
+  enclosingClass?: string;
+  specifier?: string;
+  importKind?: "named" | "default" | "namespace";
+};
+export type ReexportTable = Map<string, Map<string, { specifier: string; sourceName: string }>>; // file -> exportedName -> target
+
 export function buildSymbolIndex(symbols: SymbolNode[]): SymbolIndex;
+export function buildReexportTable(rows: ReexportRow[]): ReexportTable;
 export function resolveName(
   idx: SymbolIndex,
-  site: { file: string; name: string; receiver?: string; enclosingClass?: string; specifier?: string },
+  site: ResolveSite,
   bindings: ImportBinding[],
   reexports: ReexportTable,
   includesByFile: Map<string, ImportEdge[]>,
 ): string | null;   // symbols key or null
-export function resolveRefs(rawRefs, symbols, bindingsByFile, includesByFile): RefEdge[];
+export function resolveRefs(
+  rawRefs: RawRefSite[],
+  symbols: SymbolNode[],
+  bindingsByFile: Map<string, ImportBinding[]>,
+  reexports: ReexportRow[],            // merged set on incremental, adapter output on full index
+  includesByFile: Map<string, ImportEdge[]>,
+): RefEdge[];
 ```
+
+`resolveCallSites` gains the same `reexports: ReexportRow[]` parameter so
+`calls` follow one aliased hop exactly as `refs` do; its existing four
+arguments are unchanged. `RawCallSite` and `RawRefSite` map onto
+`ResolveSite` field for field.
 
 `resolveName` implements A5 steps 1 to 4 and the ambiguity rule. The
 re-export table is built from `ReexportRow[]`, keyed by file and
@@ -525,27 +567,58 @@ name exists as a symbol in the same file, else `NULL`.
 `functions` and `calls`. It does not assign the sequence.
 
 **Sequence commit.** `transcodeCacheToDb` builds the temporary database in
-full, then runs a short critical section per canonical path:
+full, then runs a short critical section per canonical path. Mutual
+exclusion comes from SQLite's own file locking on a tiny sidecar database,
+`<worktreeKey>.seq.db`, never from a lock file or directory that a process
+has to judge stale and remove. SQLite locks are released by the operating
+system when a holder exits or dies, so there is no abandoned-lock state, no
+staleness threshold, and no reclamation step for competing processes to race
+on.
 
-1. Acquire `<dbPath>.lock` by `fs.mkdirSync` (atomic create on POSIX and
-   Windows). On `EEXIST`, if the lock directory's mtime is older than 30
-   seconds it is treated as abandoned, removed, and retried; otherwise wait
-   10 to 50 ms with jitter and retry, for up to 15 seconds, then throw.
-2. Read `indexSeq` from the canonical `dbPath` via `readFreshnessMeta`,
-   treating a missing, unreadable, or wrong-format store as `0`.
-3. Open the temporary database, `UPDATE meta SET value = ? WHERE key =
-   'indexSeq'` with the prior value plus one, close, run
-   `checkpointAndVerify`.
-4. `fs.renameSync(tmpDb, dbPath)`.
-5. Remove the lock directory in a `finally`.
+The sidecar holds one table, `seq(n INTEGER NOT NULL)`, with one row. It uses
+the default rollback journal, not WAL, so `BEGIN IMMEDIATE` takes the
+RESERVED lock and excludes every other writer across processes and threads.
+The connection sets `busy_timeout = 15000`.
 
-Only steps 2 to 4 are serialized; parsing and the bulk insert stay
-concurrent. Because read, stamp, and rename happen under one lock, two
-writers that start from `n` produce `n+1` and `n+2`, and the store at
-`dbPath` never shows a sequence smaller than one it showed before. The
-`writeCache` wrapper remains the only production caller. The lock directory
-is transient and lives beside the `.db`, `.db-wal`, and `.db-shm` files; it
-is documented in the storage-shape section of the contract. `container_key` is computed at insert time from
+1. Open or create `<worktreeKey>.seq.db`; `CREATE TABLE IF NOT EXISTS seq`
+   and insert the single row with `n = 0` if absent. Both statements are
+   idempotent and SQLite serializes concurrent creators on the same path.
+2. `BEGIN IMMEDIATE`. From here to step 7 exactly one writer per canonical
+   path is inside the section; others block in the busy handler and throw a
+   clear error after 15 seconds.
+3. Read `seq.n`. Read `indexSeq` from the canonical `dbPath` via
+   `readFreshnessMeta`, treating a missing, unreadable, or wrong-format store
+   as `0`. Let `next = max(seq.n, canonical) + 1`.
+4. `UPDATE seq SET n = next` (uncommitted).
+5. Open the temporary database, `UPDATE meta SET value = next WHERE key =
+   'indexSeq'`, close, run `checkpointAndVerify`.
+6. `fs.renameSync(tmpDb, dbPath)`.
+7. `COMMIT`. On any failure before this point, `ROLLBACK` in a `finally`.
+
+Why `max` of both sources: if a holder dies after step 6 and before step 7,
+the canonical store already shows `next` while the sidecar rolls back to the
+old `n`; the next writer takes `max(n, next) + 1`, so the value is never
+reused. If a holder dies before step 6, nothing is published and the
+sidecar rolls back, so nothing is consumed. If the canonical store is deleted
+but the sidecar remains, numbering continues from the sidecar. If the sidecar
+is deleted but the store remains, numbering continues from the store. In every
+case each successful write publishes a value strictly greater than any value
+`dbPath` showed before, and two writers starting from `n` publish `n+1` and
+`n+2` in that order.
+
+Only steps 2 to 7 are serialized; parsing and the bulk insert stay
+concurrent. The `writeCache` wrapper remains the only production caller. The
+sidecar and its transient `-journal` file live beside the `.db`, `.db-wal`,
+and `.db-shm` files and are documented in the storage-shape section of the
+contract. `ensureValidDb`'s discard path removes the sidecar together with the
+store so a format reset restarts numbering at `1`.
+
+**`cache-store.ts` upgrade gate.** `ensureValidDb` step 2 (legacy JSON)
+compares `cache.schemaVersion` to `SCHEMA_VERSION` exactly before
+transcoding and deletes the JSON on mismatch (A1). `dbSchemaValid` and
+`readFromDb` compare `meta.schemaVersion` to `SCHEMA_VERSION` exactly in
+addition to the `user_version` check. Both changes are single comparisons at
+existing gate sites. `container_key` is computed at insert time from
 `containerQualifiedName`. `assembleCache` reads both tables back. The lean
 `readFreshnessMeta` path gains `indexSeq` and `contentFingerprint` so the CLI
 JSON output does not need a full materialize.
@@ -597,7 +670,9 @@ path string in `index` human output becomes the `.db` path from
 - `docs/architecture/cortex-index-contract.md` becomes v3.2: section 4 covers
   `symbols.key` and the `.` separator rule including the C-family correction;
   section 7 adds the two consumer tables, the writer-internal `reexports`
-  table, the three meta keys, and the transient `.lock` directory; a new
+  table, the three meta keys, the `<worktreeKey>.seq.db` sequence sidecar
+  with its transient `-journal`, and the exact-version gate on legacy JSON
+  caches; a new
   appendix lists both closed `kind` sets and the import-form table from A3; a
   new section documents CLI exit codes and JSON shapes.
 - `README.md` and the relevant `docs/reference/` page mention the navigation
@@ -640,12 +715,27 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   building a temp database and renaming it over the canonical path) yield
   `1` then `2`, a third call after an empty-diff incremental refresh yields
   `3`, and a `writeCache` over a `user_version = 1` store restarts at `1`.
+  Legacy JSON regression, beside the existing legacy-JSON transcode cases in
+  `tests/unit/lib/cache-store.test.ts`: a
+  `<worktreeKey>.json` cache with `schemaVersion: "3.1"` and the current major
+  makes `ensureValidDb` return `null` and delete the JSON, and no `.db` is
+  created from it; a JSON cache with `schemaVersion: "3.2"` still transcodes.
+  A `.db` with `user_version = 2` but `meta.schemaVersion = "3.1"` is also
+  rejected by `dbSchemaValid`.
   Extend the existing eight-process concurrent transcode test: after all
-  eight processes finish, `indexSeq` equals `8`, proving each write took a
-  distinct value, and no `.lock` directory remains. Add a case where a stale
-  lock directory older than 30 seconds is present and the write still
-  succeeds, and a case where a fresh lock held by the test makes the write
-  wait and then succeed once the lock is released. Assert
+  eight processes finish, `indexSeq` equals `8` and `seq.n` equals `8`,
+  proving each write took a distinct value, and no `-journal` file remains.
+  Add three crash and contention cases, each with real child processes:
+  (1) a child takes `BEGIN IMMEDIATE` on the sidecar and is `SIGKILL`ed while
+  holding it; a following `writeCache` succeeds without any wait beyond lock
+  release and publishes `n+1`; (2) a child is killed after the rename and
+  before `COMMIT` (simulated by a test hook that exits between steps 6 and
+  7); the sidecar rolls back, the store shows `n+1`, and the next
+  `writeCache` publishes `n+2`, never `n+1` again; (3) two children race to
+  write while a third holds the sidecar lock for 200 ms; both wait, both
+  succeed, and the published values are distinct and increasing. Also assert
+  that a `writeCache` with the sidecar deleted continues from the store's
+  value, and with the store deleted continues from the sidecar's. Assert
   `contentFingerprint` is unchanged when only `indexedAt` moves and changes when
   one `content_hash` changes. Assert `navCapabilities` parses and
   `referencesTable === "refs"`. Assert a `user_version = 1` store is rejected
@@ -690,12 +780,15 @@ tasks of at most three production files each.
 
 ## Risks and mitigations
 
-- **Sequence lock contention or abandonment.** The critical section is a
-  meta read, one-row update, checkpoint, and rename, so holders release in
-  milliseconds; the 30-second stale threshold only matters if a process dies
-  mid-section, and the 15-second wait bound turns a wedged lock into a clear
-  error instead of a hang. A crash between the stale check and `rmdir` by two
-  breakers at once is tolerated because `mkdirSync` still admits only one.
+- **Sequence section contention.** The critical section is a meta read, two
+  one-row updates, a checkpoint, and a rename, so holders release in
+  milliseconds. Exclusion is SQLite's file lock on the sequence sidecar,
+  released by the kernel on process exit, so a crashed holder cannot wedge
+  later writers and no process ever reclaims another's lock. The 15-second
+  busy timeout turns a pathological stall into a clear error instead of a
+  hang. The one known limitation is network filesystems with broken POSIX
+  advisory locking, where SQLite itself documents that locking is unreliable;
+  `~/.cache/ai-cortex` is expected to be local.
 - **Index time and store size.** Refs add a second tree walk per TS file and
   roughly 50 rows per file. Measure full-index duration and `.db` size on
   ai-cortex (631 files) and ai-14all (1347 files) before and after; a
