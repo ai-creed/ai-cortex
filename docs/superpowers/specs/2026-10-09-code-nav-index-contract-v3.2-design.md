@@ -208,6 +208,25 @@ Rules:
   differs deliberately from `calls.to_key = '::name'`, which stays as-is for
   3.1 compatibility.
 - The range is the identifier token. For `a.b.c` it is the `c` token.
+- `name` is always the text of the token at the range. For import and export
+  specifiers that means:
+
+  | Form | `name` | range | resolves to |
+  |---|---|---|---|
+  | `import { foo } from "./x"` | `foo` | the `foo` token | symbol `foo` in `./x` |
+  | `import { foo as bar } from "./x"` | `foo` | the `foo` token | symbol `foo` in `./x` |
+  | `import Foo from "./x"` | `Foo` | the `Foo` token | the `is_default_export = 1` symbol in `./x` |
+  | `import * as ns from "./x"` | `ns` | the `ns` token | `NULL` (a module is not a symbol) |
+  | `export { foo } from "./x"` | `foo` | the `foo` token | symbol `foo` in `./x` |
+  | `export { foo as bar } from "./x"` | `foo` | the `foo` token | symbol `foo` in `./x` |
+  | `export { foo }` (local) | `foo` | the `foo` token | same-file `foo` |
+  | `export * from "./x"` | no row | | star re-exports are not recorded and not followed |
+  | `import "./x"` (side effect) | no row | | |
+
+  The default and namespace forms have no imported-name token, so their row
+  names the local binding. Consumers doing bare-name fallback on a default
+  import therefore match the local name, which is the only name that appears
+  in the importing file.
 - A declaration's own name is not a ref.
 - The row set is deterministic for a given file content.
 
@@ -220,12 +239,33 @@ Rules:
 | `type` | identifier in a type position: annotations, generics, `satisfies`, `as`, `typeof X`, `keyof X` | TS |
 | `extends` | heritage clause | TS/JS, Python bases |
 | `implements` | heritage clause | TS |
-| `import` | import specifier, imported name not local alias | TS/JS, Python |
+| `import` | import specifier: the imported-name token for named imports, the local-name token for default and namespace imports (A3 table) | TS/JS, Python |
 | `export` | re-export or export specifier | TS/JS |
 | `member` | property access that is not a call | TS/JS |
 | `jsx` | JSX/TSX element tag | TS/JS |
 | `decorator` | decorator expression | TS/JS |
 | `read`, `write` | plain identifier read / assignment target | not emitted (decision 8) |
+
+#### A3.2: `reexports` table (writer-internal)
+
+The one-hop rule needs each file's named re-exports to survive incremental
+indexing, where unchanged files are not reparsed. They are persisted in a
+small table that is part of the storage shape but not part of the consumer
+navigation contract; consumers may ignore it and `navCapabilities` does not
+advertise it.
+
+```sql
+CREATE TABLE IF NOT EXISTS reexports (
+  file          TEXT NOT NULL,  -- file containing the export-from statement
+  exported_name TEXT NOT NULL,  -- name visible to importers (`bar` in `export { foo as bar } from`)
+  source_name   TEXT NOT NULL,  -- name in the source module (`foo`)
+  specifier     TEXT NOT NULL   -- raw specifier text as written (`./x`)
+);
+CREATE INDEX IF NOT EXISTS idx_reexports_file ON reexports(file, exported_name);
+```
+
+One row per named export-from specifier. `export * from` produces no row.
+Rows are deleted and re-inserted by `file` with the rest of that file's rows.
 
 ### A4: `meta` additions
 
@@ -253,21 +293,23 @@ Shared by `refs.to_key` and `calls.to_key`. Syntactic, first hit wins:
    same file.
 3. **Import binding.** Two cases, because the identifier in the ref and the
    identifier in the binding differ under aliasing:
-   - A ref of kind `import` carries the imported name (`foo` in
-     `import { foo as bar }`) and the specifier. It resolves directly: specifier
-     to target file with the existing logic, then symbol with
-     `qualified_name = foo` in that file; default import uses
-     `is_default_export = 1`; a namespace import ref (`import * as ns`) has no
-     symbol target and stays `NULL`.
+   - A ref of kind `import` carries the specifier and an internal
+     `importKind` of `named`, `default`, or `namespace` (B1). It resolves
+     directly, without a binding lookup: specifier to target file with the
+     existing logic, then for `named` the symbol with `qualified_name = name`
+     (`foo` in `import { foo as bar }`), for `default` the unique symbol with
+     `is_default_export = 1` in that file, and for `namespace` nothing
+     (`to_key = NULL`).
    - Any other ref whose `name` (or receiver, for `receiver.member`) equals an
      `ImportBinding.localName` (`bar`) resolves through the binding's
      `importedName` (`foo`): named import, symbol `foo` in the target file;
      default import, `is_default_export = 1`; namespace import, `member` in the
      target file.
-   Re-exports are followed one hop: if the target file has an `export` ref
-   with a specifier whose exported name equals the wanted name, resolution
-   continues in that specifier's file with the ref's source name
+   Re-exports are followed one hop: if the target file has a `reexports` row
+   (A3.2) whose `exported_name` equals the wanted name, resolution continues
+   in that row's specifier file with its `source_name`
    (`export { foo as bar } from "./x"` maps wanted `bar` to `foo` in `./x`).
+   Star re-exports are not followed.
 4. **Static member on an imported or same-file class.** `Foo.bar` where `Foo`
    resolves (steps 2 or 3) to a `class`, `enum`, or `namespace` symbol resolves
    to `${thatFile}::Foo.bar`.
@@ -281,15 +323,22 @@ extended to symbols.
 
 ### A6: writer obligations
 
-- `symbols`, `refs`, `functions`, `calls`, `imports`, `files`, `meta` are
-  written in one transaction. This is already true: `replaceAll` clears and
-  refills every table inside one `db.transaction`, even for incremental
-  indexes, because incrementality lives in the in-memory cache merge.
+- `symbols`, `refs`, `reexports`, `functions`, `calls`, `imports`, `files`,
+  `meta` are written in one transaction. This is already true: `replaceAll`
+  clears and refills every table inside one `db.transaction`, even for
+  incremental indexes, because incrementality lives in the in-memory cache
+  merge. The later `indexSeq` stamp (B4) is a single-row update followed by a
+  checkpoint on the not-yet-published temporary file, so readers of the
+  canonical path still only ever see whole snapshots.
 - `indexSeq` is carried forward from the canonical store at the destination
   path and written incremented into the new snapshot. The write path builds a
-  temporary database and renames it over the canonical one, so the prior
-  value must be read from the canonical path before the build, not from the
-  database being written (B4). A path with no valid prior store starts at `1`.
+  temporary database and renames it over the canonical one, and several
+  ai-cortex processes may do so for the same worktree at once (the existing
+  eight-process transcode test pins that as a supported path). Reading the
+  prior value, stamping the new one, and renaming therefore happen inside a
+  per-store critical section (B4 "sequence commit"), so every successful write
+  observes a strictly larger value than the write before it. A path with no
+  valid prior store starts at `1`.
 - Stale `to_key` values pointing at a deleted or moved symbol are a contract
   violation. Part B4 covers how the incremental merge honors this.
 - Store stays WAL.
@@ -351,6 +400,14 @@ export type RawRefSite = {           // adapter output, never serialized
   enclosingClass?: string;           // fully qualified innermost enclosing class, e.g. "N.C"
   specifier?: string;                // import / export-from specifier
   alias?: string;                    // import: local name when it differs; export-from: exported name when it differs
+  importKind?: "named" | "default" | "namespace"; // kind "import" only; drives A5 step 3 direct resolution
+};
+
+export type ReexportRow = {          // stored in `reexports` (A3.2)
+  file: string;
+  exportedName: string;
+  sourceName: string;
+  specifier: string;
 };
 ```
 
@@ -369,12 +426,13 @@ export type RefEdge = {              // resolved, stored
 };
 ```
 
-`RepoCache` gains `symbols: SymbolNode[]`, `refs: RefEdge[]`, `indexSeq: number`,
-`contentFingerprint: string`. `functions` stays on `RepoCache` as a derived
+`RepoCache` gains `symbols: SymbolNode[]`, `refs: RefEdge[]`,
+`reexports: ReexportRow[]`, `indexSeq: number`, `contentFingerprint: string`. `functions` stays on `RepoCache` as a derived
 field so every existing reader (`blast_radius`, `suggest`, briefing) is
 untouched. `SCHEMA_VERSION = "3.2"`.
 
-`RawCallData` gains `symbols: SymbolNode[]` and `rawRefs: RawRefSite[]`. The
+`RawCallData` gains `symbols: SymbolNode[]`, `rawRefs: RawRefSite[]`, and
+`reexports: ReexportRow[]` (derived by the adapter from its export-from refs). The
 `functions` field is removed from adapter output; `extractCallGraphRaw` derives
 it with a shared `functionsFromSymbols(symbols)` helper in `src/lib/symbols.ts`.
 `AdapterCapabilities.symbolIndex` already exists and becomes meaningful: `true`
@@ -400,10 +458,12 @@ token.
   existing call-site extraction so `calls` and `refs` agree on receiver and
   member. `type` covers `type_identifier` nodes in annotations, generic
   arguments, `as`, `satisfies`, `typeof`, `keyof`. `import` refs carry
-  `specifier`, `name` = imported name, and `alias` = local name when the
-  specifier is aliased. `export` refs with a `from` clause carry `specifier`,
-  `name` = source name, and `alias` = exported name when aliased; the ref range
-  is the source-name token. `jsx` covers `jsx_opening_element` and `jsx_self_closing_element`
+  `specifier` and `importKind`; for named imports `name` is the imported-name
+  token and `alias` the local name when aliased; for default and namespace
+  imports `name` is the local-name token (A3 table). `export` refs with a
+  `from` clause carry `specifier`, `name` = source name, and `alias` =
+  exported name when aliased; the ref range is the source-name token, and each
+  one also yields a `ReexportRow`. `export * from` yields neither. `jsx` covers `jsx_opening_element` and `jsx_self_closing_element`
   name tokens. `decorator` covers the identifier or call callee of a
   `decorator` node.
 - Existing `extractCallGraph` remains the single adapter entry point; it
@@ -438,10 +498,13 @@ export function resolveRefs(rawRefs, symbols, bindingsByFile, includesByFile): R
 ```
 
 `resolveName` implements A5 steps 1 to 4 and the ambiguity rule. The
-re-export table is built from `rawRefs` of kind `export` that carry a
-`specifier`, keyed by file and exported name (`alias ?? name`) and mapping to
-`{ specifier, sourceName: name }`, so following one aliased hop needs no new
-adapter output. The `site` argument carries `enclosingClass` for step 1.
+re-export table is built from `ReexportRow[]`, keyed by file and
+`exportedName` and mapping to `{ specifier, sourceName }`. On a full index
+those rows come straight from the adapters; on an incremental index they are
+the merged set of kept rows for unchanged files plus fresh rows for reparsed
+files (B4), so an importer can follow a hop through an intermediary that was
+not reparsed. The `site` argument carries `enclosingClass` for step 1 and
+`importKind` for step 3.
 
 `resolveCallSites` keeps its signature and its `::member` fallback but delegates
 steps 1 and 4 to `resolveName` before its existing logic. Existing
@@ -455,17 +518,34 @@ name exists as a symbol in the same file, else `NULL`.
 
 ### B4: store and incremental merge
 
-**`cache-store-sqlite.ts`:** DDL from A2 and A3 appended to `SCHEMA_SQL`;
-`STORE_FORMAT_VERSION = 2`. `replaceAll` writes `cache.indexSeq`,
-`contentFingerprint`, and `navCapabilities` into `meta`, then inserts
-`symbols` and `refs` after `functions` and `calls`. It does not compute the
-sequence itself: `transcodeCacheToDb` builds a fresh temporary database and
-renames it over `dbPath`, so the database `replaceAll` writes never holds a
-prior value. Instead `transcodeCacheToDb` reads `indexSeq` from the canonical
-`dbPath` via `readFreshnessMeta` before the build (treating a missing,
-unreadable, or wrong-format store as `0`) and sets `cache.indexSeq` to that
-value plus one. `writeCache` is the only production caller and therefore the
-only place the sequence advances. `container_key` is computed at insert time from
+**`cache-store-sqlite.ts`:** DDL from A2, A3, and A3.2 appended to
+`SCHEMA_SQL`; `STORE_FORMAT_VERSION = 2`. `replaceAll` writes
+`contentFingerprint` and `navCapabilities` into `meta`, a placeholder
+`indexSeq` of `"0"`, then inserts `symbols`, `refs`, and `reexports` after
+`functions` and `calls`. It does not assign the sequence.
+
+**Sequence commit.** `transcodeCacheToDb` builds the temporary database in
+full, then runs a short critical section per canonical path:
+
+1. Acquire `<dbPath>.lock` by `fs.mkdirSync` (atomic create on POSIX and
+   Windows). On `EEXIST`, if the lock directory's mtime is older than 30
+   seconds it is treated as abandoned, removed, and retried; otherwise wait
+   10 to 50 ms with jitter and retry, for up to 15 seconds, then throw.
+2. Read `indexSeq` from the canonical `dbPath` via `readFreshnessMeta`,
+   treating a missing, unreadable, or wrong-format store as `0`.
+3. Open the temporary database, `UPDATE meta SET value = ? WHERE key =
+   'indexSeq'` with the prior value plus one, close, run
+   `checkpointAndVerify`.
+4. `fs.renameSync(tmpDb, dbPath)`.
+5. Remove the lock directory in a `finally`.
+
+Only steps 2 to 4 are serialized; parsing and the bulk insert stay
+concurrent. Because read, stamp, and rename happen under one lock, two
+writers that start from `n` produce `n+1` and `n+2`, and the store at
+`dbPath` never shows a sequence smaller than one it showed before. The
+`writeCache` wrapper remains the only production caller. The lock directory
+is transient and lives beside the `.db`, `.db-wal`, and `.db-shm` files; it
+is documented in the storage-shape section of the contract. `container_key` is computed at insert time from
 `containerQualifiedName`. `assembleCache` reads both tables back. The lean
 `readFreshnessMeta` path gains `indexSeq` and `contentFingerprint` so the CLI
 JSON output does not need a full materialize.
@@ -481,15 +561,19 @@ kinds observed in this repo. A consumer can then rely on them without scanning.
 **`indexer.ts` incremental path.** Mirrors today's `functions` and `calls`
 handling:
 
-- `keptSymbols` and `keptRefs` are the existing rows whose `file` is not in
-  the touched set and not in the affected set.
+- `keptSymbols`, `keptRefs`, and `keptReexports` are the existing rows whose
+  `file` is not in the touched set and not in the affected set.
 - The affected set is today's `affectedCallers` (unchanged files that import a
   touched file) plus one more hop: unchanged files that import an affected file
-  which itself contains `export` refs with a specifier. This matches the
-  one-hop re-export rule in A5 step 3 and is what keeps `to_key` from pointing
-  at a moved symbol.
+  which has at least one `reexports` row. This matches the one-hop re-export
+  rule in A5 step 3 and is what keeps `to_key` from pointing at a moved
+  symbol.
 - Affected files are reparsed; `resolveRefs` and `resolveCallSites` run over
-  the reparsed raw sites against the merged symbol list.
+  the reparsed raw sites against the merged symbol list and the merged
+  re-export table (`keptReexports` plus the reparsed files' rows). An edit
+  that touches only an importer therefore still follows an untouched
+  intermediary's re-export, because that intermediary's mapping is read back
+  from the store rather than from a parse that did not happen.
 - The empty-diff path still bumps `indexSeq` and recomputes
   `contentFingerprint` (which will be unchanged).
 
@@ -512,8 +596,10 @@ path string in `index` human output becomes the `.db` path from
 
 - `docs/architecture/cortex-index-contract.md` becomes v3.2: section 4 covers
   `symbols.key` and the `.` separator rule including the C-family correction;
-  section 7 adds the two tables and three meta keys; a new appendix lists both
-  closed `kind` sets; a new section documents CLI exit codes and JSON shapes.
+  section 7 adds the two consumer tables, the writer-internal `reexports`
+  table, the three meta keys, and the transient `.lock` directory; a new
+  appendix lists both closed `kind` sets and the import-form table from A3; a
+  new section documents CLI exit codes and JSON shapes.
 - `README.md` and the relevant `docs/reference/` page mention the navigation
   index and the `--json` flags.
 - `CHANGELOG.md` entry in the narrative style, committed before
@@ -534,7 +620,11 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   Assert the same one-row outcome for a same-file C prototype plus definition.
 - **Adapter refs (TS).** One fixture exercising every emitted ref kind. Assert
   the row set is deterministic across two parses and that declaration names are
-  absent.
+  absent. Assert the exact row shape for every form in the A3 import table:
+  named, aliased named, default, namespace, export-from, aliased export-from,
+  local export, and that `export * from` and side-effect imports produce no
+  row. Assert each export-from yields one `ReexportRow` with the expected
+  exported and source names.
 - **Resolver.** Unit cases for each A5 step, the ambiguity rule, inheritance
   falling through to unresolved, namespace import member, and static enum
   member. Aliasing cases: `import { foo as bar }` followed by `bar()` resolves
@@ -549,14 +639,24 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   path only: two consecutive `writeCache` calls for the same worktree (each
   building a temp database and renaming it over the canonical path) yield
   `1` then `2`, a third call after an empty-diff incremental refresh yields
-  `3`, and a `writeCache` over a `user_version = 1` store restarts at `1`. Assert
+  `3`, and a `writeCache` over a `user_version = 1` store restarts at `1`.
+  Extend the existing eight-process concurrent transcode test: after all
+  eight processes finish, `indexSeq` equals `8`, proving each write took a
+  distinct value, and no `.lock` directory remains. Add a case where a stale
+  lock directory older than 30 seconds is present and the write still
+  succeeds, and a case where a fresh lock held by the test makes the write
+  wait and then succeed once the lock is released. Assert
   `contentFingerprint` is unchanged when only `indexedAt` moves and changes when
   one `content_hash` changes. Assert `navCapabilities` parses and
   `referencesTable === "refs"`. Assert a `user_version = 1` store is rejected
   by `dbSchemaValid`.
-- **Incremental merge.** Fixture repo with A importing B re-exporting from C.
-  Move a symbol in C; assert A's `refs.to_key` is updated and no `to_key` points
-  at a key absent from `symbols`.
+- **Incremental merge.** Fixture repo with A importing B re-exporting from C,
+  including one aliased re-export. Three cases: (1) move a symbol in C and
+  assert A's `refs.to_key` is updated; (2) edit only A, adding a new reference
+  to the re-exported name, and assert the new ref resolves to C's key even
+  though B was not reparsed; (3) remove the re-export from B and assert A's
+  ref becomes `NULL`. In every case assert no `to_key` points at a key absent
+  from `symbols`, and that `reexports` rows for untouched files are unchanged.
 - **CLI (`tests/integration/cli.test.ts`).** `rehydrate --help` exits 0 with
   usage on stdout and performs no index. `rehydrate --bogus` exits 2.
   `rehydrate --json` and `index --json` contain every A7 field and keep the
@@ -590,6 +690,12 @@ tasks of at most three production files each.
 
 ## Risks and mitigations
 
+- **Sequence lock contention or abandonment.** The critical section is a
+  meta read, one-row update, checkpoint, and rename, so holders release in
+  milliseconds; the 30-second stale threshold only matters if a process dies
+  mid-section, and the 15-second wait bound turns a wedged lock into a clear
+  error instead of a hang. A crash between the stale check and `rmdir` by two
+  breakers at once is tolerated because `mkdirSync` still admits only one.
 - **Index time and store size.** Refs add a second tree walk per TS file and
   roughly 50 rows per file. Measure full-index duration and `.db` size on
   ai-cortex (631 files) and ai-14all (1347 files) before and after; a
