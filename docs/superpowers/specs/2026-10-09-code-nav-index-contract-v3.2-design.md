@@ -53,10 +53,14 @@ column intact, and fixes the freshness and CLI defects, in one release.
    best effort.** Required kinds for TS/JS are listed below. Python and
    C-family emit what their adapters can produce cheaply; omissions are not a
    contract violation.
-5. **`functions` is derived from `symbols` in memory.** Adapters emit one
-   symbol list. The writer derives `functions` rows from it by kind. The
-   consumer's invariant that every `functions` row has a `symbols` row with the
-   same key and declaration range holds by construction, not by test.
+5. **`functions` is derived from `symbols` in memory, one row per key.**
+   Adapters emit one symbol list. The writer projects `functions` rows from it
+   by kind and collapses rows that share a key (overloads, `declare` plus
+   implementation, same-file prototype plus definition) to a single row, so
+   the 3.1 rule that `${file}::${qualifiedName}` is unique within a snapshot
+   keeps holding. The consumer's invariant that every `functions` row has a
+   `symbols` row with the same key and declaration range holds by
+   construction, not by test. See A2.2 for the projection rule.
 6. **`STORE_FORMAT_VERSION` bumps from 1 to 2.** Upgraded installs then fail
    `ensureValidDb` and reindex fully on first use, instead of serving a 3.1
    store until HEAD moves.
@@ -123,9 +127,11 @@ Rules:
 - Scope: module scope plus members directly inside `class`, `interface`,
   `enum`, `namespace`, and object type bodies. Function-local declarations and
   parameters are not emitted.
-- For kinds `function`, `method`, and `class`, the row's `file`,
-  `qualified_name`, declaration range, `exported`, `is_default_export`, and
-  `is_declaration_only` equal the matching `functions` row (decision 5).
+- Every `functions` row has a `symbols` row with the same `key` and identical
+  `file`, `qualified_name`, declaration range, `exported`,
+  `is_default_export`, and `is_declaration_only` (decision 5). The converse
+  does not hold: `symbols` may carry several rows per key, `functions`
+  carries exactly one (A2.2).
 
 #### A2.1: symbol `kind` closed set
 
@@ -149,11 +155,30 @@ Readers treat an unknown value as `other`.
 Required in 3.2 for TS/JS: `function`, `method`, `class`, `interface`, `type`,
 `enum`, `enum_member`, `variable`, `property`, `namespace`.
 
-The derivation rule for `functions` is: kinds `function`, `method`, `class`.
-Existing adapter tests (`tests/unit/call-graph.test.ts`, `c-cpp.test.ts`,
-`python.test.ts`) pin today's `functions` sets. If a C-family or Python node
-that is in `functions` today does not fall into one of those three kinds, the
-adapter assigns it one of them so the derived set is unchanged.
+#### A2.2: projection of `symbols` into `functions`
+
+`functions` is `symbols` filtered to kinds `function`, `method`, `class`, then
+collapsed to one row per `key`:
+
+1. If any row for the key has `is_declaration_only = 0`, take the first such
+   row in source order (the implementation; for TS overloads, the body).
+2. Otherwise take the first declaration-only row in source order (a C header
+   prototype, an interface method signature, an abstract method).
+
+The projected row is the chosen `symbols` row verbatim, so the equality
+invariant above holds. `calls.to_key` and `refs.to_key` point at the key, which
+is shared by all rows for that declaration, so resolution is unaffected by the
+collapse. `symbols` keeps every row so readers can still land on an overload
+signature when they prefer to.
+
+Existing adapter tests (`tests/unit/call-graph.test.ts`,
+`tests/integration/c-cpp.test.ts`, `tests/unit/python.test.ts`) pin today's
+`functions` sets. If a C-family or Python node that is in `functions` today
+does not fall into one of the three kinds, the adapter assigns it one of them
+so the projected set is unchanged. A same-file C prototype followed by its
+definition projects to the definition only; today both rows exist with one key,
+and `pickUnique` already discards the prototype, so observable resolution does
+not change.
 
 ### A3: `refs` table
 
@@ -208,7 +233,7 @@ Rules:
 |---|---|---|
 | `schemaVersion` | `"3.2"` | content contract |
 | `navCapabilities` | JSON | `{"symbols":true,"references":true,"referencesTable":"refs","symbolKinds":[...],"referenceKinds":[...]}`. Lists the kinds this writer emits for the adapters present. A 3.2 writer always emits it. |
-| `indexSeq` | integer as text | monotonically increasing per store, incremented on every successful write, full or incremental, including the empty-diff timestamp-only refresh |
+| `indexSeq` | integer as text | monotonically increasing per canonical store path, incremented on every successful write, full or incremental, including the empty-diff timestamp-only refresh. Survives the temp-db build and atomic rename in `transcodeCacheToDb` (B4). |
 | `contentFingerprint` | hex text | sha1 over sorted `(path, content_hash)` pairs of `files`, joined with newlines. Lets a consumer skip re-ingest when content is unchanged even though `indexSeq` moved. |
 
 `fingerprint`, `indexedAt`, `dirtyAtIndex` are unchanged.
@@ -219,17 +244,30 @@ Shared by `refs.to_key` and `calls.to_key`. Syntactic, first hit wins:
 
 1. **Enclosing-class member.** `this.m`, `self.m`, `cls.m` inside a class body,
    or `Class.m` written literally where `Class` is the enclosing class, resolves
-   to `${file}::${Class}.${m}`. The enclosing class is the prefix of the
-   enclosing symbol's `qualified_name` before the first `.`. Inherited members
+   to `${file}::${enclosingClass}.${m}`. `enclosingClass` is the fully
+   qualified name of the innermost enclosing class as emitted by the adapter
+   from its declaration stack (`N.C` for `namespace N { class C { ... } }`),
+   not a prefix computed from the enclosing function name. Inherited members
    are not followed in 3.2 and fall through.
 2. **Same-file bare match.** `name` equals a module-scope `qualified_name` in the
    same file.
-3. **Import binding.** `name`, or the receiver of `receiver.member`, is a local
-   import binding. Resolve the specifier to a target file with the existing
-   logic. Named import: symbol with `qualified_name = importedName` in that
-   file. Default import: `is_default_export = 1`. Namespace import: `member` in
-   that file. Re-exports are followed one hop using the target file's
-   `export` refs that carry a specifier.
+3. **Import binding.** Two cases, because the identifier in the ref and the
+   identifier in the binding differ under aliasing:
+   - A ref of kind `import` carries the imported name (`foo` in
+     `import { foo as bar }`) and the specifier. It resolves directly: specifier
+     to target file with the existing logic, then symbol with
+     `qualified_name = foo` in that file; default import uses
+     `is_default_export = 1`; a namespace import ref (`import * as ns`) has no
+     symbol target and stays `NULL`.
+   - Any other ref whose `name` (or receiver, for `receiver.member`) equals an
+     `ImportBinding.localName` (`bar`) resolves through the binding's
+     `importedName` (`foo`): named import, symbol `foo` in the target file;
+     default import, `is_default_export = 1`; namespace import, `member` in the
+     target file.
+   Re-exports are followed one hop: if the target file has an `export` ref
+   with a specifier whose exported name equals the wanted name, resolution
+   continues in that specifier's file with the ref's source name
+   (`export { foo as bar } from "./x"` maps wanted `bar` to `foo` in `./x`).
 4. **Static member on an imported or same-file class.** `Foo.bar` where `Foo`
    resolves (steps 2 or 3) to a `class`, `enum`, or `namespace` symbol resolves
    to `${thatFile}::Foo.bar`.
@@ -247,9 +285,11 @@ extended to symbols.
   written in one transaction. This is already true: `replaceAll` clears and
   refills every table inside one `db.transaction`, even for incremental
   indexes, because incrementality lives in the in-memory cache merge.
-- `indexSeq` is read from the existing store before the meta table is cleared
-  and written back incremented inside the same transaction. A fresh store
-  starts at `1`.
+- `indexSeq` is carried forward from the canonical store at the destination
+  path and written incremented into the new snapshot. The write path builds a
+  temporary database and renames it over the canonical one, so the prior
+  value must be read from the canonical path before the build, not from the
+  database being written (B4). A path with no valid prior store starts at `1`.
 - Stale `to_key` values pointing at a deleted or moved symbol are a contract
   violation. Part B4 covers how the incremental merge honors this.
 - Store stays WAL.
@@ -262,8 +302,12 @@ extended to symbols.
    rest, so `rehydrate --help` performs a rehydrate.
 2. `rehydrate --json` prints one object with the existing fields plus
    `dbPath`, `schemaVersion`, `fingerprint`, `contentFingerprint`, `indexSeq`,
-   `indexedAt`, `dirtyAtIndex`. `index --json` prints the same object without
-   `briefingPath`; `cacheStatus` is `"fresh"` or `"reindexed"`.
+   `indexedAt`, `dirtyAtIndex`. `cacheStatus` is `"fresh"`, `"reindexed"`, or
+   `"stale"`; `"stale"` is produced only with `--stale`, when the store is out
+   of date and the caller asked to read it anyway, exactly as the human output
+   reports today. `index --json` prints the same object without
+   `briefingPath`; `index` has no `--stale` flag, so its `cacheStatus` is
+   `"fresh"` or `"reindexed"`.
 3. The human output of `index` prints a `.json` cache path. It becomes the
    `.db` path.
 4. Exit codes: `0` on success including `fresh`, non-zero with a one-line
@@ -299,13 +343,21 @@ export type RefKind =
 
 export type RawRefSite = {           // adapter output, never serialized
   file: string;
-  name: string;
+  name: string;                      // import: imported name; export-from: source name; else token text
   kind: RefKind;
   range: Range;
   receiver?: string;                 // `a` in `a.b`; "this" | "self" | "cls" allowed
   enclosingQualifiedName?: string;   // enclosing function/method/class, undefined at module scope
+  enclosingClass?: string;           // fully qualified innermost enclosing class, e.g. "N.C"
   specifier?: string;                // import / export-from specifier
+  alias?: string;                    // import: local name when it differs; export-from: exported name when it differs
 };
+```
+
+`RawCallSite` gains the same `enclosingClass?: string` so `resolveCallSites`
+can apply A5 step 1 without parsing `callerQualifiedName`.
+
+```ts
 
 export type RefEdge = {              // resolved, stored
   file: string;
@@ -331,8 +383,9 @@ for all three adapters.
 ### B2: adapters
 
 Each adapter's `extractFunctions` walk becomes `extractSymbols`, tracking an
-enclosing-symbol stack so `containerQualifiedName` and `enclosingQualifiedName`
-are available without re-parsing. `rangeFromNode` is reused for both ranges;
+enclosing-symbol stack so `containerQualifiedName`, `enclosingQualifiedName`,
+and `enclosingClass` (the innermost `class` entry on that stack, fully
+qualified through any namespaces) are available without re-parsing. `rangeFromNode` is reused for both ranges;
 the name range comes from `childForFieldName("name")` or the `default` keyword
 token.
 
@@ -346,8 +399,11 @@ token.
 - Refs: a second walk collecting the A3.1 kinds. Call and new sites reuse the
   existing call-site extraction so `calls` and `refs` agree on receiver and
   member. `type` covers `type_identifier` nodes in annotations, generic
-  arguments, `as`, `satisfies`, `typeof`, `keyof`. `import` and `export` carry
-  `specifier`. `jsx` covers `jsx_opening_element` and `jsx_self_closing_element`
+  arguments, `as`, `satisfies`, `typeof`, `keyof`. `import` refs carry
+  `specifier`, `name` = imported name, and `alias` = local name when the
+  specifier is aliased. `export` refs with a `from` clause carry `specifier`,
+  `name` = source name, and `alias` = exported name when aliased; the ref range
+  is the source-name token. `jsx` covers `jsx_opening_element` and `jsx_self_closing_element`
   name tokens. `decorator` covers the identifier or call callee of a
   `decorator` node.
 - Existing `extractCallGraph` remains the single adapter entry point; it
@@ -355,8 +411,9 @@ token.
 
 **Python (`adapters/python.ts`)**, best effort: symbols `function`, `method`,
 `class`, module-level `variable`; refs `call`, `import`, `extends`. `self.m`
-calls already rewrite to `Class.m` in the adapter; that path now also sets
-`receiver: "self"` so the resolver treats it uniformly.
+calls already rewrite to `Class.m` in the adapter; that path now emits
+`receiver: "self"` and `enclosingClass` instead, so the resolver applies A5
+step 1 uniformly across languages.
 
 **C-family (`adapters/cfamily.ts`)**, best effort: symbols `function`, `method`,
 `class`, `struct`, `enum`, `enum_member`, `type`, `macro`, file-scope
@@ -372,7 +429,7 @@ A new module owns name resolution against the symbol set:
 export function buildSymbolIndex(symbols: SymbolNode[]): SymbolIndex;
 export function resolveName(
   idx: SymbolIndex,
-  site: { file: string; name: string; receiver?: string; enclosingQualifiedName?: string },
+  site: { file: string; name: string; receiver?: string; enclosingClass?: string; specifier?: string },
   bindings: ImportBinding[],
   reexports: ReexportTable,
   includesByFile: Map<string, ImportEdge[]>,
@@ -382,7 +439,9 @@ export function resolveRefs(rawRefs, symbols, bindingsByFile, includesByFile): R
 
 `resolveName` implements A5 steps 1 to 4 and the ambiguity rule. The
 re-export table is built from `rawRefs` of kind `export` that carry a
-`specifier`, keyed by file, so following one hop needs no new adapter output.
+`specifier`, keyed by file and exported name (`alias ?? name`) and mapping to
+`{ specifier, sourceName: name }`, so following one aliased hop needs no new
+adapter output. The `site` argument carries `enclosingClass` for step 1.
 
 `resolveCallSites` keeps its signature and its `::member` fallback but delegates
 steps 1 and 4 to `resolveName` before its existing logic. Existing
@@ -397,10 +456,16 @@ name exists as a symbol in the same file, else `NULL`.
 ### B4: store and incremental merge
 
 **`cache-store-sqlite.ts`:** DDL from A2 and A3 appended to `SCHEMA_SQL`;
-`STORE_FORMAT_VERSION = 2`. `replaceAll` reads `indexSeq` from `meta` before
-the `DELETE`, writes `indexSeq + 1`, `contentFingerprint`, and
-`navCapabilities`, then inserts `symbols` and `refs` after `functions` and
-`calls`. `container_key` is computed at insert time from
+`STORE_FORMAT_VERSION = 2`. `replaceAll` writes `cache.indexSeq`,
+`contentFingerprint`, and `navCapabilities` into `meta`, then inserts
+`symbols` and `refs` after `functions` and `calls`. It does not compute the
+sequence itself: `transcodeCacheToDb` builds a fresh temporary database and
+renames it over `dbPath`, so the database `replaceAll` writes never holds a
+prior value. Instead `transcodeCacheToDb` reads `indexSeq` from the canonical
+`dbPath` via `readFreshnessMeta` before the build (treating a missing,
+unreadable, or wrong-format store as `0`) and sets `cache.indexSeq` to that
+value plus one. `writeCache` is the only production caller and therefore the
+only place the sequence advances. `container_key` is computed at insert time from
 `containerQualifiedName`. `assembleCache` reads both tables back. The lean
 `readFreshnessMeta` path gains `indexSeq` and `contentFingerprint` so the CLI
 JSON output does not need a full materialize.
@@ -436,7 +501,10 @@ fields.
 `parseIndexOrRehydrateArgs` returns `{ repoPath, options, help, unknown }`.
 The two call sites print `INDEX_USAGE` / `REHYDRATE_USAGE` and exit per A7.
 `rehydrate --json` and `index --json` build their object from
-`readFreshnessMeta(dbPath)` plus the result fields already in hand. The `.json`
+`readFreshnessMeta(dbPath)` plus the result fields already in hand.
+`cacheStatus` is passed through from `rehydrateRepo` unchanged, so the
+`"stale"` value produced by `--stale` reaches the JSON as it reaches the human
+output today. The `.json`
 path string in `index` human output becomes the `.db` path from
 `getCacheDbFilePath`.
 
@@ -460,17 +528,28 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   exported flags, declaration range, and name range. Assert
   `name_line = line` and `name_col > col` for a typical `export interface`.
   Assert `functionsFromSymbols` reproduces today's `functions` set for the
-  existing call-graph fixtures byte for byte.
+  existing call-graph fixtures byte for byte, and that for a TS fixture with
+  two overload signatures plus an implementation, `symbols` holds three rows
+  with one key while `functions` holds exactly one row, the implementation.
+  Assert the same one-row outcome for a same-file C prototype plus definition.
 - **Adapter refs (TS).** One fixture exercising every emitted ref kind. Assert
   the row set is deterministic across two parses and that declaration names are
   absent.
 - **Resolver.** Unit cases for each A5 step, the ambiguity rule, inheritance
-  falling through to unresolved, one-hop re-export, namespace import member,
-  and static enum member. Assert `calls` and `refs` agree on
-  `this.open(keys)` inside a method.
+  falling through to unresolved, namespace import member, and static enum
+  member. Aliasing cases: `import { foo as bar }` followed by `bar()` resolves
+  the `import` ref and the `call` ref to `foo`'s key; `export { foo as bar }
+  from "./x"` in an intermediary resolves an importer's `bar` to `foo` in
+  `./x`. Enclosing-class cases: `this.open(keys)` inside a module-scope class
+  method, and inside `namespace N { class C { run() { this.open() } } }`,
+  which must resolve to `N.C.open`, not `N.open`. Assert `calls` and `refs`
+  agree on every `this.` case.
 - **Store round trip (`sqlite-store.test.ts`).** Write then read a cache with
-  symbols and refs; assert equality. Assert `indexSeq` starts at 1, increments
-  on a second write to the same path, and survives the empty-diff path. Assert
+  symbols and refs; assert equality. Assert `indexSeq` through the production
+  path only: two consecutive `writeCache` calls for the same worktree (each
+  building a temp database and renaming it over the canonical path) yield
+  `1` then `2`, a third call after an empty-diff incremental refresh yields
+  `3`, and a `writeCache` over a `user_version = 1` store restarts at `1`. Assert
   `contentFingerprint` is unchanged when only `indexedAt` moves and changes when
   one `content_hash` changes. Assert `navCapabilities` parses and
   `referencesTable === "refs"`. Assert a `user_version = 1` store is rejected
@@ -481,7 +560,8 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
 - **CLI (`tests/integration/cli.test.ts`).** `rehydrate --help` exits 0 with
   usage on stdout and performs no index. `rehydrate --bogus` exits 2.
   `rehydrate --json` and `index --json` contain every A7 field and keep the
-  existing ones. Dirty-worktree reindex changes `indexSeq` and
+  existing ones. `rehydrate --stale --json` against an out-of-date store
+  reports `cacheStatus: "stale"` and does not change `indexSeq`. Dirty-worktree reindex changes `indexSeq` and
   `contentFingerprint` while `fingerprint` stays.
 - **Consumer acceptance replica.** A TS fixture mirroring the ai-14all
   acceptance list (interface `WorktreeStatus`, class `CortexIndexService` with
