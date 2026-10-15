@@ -662,8 +662,38 @@ describe("typescript adapter — refs (3.2)", () => {
 		expect(one).toEqual(two);
 	});
 
-	it("handles a file with syntax errors without throwing and still emits refs", async () => {
-		const { refs } = await refsOf('import { ok } from "./ok";\nfunction broken( {\nok();\n');
+	it("handles a file with syntax errors without throwing and keeps recovered refs", async () => {
+		const { refs } = await refsOf("import { ok } from \"./ok\";\nconst a = ok();\nfunction broken( {\nconst b = cfg.timeout;\n");
 		expect(refs.some((r) => r.kind === "import" && r.name === "ok")).toBe(true);
+		expect(refs.some((r) => r.kind === "call" && r.name === "ok" && r.range.line === 2)).toBe(true);
+	});
+
+	it("visits non-identifier callees (IIFE, chained calls, casts)", async () => {
+		const { refs } = await refsOf("(() => { foo(); new Bar(); x.y; })();\na()();\n(x as Foo)();\nx[y.z]();");
+		const has = (kind: string, name: string) => refs.some((r) => r.kind === kind && r.name === name);
+		expect(has("call", "foo")).toBe(true);
+		expect(has("new", "Bar")).toBe(true);
+		expect(has("member", "y")).toBe(true);
+		expect(has("call", "a")).toBe(true);
+		expect(has("type", "Foo")).toBe(true);
+		expect(has("member", "z")).toBe(true);
+	});
+
+	it("emits extends for JavaScript classes", async () => {
+		const { refs } = await refsOf("class A extends B {}\nclass C extends ns.D {}", "src/r.js");
+		expect(refs.filter((r) => r.kind === "extends").map((r) => [r.name, r.receiver])).toEqual([
+			["B", undefined],
+			["D", "ns"],
+		]);
+	});
+
+	it("does not emit type-parameter declarations as type refs", async () => {
+		const { refs } = await refsOf(
+			"function f<T extends Base>(x: T): T { return x; }\ntype M<K> = { [P in keyof K]: K[P] };\ntype U<V> = V extends Array<infer E> ? E : never;",
+		);
+		const types = refs.filter((r) => r.kind === "type");
+		expect(types.filter((r) => r.range.line === 1 && r.range.column < 25).map((r) => r.name)).toEqual(["Base"]);
+		expect(types.filter((r) => r.range.line === 2).map((r) => r.name)).toEqual(["K", "K", "P"]);
+		expect(types.filter((r) => r.range.line === 3 && r.name === "E").length).toBe(1);
 	});
 });

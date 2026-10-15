@@ -560,6 +560,23 @@ function extractRawRefs(
 			}
 			return;
 		}
+		if (node.type === "type_parameter") {
+			// The parameter's own name is a declaration; only constraint and default are references.
+			const nameNode = node.childForFieldName("name");
+			for (const c of node.namedChildren) if (c.id !== nameNode?.id) typeIdentifiers(c);
+			return;
+		}
+		if (node.type === "mapped_type_clause") {
+			const nameNode = node.childForFieldName("name");
+			for (const c of node.namedChildren) if (c.id !== nameNode?.id) typeIdentifiers(c);
+			return;
+		}
+		if (node.type === "infer_type") {
+			// `infer E` declares E; any constraint beyond the name is a reference.
+			const nameNode = node.namedChildren[0];
+			for (const c of node.namedChildren) if (c.id !== nameNode?.id) typeIdentifiers(c);
+			return;
+		}
 		for (const c of node.namedChildren) typeIdentifiers(c);
 	}
 
@@ -634,6 +651,8 @@ function extractRawRefs(
 				if (fn && fn.type === "member_expression") {
 					const obj = fn.childForFieldName("object");
 					if (obj) walk(obj); // nested member/call chains inside the receiver
+				} else if (fn && fn.type !== "identifier") {
+					walk(fn); // IIFE, chained call, cast: refs inside the callee expression
 				}
 				return;
 			}
@@ -645,6 +664,12 @@ function extractRawRefs(
 					else if (ctor.type === "identifier") push("new", ctor, node);
 				}
 				for (const c of node.namedChildren) if (c.id !== ctor?.id) walk(c);
+				if (ctor && ctor.type === "member_expression") {
+					const obj = ctor.childForFieldName("object");
+					if (obj) walk(obj);
+				} else if (ctor && ctor.type !== "identifier") {
+					walk(ctor);
+				}
 				return;
 			}
 			case "member_expression": {
@@ -655,6 +680,16 @@ function extractRawRefs(
 				return;
 			}
 			case "class_heritage": {
+				// tree-sitter-javascript has no extends_clause: the heritage holds the expression directly.
+				const hasClause = node.namedChildren.some((x) => x.type === "extends_clause" || x.type === "implements_clause");
+				const jsBase = hasClause ? undefined : node.namedChildren[0];
+				if (jsBase) {
+					const m = splitMember(jsBase);
+					if (m) push("extends", m.token, node, { receiver: m.receiver });
+					else if (jsBase.type === "identifier") push("extends", jsBase, node);
+					else typeIdentifiersAs("extends", jsBase, node);
+					return;
+				}
 				for (const c of node.namedChildren) {
 					if (c.type === "extends_clause") {
 						const v = c.childForFieldName("value") ?? c.namedChildren[0];
