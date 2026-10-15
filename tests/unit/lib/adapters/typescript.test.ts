@@ -415,3 +415,129 @@ describe("typescript adapter — range and site emission (unit)", () => {
 		expect(ctor?.site).toBeDefined();
 	});
 });
+
+describe("typescript adapter — symbols (3.2)", () => {
+	async function symbolsOf(src: string, file = "src/s.ts") {
+		const r = await adapter.extractCallGraph!("", file, src);
+		return r.symbols!;
+	}
+
+	it("emits interface, type alias, enum, enum members, namespace, variable, property", async () => {
+		const syms = await symbolsOf(
+			[
+				"export interface WorktreeStatus { dirty: boolean; refresh(): void }",
+				"export type Id = string;",
+				"export enum Color { Red, Green = 2 }",
+				"export namespace Util { export const x = 1; }",
+				"const answer = 42;",
+				"export const { a, b: c } = obj;",
+			].join("\n"),
+		);
+		const byQn = Object.fromEntries(syms.map((s) => [s.qualifiedName, s]));
+		expect(byQn.WorktreeStatus).toMatchObject({ kind: "interface", name: "WorktreeStatus", exported: true });
+		expect(byQn["WorktreeStatus.dirty"]).toMatchObject({ kind: "property", isDeclarationOnly: true, containerQualifiedName: "WorktreeStatus" });
+		expect(byQn["WorktreeStatus.refresh"]).toMatchObject({ kind: "method", isDeclarationOnly: true });
+		expect(byQn.Id).toMatchObject({ kind: "type", exported: true });
+		expect(byQn.Color).toMatchObject({ kind: "enum" });
+		expect(byQn["Color.Red"]).toMatchObject({ kind: "enum_member", name: "Red", containerQualifiedName: "Color" });
+		expect(byQn["Color.Green"]).toMatchObject({ kind: "enum_member" });
+		expect(byQn.Util).toMatchObject({ kind: "namespace" });
+		expect(byQn["Util.x"]).toMatchObject({ kind: "variable", exported: true, containerQualifiedName: "Util" });
+		expect(byQn.answer).toMatchObject({ kind: "variable", exported: false });
+		expect(byQn.a).toMatchObject({ kind: "variable", exported: true });
+		expect(byQn.c).toMatchObject({ kind: "variable", name: "c" });
+		expect(byQn.b).toBeUndefined();
+	});
+
+	it("name range lies inside the declaration range and starts after it", async () => {
+		const [iface] = await symbolsOf("export interface WorktreeStatus {\n  dirty: boolean;\n}\n");
+		expect(iface.nameRange.line).toBe(iface.range.line);
+		expect(iface.nameRange.column).toBeGreaterThan(iface.range.column);
+		expect(iface.nameRange.column).toBe("export interface ".length + 1);
+		expect(iface.nameRange.endColumn).toBe("export interface WorktreeStatus".length);
+		expect(iface.range.endLine).toBe(3);
+	});
+
+	it("class members carry container and enclosing names; namespace containers join with '.'", async () => {
+		const syms = await symbolsOf(
+			"namespace N { export class C { x = 1; run() {} static s() {} } }",
+		);
+		const qns = syms.map((s) => s.qualifiedName).sort();
+		expect(qns).toEqual(["N", "N.C", "N.C.run", "N.C.s", "N.C.x"]);
+		const run = syms.find((s) => s.qualifiedName === "N.C.run")!;
+		expect(run).toMatchObject({ kind: "method", name: "run", containerQualifiedName: "N.C", exported: true });
+		for (const s of syms) expect(s.qualifiedName).not.toContain("::");
+	});
+
+	it("marks overload signatures, declare, abstract, and interface members declaration-only; implementation is not", async () => {
+		const syms = await symbolsOf(
+			[
+				"declare function d(): void;",
+				"export function o(a: string): void;",
+				"export function o(a: number): void;",
+				"export function o(a: unknown) {}",
+				"abstract class A { abstract m(): void; n() {} }",
+			].join("\n"),
+		);
+		const o = syms.filter((s) => s.qualifiedName === "o");
+		expect(o.map((s) => s.isDeclarationOnly)).toEqual([true, true, false]);
+		expect(syms.find((s) => s.qualifiedName === "d")!.isDeclarationOnly).toBe(true);
+		expect(syms.find((s) => s.qualifiedName === "A.m")!.isDeclarationOnly).toBe(true);
+		expect(syms.find((s) => s.qualifiedName === "A.n")!.isDeclarationOnly).toBe(false);
+		expect(syms.find((s) => s.qualifiedName === "A")!.kind).toBe("class");
+	});
+
+	it("re-opened namespace yields two symbol rows with one key, functions projects classes once", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace N { export class C {} }\nnamespace N { export const y = 1; }",
+		);
+		const ns = r.symbols!.filter((s) => s.qualifiedName === "N");
+		expect(ns).toHaveLength(2);
+		expect(ns.every((s) => s.kind === "namespace")).toBe(true);
+		expect(r.functions.filter((f) => f.qualifiedName === "N.C")).toHaveLength(1);
+	});
+
+	it("computed and string-literal member names are unquoted", async () => {
+		const syms = await symbolsOf(
+			"class K { ['computed']() {} \"quoted\" = 1 }",
+		);
+		expect(syms.map((s) => s.name).sort()).toEqual(["K", "computed", "quoted"]);
+	});
+
+	it("anonymous default export keeps 'default' with the name range on the keyword", async () => {
+		const syms = await symbolsOf("export default class {}");
+		expect(syms).toHaveLength(1);
+		expect(syms[0]).toMatchObject({ qualifiedName: "default", name: "default", kind: "class", isDefaultExport: true });
+		expect(syms[0].nameRange).toEqual({ line: 1, column: 8, endLine: 1, endColumn: 14 });
+	});
+
+	it("does not emit function-local declarations or parameters", async () => {
+		const syms = await symbolsOf(
+			"export function outer(p: number) { const inner = 1; function nested() {} class Local {} return inner; }",
+		);
+		expect(syms.map((s) => s.qualifiedName)).toEqual(["outer"]);
+	});
+
+	it("functions output equals the A2.2 projection of symbols", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"export class C { m() {} }\nexport const f = () => 1;\nfunction g() {}\nexport default function () {}",
+		);
+		const { functionsFromSymbols } = await import("../../../../src/lib/symbols.js");
+		expect(r.functions).toEqual(functionsFromSymbols(r.symbols!));
+	});
+
+	it("rawCalls carry enclosingClass for this.* calls inside namespaced classes", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace N { export class C { open() {} run() { this.open(); } } }",
+		);
+		const call = r.rawCalls.find((c) => c.rawCallee === "this.open")!;
+		expect(call.callerQualifiedName).toBe("N.C.run");
+		expect(call.enclosingClass).toBe("N.C");
+	});
+});
