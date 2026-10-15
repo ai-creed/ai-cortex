@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildReexportTable,
 	buildSymbolIndex,
+	findTargetFile,
 	resolveName,
 	resolveRefs,
 } from "../../../src/lib/symbol-resolver.js";
@@ -524,5 +525,31 @@ describe("resolveRefs", () => {
 			},
 			{ file: "src/a.ts", name: "nothing", kind: "type", range: R },
 		]);
+	});
+});
+
+describe("findTargetFile", () => {
+	it("returns the first known file per stripped path, falls back to index, and sees files added later", () => {
+		const known = new Map<string, unknown>([
+			["src/a.ts", true],
+			["src/a.js", true],
+			["src/b/index.ts", true],
+		]);
+		expect(findTargetFile("src/a.js", known, "ts")).toBe("src/a.ts");
+		expect(findTargetFile("src/b", known, "ts")).toBe("src/b/index.ts");
+		expect(findTargetFile("src/c", known, "ts")).toBeNull();
+		known.set("src/c.tsx", true);
+		expect(findTargetFile("src/c", known, "ts")).toBe("src/c.tsx");
+	});
+
+	it("matches C-family includes exactly or by a unique basename", () => {
+		const known = new Map<string, unknown>([
+			["inc/u.h", true],
+			["x/dup.h", true],
+			["y/dup.h", true],
+		]);
+		expect(findTargetFile("inc/u.h", known, "cfamily")).toBe("inc/u.h");
+		expect(findTargetFile("other/u.h", known, "cfamily")).toBe("inc/u.h");
+		expect(findTargetFile("z/dup.h", known, "cfamily")).toBeNull();
 	});
 });

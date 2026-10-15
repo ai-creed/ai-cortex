@@ -45,25 +45,53 @@ export function resolveSpecifier(
 		.replace(/\\/g, "/");
 }
 
+type TargetFileIndex = {
+	size: number;
+	byStripped: Map<string, string>;
+	byBaseName: Map<string, string[]>;
+};
+
+// Built once per known-files map so lookups stop scanning every file per ref.
+// The maps passed here only grow, so a size change is enough to detect staleness.
+const targetFileIndexes = new WeakMap<Map<string, unknown>, TargetFileIndex>();
+
+function targetFileIndexFor(knownFiles: Map<string, unknown>): TargetFileIndex {
+	const cached = targetFileIndexes.get(knownFiles);
+	if (cached && cached.size === knownFiles.size) return cached;
+	const byStripped = new Map<string, string>();
+	const byBaseName = new Map<string, string[]>();
+	for (const file of knownFiles.keys()) {
+		const stripped = stripTsExt(file);
+		// First file in iteration order wins, matching the earlier linear scan.
+		if (!byStripped.has(stripped)) byStripped.set(stripped, file);
+		const baseName = path.basename(file);
+		const list = byBaseName.get(baseName);
+		if (list) list.push(file);
+		else byBaseName.set(baseName, [file]);
+	}
+	const built = { size: knownFiles.size, byStripped, byBaseName };
+	targetFileIndexes.set(knownFiles, built);
+	return built;
+}
+
 export function findTargetFile(
 	normalizedSpecifier: string,
 	knownFiles: Map<string, unknown>,
 	lang: Lang,
 ): string | null {
 	if (lang === "ts") {
+		const { byStripped } = targetFileIndexFor(knownFiles);
 		const stripped = stripTsExt(normalizedSpecifier);
-		for (const file of knownFiles.keys())
-			if (stripTsExt(file) === stripped) return file;
-		for (const file of knownFiles.keys())
-			if (stripTsExt(file) === `${stripped}/index`) return file;
-		return null;
+		return (
+			byStripped.get(stripped) ?? byStripped.get(`${stripped}/index`) ?? null
+		);
 	}
 	if (lang === "cfamily") {
 		if (knownFiles.has(normalizedSpecifier)) return normalizedSpecifier;
-		const baseName = path.basename(normalizedSpecifier);
-		const matches: string[] = [];
-		for (const file of knownFiles.keys())
-			if (path.basename(file) === baseName) matches.push(file);
+		const matches =
+			targetFileIndexFor(knownFiles).byBaseName.get(
+				path.basename(normalizedSpecifier),
+			) ?? [];
 		return matches.length === 1 ? matches[0] : null;
 	}
 	return null;
