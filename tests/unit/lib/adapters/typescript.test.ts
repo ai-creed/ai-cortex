@@ -592,21 +592,24 @@ describe("typescript adapter: refs (3.2)", () => {
 				'import "./side";',
 			].join("\n"),
 		);
-		expect(pick(refs, "import")).toEqual([
-			{ name: "foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: "named", line: 1, col: 10, endCol: 12 },
-			{ name: "foo", receiver: undefined, alias: "bar", specifier: "./x", importKind: "named", line: 2, col: 10, endCol: 12 },
-			{ name: "Foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: "default", line: 3, col: 8, endCol: 10 },
-			{ name: "ns", receiver: undefined, alias: undefined, specifier: "./x", importKind: "namespace", line: 4, col: 13, endCol: 14 },
+		const F = "src/r.ts";
+		const at = (line: number, column: number, endColumn: number) => ({ line, column, endLine: line, endColumn });
+		expect(refs.filter((r) => r.kind === "import")).toStrictEqual([
+			{ file: F, name: "foo", kind: "import", range: at(1, 10, 12), specifier: "./x", importKind: "named" },
+			{ file: F, name: "foo", kind: "import", range: at(2, 10, 12), specifier: "./x", alias: "bar", importKind: "named" },
+			{ file: F, name: "Foo", kind: "import", range: at(3, 8, 10), specifier: "./x", importKind: "default" },
+			{ file: F, name: "ns", kind: "import", range: at(4, 13, 14), specifier: "./x", importKind: "namespace" },
 		]);
-		expect(pick(refs, "export")).toEqual([
-			{ name: "foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: undefined, line: 5, col: 10, endCol: 12 },
-			{ name: "foo", receiver: undefined, alias: "baz", specifier: "./x", importKind: undefined, line: 6, col: 10, endCol: 12 },
-			{ name: "foo", receiver: undefined, alias: undefined, specifier: undefined, importKind: undefined, line: 7, col: 10, endCol: 12 },
+		expect(refs.filter((r) => r.kind === "export")).toStrictEqual([
+			{ file: F, name: "foo", kind: "export", range: at(5, 10, 12), specifier: "./x" },
+			{ file: F, name: "foo", kind: "export", range: at(6, 10, 12), specifier: "./x", alias: "baz" },
+			{ file: F, name: "foo", kind: "export", range: at(7, 10, 12) },
 		]);
-		expect(reexports).toEqual([
-			{ file: "src/r.ts", exportedName: "foo", sourceName: "foo", specifier: "./x" },
-			{ file: "src/r.ts", exportedName: "baz", sourceName: "foo", specifier: "./x" },
+		expect(reexports).toStrictEqual([
+			{ file: F, exportedName: "foo", sourceName: "foo", specifier: "./x" },
+			{ file: F, exportedName: "baz", sourceName: "foo", specifier: "./x" },
 		]);
+		expect(refs).toHaveLength(7);
 		expect(refs.some((r) => r.range.line === 8 || r.range.line === 9)).toBe(false);
 	});
 
