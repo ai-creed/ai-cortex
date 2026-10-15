@@ -330,7 +330,7 @@ describe("python adapter — range and site emission (unit)", () => {
 	});
 });
 
-describe("python adapter — symbols and refs (3.2)", () => {
+describe("python adapter: symbols and refs (3.2)", () => {
 	it("emits class, method, function, module variable with '.' containers and name ranges", async () => {
 		const r = await adapter.extractCallGraph!(
 			"",
@@ -376,5 +376,17 @@ describe("python adapter — symbols and refs (3.2)", () => {
 	it("does not emit nested function or local variables as symbols", async () => {
 		const r = await adapter.extractCallGraph!("", "pkg/m.py", "def outer():\n  local = 1\n  def inner():\n    pass\n");
 		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["outer"]);
+	});
+
+	it("uses the full dotted class chain for nested classes in symbols, calls, and refs", async () => {
+		const r = await adapter.extractCallGraph!("", "pkg/m.py", "class Outer:\n  class Inner:\n    def m(self):\n      self.n()\n");
+		const qns = r.symbols!.map((s) => s.qualifiedName);
+		expect(qns).toContain("Outer.Inner.m");
+		const call = r.rawCalls.find((c) => c.rawCallee === "self.n")!;
+		expect(call.callerQualifiedName).toBe("Outer.Inner.m");
+		expect(call.enclosingClass).toBe("Outer.Inner");
+		const ref = r.rawRefs!.find((x) => x.kind === "call" && x.name === "n")!;
+		expect(ref.enclosingQualifiedName).toBe("Outer.Inner.m");
+		expect(ref.enclosingClass).toBe("Outer.Inner");
 	});
 });

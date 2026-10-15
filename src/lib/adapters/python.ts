@@ -103,6 +103,25 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 	return out;
 }
 
+// Dotted class chain (e.g. "Outer.Inner") for the class ancestors of `from`,
+// matching the container names extractSymbols emits. Returns null when a
+// function_definition ancestor is hit (nested scope, not indexed); returns ""
+// at module level.
+function classChainOf(from: SyntaxNode | null): string | null {
+	const names: string[] = [];
+	let p = from;
+	while (p && p.type !== "module") {
+		if (p.type === "function_definition") return null;
+		if (p.type === "class_definition") {
+			const n = p.childForFieldName("name")?.text;
+			if (!n) return null;
+			names.unshift(n);
+		}
+		p = p.parent;
+	}
+	return names.join(".");
+}
+
 function findEnclosingFunction(
 	node: SyntaxNode,
 ): { name: string; className: string | null } | null {
@@ -111,20 +130,12 @@ function findEnclosingFunction(
 		if (cur.type === "function_definition") {
 			const nameNode = cur.childForFieldName("name");
 			if (!nameNode) return null;
-			// Walk up to find enclosing class. If we hit another function_definition
-			// first, this def is nested — extractSymbols does not index it, so
-			// emitting a call edge from it would produce a phantom caller node.
-			let p: SyntaxNode | null = cur.parent;
-			let className: string | null = null;
-			while (p && p.type !== "module") {
-				if (p.type === "function_definition") return null; // nested — not indexed
-				if (p.type === "class_definition") {
-					className = p.childForFieldName("name")?.text ?? null;
-					break;
-				}
-				p = p.parent;
-			}
-			return { name: nameNode.text, className };
+			// A function_definition ancestor above this def means it is nested:
+			// extractSymbols does not index it, so emitting a call edge from it
+			// would produce a phantom caller node.
+			const chain = classChainOf(cur.parent);
+			if (chain === null) return null;
+			return { name: nameNode.text, className: chain || null };
 		}
 		cur = cur.parent;
 	}
@@ -184,14 +195,8 @@ function extractRawRefs(root: SyntaxNode, filePath: string): RawRefSite[] {
 			};
 		}
 		// class body but outside any method
-		let p: SyntaxNode | null = node.parent;
-		while (p && p.type !== "module") {
-			if (p.type === "class_definition") {
-				const n = p.childForFieldName("name")?.text;
-				return n ? { enclosingQualifiedName: n, enclosingClass: n } : {};
-			}
-			p = p.parent;
-		}
+		const chain = classChainOf(node.parent);
+		if (chain) return { enclosingQualifiedName: chain, enclosingClass: chain };
 		return {};
 	}
 
@@ -366,7 +371,7 @@ function extractImportSitesFromRoot(
 					rawSpecifier,
 					candidate: baseCandidate,
 				});
-				// Also emit candidate per imported name — covers "from pkg import sub"
+				// Also emit candidate per imported name; covers "from pkg import sub"
 				// where `sub` is a subpackage (resolved via sub/__init__.py).
 				for (const child of node.children) {
 					let importedName: string | null = null;
