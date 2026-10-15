@@ -26,6 +26,14 @@ carry the amended text:
 - **Section C.** The resolved-ref ratio is name-matched in both the CI replica
   and the release gate, and the sequence and dirty-reindex checks are covered
   by the `writeCache` and CLI tests rather than the nav-acceptance fixture.
+  The byte-for-byte `functions` parity with the 3.1 snapshot
+  (`tests/fixtures/symbols/functions-3.1.json`) holds modulo the changes this
+  spec itself mandates: `is_declaration_only` defaults to false (A2), C-family
+  `::` becomes `.` (B2), one row per key (A2.2), function-local declarations
+  are not emitted (A2 scope), namespace members are keyed by their container
+  (A2, A2.1), and classes, abstract members, class expressions, and signatures
+  are projected (A2.1, A2.2). The parity test applies exactly those
+  transformations, each cited inline.
 - **Risks.** Incremental sweep naming and C-family edges outside the affected
   set are listed as known limitations.
 
