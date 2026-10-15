@@ -451,7 +451,7 @@ describe("resolveCallSites — C/C++ includesByFile resolution", () => {
 		);
 	});
 
-	it("resolves to first matching included file when multiple headers are included", () => {
+	it("leaves the call unresolved when two included headers both define the callee (A5 ambiguity)", () => {
 		const fns: FunctionNode[] = [
 			{
 				qualifiedName: "helper",
@@ -488,12 +488,9 @@ describe("resolveCallSites — C/C++ includesByFile resolution", () => {
 			],
 		]);
 		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
-		// Should resolve to the first included file that has a unique live definition
-		expect(edges).toContainEqual({
-			from: "src/main.cpp::main",
-			to: "src/other.h::helper",
-			kind: "call",
-		});
+		expect(edges).toEqual([
+			{ from: "src/main.cpp::main", to: "::helper", kind: "call" },
+		]);
 	});
 
 	it("skips included file with no matching function and falls through to next", () => {

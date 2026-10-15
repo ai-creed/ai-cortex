@@ -182,8 +182,10 @@ export function buildCFamilyFunctionIndex(
 /** C-family resolution after the shared resolver misses, applied identically to
  *  `calls` and `refs` so both tables carry the same key for one site. `fullName`
  *  is the whole dotted callee (`ns.add`, not `add`). Order: a same-file
- *  definition, a live exported definition in a directly included file or that
- *  header's companion source, then a repo-wide unique live exported definition. */
+ *  definition, then the include step, then a repo-wide unique live exported
+ *  definition. The include step gathers every exported candidate across all
+ *  directly included files and their companion sources before choosing, so two
+ *  headers that both offer the name leave the site unresolved (A5 ambiguity). */
 export function resolveCFamilyFallback(
 	idx: CFamilyFunctionIndex,
 	file: string,
@@ -192,20 +194,38 @@ export function resolveCFamilyFallback(
 ): string | null {
 	const same = pickUnique(idx.byFile.get(file)?.get(fullName));
 	if (same) return symbolKey(file, same.qualifiedName);
-	for (const inc of includesByFile.get(file) ?? []) {
-		const match = pickUnique(idx.byFile.get(inc.to)?.get(fullName), true);
-		if (match) return symbolKey(inc.to, match.qualifiedName);
-		for (const companion of companionSourceFiles(inc.to, idx.byFile)) {
-			const compMatch = pickUnique(
-				idx.byFile.get(companion)?.get(fullName),
-				true,
-			);
-			if (compMatch) return symbolKey(companion, compMatch.qualifiedName);
-		}
-	}
+	const fromIncludes = pickIncludeCandidate(idx, file, fullName, includesByFile);
+	if (fromIncludes !== undefined) return fromIncludes;
 	const live = idx.liveByName.get(fullName);
 	if (live && live.length === 1) return symbolKey(live[0].file, live[0].qualifiedName);
 	return null;
+}
+
+/** The include step of the C-family fallback: the key of the single live
+ *  exported definition across every directly included file and each included
+ *  header's companion sources, null when there are two or more (A5
+ *  ambiguity), undefined when there are none so the repo-wide step runs.
+ *  Declarations are never candidates, matching the repo-wide step. */
+function pickIncludeCandidate(
+	idx: CFamilyFunctionIndex,
+	file: string,
+	fullName: string,
+	includesByFile: Map<string, ImportEdge[]>,
+): string | null | undefined {
+	const keys = new Set<string>();
+	const collect = (candidateFile: string) => {
+		for (const fn of idx.byFile.get(candidateFile)?.get(fullName) ?? []) {
+			if (fn.exported && !fn.isDeclarationOnly)
+				keys.add(symbolKey(candidateFile, fn.qualifiedName));
+		}
+	};
+	for (const inc of includesByFile.get(file) ?? []) {
+		collect(inc.to);
+		for (const companion of companionSourceFiles(inc.to, idx.byFile))
+			collect(companion);
+	}
+	if (keys.size === 0) return undefined;
+	return keys.size === 1 ? [...keys][0] : null;
 }
 
 // ---------- symbol index ----------

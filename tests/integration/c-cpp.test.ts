@@ -205,3 +205,54 @@ describe("C-family refs share the calls resolution rules (Ruling 13)", () => {
 	});
 });
 
+describe("C-family include step applies the A5 ambiguity rule", () => {
+	it("leaves foo() unresolved in both tables when two included headers declare it, and still resolves helper() via util.h to util.c", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-ccpp-ambig-"));
+		try {
+			fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+			fs.writeFileSync(path.join(dir, "src/a.h"), "int foo(int x);\n");
+			fs.writeFileSync(path.join(dir, "src/b.h"), "int foo(int x);\n");
+			fs.writeFileSync(path.join(dir, "src/util.h"), "int helper(int x);\n");
+			fs.writeFileSync(path.join(dir, "src/util.c"), '#include "util.h"\nint helper(int x) { return x + 1; }\n');
+			fs.writeFileSync(
+				path.join(dir, "src/main.c"),
+				'#include "a.h"\n#include "b.h"\n#include "util.h"\nint main(void) { return foo(1) + helper(2); }\n',
+			);
+			const files = ["src/a.h", "src/b.h", "src/util.h", "src/util.c", "src/main.c"];
+			const { calls, refs } = await extractCallGraph(dir, files);
+			const mainCalls = calls.filter((c) => c.from === "src/main.c::main");
+			const refFor = (name: string) => refs.find((r) => r.file === "src/main.c" && r.name === name && r.kind === "call");
+
+			expect(mainCalls.map((c) => c.to).sort()).toEqual(["::foo", "src/util.c::helper"]);
+			expect(refFor("foo")).toBeDefined();
+			expect(refFor("foo")?.to).toBeUndefined();
+			expect(refFor("helper")?.to).toBe("src/util.c::helper");
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves foo() unresolved in both tables when the companions of both included headers define it", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-ccpp-ambig2-"));
+		try {
+			fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+			fs.writeFileSync(path.join(dir, "src/a.h"), "int foo(int x);\n");
+			fs.writeFileSync(path.join(dir, "src/b.h"), "int foo(int x);\n");
+			fs.writeFileSync(path.join(dir, "src/a.c"), '#include "a.h"\nint foo(int x) { return x; }\n');
+			fs.writeFileSync(path.join(dir, "src/b.c"), '#include "b.h"\nint foo(int x) { return -x; }\n');
+			fs.writeFileSync(
+				path.join(dir, "src/main.c"),
+				'#include "a.h"\n#include "b.h"\nint main(void) { return foo(1); }\n',
+			);
+			const files = ["src/a.h", "src/b.h", "src/a.c", "src/b.c", "src/main.c"];
+			const { calls, refs } = await extractCallGraph(dir, files);
+			const ref = refs.find((r) => r.file === "src/main.c" && r.name === "foo" && r.kind === "call");
+
+			expect(calls.filter((c) => c.from === "src/main.c::main").map((c) => c.to)).toEqual(["::foo"]);
+			expect(ref).toBeDefined();
+			expect(ref?.to).toBeUndefined();
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});

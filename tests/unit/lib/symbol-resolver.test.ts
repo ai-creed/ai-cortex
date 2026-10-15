@@ -1,9 +1,11 @@
 // tests/unit/lib/symbol-resolver.test.ts
 import { describe, expect, it } from "vitest";
 import {
+	buildCFamilyFunctionIndex,
 	buildReexportTable,
 	buildSymbolIndex,
 	findTargetFile,
+	resolveCFamilyFallback,
 	resolveName,
 	resolveRefs,
 } from "../../../src/lib/symbol-resolver.js";
@@ -12,6 +14,7 @@ import type {
 	RawRefSite,
 } from "../../../src/lib/lang-adapter.js";
 import type { SymbolNode } from "../../../src/lib/models.js";
+import { functionsFromSymbols } from "../../../src/lib/symbols.js";
 
 const R = { line: 1, column: 1, endLine: 1, endColumn: 5 };
 function sym(
@@ -542,6 +545,68 @@ describe("resolveRefs", () => {
 		const out = resolveRefs(raw, symbols, new Map(), [], includes);
 		expect(out[0]).toMatchObject({ to: "src/util.c::helper", from: "src/main.c::main" });
 		expect(out[1].to).toBeUndefined();
+	});
+});
+
+describe("resolveCFamilyFallback (A5 ambiguity rule)", () => {
+	const includes = new Map([
+		[
+			"src/main.c",
+			[
+				{ from: "src/main.c", to: "src/a.h" },
+				{ from: "src/main.c", to: "src/b.h" },
+			],
+		],
+	]);
+	const resolve = (symbols: SymbolNode[]) =>
+		resolveCFamilyFallback(
+			buildCFamilyFunctionIndex(functionsFromSymbols(symbols)),
+			"src/main.c",
+			"foo",
+			includes,
+		);
+
+	it("two included headers declaring foo with no companions leave the site unresolved", () => {
+		expect(
+			resolve([
+				sym("src/a.h", "foo", { isDeclarationOnly: true }),
+				sym("src/b.h", "foo", { isDeclarationOnly: true }),
+				sym("src/main.c", "main"),
+			]),
+		).toBeNull();
+	});
+
+	it("two included headers whose companions both define foo leave the site unresolved", () => {
+		expect(
+			resolve([
+				sym("src/a.h", "foo", { isDeclarationOnly: true }),
+				sym("src/a.c", "foo"),
+				sym("src/b.h", "foo", { isDeclarationOnly: true }),
+				sym("src/b.c", "foo"),
+				sym("src/main.c", "main"),
+			]),
+		).toBeNull();
+	});
+
+	it("one header declaring foo plus its companion defining it resolves to the companion", () => {
+		expect(
+			resolve([
+				sym("src/a.h", "foo", { isDeclarationOnly: true }),
+				sym("src/a.c", "foo"),
+				sym("src/b.h", "bar", { isDeclarationOnly: true }),
+				sym("src/main.c", "main"),
+			]),
+		).toBe("src/a.c::foo");
+	});
+
+	it("a lone included declaration is not a candidate; the repo-wide step finds the single definition", () => {
+		expect(
+			resolve([
+				sym("src/a.h", "foo", { isDeclarationOnly: true }),
+				sym("src/impl/foo_impl.c", "foo"),
+				sym("src/main.c", "main"),
+			]),
+		).toBe("src/impl/foo_impl.c::foo");
 	});
 });
 
