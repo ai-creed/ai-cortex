@@ -615,7 +615,7 @@ lives as long as the worktree's cache directory, so numbering continues
 across store-format resets and only restarts when the whole cache directory
 is removed.
 
-**Coordinated invalidation.** `ensureValidDb` step 1 today checks
+**Coordinated invalidation.** `ensureValidDb`'s first branch today checks
 `dbSchemaValid(dbPath)` and, on failure, deletes the store and its WAL and
 SHM files, with no coordination against a writer. Two processes that both
 observe a `user_version = 1` store can interleave so that A deletes it and
@@ -623,27 +623,41 @@ publishes a 3.2 store with `indexSeq = 1`, then B, acting on its stale
 judgment, deletes A's store and publishes another with `indexSeq = 1`. In
 3.2 the discard runs inside the same exclusion as the sequence commit:
 
-1. The unlocked `dbSchemaValid` check stays as a fast path: a valid store
-   returns immediately with no lock taken.
-2. On an invalid or absent store, open the sequence sidecar and
-   `BEGIN IMMEDIATE`, blocking behind any in-flight sequence commit.
-3. Under the lock, re-run `fs.existsSync(dbPath) && dbSchemaValid(dbPath)`.
-   If the store is now valid, another process upgraded it: `COMMIT` and
-   return `dbPath` without deleting anything.
-4. If it is still invalid, delete `dbPath`, `-wal`, and `-shm`, `COMMIT`,
-   print the existing "cache schema updated, reindexing" notice, and return
-   `null`. The sequence sidecar is left in place.
+The three top-level branches of `ensureValidDb` keep today's order and
+meaning: (1) a `.db` exists, (2) no `.db` but a legacy `.json` exists,
+(3) nothing on disk. Only branch 1's discard changes:
 
-Because a writer's rename (B4 step 6) and the invalidator's delete both
-happen only while holding the sidecar transaction, no process can delete a
-store that was published after its own validity check. The reindex that
-follows a `null` return is an ordinary `writeCache` with its own sequence
-commit, so two processes that both reindex publish distinct, increasing
-values. The legacy JSON branch needs no lock: the JSON file is read-only
-input, two processes transcoding it concurrently are just two sequence
-commits, and deleting it twice is harmless.
+1. **`.db` present and valid** (unlocked `dbSchemaValid` fast path): return
+   `dbPath` immediately with no lock taken, deleting any leftover `.json` as
+   today.
+2. **`.db` present and invalid:** open the sequence sidecar and
+   `BEGIN IMMEDIATE`, blocking behind any in-flight sequence commit. Under
+   the lock, re-check:
+   - now valid: another process upgraded it; `COMMIT` and return `dbPath`
+     without deleting anything.
+   - now absent: another process already discarded it; `COMMIT` and
+     continue to branch 2 below exactly as if no `.db` had been found.
+   - still invalid: delete `dbPath`, `-wal`, and `-shm`, `COMMIT`, print
+     the existing "cache schema updated, reindexing" notice, and return
+     `null`. The sequence sidecar is left in place.
+3. **No `.db`, legacy `.json` present:** unchanged apart from the exact
+   version gate (A1). A `3.2` JSON transcodes through `transcodeCacheToDb`,
+   whose sequence commit provides the only coordination this branch needs;
+   any other version deletes the JSON and returns `null`. No lock is taken
+   around the JSON read: the file is read-only input, two processes
+   transcoding it concurrently are just two sequence commits, and deleting
+   it twice is harmless.
+4. **Nothing on disk:** return `null`, as today.
 
-**`cache-store.ts` upgrade gate.** `ensureValidDb` step 2 (legacy JSON)
+An absent `.db` therefore never enters the locked path; it goes straight to
+branch 3, so a current-version JSON cache still migrates. Because a writer's
+rename (B4 step 6) and the invalidator's delete both happen only while
+holding the sidecar transaction, no process can delete a store that was
+published after its own validity check. The reindex that follows a `null`
+return is an ordinary `writeCache` with its own sequence commit, so two
+processes that both reindex publish distinct, increasing values.
+
+**`cache-store.ts` upgrade gate.** `ensureValidDb` branch 3 (legacy JSON)
 compares `cache.schemaVersion` to `SCHEMA_VERSION` exactly before
 transcoding and deletes the JSON on mismatch (A1). `dbSchemaValid` and
 `readFromDb` compare `meta.schemaVersion` to `SCHEMA_VERSION` exactly in
@@ -778,7 +792,15 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   before and after B's run, no second store with `indexSeq = 1` is ever
   published, and if B subsequently writes it publishes `2`. Repeat with B
   paused while A holds the sidecar lock mid-commit, asserting B blocks and
-  then observes A's store as valid. Assert
+  then observes A's store as valid. Third variant: B is released after A has
+  discarded the invalid store but before A has written; B's locked recheck
+  finds the store absent, B falls through to the JSON branch and returns
+  `null` without deleting anything, and when A later publishes `indexSeq =
+  1` B's own write publishes `2`. Fourth variant, absent store plus JSON: no
+  `.db` on disk and a `schemaVersion: "3.2"` JSON cache present; assert
+  `ensureValidDb` takes no sidecar lock before the transcode, the JSON is
+  transcoded into a valid `.db` with `indexSeq = 1`, and the JSON is removed.
+  Assert
   `contentFingerprint` is unchanged when only `indexedAt` moves and changes when
   one `content_hash` changes. Assert `navCapabilities` parses and
   `referencesTable === "refs"`. Assert a `user_version = 1` store is rejected
