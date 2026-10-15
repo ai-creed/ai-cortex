@@ -812,10 +812,21 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   though B was not reparsed; (3) remove the re-export from B and assert A's
   ref becomes `NULL`. In every case assert no `to_key` points at a key absent
   from `symbols`, and that `reexports` rows for untouched files are unchanged.
-- **CLI (`tests/integration/cli.test.ts`).** `rehydrate --help` exits 0 with
-  usage on stdout and performs no index. `rehydrate --bogus` exits 2.
+- **CLI (`tests/integration/cli.test.ts`).** All cases spawn the built
+  `dist/src/cli.js` binary. Flag handling is asserted for both commands
+  through a shared table of four invocations per command, `index` and
+  `rehydrate`, each on a fixture repo with no prior cache:
+  - `<cmd> --help` and `<cmd> -h`: exit code `0`, stdout contains the
+    subcommand usage block, stderr is empty, and no `.db` is created
+    (proving no index ran).
+  - `<cmd> --bogus`: exit code `2`, stderr contains the subcommand usage
+    block and names the unknown flag, stdout is empty, and no `.db` is
+    created.
+  - `<cmd> --bogus --json`: identical outcome, proving an unknown flag wins
+    over a known one and no partial JSON is printed.
   `rehydrate --json` and `index --json` contain every A7 field and keep the
-  existing ones. `rehydrate --stale --json` against an out-of-date store
+  existing ones; `index --json` has no `briefingPath`. `index` human output
+  prints the `.db` cache path, not `.json`. `rehydrate --stale --json` against an out-of-date store
   reports `cacheStatus: "stale"` and does not change `indexSeq`. Two
   consecutive `index --refresh --json` invocations of the built CLI binary
   on an unchanged fixture repo report `indexSeq` values `n` and `n+1`, the
