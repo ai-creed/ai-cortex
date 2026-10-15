@@ -16,6 +16,7 @@ import { resolveRepoIdentity } from "../../src/lib/repo-identity.js";
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/nav-acceptance");
 const OLD_STORE = path.join(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/stores/v3.1-nav-acceptance.db");
 const SVC = "electron/code-nav/cortex-index-service.ts";
+const NS_SVC = "electron/code-nav/namespaced-service.ts";
 let dir: string;
 let db: InstanceType<typeof Database>;
 
@@ -74,6 +75,13 @@ describe("consumer acceptance (upstream request section 11)", () => {
 	it("this.open(keys) inside findDefinitions resolves to CortexIndexService.open in refs and calls", () => {
 		const target = `${SVC}::CortexIndexService.open`;
 		const from = `${SVC}::CortexIndexService.findDefinitions`;
+		expect(one<{ to_key: string }>("SELECT to_key FROM refs WHERE kind='call' AND name='open' AND from_key=?", from).to_key).toBe(target);
+		expect(one<{ to_key: string }>("SELECT to_key FROM calls WHERE from_key=? AND kind='method'", from).to_key).toBe(target);
+	});
+
+	it("this.open(keys) inside namespace N { class C } resolves to N.C.open, not N.open, in refs and calls", () => {
+		const target = `${NS_SVC}::N.C.open`;
+		const from = `${NS_SVC}::N.C.run`;
 		expect(one<{ to_key: string }>("SELECT to_key FROM refs WHERE kind='call' AND name='open' AND from_key=?", from).to_key).toBe(target);
 		expect(one<{ to_key: string }>("SELECT to_key FROM calls WHERE from_key=? AND kind='method'", from).to_key).toBe(target);
 	});

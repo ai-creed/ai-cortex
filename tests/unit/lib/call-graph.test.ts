@@ -8,6 +8,7 @@ import {
 	getAdapterForFile,
 	adapterSupports,
 } from "../../../src/lib/adapters/index.js";
+import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
 import type {
 	LanguageAdapter,
@@ -1357,5 +1358,47 @@ describe("extractCallGraph: refs", () => {
 		vi.mocked(extractImports).mockResolvedValue([]);
 		const r = await extractCallGraph("/repo", ["src/a.ts"]);
 		expect(r.refs).toEqual([{ file: "src/a.ts", name: "foo", kind: "call", range: R, to: "src/a.ts::foo" }]);
+	});
+});
+
+describe("extractCallGraph: calls and refs agree on this. sites (Section C Resolver)", () => {
+	beforeEach(async () => {
+		vi.mocked(extractImports).mockResolvedValue([]);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(getAdapterForFile).mockReturnValue(await createTypescriptAdapter());
+	});
+
+	async function thisOpenTargets(source: string, caller: string) {
+		const { calls, refs } = await extractCallGraph("/fake", ["src/a.ts"], new Map([["src/a.ts", source]]));
+		const from = `src/a.ts::${caller}`;
+		const call = calls.filter((c) => c.from === from);
+		const ref = refs.filter((r) => r.kind === "call" && r.name === "open" && r.from === from);
+		expect(call).toHaveLength(1);
+		expect(ref).toHaveLength(1);
+		return { call: call[0].to, ref: ref[0].to };
+	}
+
+	it("this.open(keys) inside a module-scope class method resolves to C.open in both tables", async () => {
+		const source = [
+			"export class C {",
+			"\topen(keys: string[]): number { return keys.length; }",
+			"\trun(keys: string[]): number { return this.open(keys); }",
+			"}",
+			"export function open(): number { return 0; }",
+		].join("\n");
+		expect(await thisOpenTargets(source, "C.run")).toEqual({ call: "src/a.ts::C.open", ref: "src/a.ts::C.open" });
+	});
+
+	it("this.open() inside namespace N { class C } resolves to N.C.open, not N.open, in both tables", async () => {
+		const source = [
+			"export namespace N {",
+			"\texport class C {",
+			"\t\topen(): number { return 1; }",
+			"\t\trun(): number { return this.open(); }",
+			"\t}",
+			"\texport function open(): number { return 0; }",
+			"}",
+		].join("\n");
+		expect(await thisOpenTargets(source, "N.C.run")).toEqual({ call: "src/a.ts::N.C.open", ref: "src/a.ts::N.C.open" });
 	});
 });
