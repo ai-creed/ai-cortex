@@ -21,6 +21,10 @@ trap 'rm -rf "$SCRATCH"' EXIT
 export AI_CORTEX_CACHE_HOME="$SCRATCH/cache"
 mkdir -p "$AI_CORTEX_CACHE_HOME"
 
+# Snapshot the real worktree, ignored paths included, before any step runs so the
+# final check proves no step (indexing or the consumer probe) wrote into it.
+WT_STATUS_BEFORE="$(git -C "$WT" status --porcelain --ignored)"
+
 echo "== index --refresh (1/2)"
 ONE="$($CLI index --refresh --json "$WT")"
 echo "== index --refresh (2/2)"
@@ -83,7 +87,6 @@ DIRTY_JSON="$($CLI rehydrate --json "$CLONE")"
 check "dirty reindex changes indexSeq and contentFingerprint while fingerprint stays" "$(node -e '
 const a=JSON.parse(process.argv[1]),b=JSON.parse(process.argv[2]);
 console.log(b.indexSeq>a.indexSeq&&b.contentFingerprint!==a.contentFingerprint&&b.fingerprint===a.fingerprint&&b.dirtyAtIndex===true?1:0)' "$BASE_JSON" "$DIRTY_JSON")"
-check "clean worktree left untouched (git status empty)" "$([[ -z "$(git -C "$WT" status --porcelain)" ]] && echo 1 || echo 0)"
 
 echo "== consumer ingestion path: ai-14all ingestCortexStore over the 3.1 fixture and the fresh 3.2 store"
 OLD="$ROOT/tests/fixtures/stores/v3.1-nav-acceptance.db"
@@ -95,6 +98,9 @@ const r=JSON.parse(process.argv[1])[0]; console.log(!r.unavailable&&r.schemaVers
 check "fresh 3.2 store is accepted by the consumer ingest (schema gate admits 3.2)" "$(node -e '
 const r=JSON.parse(process.argv[1])[1]; console.log(!r.unavailable&&r.schemaVersion==="3.2"&&r.functionsCount>0&&r.hasFindDefinitions===true?1:0)' "$INGEST")"
 check "3.1 fixture has no navCapabilities (feature detection falls back)" "$(qdb "$OLD" "SELECT count(*)=0 FROM meta WHERE key='navCapabilities'")"
+
+WT_STATUS_AFTER="$(git -C "$WT" status --porcelain --ignored)"
+check "real worktree unchanged across every step (git status --porcelain --ignored matches the snapshot)" "$([[ "$WT_STATUS_BEFORE" == "$WT_STATUS_AFTER" ]] && echo 1 || echo 0)"
 
 if [[ "$fail" -ne 0 ]]; then echo "acceptance-v3.2: FAILED"; exit 1; fi
 echo "acceptance-v3.2: OK (resolved refs naming repo symbols ${RATIO}%, raw resolved refs ${RAW_RATIO}%, calls $CALLS_RESOLVED/$CALLS_TOTAL)"
