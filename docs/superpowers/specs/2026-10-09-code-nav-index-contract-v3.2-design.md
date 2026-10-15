@@ -164,7 +164,7 @@ Readers treat an unknown value as `other`.
 | `enum` | `enum_declaration` | not emitted | `enum_specifier` |
 | `enum_member` | enum body members | not emitted | `enumerator` |
 | `variable` | module-scope `lexical_declaration` / `variable_declaration` declarators whose value is not a function; each destructured name is one row | module-level assignment targets | file-scope declarations |
-| `property` | `public_field_definition`, `property_signature` | not emitted | field declarations |
+| `property` | `public_field_definition`, `property_signature` | not emitted | struct and class field declarations |
 | `namespace` | `internal_module` (`namespace X {}`), `module` | not applicable | `namespace_definition` |
 | `macro` | not applicable | not applicable | `preproc_def`, `preproc_function_def` |
 
@@ -330,6 +330,11 @@ Shared by `refs.to_key` and `calls.to_key`. Syntactic, first hit wins:
    resolves (steps 2 or 3) to a `class`, `enum`, or `namespace` symbol resolves
    to `${thatFile}::Foo.bar`.
 5. Otherwise `NULL` for refs, `::member` for calls.
+
+`calls.to_key` may name any `symbols` key, including module-level variables
+(for example a call to `const execAsync = promisify(exec)`), because step 2 has
+no kind restriction; the only invariant is that a non-null `to_key` exists in
+`symbols`. Consumers that join `calls` to `functions` will not see those edges.
 
 Ambiguity rule: if a step yields more than one candidate (overloads aside,
 which share a key), leave unresolved. This is today's `pickUnique` behavior
@@ -587,7 +592,7 @@ The connection sets `busy_timeout = 15000`.
    path is inside the section; others block in the busy handler and throw a
    clear error after 15 seconds.
 3. Read `seq.n`. Read `indexSeq` from the canonical `dbPath` via
-   `readFreshnessMeta`, treating a missing, unreadable, or wrong-format store
+   `readCanonicalIndexSeq(dbPath)`, treating a missing, unreadable, or wrong-format store
    as `0`. Let `next = max(seq.n, canonical) + 1`.
 4. `UPDATE seq SET n = next` (uncommitted).
 5. Open the temporary database, `UPDATE meta SET value = next WHERE key =
@@ -663,7 +668,7 @@ transcoding and deletes the JSON on mismatch (A1). `dbSchemaValid` and
 `readFromDb` compare `meta.schemaVersion` to `SCHEMA_VERSION` exactly in
 addition to the `user_version` check. Both changes are single comparisons at
 existing gate sites. The sidecar open, `BEGIN IMMEDIATE`, and `COMMIT` are
-factored into one helper, `withSequenceLock(worktreeKey, fn)`, used by both
+factored into one helper, `withSequenceLock(dbPath, fn)`, used by both
 `transcodeCacheToDb` and `ensureValidDb` so the two paths cannot drift onto
 different lock files. `container_key` is computed at insert time from
 `containerQualifiedName`. `assembleCache` reads both tables back. The lean
@@ -839,8 +844,12 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
 - **Consumer acceptance replica (CI).** A TS fixture mirroring the ai-14all
   acceptance list (interface `WorktreeStatus`, class `CortexIndexService` with
   `findDefinitions` calling `this.open`). Run through `indexRepo` and assert
-  every section 11 check from the consumer spec, including the resolved-ref
-  ratio: rows with `to_key IS NOT NULL` are at least 50 percent of rows with
+  the section 11 symbol, reference, resolution, and `navCapabilities` checks
+  from the consumer spec. The "indexSeq increments across consecutive
+  refreshes" and "dirty reindex" checks are covered instead by the
+  production-path `writeCache` test in `tests/unit/lib/cache-store.test.ts`
+  and the CLI consecutive-refresh test in `tests/integration/cli.test.ts`, not
+  by `tests/integration/nav-acceptance.test.ts`. The resolved-ref ratio: rows with `to_key IS NOT NULL` are at least 50 percent of rows with
   `kind IN ('call','new','type','import')` on the fixture.
 - **Consumer acceptance on the real repository (release gate).** A script,
   `scripts/acceptance-v3.2.sh <path-to-ai-14all-worktree>`, runs
@@ -851,7 +860,16 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   row has the specified kind, name, container key, and qualified name; every
   `functions` row has a `symbols` row with the same key and declaration range;
   `refs` has at least one `type` row; resolved refs are **at least 50 percent**
-  of `call`, `new`, `type`, and `import` refs; `this.open(keys)` inside
+  of `call`, `new`, `type`, and `import` refs whose `name` is defined as a
+  symbol in the indexed repo (`name IN (SELECT DISTINCT name FROM symbols)`),
+  with the raw ratio over all such refs reported as information only. The raw
+  metric counts test globals, matchers, DOM helpers, array methods, and package
+  types that the contract defines as unresolvable (externals keep
+  `to_key = NULL`), so it measures a repo's test density rather than the
+  resolver; on the consumer's own repository the raw ceiling is about 32
+  percent with a perfect resolver while the name-matched ratio is about 65
+  percent. The consumer's request document in ai-14all still states the raw
+  metric and needs the same amendment on their side; `this.open(keys)` inside
   `findDefinitions` resolves to `CortexIndexService.open` in both `refs` and
   `calls`; `navCapabilities` parses and lists the emitted kinds; two
   consecutive `index --refresh` runs report increasing `indexSeq`; a
@@ -904,6 +922,16 @@ tasks of at most three production files each.
   is merged with the existing one.
 - **C-family separator change** alters `functions.qualified_name` for C-family
   repos. No known consumer reads C-family keys; the contract calls it out.
+- **Incremental sweep naming.** In an incremental build, a `calls` row whose
+  target key was removed is swept to the unresolved form `::<qualified name of
+  the stale target>`, while a full build writes `::<raw callee>` or
+  `::<member>`, so the unresolved name can differ between an incremental and a
+  full build for the same source.
+- **C-family edges outside the affected set.** C-family calls resolved through
+  companion source files or the repo-wide unique-name fallback are outside the
+  import-based affected set, so when such a target moves an incremental build
+  sweeps the caller's edge to unresolved instead of re-pointing it. A full
+  reindex repairs it.
 - **Incremental staleness** through re-export chains longer than one hop is
   still possible. It matches the documented one-hop rule; a full `index
   --refresh` repairs it.
