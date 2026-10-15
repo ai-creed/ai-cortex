@@ -2,13 +2,14 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { Range, SymbolKind, SymbolNode } from "../models.js";
+import type { Range, ReexportRow, SymbolKind, SymbolNode } from "../models.js";
 import type {
 	LanguageAdapter,
 	RawCallData,
 	RawCallSite,
 	ImportBinding,
 	RawImportSite,
+	RawRefSite,
 } from "../lang-adapter.js";
 import { functionsFromSymbols, TS_REF_KINDS, TS_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
@@ -495,6 +496,302 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 	return calls;
 }
 
+function stripQuotes(s: string): string {
+	return s.replace(/^['"]|['"]$/g, "");
+}
+
+function extractRawRefs(
+	root: SyntaxNode,
+	filePath: string,
+): { rawRefs: RawRefSite[]; reexports: ReexportRow[] } {
+	const refs: RawRefSite[] = [];
+	const reexports: ReexportRow[] = [];
+
+	function push(
+		kind: RawRefSite["kind"],
+		token: SyntaxNode,
+		at: SyntaxNode,
+		extra: Partial<RawRefSite> = {},
+	): void {
+		const ctx = enclosingContext(at);
+		const name = extra.name ?? memberName(token) ?? token.text;
+		const site: RawRefSite = {
+			file: filePath,
+			name,
+			kind,
+			range: nameRangeOf(token),
+			...(ctx.qualifiedName ? { enclosingQualifiedName: ctx.qualifiedName } : {}),
+			...(ctx.enclosingClass ? { enclosingClass: ctx.enclosingClass } : {}),
+		};
+		if (extra.receiver !== undefined) site.receiver = extra.receiver;
+		if (extra.specifier !== undefined) site.specifier = extra.specifier;
+		if (extra.alias !== undefined) site.alias = extra.alias;
+		if (extra.importKind !== undefined) site.importKind = extra.importKind;
+		refs.push(site);
+	}
+
+	/** Rightmost identifier token and the receiver text to its left. */
+	function splitMember(expr: SyntaxNode): { token: SyntaxNode; receiver: string } | null {
+		if (expr.type !== "member_expression") return null;
+		const obj = expr.childForFieldName("object");
+		const prop = expr.childForFieldName("property");
+		if (!obj || !prop) return null;
+		return { token: prop, receiver: obj.text };
+	}
+
+	function typeIdentifiers(node: SyntaxNode): void {
+		if (node.type === "type_identifier") {
+			push("type", node, node);
+			return;
+		}
+		if (node.type === "nested_type_identifier") {
+			const nameNode = node.childForFieldName("name");
+			const mod = node.childForFieldName("module");
+			if (nameNode) push("type", nameNode, node, mod ? { receiver: mod.text } : {});
+			return;
+		}
+		if (node.type === "type_query") {
+			// typeof X: the identifier names a value symbol; record as type position.
+			const id = node.namedChildren[0];
+			if (id && id.type === "identifier") push("type", id, node);
+			else if (id && id.type === "member_expression") {
+				const m = splitMember(id);
+				if (m) push("type", m.token, node, { receiver: m.receiver });
+			}
+			return;
+		}
+		for (const c of node.namedChildren) typeIdentifiers(c);
+	}
+
+	function walk(node: SyntaxNode): void {
+		switch (node.type) {
+			case "import_statement": {
+				const sourceNode = node.childForFieldName("source");
+				if (!sourceNode) return; // side-effect import has source too; handled below
+				const specifier = stripQuotes(sourceNode.text);
+				const clause = node.children.find((c) => c.type === "import_clause");
+				if (!clause) return; // import "./side": no row
+				for (const c of clause.children) {
+					if (c.type === "identifier") {
+						push("import", c, node, { specifier, importKind: "default" });
+					} else if (c.type === "namespace_import") {
+						const id = c.children.find((x) => x.type === "identifier");
+						if (id) push("import", id, node, { specifier, importKind: "namespace" });
+					} else if (c.type === "named_imports") {
+						for (const spec of c.namedChildren) {
+							if (spec.type !== "import_specifier") continue;
+							const nameNode = spec.childForFieldName("name");
+							const aliasNode = spec.childForFieldName("alias");
+							if (!nameNode) continue;
+							push("import", nameNode, node, {
+								specifier,
+								importKind: "named",
+								...(aliasNode ? { alias: aliasNode.text } : {}),
+							});
+						}
+					}
+				}
+				return;
+			}
+			case "export_statement": {
+				const sourceNode = node.childForFieldName("source");
+				const specifier = sourceNode ? stripQuotes(sourceNode.text) : undefined;
+				const clause = node.children.find((c) => c.type === "export_clause");
+				if (clause) {
+					for (const spec of clause.namedChildren) {
+						if (spec.type !== "export_specifier") continue;
+						const nameNode = spec.childForFieldName("name");
+						const aliasNode = spec.childForFieldName("alias");
+						if (!nameNode) continue;
+						push("export", nameNode, node, {
+							...(specifier !== undefined ? { specifier } : {}),
+							...(aliasNode ? { alias: aliasNode.text } : {}),
+						});
+						if (specifier !== undefined) {
+							reexports.push({
+								file: filePath,
+								exportedName: aliasNode?.text ?? nameNode.text,
+								sourceName: nameNode.text,
+								specifier,
+							});
+						}
+					}
+					return;
+				}
+				// `export * from`, `export * as ns from`: no row. Declarations: walk them.
+				if (node.children.some((c) => c.type === "*")) return;
+				for (const c of node.children) walk(c);
+				return;
+			}
+			case "call_expression": {
+				const fn = node.childForFieldName("function");
+				if (fn) {
+					const m = splitMember(fn);
+					if (m) push("call", m.token, node, { receiver: m.receiver });
+					else if (fn.type === "identifier") push("call", fn, node);
+				}
+				for (const c of node.namedChildren) if (c.id !== fn?.id) walk(c);
+				if (fn && fn.type === "member_expression") {
+					const obj = fn.childForFieldName("object");
+					if (obj) walk(obj); // nested member/call chains inside the receiver
+				}
+				return;
+			}
+			case "new_expression": {
+				const ctor = node.childForFieldName("constructor");
+				if (ctor) {
+					const m = splitMember(ctor);
+					if (m) push("new", m.token, node, { receiver: m.receiver });
+					else if (ctor.type === "identifier") push("new", ctor, node);
+				}
+				for (const c of node.namedChildren) if (c.id !== ctor?.id) walk(c);
+				return;
+			}
+			case "member_expression": {
+				const m = splitMember(node);
+				if (m) push("member", m.token, node, { receiver: m.receiver });
+				const obj = node.childForFieldName("object");
+				if (obj) walk(obj);
+				return;
+			}
+			case "class_heritage": {
+				for (const c of node.namedChildren) {
+					if (c.type === "extends_clause") {
+						const v = c.childForFieldName("value") ?? c.namedChildren[0];
+						if (v) {
+							const m = splitMember(v);
+							if (m) push("extends", m.token, c, { receiver: m.receiver });
+							else if (v.type === "identifier" || v.type === "type_identifier") push("extends", v, c);
+							else typeIdentifiersAs("extends", v, c);
+						}
+						// type arguments on extends: Base<T>
+						const ta = c.namedChildren.find((x) => x.type === "type_arguments");
+						if (ta) typeIdentifiers(ta);
+					} else if (c.type === "implements_clause") {
+						for (const t of c.namedChildren) typeIdentifiersAs("implements", t, c);
+					}
+				}
+				return;
+			}
+			case "extends_type_clause": {
+				// interface A extends B
+				for (const t of node.namedChildren) typeIdentifiersAs("extends", t, node);
+				return;
+			}
+			case "type_annotation":
+			case "type_arguments":
+			case "type_parameters":
+			case "as_expression":
+			case "satisfies_expression":
+			case "type_assertion":
+			case "return_type":
+			case "index_type_query":
+			case "type_alias_declaration":
+			case "interface_body":
+			case "object_type":
+			case "property_signature":
+			case "method_signature":
+			case "abstract_method_signature":
+			case "generic_type":
+			case "union_type":
+			case "intersection_type":
+			case "array_type":
+			case "tuple_type":
+			case "function_type":
+			case "conditional_type":
+			case "lookup_type":
+			case "type_predicate":
+			case "predefined_type":
+			case "type_query": {
+				if (node.type === "as_expression" || node.type === "satisfies_expression" || node.type === "type_assertion") {
+					// expression part is a normal expression; the type part is a type position
+					for (const c of node.namedChildren) {
+						if (c.type.endsWith("_type") || c.type === "type_identifier" || c.type === "generic_type" || c.type === "nested_type_identifier" || c.type === "type_query") typeIdentifiers(c);
+						else walk(c);
+					}
+					return;
+				}
+				if (node.type === "type_alias_declaration") {
+					const v = node.childForFieldName("value");
+					if (v) typeIdentifiers(v);
+					const tp = node.childForFieldName("type_parameters");
+					if (tp) typeIdentifiers(tp);
+					return;
+				}
+				if (node.type === "method_signature" || node.type === "abstract_method_signature" || node.type === "property_signature") {
+					for (const c of node.namedChildren) if (c.type !== "property_identifier") typeIdentifiers(c);
+					return;
+				}
+				typeIdentifiers(node);
+				return;
+			}
+			case "jsx_opening_element":
+			case "jsx_self_closing_element": {
+				const nameNode = node.childForFieldName("name");
+				if (nameNode) {
+					const m = splitMember(nameNode);
+					if (m) push("jsx", m.token, node, { receiver: m.receiver });
+					else if (nameNode.type === "identifier" && /^[A-Z]/.test(nameNode.text)) push("jsx", nameNode, node);
+				}
+				for (const c of node.namedChildren) if (c.id !== nameNode?.id) walk(c);
+				return;
+			}
+			case "decorator": {
+				const inner = node.namedChildren[0];
+				if (inner) {
+					if (inner.type === "identifier") push("decorator", inner, node);
+					else if (inner.type === "call_expression") {
+						const fn = inner.childForFieldName("function");
+						if (fn) {
+							const m = splitMember(fn);
+							if (m) push("decorator", m.token, node, { receiver: m.receiver });
+							else if (fn.type === "identifier") push("decorator", fn, node);
+						}
+						const args = inner.childForFieldName("arguments");
+						if (args) walk(args);
+					} else if (inner.type === "member_expression") {
+						const m = splitMember(inner);
+						if (m) push("decorator", m.token, node, { receiver: m.receiver });
+					}
+				}
+				return;
+			}
+		}
+		for (const c of node.children) walk(c);
+	}
+
+	function typeIdentifiersAs(kind: "extends" | "implements", node: SyntaxNode, at: SyntaxNode): void {
+		if (node.type === "type_identifier" || node.type === "identifier") {
+			push(kind, node, at);
+			return;
+		}
+		if (node.type === "generic_type") {
+			const n = node.childForFieldName("name");
+			if (n) typeIdentifiersAs(kind, n, at);
+			const ta = node.childForFieldName("type_arguments");
+			if (ta) typeIdentifiers(ta);
+			return;
+		}
+		if (node.type === "nested_type_identifier") {
+			const n = node.childForFieldName("name");
+			const mod = node.childForFieldName("module");
+			if (n) push(kind, n, at, mod ? { receiver: mod.text } : {});
+			return;
+		}
+		if (node.type === "member_expression") {
+			const m = splitMember(node);
+			if (m) push(kind, m.token, at, { receiver: m.receiver });
+			return;
+		}
+		for (const c of node.namedChildren) typeIdentifiersAs(kind, c, at);
+	}
+
+	walk(root);
+	// Deterministic order: by position, then kind, so re-parses compare equal.
+	refs.sort((a, b) => a.range.line - b.range.line || a.range.column - b.range.column || a.kind.localeCompare(b.kind));
+	return { rawRefs: refs, reexports };
+}
+
 function extractImportBindings(root: SyntaxNode): ImportBinding[] {
 	const bindings: ImportBinding[] = [];
 
@@ -615,15 +912,18 @@ export async function createTypescriptAdapter(): Promise<LanguageAdapter> {
 				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
 			const ext = path.extname(filePath);
 			const parser = parserForExt(ext);
-			if (!parser) return { functions: [], symbols: [], rawCalls: [], importBindings: [] };
+			if (!parser) return { functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
 			const tree = parser.parse(source);
-			if (!tree) return { functions: [], symbols: [], rawCalls: [], importBindings: [] };
+			if (!tree) return { functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
 			const root = tree.rootNode;
 			const symbols = extractSymbols(root, filePath);
+			const { rawRefs, reexports } = extractRawRefs(root, filePath);
 			return {
 				functions: functionsFromSymbols(symbols),
 				symbols,
 				rawCalls: extractRawCalls(root, filePath),
+				rawRefs,
+				reexports,
 				importBindings: extractImportBindings(root),
 			};
 		},

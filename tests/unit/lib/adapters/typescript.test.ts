@@ -578,3 +578,92 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 		expect(r.symbols!.some((s) => s.qualifiedName === "A.B.f")).toBe(true);
 	});
 });
+
+describe("typescript adapter — refs (3.2)", () => {
+	async function refsOf(src: string, file = "src/r.ts") {
+		const r = await adapter.extractCallGraph!("", file, src);
+		return { refs: r.rawRefs!, reexports: r.reexports! };
+	}
+	const pick = (refs: import("../../../../src/lib/lang-adapter.js").RawRefSite[], kind: string) =>
+		refs.filter((r) => r.kind === kind).map((r) => ({ name: r.name, receiver: r.receiver, alias: r.alias, specifier: r.specifier, importKind: r.importKind, line: r.range.line, col: r.range.column, endCol: r.range.endColumn }));
+
+	it("import forms follow the A3 table exactly", async () => {
+		const { refs, reexports } = await refsOf(
+			[
+				'import { foo } from "./x";',
+				'import { foo as bar } from "./x";',
+				'import Foo from "./x";',
+				'import * as ns from "./x";',
+				'export { foo } from "./x";',
+				'export { foo as baz } from "./x";',
+				"export { foo };",
+				'export * from "./x";',
+				'import "./side";',
+			].join("\n"),
+		);
+		expect(pick(refs, "import")).toEqual([
+			{ name: "foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: "named", line: 1, col: 10, endCol: 12 },
+			{ name: "foo", receiver: undefined, alias: "bar", specifier: "./x", importKind: "named", line: 2, col: 10, endCol: 12 },
+			{ name: "Foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: "default", line: 3, col: 8, endCol: 10 },
+			{ name: "ns", receiver: undefined, alias: undefined, specifier: "./x", importKind: "namespace", line: 4, col: 13, endCol: 14 },
+		]);
+		expect(pick(refs, "export")).toEqual([
+			{ name: "foo", receiver: undefined, alias: undefined, specifier: "./x", importKind: undefined, line: 5, col: 10, endCol: 12 },
+			{ name: "foo", receiver: undefined, alias: "baz", specifier: "./x", importKind: undefined, line: 6, col: 10, endCol: 12 },
+			{ name: "foo", receiver: undefined, alias: undefined, specifier: undefined, importKind: undefined, line: 7, col: 10, endCol: 12 },
+		]);
+		expect(reexports).toEqual([
+			{ file: "src/r.ts", exportedName: "foo", sourceName: "foo", specifier: "./x" },
+			{ file: "src/r.ts", exportedName: "baz", sourceName: "foo", specifier: "./x" },
+		]);
+		expect(refs.some((r) => r.range.line === 8 || r.range.line === 9)).toBe(false);
+	});
+
+	it("emits call, new, member, type, extends, implements, jsx, decorator with token ranges", async () => {
+		const { refs } = await refsOf(
+			[
+				"class Base {} interface I {}",
+				"@Injectable()",
+				"class Svc extends Base implements I {",
+				"  run(x: Base, y: Map<string, I>): I { this.open(); return cfg.timeout as I; }",
+				"  open() { const b = new Base(); return <Button prop={1} /> }",
+				"}",
+			].join("\n"),
+			"src/r.tsx",
+		);
+		expect(pick(refs, "call")).toEqual([
+			{ name: "open", receiver: "this", alias: undefined, specifier: undefined, importKind: undefined, line: 4, col: 45, endCol: 48 },
+		]);
+		expect(pick(refs, "new")).toEqual([
+			{ name: "Base", receiver: undefined, alias: undefined, specifier: undefined, importKind: undefined, line: 5, col: 26, endCol: 29 },
+		]);
+		expect(pick(refs, "member").map((m) => [m.name, m.receiver])).toEqual([["timeout", "cfg"]]);
+		expect(pick(refs, "type").map((t) => t.name)).toEqual(["Base", "Map", "I", "I", "I"]);
+		expect(pick(refs, "extends").map((t) => t.name)).toEqual(["Base"]);
+		expect(pick(refs, "implements").map((t) => t.name)).toEqual(["I"]);
+		expect(pick(refs, "jsx").map((t) => t.name)).toEqual(["Button"]);
+		expect(pick(refs, "decorator").map((t) => t.name)).toEqual(["Injectable"]);
+		const thisCall = refs.find((r) => r.kind === "call")!;
+		expect(thisCall.enclosingQualifiedName).toBe("Svc.run");
+		expect(thisCall.enclosingClass).toBe("Svc");
+	});
+
+	it("does not emit a declaration's own name, and never emits read/write kinds", async () => {
+		const { refs } = await refsOf("export function handler() { return 1; }\nconst h = handler;\nlet v = 1; v = 2;");
+		expect(refs.filter((r) => r.range.line === 1)).toEqual([]);
+		expect(refs.map((r) => r.kind)).not.toContain("read");
+		expect(refs.map((r) => r.kind)).not.toContain("write");
+	});
+
+	it("is deterministic across two parses", async () => {
+		const src = 'import { a } from "./a";\nexport class C { m(): a.T { return a.f(); } }';
+		const one = await refsOf(src);
+		const two = await refsOf(src);
+		expect(one).toEqual(two);
+	});
+
+	it("handles a file with syntax errors without throwing and still emits refs", async () => {
+		const { refs } = await refsOf('import { ok } from "./ok";\nfunction broken( {\nok();\n');
+		expect(refs.some((r) => r.kind === "import" && r.name === "ok")).toBe(true);
+	});
+});
