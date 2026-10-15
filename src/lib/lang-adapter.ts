@@ -57,11 +57,10 @@ export type AdapterCapabilities = {
 };
 
 export type RawCallData = {
-	functions: FunctionNode[]; // removed in Task 6; derived from symbols afterwards
-	symbols?: SymbolNode[]; // required from Task 6
+	symbols: SymbolNode[]; // the only declaration source; FunctionNode rows are derived from it
 	rawCalls: RawCallSite[];
-	rawRefs?: RawRefSite[]; // required from Task 6
-	reexports?: ReexportRow[]; // required from Task 6
+	rawRefs: RawRefSite[];
+	reexports: ReexportRow[];
 	importBindings: ImportBinding[];
 };
 

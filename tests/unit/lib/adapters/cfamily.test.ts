@@ -3,6 +3,7 @@ import {
 	createCAdapter,
 	createCppAdapter,
 } from "../../../../src/lib/adapters/cfamily.js";
+import { functionsFromSymbols } from "../../../../src/lib/symbols.js";
 import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
 let cAdapter: LanguageAdapter;
@@ -20,7 +21,7 @@ describe("c adapter — function extraction", () => {
 			"src/foo.c",
 			"int foo(void) { return 0; }",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "foo",
 				file: "src/foo.c",
@@ -37,7 +38,7 @@ describe("c adapter — function extraction", () => {
 			"src/foo.c",
 			"static int helper(void) { return 0; }",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "helper",
 				exported: false,
@@ -52,7 +53,7 @@ describe("c adapter — function extraction", () => {
 			"src/foo.h",
 			"int compute(int x);",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "compute",
 				file: "src/foo.h",
@@ -126,7 +127,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 			"src/x.cpp",
 			"namespace foo { void bar() {} }",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "foo.bar" }),
 		);
 	});
@@ -137,7 +138,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 			"src/x.cpp",
 			"namespace a { namespace b { void c() {} } }",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "a.b.c" }),
 		);
 	});
@@ -148,7 +149,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 			"src/x.cpp",
 			"class Foo { public: void bar() {} };",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.bar" }),
 		);
 	});
@@ -161,7 +162,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 		);
 		const symbols = r.symbols!.filter((s) => s.qualifiedName === "Foo.bar");
 		expect(symbols.map((s) => s.isDeclarationOnly)).toEqual([true, false]); // declaration + definition
-		const fns = r.functions.filter((f) => f.qualifiedName === "Foo.bar");
+		const fns = functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "Foo.bar");
 		expect(fns).toHaveLength(1); // one functions row per key, definition preferred
 		expect(fns[0].isDeclarationOnly).toBe(false);
 	});
@@ -201,7 +202,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
 			"src/x.cpp",
 			"int (*cmp)(const void*, const void*);",
 		);
-		expect(r.functions).toHaveLength(0);
+		expect(functionsFromSymbols(r.symbols)).toHaveLength(0);
 	});
 
 	it("does not emit a function-pointer struct field as a method declaration", async () => {
@@ -211,7 +212,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
 			"src/x.h",
 			"struct Sorter { int (*compare)(int, int); };",
 		);
-		const cmpFn = r.functions.find((f) => f.qualifiedName.includes("compare"));
+		const cmpFn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName.includes("compare"));
 		expect(cmpFn).toBeUndefined();
 	});
 
@@ -222,7 +223,7 @@ describe("cfamily — function-pointer variables not emitted as declarations", (
 			"src/utils.h",
 			"int add(int a, int b);",
 		);
-		const fn = r.functions.find((f) => f.qualifiedName === "add");
+		const fn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "add");
 		expect(fn).toBeDefined();
 		expect(fn?.isDeclarationOnly).toBe(true);
 	});
@@ -251,13 +252,13 @@ describe("cfamily adapter — boot", () => {
 
 	it("c adapter can parse an empty source without throwing", async () => {
 		const r = await cAdapter.extractCallGraph!("", "x.c", "");
-		expect(r).toEqual({ functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
+		expect(r).toEqual({ symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
 		expect(await cAdapter.extractImports("", "x.c", "")).toEqual([]);
 	});
 
 	it("cpp adapter can parse an empty source without throwing", async () => {
 		const r = await cppAdapter.extractCallGraph!("", "x.cpp", "");
-		expect(r).toEqual({ functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
+		expect(r).toEqual({ symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
 		expect(await cppAdapter.extractImports("", "x.cpp", "")).toEqual([]);
 	});
 });
@@ -269,7 +270,7 @@ describe("c/c++ adapter — range and site emission (unit)", () => {
 			"src/r.c",
 			"int multi(void) {\n  return 0;\n}",
 		);
-		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		const fn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "multi");
 		expect(fn?.column).toBeGreaterThanOrEqual(1);
 		expect(fn?.endLine).toBeGreaterThan(fn!.line);
 		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
@@ -329,16 +330,16 @@ describe("cfamily adapter: symbols and refs (3.2)", () => {
 		expect(bars.map((b) => b.isDeclarationOnly)).toEqual([true, false]);
 		expect(byQn.counter).toMatchObject({ kind: "variable" });
 		for (const s of r.symbols!) expect(s.qualifiedName).not.toContain("::");
-		expect(r.functions.filter((f) => f.qualifiedName === "ns.Foo.bar")).toHaveLength(1);
-		expect(r.functions.find((f) => f.qualifiedName === "ns.Foo.bar")!.isDeclarationOnly).toBe(false);
+		expect(functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "ns.Foo.bar")).toHaveLength(1);
+		expect(functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "ns.Foo.bar")!.isDeclarationOnly).toBe(false);
 	});
 
 	it("c: same-file prototype plus definition projects to one functions row", async () => {
 		const c = await createCAdapter();
 		const r = await c.extractCallGraph!("", "src/u.c", "int add(int a, int b);\nint add(int a, int b) { return a + b; }\n");
 		expect(r.symbols!.filter((s) => s.qualifiedName === "add")).toHaveLength(2);
-		expect(r.functions.filter((f) => f.qualifiedName === "add")).toHaveLength(1);
-		expect(r.functions[0].isDeclarationOnly).toBe(false);
+		expect(functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "add")).toHaveLength(1);
+		expect(functionsFromSymbols(r.symbols)[0].isDeclarationOnly).toBe(false);
 	});
 
 	it("emits call and new refs with receivers; qualified calls become receiver + member", async () => {

@@ -15,8 +15,10 @@ const stubAdapter: LanguageAdapter = {
 	referenceKinds: [],
 	extractImports: async () => [],
 	extractCallGraph: async () => ({
-		functions: [],
+		symbols: [],
 		rawCalls: [],
+		rawRefs: [],
+		reexports: [],
 		importBindings: [],
 	}),
 };

@@ -11,7 +11,7 @@ import type {
 	RawImportSite,
 	RawRefSite,
 } from "../lang-adapter.js";
-import { functionsFromSymbols, TS_REF_KINDS, TS_SYMBOL_KINDS } from "../symbols.js";
+import { TS_REF_KINDS, TS_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -947,14 +947,13 @@ export async function createTypescriptAdapter(): Promise<LanguageAdapter> {
 				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
 			const ext = path.extname(filePath);
 			const parser = parserForExt(ext);
-			if (!parser) return { functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
+			if (!parser) return { symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
 			const tree = parser.parse(source);
-			if (!tree) return { functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
+			if (!tree) return { symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] };
 			const root = tree.rootNode;
 			const symbols = extractSymbols(root, filePath);
 			const { rawRefs, reexports } = extractRawRefs(root, filePath);
 			return {
-				functions: functionsFromSymbols(symbols),
 				symbols,
 				rawCalls: extractRawCalls(root, filePath),
 				rawRefs,

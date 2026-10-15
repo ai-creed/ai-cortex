@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { createPythonAdapter } from "../../../../src/lib/adapters/python.js";
+import { functionsFromSymbols } from "../../../../src/lib/symbols.js";
 import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
 let adapter: LanguageAdapter;
@@ -15,7 +16,7 @@ describe("python adapter — function extraction", () => {
 			"pkg/foo.py",
 			"def foo():\n  pass\n",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "foo",
 				file: "pkg/foo.py",
@@ -31,7 +32,7 @@ describe("python adapter — function extraction", () => {
 			"pkg/foo.py",
 			"async def bar():\n  pass\n",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "bar", exported: true }),
 		);
 	});
@@ -42,10 +43,10 @@ describe("python adapter — function extraction", () => {
 			"pkg/models.py",
 			"class Model:\n  def save(self):\n    pass\n  def finalize(self):\n    pass\n",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Model.save" }),
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Model.finalize" }),
 		);
 	});
@@ -56,7 +57,7 @@ describe("python adapter — function extraction", () => {
 			"pkg/foo.py",
 			"@property\ndef foo(self):\n  pass\n",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "foo" }),
 		);
 	});
@@ -67,14 +68,14 @@ describe("python adapter — function extraction", () => {
 			"pkg/models.py",
 			"class Model:\n  @property\n  def name(self):\n    pass\n",
 		);
-		expect(r.functions).toContainEqual(
+		expect(functionsFromSymbols(r.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Model.name" }),
 		);
 	});
 
 	it("returns empty result for empty file without throwing", async () => {
 		const result = await adapter.extractCallGraph!("", "pkg/empty.py", "");
-		expect(result.functions).toEqual([]);
+		expect(functionsFromSymbols(result.symbols)).toEqual([]);
 	});
 });
 
@@ -300,7 +301,7 @@ describe("python adapter — range and site emission (unit)", () => {
 			"pkg/r.py",
 			"def multi():\n    return 1\n",
 		);
-		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		const fn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "multi");
 		expect(fn?.column).toBe(1);
 		expect(fn?.endLine).toBeGreaterThan(fn!.line);
 		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
@@ -345,7 +346,7 @@ describe("python adapter: symbols and refs (3.2)", () => {
 		expect(byQn.x).toMatchObject({ kind: "variable" });
 		expect(byQn.y).toMatchObject({ kind: "variable" });
 		expect(byQn.Model.nameRange).toEqual({ line: 1, column: 7, endLine: 1, endColumn: 11 });
-		expect(r.functions).toEqual((await import("../../../../src/lib/symbols.js")).functionsFromSymbols(r.symbols!));
+		expect(functionsFromSymbols(r.symbols)).toEqual((await import("../../../../src/lib/symbols.js")).functionsFromSymbols(r.symbols!));
 	});
 
 	it("emits call refs with receiver, extends refs, and import refs; self-calls carry enclosingClass", async () => {

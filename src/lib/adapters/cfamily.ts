@@ -13,7 +13,6 @@ import type { SymbolKind, SymbolNode } from "../models.js";
 import {
 	C_REF_KINDS,
 	C_SYMBOL_KINDS,
-	functionsFromSymbols,
 } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
@@ -514,7 +513,6 @@ function extractImportSitesFromRoot(
 
 function emptyCallData(): RawCallData {
 	return {
-		functions: [],
 		symbols: [],
 		rawCalls: [],
 		rawRefs: [],
@@ -565,7 +563,6 @@ function buildAdapter(
 			const root = tree.rootNode;
 			const symbols = extractSymbols(root, filePath);
 			return {
-				functions: functionsFromSymbols(symbols),
 				symbols,
 				rawCalls: extractRawCalls(root, filePath),
 				rawRefs: extractRawRefs(root, filePath),

@@ -14,7 +14,12 @@ import type {
 	RawCallSite,
 	ImportBinding,
 } from "../../../src/lib/lang-adapter.js";
-import type { FunctionNode, ImportEdge } from "../../../src/lib/models.js";
+import type {
+	FunctionNode,
+	ImportEdge,
+	SymbolNode,
+} from "../../../src/lib/models.js";
+import { functionsFromSymbols } from "../../../src/lib/symbols.js";
 import {
 	resolveCallSites,
 	extractCallGraph,
@@ -675,7 +680,7 @@ describe("resolveCallSites — decl-only never becomes a call edge target", () =
 			"src/utils.h",
 			"int add(int a, int b);", // declaration only
 		);
-		const decl = r.functions.find((f) => f.qualifiedName === "add");
+		const decl = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "add");
 		expect(decl).toBeDefined();
 		expect(decl?.isDeclarationOnly).toBe(true);
 	});
@@ -707,20 +712,28 @@ describe("extractCallGraph", () => {
 			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi.fn().mockResolvedValue({
-				functions: [
+				symbols: [
 					{
 						qualifiedName: "main",
+						name: "main",
 						file: "src/main.ts",
+						kind: "function",
 						exported: true,
 						isDefaultExport: false,
-						line: 1,
+						isDeclarationOnly: false,
+						range: { line: 1, column: 1, endLine: 3, endColumn: 1 },
+						nameRange: { line: 1, column: 10, endLine: 1, endColumn: 14 },
 					},
 					{
 						qualifiedName: "helper",
+						name: "helper",
 						file: "src/main.ts",
+						kind: "function",
 						exported: false,
 						isDefaultExport: false,
-						line: 5,
+						isDeclarationOnly: false,
+						range: { line: 5, column: 1, endLine: 7, endColumn: 1 },
+						nameRange: { line: 5, column: 10, endLine: 5, endColumn: 16 },
 					},
 				],
 				rawCalls: [
@@ -731,6 +744,8 @@ describe("extractCallGraph", () => {
 						kind: "call",
 					},
 				],
+				rawRefs: [],
+				reexports: [],
 				importBindings: [],
 			}),
 		};
@@ -747,6 +762,45 @@ describe("extractCallGraph", () => {
 		});
 	});
 
+	it("derives functions from adapter symbols and surfaces symbols and reexports", async () => {
+		const sym = (file: string, qualifiedName: string): SymbolNode => ({
+			qualifiedName,
+			name: qualifiedName,
+			file,
+			kind: "function",
+			exported: true,
+			isDefaultExport: false,
+			isDeclarationOnly: false,
+			range: { line: 1, column: 1, endLine: 2, endColumn: 1 },
+			nameRange: { line: 1, column: 10, endLine: 1, endColumn: 13 },
+		});
+		const adapter: LanguageAdapter = {
+			extensions: [".ts"],
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: true },
+			symbolKinds: ["function"],
+			referenceKinds: ["call"],
+			async extractImports() { return []; },
+			async extractCallGraph(_w, file) {
+				return {
+					symbols: [sym(file, "foo"), { ...sym(file, "foo"), isDeclarationOnly: true }],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [{ file, exportedName: "x", sourceName: "y", specifier: "./z" }],
+					importBindings: [],
+				};
+			},
+		};
+		vi.mocked(getAdapterForFile).mockReturnValue(adapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(extractImports).mockResolvedValue([]);
+		const r = await extractCallGraph("/repo", ["src/a.ts"]);
+		expect(r.symbols).toHaveLength(2);
+		expect(r.functions).toHaveLength(1);
+		expect(r.functions[0]).toMatchObject({ qualifiedName: "foo", file: "src/a.ts", isDeclarationOnly: false, line: 1, column: 1, endLine: 2, endColumn: 1 });
+		expect(r.reexports).toEqual([{ file: "src/a.ts", exportedName: "x", sourceName: "y", specifier: "./z" }]);
+		expect(r.refs).toEqual([]);
+	});
+
 	it("calls extractImports with the file list and passes results to resolver", async () => {
 		const mockAdapter: LanguageAdapter = {
 			extensions: [".cpp"],
@@ -760,7 +814,13 @@ describe("extractCallGraph", () => {
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi
 				.fn()
-				.mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] }),
+				.mockResolvedValue({
+					symbols: [],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [],
+					importBindings: [],
+				}),
 		};
 		vi.mocked(adapterSupports).mockReturnValue(true);
 		vi.mocked(getAdapterForFile).mockReturnValue(mockAdapter);
@@ -1150,7 +1210,13 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 	it("uses content from contentMap without reading disk", async () => {
 		const extractCallGraphFn = vi
 			.fn()
-			.mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] });
+			.mockResolvedValue({
+					symbols: [],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [],
+					importBindings: [],
+				});
 		const mockAdapter: LanguageAdapter = {
 			extensions: [".ts"],
 			capabilities: {

@@ -83,10 +83,19 @@ beforeEach(async () => {
 	vi.mocked(readCacheForWorktree).mockResolvedValue(null);
 	vi.mocked(writeCache).mockResolvedValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
-	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
+	vi.mocked(extractCallGraph).mockResolvedValue({
+		calls: [],
+		functions: [],
+		symbols: [],
+		refs: [],
+		reexports: [],
+	});
 	vi.mocked(extractCallGraphRaw).mockResolvedValue({
 		rawCalls: [],
+		rawRefs: [],
+		symbols: [],
 		functions: [],
+		reexports: [],
 		bindingsByFile: new Map(),
 	});
 	vi.mocked(resolveCallSites).mockReturnValue([]);
@@ -144,6 +153,9 @@ describe("buildIndex", () => {
 					line: 1,
 				},
 			],
+			symbols: [],
+			refs: [],
+			reexports: [],
 		});
 		const cache = await buildIndex(mockIdentity);
 		expect(cache.calls).toHaveLength(1);
@@ -586,6 +598,9 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
+			rawRefs: [],
+			symbols: [],
+			reexports: [],
 			functions: [
 				{
 					qualifiedName: "main",
@@ -676,6 +691,9 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_utils_v2");
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
+			rawRefs: [],
+			symbols: [],
+			reexports: [],
 			functions: [
 				{
 					qualifiedName: "helper",

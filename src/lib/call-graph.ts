@@ -3,8 +3,16 @@ import path from "node:path";
 import { getAdapterForFile, adapterSupports } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
-import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
-import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
+import { functionsFromSymbols } from "./symbols.js";
+import type { RawCallSite, RawRefSite, ImportBinding } from "./lang-adapter.js";
+import type {
+	CallEdge,
+	FunctionNode,
+	ImportEdge,
+	RefEdge,
+	ReexportRow,
+	SymbolNode,
+} from "./models.js";
 
 const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const C_FAMILY_EXTS = new Set([
@@ -356,7 +364,10 @@ export function resolveCallSites(
 
 export type ExtractResult = {
 	rawCalls: RawCallSite[];
+	rawRefs: RawRefSite[];
+	symbols: SymbolNode[];
 	functions: FunctionNode[];
+	reexports: ReexportRow[];
 	bindingsByFile: Map<string, ImportBinding[]>;
 };
 
@@ -366,8 +377,10 @@ export async function extractCallGraphRaw(
 	contentMap?: Map<string, string>,
 ): Promise<ExtractResult> {
 	await ensureAdapters();
-	const allFunctions: FunctionNode[] = [];
+	const allSymbols: SymbolNode[] = [];
 	const allRawCalls: RawCallSite[] = [];
+	const allRawRefs: RawRefSite[] = [];
+	const allReexports: ReexportRow[] = [];
 	const bindingsByFile = new Map<string, ImportBinding[]>();
 
 	for (const filePath of filePaths) {
@@ -384,8 +397,10 @@ export async function extractCallGraphRaw(
 				filePath,
 				content,
 			);
-			allFunctions.push(...result.functions);
+			allSymbols.push(...result.symbols);
 			allRawCalls.push(...result.rawCalls);
+			allRawRefs.push(...result.rawRefs);
+			allReexports.push(...result.reexports);
 			if (result.importBindings.length > 0) {
 				bindingsByFile.set(filePath, result.importBindings);
 			}
@@ -394,19 +409,29 @@ export async function extractCallGraphRaw(
 		}
 	}
 
-	return { rawCalls: allRawCalls, functions: allFunctions, bindingsByFile };
+	return {
+		rawCalls: allRawCalls,
+		rawRefs: allRawRefs,
+		symbols: allSymbols,
+		functions: functionsFromSymbols(allSymbols),
+		reexports: allReexports,
+		bindingsByFile,
+	};
 }
 
 export async function extractCallGraph(
 	worktreePath: string,
 	filePaths: string[],
 	contentMap?: Map<string, string>,
-): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
-	const { rawCalls, functions, bindingsByFile } = await extractCallGraphRaw(
-		worktreePath,
-		filePaths,
-		contentMap,
-	);
+): Promise<{
+	calls: CallEdge[];
+	functions: FunctionNode[];
+	symbols: SymbolNode[];
+	refs: RefEdge[];
+	reexports: ReexportRow[];
+}> {
+	const { rawCalls, functions, symbols, reexports, bindingsByFile } =
+		await extractCallGraphRaw(worktreePath, filePaths, contentMap);
 	const importEdges = await extractImports(
 		worktreePath,
 		filePaths,
@@ -425,5 +450,5 @@ export async function extractCallGraph(
 		bindingsByFile,
 		includesByFile,
 	);
-	return { calls, functions };
+	return { calls, functions, symbols, refs: [], reexports };
 }

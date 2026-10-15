@@ -1,6 +1,7 @@
 // tests/unit/lib/adapters/typescript.test.ts
 import { describe, expect, it, beforeAll } from "vitest";
 import { createTypescriptAdapter } from "../../../../src/lib/adapters/typescript.js";
+import { functionsFromSymbols } from "../../../../src/lib/symbols.js";
 import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
 let adapter: LanguageAdapter;
@@ -16,7 +17,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/foo.ts",
 			"function foo() { return 1; }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "foo",
 				file: "src/foo.ts",
@@ -32,7 +33,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/bar.ts",
 			"export function bar() {}",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "bar",
 				exported: true,
@@ -47,7 +48,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/baz.ts",
 			"const baz = () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "baz",
 				exported: false,
@@ -61,7 +62,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/qux.ts",
 			"export const qux = () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "qux",
 				exported: true,
@@ -76,10 +77,10 @@ describe("typescript adapter — function extraction", () => {
 			"src/foo.ts",
 			"class Foo { bar() {} render() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.bar" }),
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.render" }),
 		);
 	});
@@ -90,7 +91,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/svc.ts",
 			"export class Svc { run() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Svc.run",
 				exported: true,
@@ -104,7 +105,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/ab.ts",
 			"class A { render() {} }\nclass B { render() {} }",
 		);
-		const names = result.functions.map((f) => f.qualifiedName);
+		const names = functionsFromSymbols(result.symbols).map((f) => f.qualifiedName);
 		expect(names).toContain("A.render");
 		expect(names).toContain("B.render");
 	});
@@ -115,7 +116,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/do.ts",
 			"export default function doThing() {}",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "doThing",
 				exported: true,
@@ -130,7 +131,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/anon.ts",
 			"export default () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "default",
 				exported: true,
@@ -145,13 +146,13 @@ describe("typescript adapter — function extraction", () => {
 			"src/ctrl.ts",
 			"export default class Ctrl { handle() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Ctrl",
 				isDefaultExport: true,
 			}),
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Ctrl.handle",
 				exported: true,
@@ -162,7 +163,7 @@ describe("typescript adapter — function extraction", () => {
 	it("reports accurate line numbers", async () => {
 		const source = "// comment\n\nfunction foo() {}\n";
 		const result = await adapter.extractCallGraph!("", "src/foo.ts", source);
-		const foo = result.functions.find((f) => f.qualifiedName === "foo");
+		const foo = functionsFromSymbols(result.symbols).find((f) => f.qualifiedName === "foo");
 		expect(foo?.line).toBe(3);
 	});
 });
@@ -307,7 +308,7 @@ describe("typescript adapter — import binding extraction", () => {
 describe("typescript adapter — edge cases", () => {
 	it("returns empty result for empty file", async () => {
 		const result = await adapter.extractCallGraph!("", "src/empty.ts", "");
-		expect(result.functions).toHaveLength(0);
+		expect(functionsFromSymbols(result.symbols)).toHaveLength(0);
 		expect(result.rawCalls).toHaveLength(0);
 		expect(result.importBindings).toHaveLength(0);
 	});
@@ -382,7 +383,7 @@ describe("typescript adapter — range and site emission (unit)", () => {
 			"src/r.ts",
 			"function multi() {\n  return 1;\n}",
 		);
-		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		const fn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "multi");
 		expect(fn?.column).toBe(1);
 		expect(fn?.endLine).toBeGreaterThan(fn!.line);
 		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
@@ -496,7 +497,7 @@ describe("typescript adapter — symbols (3.2)", () => {
 		const ns = r.symbols!.filter((s) => s.qualifiedName === "N");
 		expect(ns).toHaveLength(2);
 		expect(ns.every((s) => s.kind === "namespace")).toBe(true);
-		expect(r.functions.filter((f) => f.qualifiedName === "N.C")).toHaveLength(1);
+		expect(functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "N.C")).toHaveLength(1);
 	});
 
 	it("computed and string-literal member names are unquoted", async () => {
@@ -527,7 +528,7 @@ describe("typescript adapter — symbols (3.2)", () => {
 			"export class C { m() {} }\nexport const f = () => 1;\nfunction g() {}\nexport default function () {}",
 		);
 		const { functionsFromSymbols } = await import("../../../../src/lib/symbols.js");
-		expect(r.functions).toEqual(functionsFromSymbols(r.symbols!));
+		expect(functionsFromSymbols(r.symbols)).toEqual(functionsFromSymbols(r.symbols!));
 	});
 
 	it("rawCalls carry enclosingClass for this.* calls inside namespaced classes", async () => {
@@ -550,7 +551,7 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 			"function fetch() {}\nexport default { fetch() { helper(); } };\nfoo({ m() { go(); } });",
 		);
 		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["fetch"]);
-		expect(r.functions.map((f) => f.qualifiedName)).toEqual(["fetch"]);
+		expect(functionsFromSymbols(r.symbols).map((f) => f.qualifiedName)).toEqual(["fetch"]);
 		expect(r.rawCalls.map((c) => c.callerQualifiedName)).not.toContain("fetch");
 		expect(r.rawCalls.find((c) => c.rawCallee === "go")).toBeUndefined();
 	});

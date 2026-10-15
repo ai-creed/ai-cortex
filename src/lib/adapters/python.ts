@@ -11,7 +11,7 @@ import type {
 	RawRefSite,
 } from "../lang-adapter.js";
 import type { SymbolNode } from "../models.js";
-import { functionsFromSymbols, PY_REF_KINDS, PY_SYMBOL_KINDS } from "../symbols.js";
+import { PY_REF_KINDS, PY_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -421,7 +421,6 @@ function extractImportSitesFromRoot(
 }
 
 const EMPTY: RawCallData = {
-	functions: [],
 	symbols: [],
 	rawCalls: [],
 	rawRefs: [],
@@ -481,7 +480,6 @@ export async function createPythonAdapter(): Promise<LanguageAdapter> {
 			try {
 				const symbols = extractSymbols(tree.rootNode, filePath);
 				return {
-					functions: functionsFromSymbols(symbols),
 					symbols,
 					rawCalls: extractRawCalls(tree.rootNode, filePath),
 					rawRefs: extractRawRefs(tree.rootNode, filePath),
