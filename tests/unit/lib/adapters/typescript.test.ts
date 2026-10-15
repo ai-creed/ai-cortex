@@ -417,7 +417,7 @@ describe("typescript adapter — range and site emission (unit)", () => {
 	});
 });
 
-describe("typescript adapter — symbols (3.2)", () => {
+describe("typescript adapter: symbols (3.2)", () => {
 	async function symbolsOf(src: string, file = "src/s.ts") {
 		const r = await adapter.extractCallGraph!("", file, src);
 		return r.symbols;
@@ -533,7 +533,7 @@ describe("typescript adapter — symbols (3.2)", () => {
 	});
 });
 
-describe("typescript adapter — symbols (3.2) review fixes", () => {
+describe("typescript adapter: symbols (3.2) review fixes", () => {
 	it("object-literal methods are not indexed and do not become callers", async () => {
 		const r = await adapter.extractCallGraph!(
 			"",
@@ -570,7 +570,7 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 	});
 });
 
-describe("typescript adapter — refs (3.2)", () => {
+describe("typescript adapter: refs (3.2)", () => {
 	async function refsOf(src: string, file = "src/r.ts") {
 		const r = await adapter.extractCallGraph!("", file, src);
 		return { refs: r.rawRefs, reexports: r.reexports };

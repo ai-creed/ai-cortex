@@ -1245,7 +1245,7 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 	});
 });
 
-describe("resolveCallSites — 3.2 member resolution (A5 steps 1 and 4)", () => {
+describe("resolveCallSites: 3.2 member resolution (A5 steps 1 and 4)", () => {
 	const R = { line: 1, column: 1, endLine: 1, endColumn: 5 };
 	const sym = (file: string, qualifiedName: string, kind: SymbolNode["kind"] = "method"): SymbolNode => ({
 		qualifiedName,
@@ -1305,7 +1305,7 @@ describe("resolveCallSites — 3.2 member resolution (A5 steps 1 and 4)", () => 
 	});
 });
 
-describe("resolveCallSites — C-family dotted callee include lookup", () => {
+describe("resolveCallSites: C-family dotted callee include lookup", () => {
 	const decl = (file: string, qualifiedName: string, isDeclarationOnly: boolean): FunctionNode => ({
 		qualifiedName,
 		file,
@@ -1336,7 +1336,7 @@ describe("resolveCallSites — C-family dotted callee include lookup", () => {
 	});
 });
 
-describe("extractCallGraph — refs", () => {
+describe("extractCallGraph: refs", () => {
 	it("returns resolved refs alongside calls", async () => {
 		const R = { line: 2, column: 3, endLine: 2, endColumn: 6 };
 		const adapter: LanguageAdapter = {
