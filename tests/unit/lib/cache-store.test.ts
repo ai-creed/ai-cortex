@@ -30,11 +30,13 @@ import {
 	isWorktreeDirty,
 	readCacheForWorktree,
 	readFreshnessMeta,
+	readFromDb,
 	RepoKeyError,
 	setEnsureValidDbTestHooks,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
 import { setTranscodeTestHooks } from "../../../src/lib/cache-store-sqlite.js";
+import { buildIncrementalIndex } from "../../../src/lib/indexer.js";
 import { seqDbPathFor } from "../../../src/lib/seq-lock.js";
 
 const mockExec = vi.mocked(exec);
@@ -244,6 +246,28 @@ describe("writeCache (SQLite)", () => {
 		fs.writeFileSync(jsonPath, "{}");
 		await writeCache(cache);
 		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+
+	it("indexSeq through writeCache: 1, 2, then 3 after an empty-diff incremental refresh", async () => {
+		mockExecSuccess("abc123\n");
+		// Seed the real fingerprint of files: [] so the empty-diff recompute matches.
+		const cache = makeCache({ contentFingerprint: computeContentFingerprint([]) });
+		const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+		await writeCache(cache);
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(1);
+		await writeCache(cache);
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(2);
+		const prior = readFromDb(dbPath)!;
+		const refreshed = await buildIncrementalIndex(
+			{ repoKey: cache.repoKey, worktreeKey: cache.worktreeKey, worktreePath: cache.worktreePath, gitCommonDir: cache.worktreePath },
+			prior,
+			{ changed: [], removed: [], method: "hash-compare" },
+			false,
+		);
+		expect(refreshed.indexSeq).toBe(0); // the writer assigns it
+		await writeCache(refreshed);
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(3);
+		expect(readFreshnessMeta(dbPath).contentFingerprint).toBe(prior.contentFingerprint);
 	});
 });
 

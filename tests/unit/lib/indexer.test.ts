@@ -47,7 +47,7 @@ import {
 import { ensureAdapters } from "../../../src/lib/adapters/ensure.js";
 import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
-import type { RepoCache } from "../../../src/lib/models.js";
+import type { RepoCache, SymbolNode } from "../../../src/lib/models.js";
 import type { FilesDiff } from "../../../src/lib/diff-files.js";
 import {
 	buildIndex,
@@ -235,6 +235,21 @@ describe("getCachedIndex", () => {
 		expect(await getCachedIndex("/repo")).toBe(fresh);
 	});
 });
+
+function fnSymbol(file: string, qualifiedName: string): SymbolNode {
+	const range = { line: 1, column: 0, endLine: 1, endColumn: 1 };
+	return {
+		name: qualifiedName.split(".").pop()!,
+		qualifiedName,
+		file,
+		kind: "function",
+		exported: true,
+		isDefaultExport: false,
+		isDeclarationOnly: false,
+		range,
+		nameRange: range,
+	};
+}
 
 function makeCacheForIncremental(): RepoCache {
 	return {
@@ -599,17 +614,9 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
 			rawRefs: [],
-			symbols: [],
+			symbols: [fnSymbol("src/main.ts", "main")],
 			reexports: [],
-			functions: [
-				{
-					qualifiedName: "main",
-					file: "src/main.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
-			],
+			functions: [],
 			bindingsByFile: new Map(),
 		});
 		vi.mocked(resolveCallSites).mockReturnValue([
@@ -626,21 +633,11 @@ describe("buildIncrementalIndex", () => {
 			{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
 			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
 		];
-		existing.functions = [
-			{
-				qualifiedName: "main",
-				file: "src/main.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
-			{
-				qualifiedName: "helper",
-				file: "src/utils.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
+		existing.symbols = [
+			fnSymbol("src/main.ts", "main"),
+			fnSymbol("src/utils.ts", "helper"),
+			fnSymbol("src/utils.ts", "newHelper"),
+			fnSymbol("src/lib.ts", "lib"),
 		];
 
 		const diff: FilesDiff = {
@@ -692,24 +689,12 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
 			rawRefs: [],
-			symbols: [],
-			reexports: [],
-			functions: [
-				{
-					qualifiedName: "helper",
-					file: "src/utils.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
-				{
-					qualifiedName: "main",
-					file: "src/main.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
+			symbols: [
+				fnSymbol("src/utils.ts", "helper"),
+				fnSymbol("src/main.ts", "main"),
 			],
+			reexports: [],
+			functions: [],
 			bindingsByFile: new Map(),
 		});
 		vi.mocked(resolveCallSites).mockReturnValue([
@@ -727,21 +712,10 @@ describe("buildIncrementalIndex", () => {
 			},
 			{ from: "src/utils.ts::oldHelper", to: "src/lib.ts::lib", kind: "call" },
 		];
-		existing.functions = [
-			{
-				qualifiedName: "main",
-				file: "src/main.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
-			{
-				qualifiedName: "oldHelper",
-				file: "src/utils.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
+		existing.symbols = [
+			fnSymbol("src/main.ts", "main"),
+			fnSymbol("src/utils.ts", "oldHelper"),
+			fnSymbol("src/lib.ts", "lib"),
 		];
 
 		const diff: FilesDiff = {

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
 	buildRepoFingerprint,
+	computeContentFingerprint,
 	readCacheForWorktree,
 	writeCache,
 } from "./cache-store.js";
@@ -21,8 +22,18 @@ import { readPackageMeta, pickEntryFiles } from "./entry-files.js";
 import { extractImports } from "./import-graph.js";
 import { listIndexableFiles } from "./indexable-files.js";
 import { SCHEMA_VERSION, IndexError, RepoIdentityError } from "./models.js";
-import type { RepoCache, RepoIdentity, ImportEdge } from "./models.js";
+import type {
+	CallEdge,
+	ImportEdge,
+	ReexportRow,
+	RefEdge,
+	RepoCache,
+	RepoIdentity,
+	SymbolNode,
+} from "./models.js";
 import { resolveRepoIdentity } from "./repo-identity.js";
+import { resolveRefs } from "./symbol-resolver.js";
+import { functionsFromSymbols } from "./symbols.js";
 
 type FileContentMap = Map<string, string>;
 
@@ -64,11 +75,13 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 			kind: "file" as const,
 			contentHash: hashFileContent(identity.worktreePath, p, contentMap.get(p)),
 		}));
-		const { calls, functions: functionNodes } = await extractCallGraph(
-			identity.worktreePath,
-			filePaths,
-			contentMap,
-		);
+		const {
+			calls,
+			functions: functionNodes,
+			symbols,
+			refs,
+			reexports,
+		} = await extractCallGraph(identity.worktreePath, filePaths, contentMap);
 
 		return {
 			schemaVersion: SCHEMA_VERSION,
@@ -77,6 +90,8 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 			worktreePath: identity.worktreePath,
 			indexedAt: new Date().toISOString(),
 			fingerprint,
+			indexSeq: 0,
+			contentFingerprint: computeContentFingerprint(files),
 			packageMeta,
 			entryFiles,
 			files,
@@ -84,11 +99,9 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 			imports,
 			calls,
 			functions: functionNodes,
-			indexSeq: 0,
-			contentFingerprint: "",
-			symbols: [],
-			refs: [],
-			reexports: [],
+			symbols,
+			refs,
+			reexports,
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
@@ -115,15 +128,20 @@ export async function buildIncrementalIndex(
 	const fingerprint = await buildRepoFingerprint(identity.worktreePath);
 	const indexedAt = new Date().toISOString();
 
-	// Empty diff — timestamp-only refresh
+	// Empty diff: timestamp-only refresh. The writer assigns indexSeq.
 	if (diff.changed.length === 0 && diff.removed.length === 0) {
 		return {
 			...existingCache,
 			fingerprint,
 			indexedAt,
 			dirtyAtIndex,
+			indexSeq: 0,
+			contentFingerprint: computeContentFingerprint(existingCache.files),
 			calls: existingCache.calls ?? [],
 			functions: existingCache.functions ?? [],
+			symbols: existingCache.symbols ?? [],
+			refs: existingCache.refs ?? [],
+			reexports: existingCache.reexports ?? [],
 		};
 	}
 
@@ -173,49 +191,43 @@ export async function buildIncrementalIndex(
 		? loadDocs(identity.worktreePath, allFilePaths)
 		: existingCache.docs;
 
-	// --- calls[] + functions[] ---
+	// --- calls, functions, symbols, refs, reexports ---
 	const existingCalls = existingCache.calls ?? [];
-	const existingFunctions = existingCache.functions ?? [];
+	const existingSymbols = existingCache.symbols ?? [];
+	const existingRefs = existingCache.refs ?? [];
+	const existingReexports = existingCache.reexports ?? [];
 
-	// Identify affected callers: unchanged files that import changed files
-	const affectedCallers = new Set<string>();
-	for (const edge of existingCache.imports) {
-		if (touchedSet.has(edge.from)) continue;
-		for (const changed of touchedSet) {
-			const changedStripped = stripTsExt(changed);
-			if (
-				edge.to === changedStripped ||
-				edge.to === changedStripped.replace(/\/index$/, "")
-			) {
-				affectedCallers.add(edge.from);
-			}
-		}
-	}
-
-	// Remove call edges from changed files and affected callers
-	const callCleanSet = new Set([...touchedSet, ...affectedCallers]);
-	const keptCalls = existingCalls.filter((e) => {
-		const fromFile = e.from.slice(0, e.from.indexOf("::"));
-		return !callCleanSet.has(fromFile);
-	});
-	const keptFunctions = existingFunctions.filter(
-		(f) =>
-			!changedSet.has(f.file) &&
-			!removedSet.has(f.file) &&
-			!affectedCallers.has(f.file),
+	// Keep rows for files outside the affected set.
+	const affected = computeAffectedFiles(
+		existingCache.imports,
+		touchedSet,
+		existingReexports,
 	);
+	const cleanSet = new Set([...touchedSet, ...affected]);
+	const keptCalls = existingCalls.filter(
+		(e) => !cleanSet.has(fileOfKey(e.from)),
+	);
+	const keptSymbols = existingSymbols.filter((s) => !cleanSet.has(s.file));
+	const keptRefs = existingRefs.filter((r) => !cleanSet.has(r.file));
+	const keptReexports = existingReexports.filter((r) => !cleanSet.has(r.file));
 
-	// Reparse changed files + affected callers
+	// Reparse touched plus affected files.
 	const filesToReparse = [
 		...changedAdapterFiles,
-		...[...affectedCallers].filter(isAdapterExt),
+		...[...affected].filter(isAdapterExt),
 	];
 	const {
 		rawCalls,
-		functions: newFunctions,
+		rawRefs,
+		symbols: newSymbols,
+		reexports: newReexports,
 		bindingsByFile,
 	} = await extractCallGraphRaw(identity.worktreePath, filesToReparse);
-	const mergedFunctions = [...keptFunctions, ...newFunctions];
+
+	// Merge, then re-resolve against the merged symbols and re-export rows.
+	const symbols = [...keptSymbols, ...newSymbols];
+	const reexports = [...keptReexports, ...newReexports];
+	const functionNodes = functionsFromSymbols(symbols);
 	const includesByFile = new Map<string, ImportEdge[]>();
 	for (const edge of imports) {
 		const list = includesByFile.get(edge.from) ?? [];
@@ -224,13 +236,26 @@ export async function buildIncrementalIndex(
 	}
 	const newCalls = resolveCallSites(
 		rawCalls,
-		mergedFunctions,
+		functionNodes,
 		bindingsByFile,
+		includesByFile,
+		symbols,
+		reexports,
+	);
+	const newRefs = resolveRefs(
+		rawRefs,
+		symbols,
+		bindingsByFile,
+		reexports,
 		includesByFile,
 	);
 
-	const calls = [...keptCalls, ...newCalls];
-	const functionNodes = mergedFunctions;
+	// Sweep kept rows that still point at keys no longer in symbols.
+	const { refs, calls } = sweepStaleKeys(
+		[...keptRefs, ...newRefs],
+		[...keptCalls, ...newCalls],
+		symbols,
+	);
 
 	return {
 		schemaVersion: SCHEMA_VERSION,
@@ -240,6 +265,8 @@ export async function buildIncrementalIndex(
 		indexedAt,
 		fingerprint,
 		dirtyAtIndex,
+		indexSeq: 0,
+		contentFingerprint: computeContentFingerprint(files),
 		packageMeta,
 		entryFiles,
 		files,
@@ -247,12 +274,76 @@ export async function buildIncrementalIndex(
 		imports,
 		calls,
 		functions: functionNodes,
-		indexSeq: 0,
-		contentFingerprint: "",
-		symbols: [],
-		refs: [],
-		reexports: [],
+		symbols,
+		refs,
+		reexports,
 	};
+}
+
+function fileOfKey(key: string): string {
+	return key.slice(0, key.indexOf("::"));
+}
+
+function importEdgeTargets(edgeTo: string, file: string): boolean {
+	const stripped = stripTsExt(file);
+	return (
+		edgeTo === stripped ||
+		edgeTo === stripped.replace(/\/index$/, "") ||
+		edgeTo === file
+	);
+}
+
+/**
+ * Untouched files whose rows must be rebuilt: importers of a touched file,
+ * plus one re-export hop (importers of a touched or affected file that has
+ * `reexports` rows in the existing cache).
+ */
+function computeAffectedFiles(
+	existingImports: ImportEdge[],
+	touchedSet: Set<string>,
+	existingReexports: ReexportRow[],
+): Set<string> {
+	const importersOf = (targets: string[], skip: Set<string>): string[] => {
+		const out: string[] = [];
+		for (const edge of existingImports) {
+			if (skip.has(edge.from)) continue;
+			if (targets.some((t) => importEdgeTargets(edge.to, t))) {
+				out.push(edge.from);
+			}
+		}
+		return out;
+	};
+
+	const affected = new Set(importersOf([...touchedSet], touchedSet));
+	const filesWithReexports = new Set(existingReexports.map((r) => r.file));
+	const hopTargets = [...touchedSet, ...affected].filter((f) =>
+		filesWithReexports.has(f),
+	);
+	const skip = new Set([...touchedSet, ...affected]);
+	for (const f of importersOf(hopTargets, skip)) affected.add(f);
+	return affected;
+}
+
+/**
+ * Guarantees no dangling key: a ref or call whose target is absent from
+ * `symbols` becomes unresolved. Chains longer than the one-hop rule land here.
+ */
+function sweepStaleKeys(
+	refs: RefEdge[],
+	calls: CallEdge[],
+	symbols: SymbolNode[],
+): { refs: RefEdge[]; calls: CallEdge[] } {
+	const liveKeys = new Set(symbols.map((s) => `${s.file}::${s.qualifiedName}`));
+	const sweptRefs = refs.map((r) => {
+		if (r.to === undefined || liveKeys.has(r.to)) return r;
+		const { to: _stale, ...rest } = r;
+		return rest;
+	});
+	const sweptCalls = calls.map((e) => {
+		if (e.to.startsWith("::") || liveKeys.has(e.to)) return e;
+		return { ...e, to: `::${e.to.slice(e.to.indexOf("::") + 2)}` };
+	});
+	return { refs: sweptRefs, calls: sweptCalls };
 }
 
 export async function getCachedIndex(
