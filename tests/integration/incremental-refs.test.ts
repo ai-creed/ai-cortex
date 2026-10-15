@@ -46,6 +46,7 @@ function noDangling(c: RepoCache) {
 	const keys = new Set(c.symbols.map((s) => `${s.file}::${s.qualifiedName}`));
 	for (const r of c.refs) if (r.to) expect(keys.has(r.to)).toBe(true);
 	for (const r of c.refs) if (r.from) expect(keys.has(r.from)).toBe(true);
+	for (const e of c.calls) if (!e.to.startsWith("::")) expect(keys.has(e.to)).toBe(true);
 }
 
 describe("incremental index: symbols, refs, reexports (B4)", () => {
@@ -126,5 +127,31 @@ describe("incremental index: symbols, refs, reexports (B4)", () => {
 		expect(same.refs).toEqual(full.refs);
 		expect(same.contentFingerprint).toBe(full.contentFingerprint);
 		expect(same.indexSeq).toBe(0);
+	});
+
+	it("(4) a kept call into a companion source outside the affected set is swept to unresolved, never dangling", async () => {
+		// main.c includes util.h, and its call resolves to the companion util.c. Only
+		// util.c changes; main.c does not import it, so main.c is kept and only the
+		// sweep can clear the stale key. (TS re-export chains cannot reach here: the
+		// resolver follows one hop, which the affected set already covers.)
+		const H = "src/cdep/util.h";
+		const CSRC = "src/cdep/util.c";
+		const MAIN = "src/cdep/main.c";
+		write(H, "int helper(void);\n");
+		write(CSRC, '#include "util.h"\nint helper(void) { return 1; }\nint keep(void) { return 2; }\n');
+		write(MAIN, '#include "util.h"\nint main(void) { return helper(); }\n');
+		try {
+			const full = await buildIndex(resolveRepoIdentity(dir));
+			expect(full.calls.find((e) => e.from === `${MAIN}::main` && e.to === `${CSRC}::helper`)).toBeDefined();
+
+			write(CSRC, '#include "util.h"\nint keep(void) { return 2; }\n');
+			const next = await incremental(full);
+			expect(next.symbols.some((s) => s.file === CSRC && s.qualifiedName === "helper")).toBe(false);
+			expect(next.calls.find((e) => e.from === `${MAIN}::main` && e.to === "::helper")).toBeDefined();
+			expect(next.calls.some((e) => e.to === `${CSRC}::helper`)).toBe(false);
+			noDangling(next);
+		} finally {
+			fs.rmSync(path.join(dir, "src/cdep"), { recursive: true, force: true });
+		}
 	});
 });
