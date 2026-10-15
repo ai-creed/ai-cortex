@@ -101,6 +101,8 @@ describe("resolveCacheWithFreshness", () => {
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
+		// The incremental rebuild keeps unchanged files' nav rows, so it reads them.
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: true });
 	});
 
 	it("returns reindexed via incremental path when worktree is dirty", async () => {
@@ -172,6 +174,7 @@ describe("resolveCacheWithFreshness", () => {
 
 		expect(result.cacheStatus).toBe("stale");
 		expect(result.cache).toBe(cache);
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: false });
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});
@@ -185,6 +188,8 @@ describe("resolveCacheWithFreshness", () => {
 
 		expect(result.cacheStatus).toBe("fresh");
 		expect(result.cache).toBe(cache);
+		// Read-only consumers skip the nav tables (Ruling 12).
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: false });
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});

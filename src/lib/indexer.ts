@@ -350,9 +350,11 @@ export async function getCachedIndex(
 	repoPath: string,
 ): Promise<RepoCache | null> {
 	const identity = resolveRepoIdentity(repoPath);
+	// `index` on a fresh store only reports counts and meta; skip the nav tables.
 	const cached = await readCacheForWorktree(
 		identity.repoKey,
 		identity.worktreeKey,
+		{ nav: false },
 	);
 	if (!cached) return null;
 	const currentFingerprint = await buildRepoFingerprint(identity.worktreePath);

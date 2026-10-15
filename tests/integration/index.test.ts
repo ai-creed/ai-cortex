@@ -488,6 +488,42 @@ describe("suggestRepo (real disk + real git)", () => {
 		).toBe(true);
 	});
 
+	it("fresh reads skip the nav tables while the incremental rebuild keeps them (Ruling 12)", async () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "src", "keep.ts"),
+			"export function keepMe() { return keepHelper(); }\nfunction keepHelper() { return 1; }\n",
+		);
+		execFileSync("git", ["-C", tmpDir, "add", "."]);
+		execFileSync("git", ["-C", tmpDir, "commit", "-m", "add keep"]);
+		const base = await indexRepo(tmpDir);
+		const dbPath = path.join(resolvedCacheDir(base.repoKey), `${base.worktreeKey}.db`);
+		const navRows = () => {
+			const db = new Database(dbPath, { readonly: true });
+			try {
+				return {
+					symbols: (db.prepare("SELECT COUNT(*) c FROM symbols WHERE file = 'src/keep.ts'").get() as { c: number }).c,
+					refs: (db.prepare("SELECT COUNT(*) c FROM refs WHERE file = 'src/keep.ts'").get() as { c: number }).c,
+				};
+			} finally {
+				db.close();
+			}
+		};
+		const before = navRows();
+		expect(before.symbols).toBeGreaterThan(0);
+		expect(before.refs).toBeGreaterThan(0);
+
+		const fresh = await rehydrateRepo(tmpDir);
+		expect(fresh.cacheStatus).toBe("fresh");
+		expect(fresh.cache.symbols).toEqual([]);
+		expect(navRows()).toEqual(before);
+
+		fs.writeFileSync(path.join(tmpDir, "src", "main.ts"), "export const dirtyAgain = true;\n");
+		const rebuilt = await rehydrateRepo(tmpDir);
+		expect(rebuilt.cacheStatus).toBe("reindexed");
+		expect(navRows()).toEqual(before); // untouched keep.ts rows survive the incremental write
+		execFileSync("git", ["-C", tmpDir, "checkout", "--", "src/main.ts"]);
+	});
+
 	it("refreshes when a dirty cache is reverted back to clean", async () => {
 		await indexRepo(tmpDir);
 		fs.writeFileSync(

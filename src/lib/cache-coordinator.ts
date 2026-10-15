@@ -52,8 +52,9 @@ export async function ensureFreshDb(
 	if (options.stale) return { dbPath: validPath, cacheStatus: "stale" };
 
 	// Stale rebuild: the incremental indexer needs the prior graph, so materialize
-	// ONCE here (transient; not retained by blast).
-	const cached = readFromDb(validPath);
+	// ONCE here (transient; not retained by blast). Nav rows are loaded because
+	// the incremental rebuild keeps the unchanged files' symbols and refs.
+	const cached = readFromDb(validPath, { nav: true });
 	if (!cached) {
 		const cache = await indexRepo(identity.worktreePath);
 		return {
@@ -87,7 +88,8 @@ async function materialize(
 	dbPath: string,
 	identity: RepoIdentity,
 ): Promise<RepoCache> {
-	const cache = readFromDb(dbPath);
+	// Read-only consumers never use the nav tables; skip loading them.
+	const cache = readFromDb(dbPath, { nav: false });
 	if (cache) return cache;
 	// Extremely defensive: db vanished between ensure and read -> reindex.
 	return indexRepo(identity.worktreePath);

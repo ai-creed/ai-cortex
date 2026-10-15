@@ -213,7 +213,25 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 	tx();
 }
 
-export function assembleCache(db: DB): RepoCache {
+export type ReadOptions = {
+	/** Load the navigation tables (`symbols`, `refs`, `reexports`). Defaults to
+	 *  true. Read-only consumers (rehydrate, suggest, `index` on a fresh store)
+	 *  pass false: those tables dominate the read cost and they never use them. */
+	nav?: boolean;
+};
+
+// Caches assembled with `nav: false` carry empty nav arrays that do not reflect
+// the store. They are tracked here, invisibly to equality and serialization, so
+// a write-back cannot silently erase the published nav rows.
+const navlessCaches = new WeakSet<RepoCache>();
+
+/** True when the cache was read with `nav: false` and must never be written. */
+export function isNavlessCache(cache: RepoCache): boolean {
+	return navlessCaches.has(cache);
+}
+
+export function assembleCache(db: DB, options: ReadOptions = {}): RepoCache {
+	const nav = options.nav ?? true;
 	const metaRows = db.prepare("SELECT key, value FROM meta").all() as Array<{
 		key: string;
 		value: string;
@@ -305,7 +323,7 @@ export function assembleCache(db: DB): RepoCache {
 		return c;
 	});
 
-	const symbols: SymbolNode[] = (db.prepare("SELECT * FROM symbols ORDER BY rowid").all() as Array<{ file: string; qualified_name: string; name: string; kind: string; container_key: string | null; exported: number; is_default_export: number; is_declaration_only: number; line: number; col: number; end_line: number; end_col: number; name_line: number; name_col: number; name_end_line: number; name_end_col: number }>).map((r) => {
+	const symbols: SymbolNode[] = !nav ? [] : (db.prepare("SELECT * FROM symbols ORDER BY rowid").all() as Array<{ file: string; qualified_name: string; name: string; kind: string; container_key: string | null; exported: number; is_default_export: number; is_declaration_only: number; line: number; col: number; end_line: number; end_col: number; name_line: number; name_col: number; name_end_line: number; name_end_col: number }>).map((r) => {
 		const s: SymbolNode = {
 			qualifiedName: r.qualified_name,
 			name: r.name,
@@ -320,13 +338,13 @@ export function assembleCache(db: DB): RepoCache {
 		if (r.container_key !== null) s.containerQualifiedName = r.container_key.slice(r.container_key.indexOf("::") + 2);
 		return s;
 	});
-	const refs: RefEdge[] = (db.prepare("SELECT * FROM refs ORDER BY rowid").all() as Array<{ file: string; name: string; kind: string; line: number; col: number; end_line: number; end_col: number; to_key: string | null; from_key: string | null }>).map((r) => {
+	const refs: RefEdge[] = !nav ? [] : (db.prepare("SELECT * FROM refs ORDER BY rowid").all() as Array<{ file: string; name: string; kind: string; line: number; col: number; end_line: number; end_col: number; to_key: string | null; from_key: string | null }>).map((r) => {
 		const e: RefEdge = { file: r.file, name: r.name, kind: r.kind as RefEdge["kind"], range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col } };
 		if (r.to_key !== null) e.to = r.to_key;
 		if (r.from_key !== null) e.from = r.from_key;
 		return e;
 	});
-	const reexports: ReexportRow[] = (db.prepare("SELECT * FROM reexports ORDER BY rowid").all() as Array<{ file: string; exported_name: string; source_name: string; specifier: string }>).map((r) => ({ file: r.file, exportedName: r.exported_name, sourceName: r.source_name, specifier: r.specifier }));
+	const reexports: ReexportRow[] = !nav ? [] : (db.prepare("SELECT * FROM reexports ORDER BY rowid").all() as Array<{ file: string; exported_name: string; source_name: string; specifier: string }>).map((r) => ({ file: r.file, exportedName: r.exported_name, sourceName: r.source_name, specifier: r.specifier }));
 
 	const cache: RepoCache = {
 		schemaVersion: (m.get("schemaVersion") ?? "") as RepoCache["schemaVersion"],
@@ -351,6 +369,7 @@ export function assembleCache(db: DB): RepoCache {
 		reexports,
 	};
 	if (m.has("dirtyAtIndex")) cache.dirtyAtIndex = m.get("dirtyAtIndex") === "1";
+	if (!nav) navlessCaches.add(cache);
 	return cache;
 }
 
@@ -375,7 +394,10 @@ export function dbSchemaValid(dbPath: string): boolean {
 }
 
 /** Open read-only, gate on store format + content major version, assemble. */
-export function readFromDb(dbPath: string): RepoCache | null {
+export function readFromDb(
+	dbPath: string,
+	options: ReadOptions = {},
+): RepoCache | null {
 	const db = new Database(dbPath, { readonly: true });
 	try {
 		if (db.pragma("user_version", { simple: true }) !== STORE_FORMAT_VERSION)
@@ -384,7 +406,7 @@ export function readFromDb(dbPath: string): RepoCache | null {
 			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
 			.get() as { value: string } | undefined;
 		if ((row?.value ?? "") !== SCHEMA_VERSION) return null;
-		return assembleCache(db);
+		return assembleCache(db, options);
 	} finally {
 		db.close();
 	}
@@ -403,6 +425,11 @@ export function setTranscodeTestHooks(h: TranscodeHooks | null): void {
  *  sidecar lock, so concurrent writers (processes or worker threads) publish
  *  distinct, strictly increasing values and readers only ever see a complete db. */
 export function transcodeCacheToDb(cache: RepoCache, dbPath: string): void {
+	if (navlessCaches.has(cache)) {
+		throw new Error(
+			"ai-cortex: refusing to write a cache read without its nav tables (readFromDb nav: false)",
+		);
+	}
 	const dir = path.dirname(dbPath);
 	fs.mkdirSync(dir, { recursive: true });
 	// OS-unique build dir; no two attempts (threads or processes) can collide.

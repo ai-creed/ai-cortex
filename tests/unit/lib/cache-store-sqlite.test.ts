@@ -13,6 +13,7 @@ import {
 	majorOf,
 	transcodeCacheToDb,
 	setTranscodeTestHooks,
+	isNavlessCache,
 } from "../../../src/lib/cache-store-sqlite.js";
 import { seqDbPathFor } from "../../../src/lib/seq-lock.js";
 import { getCacheDbFilePath, writeCache } from "../../../src/lib/cache-store.js";
@@ -204,6 +205,33 @@ describe("readFromDb", () => {
 		);
 		db.close();
 		expect(readFromDb(dbPath)).toBeNull();
+	});
+});
+
+describe("readFromDb nav option (Ruling 12)", () => {
+	it("nav: false returns empty nav arrays and keeps every other field", () => {
+		const dbPath = path.join(tmpDir, "wk.db");
+		const db = openStructuralDb(dbPath);
+		const input = richCache();
+		replaceAll(db, input);
+		db.close();
+		const lean = readFromDb(dbPath, { nav: false });
+		expect(lean).toEqual({ ...input, symbols: [], refs: [], reexports: [] });
+		expect(isNavlessCache(lean!)).toBe(true);
+		const full = readFromDb(dbPath);
+		expect(full).toEqual(input);
+		expect(isNavlessCache(full!)).toBe(false);
+	});
+
+	it("a cache read with nav: false can never be written back", async () => {
+		const dbPath = CANON();
+		await writeCache(richCache({ indexSeq: 0 }));
+		const lean = readFromDb(dbPath, { nav: false })!;
+		expect(() => transcodeCacheToDb(lean, path.join(tmpDir, "other.db"))).toThrow(/nav tables/);
+		await expect(writeCache(lean)).rejects.toThrow(/nav tables/);
+		expect(fs.existsSync(path.join(tmpDir, "other.db"))).toBe(false);
+		// The published store still carries its nav rows and its sequence value.
+		expect(readFromDb(dbPath)).toEqual({ ...richCache(), indexSeq: 1 });
 	});
 });
 

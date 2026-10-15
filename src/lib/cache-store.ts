@@ -13,6 +13,7 @@ import {
 	readFromDb,
 	dbSchemaValid,
 } from "./cache-store-sqlite.js";
+import type { ReadOptions } from "./cache-store-sqlite.js";
 import { withSequenceLock } from "./seq-lock.js";
 
 // Re-export so coordinator + tests share one seam (cache-store.js is the mock
@@ -280,7 +281,8 @@ export async function ensureValidDb(
 export async function readCacheForWorktree(
 	repoKey: string,
 	worktreeKey: string,
+	options: ReadOptions = {},
 ): Promise<RepoCache | null> {
 	const dbPath = await ensureValidDb(repoKey, worktreeKey);
-	return dbPath ? readFromDb(dbPath) : null;
+	return dbPath ? readFromDb(dbPath, options) : null;
 }
