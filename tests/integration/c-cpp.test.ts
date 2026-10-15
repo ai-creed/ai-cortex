@@ -171,3 +171,37 @@ describe("C++ namespaced cross-file calls", () => {
 	});
 });
 
+describe("C-family refs share the calls resolution rules (Ruling 13)", () => {
+	it("gives the refs row the same to_key as the calls row for same-file ns::add, header ns::add, and helper() via util.h", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-ccpp-refs-"));
+		try {
+			fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+			fs.writeFileSync(path.join(dir, "src/util.h"), "int helper(int x);\nnamespace hs { int mul(int a, int b); }\n");
+			fs.writeFileSync(path.join(dir, "src/util.c"), '#include "util.h"\nint helper(int x) { return x + 1; }\n');
+			fs.writeFileSync(path.join(dir, "src/mul.cpp"), '#include "util.h"\nnamespace hs { int mul(int a, int b) { return a * b; } }\n');
+			fs.writeFileSync(
+				path.join(dir, "src/main.cpp"),
+				'#include "util.h"\nnamespace ns { int add(int a) { return a; } }\nint main() { return ns::add(1) + helper(2) + hs::mul(3, 4); }\n',
+			);
+			const { calls, refs } = await extractCallGraph(dir, ["src/util.h", "src/util.c", "src/mul.cpp", "src/main.cpp"]);
+			const callTo = (line: number, col: number) =>
+				calls.find((c) => c.from === "src/main.cpp::main" && c.site?.line === line && c.site?.column === col)?.to;
+			const refFor = (name: string) => refs.find((r) => r.file === "src/main.cpp" && r.name === name && r.kind === "call");
+			const cases: Array<[string, string]> = [
+				["add", "src/main.cpp::ns.add"],
+				["helper", "src/util.c::helper"],
+				["mul", "src/mul.cpp::hs.mul"],
+			];
+			for (const [name, key] of cases) {
+				const ref = refFor(name);
+				expect(ref?.to, name).toBe(key);
+				const call = calls.find((c) => c.from === "src/main.cpp::main" && c.to === key);
+				expect(call, name).toBeDefined();
+				expect(callTo(call!.site!.line, call!.site!.column), name).toBe(ref!.to);
+			}
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+

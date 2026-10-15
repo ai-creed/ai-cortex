@@ -1,8 +1,14 @@
 // src/lib/symbol-resolver.ts
 import path from "node:path";
 import type { ImportBinding, ImportKind, RawRefSite } from "./lang-adapter.js";
-import type { ImportEdge, RefEdge, ReexportRow, SymbolNode } from "./models.js";
-import { symbolKey } from "./symbols.js";
+import type {
+	FunctionNode,
+	ImportEdge,
+	RefEdge,
+	ReexportRow,
+	SymbolNode,
+} from "./models.js";
+import { functionsFromSymbols, symbolKey } from "./symbols.js";
 
 // ---------- language / file-target helpers (moved from call-graph.ts) ----------
 
@@ -127,6 +133,79 @@ export function companionSourceFiles(
 	if (!H_EXTS.has(ext)) return [];
 	const base = headerPath.slice(0, -ext.length);
 	return SRC_EXTS.map((e) => `${base}${e}`).filter((p) => known.has(p));
+}
+
+// ---------- C-family fallbacks (shared by calls and refs) ----------
+
+/** The single live definition among `fns`, optionally exported only. */
+export function pickUnique(
+	fns: FunctionNode[] | undefined,
+	requireExported = false,
+): FunctionNode | null {
+	if (!fns) return null;
+	const live = fns.filter(
+		(f) => !f.isDeclarationOnly && (!requireExported || f.exported),
+	);
+	if (live.length === 1) return live[0];
+	return null;
+}
+
+export type CFamilyFunctionIndex = {
+	byFile: Map<string, Map<string, FunctionNode[]>>;
+	/** Live exported C-family definitions by qualified name (repo-wide fallback). */
+	liveByName: Map<string, FunctionNode[]>;
+};
+
+export function buildCFamilyFunctionIndex(
+	functions: FunctionNode[],
+): CFamilyFunctionIndex {
+	const byFile = new Map<string, Map<string, FunctionNode[]>>();
+	const liveByName = new Map<string, FunctionNode[]>();
+	for (const fn of functions) {
+		let fileMap = byFile.get(fn.file);
+		if (!fileMap) {
+			fileMap = new Map();
+			byFile.set(fn.file, fileMap);
+		}
+		const list = fileMap.get(fn.qualifiedName) ?? [];
+		list.push(fn);
+		fileMap.set(fn.qualifiedName, list);
+		if (!fn.isDeclarationOnly && fn.exported && langOf(fn.file) === "cfamily") {
+			const live = liveByName.get(fn.qualifiedName) ?? [];
+			live.push(fn);
+			liveByName.set(fn.qualifiedName, live);
+		}
+	}
+	return { byFile, liveByName };
+}
+
+/** C-family resolution after the shared resolver misses, applied identically to
+ *  `calls` and `refs` so both tables carry the same key for one site. `fullName`
+ *  is the whole dotted callee (`ns.add`, not `add`). Order: a same-file
+ *  definition, a live exported definition in a directly included file or that
+ *  header's companion source, then a repo-wide unique live exported definition. */
+export function resolveCFamilyFallback(
+	idx: CFamilyFunctionIndex,
+	file: string,
+	fullName: string,
+	includesByFile: Map<string, ImportEdge[]>,
+): string | null {
+	const same = pickUnique(idx.byFile.get(file)?.get(fullName));
+	if (same) return symbolKey(file, same.qualifiedName);
+	for (const inc of includesByFile.get(file) ?? []) {
+		const match = pickUnique(idx.byFile.get(inc.to)?.get(fullName), true);
+		if (match) return symbolKey(inc.to, match.qualifiedName);
+		for (const companion of companionSourceFiles(inc.to, idx.byFile)) {
+			const compMatch = pickUnique(
+				idx.byFile.get(companion)?.get(fullName),
+				true,
+			);
+			if (compMatch) return symbolKey(companion, compMatch.qualifiedName);
+		}
+	}
+	const live = idx.liveByName.get(fullName);
+	if (live && live.length === 1) return symbolKey(live[0].file, live[0].qualifiedName);
+	return null;
 }
 
 // ---------- symbol index ----------
@@ -411,9 +490,10 @@ export function resolveRefs(
 	const idx = buildSymbolIndex(symbols);
 	const table = buildReexportTable(reexports);
 	const known = knownFilesFor(idx, table, includesByFile);
+	let cIdx: CFamilyFunctionIndex | null = null;
 	const out: RefEdge[] = [];
 	for (const r of rawRefs) {
-		const to = resolveName(
+		let to = resolveName(
 			idx,
 			r,
 			bindingsByFile.get(r.file) ?? [],
@@ -421,6 +501,11 @@ export function resolveRefs(
 			includesByFile,
 			known,
 		);
+		if (!to && langOf(r.file) === "cfamily") {
+			cIdx ??= buildCFamilyFunctionIndex(functionsFromSymbols(symbols));
+			const fullName = r.receiver ? `${r.receiver}.${r.name}` : r.name;
+			to = resolveCFamilyFallback(cIdx, r.file, fullName, includesByFile);
+		}
 		const edge: RefEdge = {
 			file: r.file,
 			name: r.name,

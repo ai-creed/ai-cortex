@@ -526,6 +526,23 @@ describe("resolveRefs", () => {
 			{ file: "src/a.ts", name: "nothing", kind: "type", range: R },
 		]);
 	});
+
+	it("C-family: resolves an include-only name through the header's companion source, and leaves TS sites alone", () => {
+		const symbols = [
+			sym("src/util.h", "helper", { isDeclarationOnly: true }),
+			sym("src/util.c", "helper"),
+			sym("src/main.c", "main"),
+			sym("src/other.ts", "helper"),
+		];
+		const includes = new Map([["src/main.c", [{ from: "src/main.c", to: "src/util.h" }]]]);
+		const raw: RawRefSite[] = [
+			{ file: "src/main.c", name: "helper", kind: "call", range: R, enclosingQualifiedName: "main" },
+			{ file: "src/a.ts", name: "helper", kind: "call", range: R },
+		];
+		const out = resolveRefs(raw, symbols, new Map(), [], includes);
+		expect(out[0]).toMatchObject({ to: "src/util.c::helper", from: "src/main.c::main" });
+		expect(out[1].to).toBeUndefined();
+	});
 });
 
 describe("findTargetFile", () => {

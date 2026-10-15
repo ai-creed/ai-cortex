@@ -4,12 +4,14 @@ import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
 import { functionsFromSymbols } from "./symbols.js";
 import {
+	buildCFamilyFunctionIndex,
 	buildReexportTable,
 	buildSymbolIndex,
-	companionSourceFiles,
 	findTargetFile,
 	knownFilesFor,
 	langOf,
+	pickUnique,
+	resolveCFamilyFallback,
 	resolveName,
 	resolvePythonTargetFile,
 	resolveRefs,
@@ -26,18 +28,6 @@ import type {
 } from "./models.js";
 
 export { stripTsExt, resolvePythonTargetFile } from "./symbol-resolver.js";
-
-function pickUnique(
-	fns: FunctionNode[] | undefined,
-	requireExported = false,
-): FunctionNode | null {
-	if (!fns) return null;
-	const live = fns.filter(
-		(f) => !f.isDeclarationOnly && (!requireExported || f.exported),
-	);
-	if (live.length === 1) return live[0];
-	return null;
-}
 
 function makeEdge(from: string, to: string, raw: RawCallSite): CallEdge {
 	const edge: CallEdge = { from, to, kind: raw.kind };
@@ -76,22 +66,7 @@ export function resolveCallSites(
 	const reexportTable = buildReexportTable(reexports);
 	const known = knownFilesFor(symIdx, reexportTable, includesByFile);
 
-	// C/C++: a live exported definition of `name` in a directly-included file
-	// or in that header's companion source file.
-	const viaIncludes = (callerFile: string, name: string): string | null => {
-		for (const inc of includesByFile.get(callerFile) ?? []) {
-			const match = pickUnique(funcsByFile.get(inc.to)?.get(name), true);
-			if (match) return `${inc.to}::${match.qualifiedName}`;
-			for (const companion of companionSourceFiles(inc.to, funcsByFile)) {
-				const compMatch = pickUnique(
-					funcsByFile.get(companion)?.get(name),
-					true,
-				);
-				if (compMatch) return `${companion}::${compMatch.qualifiedName}`;
-			}
-		}
-		return null;
-	};
+	const cIdx = buildCFamilyFunctionIndex(allFunctions);
 
 	const edges: CallEdge[] = [];
 
@@ -122,6 +97,19 @@ export function resolveCallSites(
 				reexportTable,
 				includesByFile,
 				known,
+			);
+			if (hit) {
+				edges.push(makeEdge(fromKey, hit, raw));
+				continue;
+			}
+		}
+
+		if (langOf(raw.callerFile) === "cfamily") {
+			const hit = resolveCFamilyFallback(
+				cIdx,
+				raw.callerFile,
+				raw.rawCallee,
+				includesByFile,
 			);
 			if (hit) {
 				edges.push(makeEdge(fromKey, hit, raw));
@@ -186,14 +174,6 @@ export function resolveCallSites(
 							raw,
 						),
 					);
-					resolved = true;
-				}
-			}
-			if (!resolved && langOf(raw.callerFile) === "cfamily") {
-				// Qualified C++ call (`ns.add`): the full dotted name through includes.
-				const hit = viaIncludes(raw.callerFile, raw.rawCallee);
-				if (hit) {
-					edges.push(makeEdge(fromKey, hit, raw));
 					resolved = true;
 				}
 			}
@@ -271,37 +251,6 @@ export function resolveCallSites(
 				continue;
 			}
 		}
-
-		// C/C++ include-based lookup: check directly-included files for a live definition
-		if (langOf(raw.callerFile) === "cfamily") {
-			const hit = viaIncludes(raw.callerFile, raw.rawCallee);
-			if (hit) {
-				edges.push(makeEdge(fromKey, hit, raw));
-				continue;
-			}
-		}
-
-		// Repo-wide unique-name fallback for C/C++ callers only
-		if (!resolved && langOf(raw.callerFile) === "cfamily") {
-			const liveDefs = allFunctions.filter(
-				(f) =>
-					f.qualifiedName === raw.rawCallee &&
-					!f.isDeclarationOnly &&
-					f.exported &&
-					langOf(f.file) === "cfamily",
-			);
-			if (liveDefs.length === 1) {
-				edges.push(
-					makeEdge(
-						fromKey,
-						`${liveDefs[0].file}::${liveDefs[0].qualifiedName}`,
-						raw,
-					),
-				);
-				resolved = true;
-			}
-		}
-		if (resolved) continue;
 
 		edges.push(makeEdge(fromKey, `::${raw.rawCallee}`, raw));
 	}
