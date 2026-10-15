@@ -38,7 +38,9 @@ Current cache layout:
 ~/.cache/ai-cortex/
   v1/
     <repo-key>/
-      <worktree-key>.json
+      <worktree-key>.db
+      <worktree-key>.seq.db
+      <worktree-key>.meta.json
       <worktree-key>.md
       history/
         manifest.jsonl
@@ -72,7 +74,9 @@ Important directories:
 | Path | Purpose |
 |---|---|
 | `v1/<repo-key>/` | Per-project cache |
-| `<worktree-key>.json` | Structural index snapshot |
+| `<worktree-key>.db` | Structural index store (SQLite, WAL, `user_version = 2`) |
+| `<worktree-key>.seq.db` | Sequence sidecar that serializes `indexSeq` assignment across processes; a transient `-journal` file appears beside it during a write |
+| `<worktree-key>.meta.json` | Small dashboard metadata sidecar |
 | `<worktree-key>.md` | Last rehydration briefing |
 | `history/` | Captured agent session evidence |
 | `memory/memories/` | Active, candidate, deprecated, and merged memory records |
@@ -91,16 +95,28 @@ Multiple worktrees can have distinct worktree cache files while sharing the same
 
 ## Structural Cache
 
-The structural cache is a JSON snapshot of the indexed repository.
+The structural cache is a per-worktree SQLite store (`<worktree-key>.db`).
 
 It contains:
 
 - files and hashes
 - docs
 - import edges
-- function nodes
-- call edges where supported
+- function nodes (`functions`, one row per key)
+- call edges where supported (`calls`)
+- `symbols`: navigation declarations (functions, methods, classes, interfaces, types, enums, variables, properties, namespaces, and for C-family code structs and macros), each with a declaration range and an identifier (name) range
+- `refs`: identifier occurrences (call, new, type, heritage, import, export, member, JSX, decorator) with a resolved `to_key` where the syntactic resolver can determine it
+- `reexports`: writer-internal named re-exports that keep one-hop resolution correct across incremental indexes; consumers can ignore it
 - package metadata
+- `meta` keys `navCapabilities` (emitted kinds, for feature detection), `indexSeq` (increases on every successful write), and `contentFingerprint` (hash of file contents)
+
+The store format is version 2 and the content schema is `3.2`. Stores or legacy `.json` caches from older versions are discarded and reindexed once on first use. See the [index contract](../architecture/cortex-index-contract.md) for the column-level shape.
+
+Known limitations of incremental builds:
+
+- A `calls` row whose target key was removed is swept to the unresolved form `::<qualified name of the stale target>`, while a full build writes `::<raw callee>` or `::<member>`. The unresolved name can therefore differ between an incremental and a full build of the same source.
+- C-family calls resolved through companion source files or the repo-wide unique-name fallback are outside the import-based affected set. When such a target moves, an incremental build sweeps the caller's edge to unresolved instead of re-pointing it; `ai-cortex index --refresh` repairs it.
+- Re-export chains longer than one hop can leave stale resolution until a full reindex.
 
 Commands that use the structural cache normally refresh when git state changes.
 

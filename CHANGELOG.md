@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+This release turns the per-worktree store into a navigation index (index contract v3.2) for consumers such as ai-14all's in-app code navigation. Every 3.1 table and column is unchanged; the additions are new tables, new meta keys, better call resolution, and CLI fixes.
+
+### Added
+- **`symbols` table.** Every jumpable declaration (functions, methods, classes, interfaces, type aliases, enums and members, variables, properties, namespaces, plus C structs and macros) is recorded with both a declaration range and an identifier range, so Go to Definition lands on the name rather than on the `export async function` keyword. `functions` is now a one-row-per-key projection of `symbols`, which keeps the invariant that every `functions` row has a matching `symbols` row.
+- **`refs` table.** Identifier occurrences in call, new, type, heritage, import, export, member, JSX, and decorator positions are recorded with a resolved `to_key` where the syntactic resolver can determine it; unresolved occurrences keep `to_key = NULL`. This is the basis for Find References. The table is named `refs` because `REFERENCES` is a reserved word in SQLite.
+- **Change-detection meta.** `indexSeq` increases on every successful write, including dirty-worktree reindexes under the same HEAD, so consumers keyed on `fingerprint` alone no longer miss uncommitted edits. `contentFingerprint` hashes file contents so consumers can skip unchanged re-ingests, and `navCapabilities` advertises the emitted kinds for feature detection.
+- **`index --json`** and an extended `rehydrate --json` carrying `dbPath`, `schemaVersion`, `fingerprint`, `contentFingerprint`, `indexSeq`, `indexedAt`, and `dirtyAtIndex`. `rehydrate --stale --json` reports `cacheStatus: "stale"` when it served an out-of-date store.
+- **Release gate.** `scripts/acceptance-v3.2.sh` runs the consumer's acceptance checks against the ai-14all worktree. Resolution is measured over call, new, type, and import refs whose name is defined as a symbol in the indexed repo, with a 50 percent threshold. The raw ratio over every such ref is printed as information only: it counts test globals, matchers, DOM helpers, array methods, and package types that the contract defines as unresolvable, so it reflects a repo's test density rather than the resolver (about 32 percent ceiling on ai-14all with a perfect resolver, against about 65 percent name-matched).
+
+### Changed
+- **Member call resolution.** `this.m()`, `self.m()`, `cls.m()`, and `Class.m()` now resolve to the enclosing or named class member, static members on imported or same-file classes resolve, and one aliased re-export hop is followed. `calls.to_key` may now name any `symbols` key, including module-level variables such as `const execAsync = promisify(exec)`, so consumers that join `calls` to `functions` will not see those edges.
+- **C-family qualified names use `.`** instead of `::` (`ns.Foo.bar`), so container paths can be split; keys for C and C++ repos change accordingly. C-family struct and class fields are emitted as `property` symbols.
+- **Store format 2.** Existing stores reindex once on first use after upgrading, and ai-cortex's own readers now require an exact `meta.schemaVersion` match. Legacy `.json` caches that are not exactly schema 3.2 are discarded instead of transcoded.
+
+### Fixed
+- **`index --help` and `rehydrate --help`** no longer run an index. `--help` and `-h` print usage and exit 0; unknown flags print `unknown flag: --name` and the usage block to stderr and exit 2.
+- **`index` printed a `.json` cache path**; it now prints the `.db` path.
+- **Concurrent writers** could publish the same `indexSeq`. Sequence assignment is now serialized through a SQLite sidecar (`<worktreeKey>.seq.db`) whose lock the operating system releases on holder exit or crash, so there is no stale-lock state to reclaim. Discarding an invalid store takes the same lock, so a slow process can no longer delete a store another process just published.
+
+### Internal
+- New `symbol-resolver.ts` shared by `calls` and `refs`; adapters emit symbols and raw reference sites instead of `functions`, and `functions` is derived by `functionsFromSymbols`.
+- Writer-internal `reexports` table keeps one-hop re-export resolution correct across incremental indexes.
+- The "indexSeq increments across consecutive refreshes" and dirty-reindex checks are covered by the production-path `writeCache` test in `tests/unit/lib/cache-store.test.ts` and the CLI consecutive-refresh test in `tests/integration/cli.test.ts`; `tests/integration/nav-acceptance.test.ts` covers the remaining acceptance checks on a fixture.
+
+### Known limitations
+- **Unresolved names can differ between incremental and full builds.** In an incremental build, a `calls` row whose target key was removed is swept to the unresolved form `::<qualified name of the stale target>`, while a full build writes `::<raw callee>` or `::<member>`.
+- **C-family edges can go unresolved after a move.** Calls resolved through companion source files or the repo-wide unique-name fallback are outside the import-based affected set, so when such a target moves an incremental build sweeps the caller's edge to unresolved instead of re-pointing it. A full `index --refresh` repairs it.
+- **Re-export chains longer than one hop** and star re-exports are not followed; inherited members (`this.m` where `m` lives on a base class) are not resolved.
+
 ---
 
 ## v0.17.0 (2026-07-22)
