@@ -95,7 +95,7 @@ describe("python adapter — call extraction", () => {
 		);
 	});
 
-	it("maps self.method() to ClassName.method", async () => {
+	it("keeps self.method() as self.method with enclosingClass", async () => {
 		const r = await adapter.extractCallGraph!(
 			"",
 			"pkg/models.py",
@@ -105,20 +105,20 @@ describe("python adapter — call extraction", () => {
 			expect.objectContaining({
 				callerQualifiedName: "Model.save",
 				callerFile: "pkg/models.py",
-				rawCallee: "Model.finalize",
+				rawCallee: "self.finalize",
 				kind: "method",
 			}),
 		);
 	});
 
-	it("maps cls.method() to ClassName.method", async () => {
+	it("keeps cls.method() as cls.method", async () => {
 		const r = await adapter.extractCallGraph!(
 			"",
 			"pkg/models.py",
 			"class Model:\n  @classmethod\n  def create(cls):\n    cls.validate()\n",
 		);
 		expect(r.rawCalls).toContainEqual(
-			expect.objectContaining({ rawCallee: "Model.validate", kind: "method" }),
+			expect.objectContaining({ rawCallee: "cls.validate", kind: "method" }),
 		);
 	});
 
@@ -327,5 +327,54 @@ describe("python adapter — range and site emission (unit)", () => {
 		);
 		const method = r.rawCalls.find((c) => c.kind === "method");
 		expect(method?.site).toBeDefined();
+	});
+});
+
+describe("python adapter — symbols and refs (3.2)", () => {
+	it("emits class, method, function, module variable with '.' containers and name ranges", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"pkg/m.py",
+			["class Model(Base):", "  def save(self):", "    self.flush()", "", "def helper():", "  pass", "", "LIMIT = 3", "x, y = 1, 2"].join("\n"),
+		);
+		const byQn = Object.fromEntries(r.symbols!.map((s) => [s.qualifiedName, s]));
+		expect(byQn.Model).toMatchObject({ kind: "class", name: "Model", exported: true });
+		expect(byQn["Model.save"]).toMatchObject({ kind: "method", name: "save", containerQualifiedName: "Model" });
+		expect(byQn.helper).toMatchObject({ kind: "function" });
+		expect(byQn.LIMIT).toMatchObject({ kind: "variable", name: "LIMIT" });
+		expect(byQn.x).toMatchObject({ kind: "variable" });
+		expect(byQn.y).toMatchObject({ kind: "variable" });
+		expect(byQn.Model.nameRange).toEqual({ line: 1, column: 7, endLine: 1, endColumn: 11 });
+		expect(r.functions).toEqual((await import("../../../../src/lib/symbols.js")).functionsFromSymbols(r.symbols!));
+	});
+
+	it("emits call refs with receiver, extends refs, and import refs; self-calls carry enclosingClass", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"pkg/m.py",
+			["from .utils import helper as h, other", "import os.path as osp", "class Model(Base):", "  def save(self):", "    self.flush()", "    h()", "    osp.join('a')"].join("\n"),
+		);
+		const refs = r.rawRefs!;
+		const imports = refs.filter((x) => x.kind === "import").map((x) => [x.name, x.alias, x.specifier, x.importKind]);
+		expect(imports).toEqual([
+			["helper", "h", "pkg/utils", "named"],
+			["other", undefined, "pkg/utils", "named"],
+			["osp", undefined, "os/path", "namespace"],
+		]);
+		expect(refs.filter((x) => x.kind === "extends").map((x) => x.name)).toEqual(["Base"]);
+		const calls = refs.filter((x) => x.kind === "call");
+		expect(calls.map((c) => [c.name, c.receiver, c.enclosingClass, c.enclosingQualifiedName])).toEqual([
+			["flush", "self", "Model", "Model.save"],
+			["h", undefined, "Model", "Model.save"],
+			["join", "osp", "Model", "Model.save"],
+		]);
+		const selfCall = r.rawCalls.find((c) => c.rawCallee === "self.flush")!;
+		expect(selfCall.enclosingClass).toBe("Model");
+		expect(selfCall.kind).toBe("method");
+	});
+
+	it("does not emit nested function or local variables as symbols", async () => {
+		const r = await adapter.extractCallGraph!("", "pkg/m.py", "def outer():\n  local = 1\n  def inner():\n    pass\n");
+		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["outer"]);
 	});
 });

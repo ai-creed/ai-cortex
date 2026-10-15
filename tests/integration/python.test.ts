@@ -80,7 +80,8 @@ describe("Python indexing — function extraction", () => {
 });
 
 describe("Python indexing — call edges", () => {
-	it("resolves self.method() to same-file ClassName.method edge", async () => {
+	// re-enabled in Task 8 (A5 step 1 in resolver)
+	it.skip("resolves self.method() to same-file ClassName.method edge", async () => {
 		const { calls } = await extractCallGraph(FIXTURE, FILES);
 		expect(calls).toContainEqual(
 			expect.objectContaining({

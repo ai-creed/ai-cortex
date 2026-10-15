@@ -8,9 +8,10 @@ import type {
 	RawCallSite,
 	RawImportSite,
 	ImportBinding,
+	RawRefSite,
 } from "../lang-adapter.js";
-import type { FunctionNode } from "../models.js";
-import { PY_REF_KINDS, PY_SYMBOL_KINDS } from "../symbols.js";
+import type { SymbolNode } from "../models.js";
+import { functionsFromSymbols, PY_REF_KINDS, PY_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -34,50 +35,72 @@ async function initParser(): Promise<void> {
 	return initPromise;
 }
 
-function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
-	const fns: FunctionNode[] = [];
+function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
+	const out: SymbolNode[] = [];
 
-	function walk(node: SyntaxNode, className: string | null): void {
+	function emit(kind: SymbolNode["kind"], nameNode: SyntaxNode, decl: SyntaxNode, container: string | null): string {
+		const qualifiedName = container ? `${container}.${nameNode.text}` : nameNode.text;
+		out.push({
+			qualifiedName,
+			name: nameNode.text,
+			file: filePath,
+			kind,
+			...(container ? { containerQualifiedName: container } : {}),
+			exported: true,
+			isDefaultExport: false,
+			isDeclarationOnly: false,
+			range: rangeFromNode(decl),
+			nameRange: rangeFromNode(nameNode),
+		});
+		return qualifiedName;
+	}
+
+	function assignmentTargets(left: SyntaxNode): SyntaxNode[] {
+		if (left.type === "identifier") return [left];
+		if (left.type === "pattern_list" || left.type === "tuple_pattern" || left.type === "list_pattern") {
+			return left.namedChildren.flatMap(assignmentTargets);
+		}
+		return [];
+	}
+
+	function walk(node: SyntaxNode, container: string | null): void {
 		switch (node.type) {
 			case "function_definition": {
 				const nameNode = node.childForFieldName("name");
-				if (nameNode) {
-					fns.push({
-						qualifiedName: className
-							? `${className}.${nameNode.text}`
-							: nameNode.text,
-						file: filePath,
-						exported: true,
-						isDefaultExport: false,
-						...rangeFromNode(node),
-					});
-				}
-				return; // don't descend into function body — no nested extraction
+				if (nameNode) emit(container ? "method" : "function", nameNode, node, container);
+				return; // bodies are not indexed scope
 			}
 			case "decorated_definition": {
 				const def = node.children.find(
-					(c) =>
-						c.type === "function_definition" || c.type === "class_definition",
+					(c) => c.type === "function_definition" || c.type === "class_definition",
 				);
-				if (def) walk(def, className);
+				if (def) walk(def, container);
 				return;
 			}
 			case "class_definition": {
 				const nameNode = node.childForFieldName("name");
-				const cls = nameNode?.text ?? null;
+				if (!nameNode) return;
+				const clsQn = emit("class", nameNode, node, container);
 				const body = node.childForFieldName("body");
-				if (body) {
-					for (const child of body.children) walk(child, cls);
+				if (body) for (const child of body.children) walk(child, clsQn);
+				return;
+			}
+			case "expression_statement": {
+				if (container !== null) return; // class-body assignments: best effort, not emitted
+				const assign = node.namedChildren[0];
+				if (assign?.type === "assignment") {
+					const left = assign.childForFieldName("left");
+					if (left) for (const t of assignmentTargets(left)) emit("variable", t, node, null);
 				}
 				return;
 			}
 			default:
-				for (const child of node.children) walk(child, className);
+				if (container === null) for (const child of node.children) walk(child, container);
 		}
 	}
 
 	for (const child of root.children) walk(child, null);
-	return fns;
+	return out;
 }
 
 function findEnclosingFunction(
@@ -89,7 +112,7 @@ function findEnclosingFunction(
 			const nameNode = cur.childForFieldName("name");
 			if (!nameNode) return null;
 			// Walk up to find enclosing class. If we hit another function_definition
-			// first, this def is nested — extractFunctions does not index it, so
+			// first, this def is nested — extractSymbols does not index it, so
 			// emitting a call edge from it would produce a phantom caller node.
 			let p: SyntaxNode | null = cur.parent;
 			let className: string | null = null;
@@ -125,13 +148,8 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 					if (fnNode.type === "attribute") {
 						const obj = fnNode.childForFieldName("object")?.text ?? "";
 						const attr = fnNode.childForFieldName("attribute")?.text ?? "";
-						if ((obj === "self" || obj === "cls") && enclosing.className) {
-							rawCallee = `${enclosing.className}.${attr}`;
-							kind = "method";
-						} else {
-							rawCallee = `${obj}.${attr}`;
-							kind = "method";
-						}
+						rawCallee = `${obj}.${attr}`;
+						kind = "method";
 					} else {
 						rawCallee = fnNode.text;
 						kind = "call";
@@ -142,6 +160,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 						rawCallee,
 						kind,
 						site: rangeFromNode(node),
+						...(enclosing.className ? { enclosingClass: enclosing.className } : {}),
 					});
 				}
 			}
@@ -151,6 +170,86 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 
 	walk(root);
 	return calls;
+}
+
+function extractRawRefs(root: SyntaxNode, filePath: string): RawRefSite[] {
+	const refs: RawRefSite[] = [];
+
+	function ctxOf(node: SyntaxNode): Pick<RawRefSite, "enclosingQualifiedName" | "enclosingClass"> {
+		const enc = findEnclosingFunction(node);
+		if (enc) {
+			return {
+				enclosingQualifiedName: enc.className ? `${enc.className}.${enc.name}` : enc.name,
+				...(enc.className ? { enclosingClass: enc.className } : {}),
+			};
+		}
+		// class body but outside any method
+		let p: SyntaxNode | null = node.parent;
+		while (p && p.type !== "module") {
+			if (p.type === "class_definition") {
+				const n = p.childForFieldName("name")?.text;
+				return n ? { enclosingQualifiedName: n, enclosingClass: n } : {};
+			}
+			p = p.parent;
+		}
+		return {};
+	}
+
+	function walk(node: SyntaxNode): void {
+		if (node.type === "call") {
+			const fnNode = node.childForFieldName("function");
+			if (fnNode?.type === "attribute") {
+				const obj = fnNode.childForFieldName("object");
+				const attr = fnNode.childForFieldName("attribute");
+				if (obj && attr) refs.push({ file: filePath, name: attr.text, kind: "call", range: rangeFromNode(attr), receiver: obj.text, ...ctxOf(node) });
+			} else if (fnNode?.type === "identifier") {
+				refs.push({ file: filePath, name: fnNode.text, kind: "call", range: rangeFromNode(fnNode), ...ctxOf(node) });
+			}
+		} else if (node.type === "class_definition") {
+			const supers = node.childForFieldName("superclasses");
+			if (supers) {
+				for (const s of supers.namedChildren) {
+					if (s.type === "identifier") refs.push({ file: filePath, name: s.text, kind: "extends", range: rangeFromNode(s) });
+					else if (s.type === "attribute") {
+						const obj = s.childForFieldName("object");
+						const attr = s.childForFieldName("attribute");
+						if (obj && attr) refs.push({ file: filePath, name: attr.text, kind: "extends", range: rangeFromNode(attr), receiver: obj.text });
+					}
+				}
+			}
+		} else if (node.type === "import_from_statement") {
+			const modNode = node.children.find((c) => c.type === "relative_import" || c.type === "dotted_name");
+			if (modNode) {
+				const specifier = moduleSpecifier(modNode, filePath);
+				for (const child of node.children) {
+					if ((child.type === "dotted_name" || child.type === "identifier") && child !== modNode) {
+						refs.push({ file: filePath, name: child.text, kind: "import", range: rangeFromNode(child), specifier, importKind: "named" });
+					} else if (child.type === "aliased_import") {
+						const nameNode = child.childForFieldName("name");
+						const alias = child.childForFieldName("alias")?.text;
+						if (nameNode) refs.push({ file: filePath, name: nameNode.text, kind: "import", range: rangeFromNode(nameNode), specifier, importKind: "named", ...(alias ? { alias } : {}) });
+					}
+				}
+			}
+			return;
+		} else if (node.type === "import_statement") {
+			for (const child of node.children) {
+				if (child.type === "aliased_import") {
+					const nameNode = child.childForFieldName("name");
+					const aliasNode = child.childForFieldName("alias");
+					if (nameNode && aliasNode) {
+						refs.push({ file: filePath, name: aliasNode.text, kind: "import", range: rangeFromNode(aliasNode), specifier: nameNode.text.replace(/\./gu, "/"), importKind: "namespace" });
+					}
+				}
+			}
+			return;
+		}
+		for (const child of node.children) walk(child);
+	}
+
+	walk(root);
+	refs.sort((a, b) => a.range.line - b.range.line || a.range.column - b.range.column || a.kind.localeCompare(b.kind));
+	return refs;
 }
 
 // Returns a repo-root-relative slash-separated specifier for both relative and
@@ -316,6 +415,15 @@ function extractImportSitesFromRoot(
 	return sites;
 }
 
+const EMPTY: RawCallData = {
+	functions: [],
+	symbols: [],
+	rawCalls: [],
+	rawRefs: [],
+	reexports: [],
+	importBindings: [],
+};
+
 export async function createPythonAdapter(): Promise<LanguageAdapter> {
 	await initParser();
 	return {
@@ -323,7 +431,7 @@ export async function createPythonAdapter(): Promise<LanguageAdapter> {
 		capabilities: {
 			importExtraction: true,
 			callGraph: true,
-			symbolIndex: false,
+			symbolIndex: true,
 		},
 		symbolKinds: PY_SYMBOL_KINDS,
 		referenceKinds: PY_REF_KINDS,
@@ -357,22 +465,26 @@ export async function createPythonAdapter(): Promise<LanguageAdapter> {
 			const source =
 				content ??
 				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
-			if (!pyParser) return { functions: [], rawCalls: [], importBindings: [] };
+			if (!pyParser) return EMPTY;
 			let tree;
 			try {
 				tree = pyParser.parse(source);
 			} catch {
-				return { functions: [], rawCalls: [], importBindings: [] };
+				return EMPTY;
 			}
-			if (!tree) return { functions: [], rawCalls: [], importBindings: [] };
+			if (!tree) return EMPTY;
 			try {
+				const symbols = extractSymbols(tree.rootNode, filePath);
 				return {
-					functions: extractFunctions(tree.rootNode, filePath),
+					functions: functionsFromSymbols(symbols),
+					symbols,
 					rawCalls: extractRawCalls(tree.rootNode, filePath),
+					rawRefs: extractRawRefs(tree.rootNode, filePath),
+					reexports: [],
 					importBindings: extractImportBindings(tree.rootNode, filePath),
 				};
 			} catch {
-				return { functions: [], rawCalls: [], importBindings: [] };
+				return EMPTY;
 			}
 		},
 	};
