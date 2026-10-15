@@ -148,7 +148,7 @@ One row per named export-from specifier; `export * from` produces no row.
 | `schemaVersion` | `"3.2"` | Content contract version. |
 | `navCapabilities` | JSON | `{"symbols":true,"references":true,"referencesTable":"refs","symbolKinds":[...],"referenceKinds":[...]}`. The union of kinds the registered adapters can emit (static per adapter, not observed in this repo). A 3.2 writer always emits it. |
 | `indexSeq` | integer as text | Increases on every successful write, full or incremental, including the empty-diff timestamp-only refresh and dirty-worktree reindexes under an unchanged `fingerprint`. Every successful write publishes a value strictly greater than the previous one for that store path. A path with no prior store and no sidecar starts at `1`. |
-| `contentFingerprint` | hex text | sha1 over sorted `(path, content_hash)` pairs of `files`, joined with newlines. Unchanged when only `indexedAt` moves, so a consumer can skip re-ingest when content is the same even though `indexSeq` moved. |
+| `contentFingerprint` | hex text | sha1 (lowercase hex) over the lines `${path}\t${content_hash ?? ""}`, one per `files` row, sorted by UTF-16 code unit, and joined by `\n` with no trailing newline. Consumers should treat it as opaque and compare it only for equality. Unchanged when only `indexedAt` moves, so a consumer can skip re-ingest when content is the same even though `indexSeq` moved. |
 
 `fingerprint` (the git HEAD), `indexedAt`, and `dirtyAtIndex` are unchanged.
 
@@ -237,7 +237,13 @@ Shared by `refs.to_key` and `calls.to_key`. Syntactic, first hit wins:
 4. **Static member on an imported or same-file class.** `Foo.bar` where `Foo`
    resolves (steps 2 or 3) to a `class`, `enum`, or `namespace` symbol resolves
    to `${thatFile}::Foo.bar`.
-5. Otherwise `NULL` for refs, `::member` for calls.
+5. **C and C++ fallbacks.** For a site in a C-family file, when steps 1 to 4
+   miss, both tables try the full dotted callee (`ns.add` for `ns::add`) as a
+   live definition in the same file, then as a live exported definition in a
+   directly included file or that header's companion source file, then as the
+   single live exported C-family definition with that qualified name anywhere
+   in the repository.
+6. Otherwise `NULL` for refs, `::member` for calls.
 
 If a step yields more than one candidate (overloads aside, which share a key),
 the ref is left unresolved.
@@ -267,7 +273,8 @@ Invariants and limits consumers should rely on:
 
 1. Unknown flags on `index` or `rehydrate` print `ai-cortex: unknown flag: --name`
    and the subcommand usage to stderr and exit `2`; nothing is printed to stdout
-   and no index runs. `--help` and `-h` print the usage to stdout and exit `0`
+   and no index runs. The same message and exit code cover extra positional
+   arguments after the repository path (`ai-cortex: unknown flag: extra`). `--help` and `-h` print the usage to stdout and exit `0`
    without indexing.
 2. Exit codes: `0` on success (including a `fresh` cache). `2` for usage
    errors (stderr starts with `ai-cortex: unknown flag:` and includes the usage
@@ -286,7 +293,10 @@ Invariants and limits consumers should rely on:
    (a new snapshot was written), or `"stale"` (`rehydrate --stale` served an
    out-of-date store without writing). `index` has no `--stale` flag, so its
    value is `"fresh"` or `"reindexed"`; `index --refresh` always reports
-   `"reindexed"`.
+   `"reindexed"`. Without `--refresh`, `index` compares only the HEAD commit
+   (`fingerprint`) and reports `"fresh"` even when the worktree has uncommitted
+   edits; `rehydrate` is the command that detects dirty edits and reindexes
+   them.
 5. The human output of `index` prints the `.db` store path.
 
 ## 10. Acceptance measurement
