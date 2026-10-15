@@ -127,7 +127,7 @@ describe("cpp adapter — namespace and class extraction", () => {
 			"namespace foo { void bar() {} }",
 		);
 		expect(r.functions).toContainEqual(
-			expect.objectContaining({ qualifiedName: "foo::bar" }),
+			expect.objectContaining({ qualifiedName: "foo.bar" }),
 		);
 	});
 
@@ -138,45 +138,37 @@ describe("cpp adapter — namespace and class extraction", () => {
 			"namespace a { namespace b { void c() {} } }",
 		);
 		expect(r.functions).toContainEqual(
-			expect.objectContaining({ qualifiedName: "a::b::c" }),
+			expect.objectContaining({ qualifiedName: "a.b.c" }),
 		);
 	});
 
-	it("emits Class::method for inline methods inside class body", async () => {
+	it("emits Class.method for inline methods inside class body", async () => {
 		const r = await cppAdapter.extractCallGraph!(
 			"",
 			"src/x.cpp",
 			"class Foo { public: void bar() {} };",
 		);
 		expect(r.functions).toContainEqual(
-			expect.objectContaining({ qualifiedName: "Foo::bar" }),
+			expect.objectContaining({ qualifiedName: "Foo.bar" }),
 		);
 	});
 
-	it("emits Class::method for out-of-line definitions", async () => {
+	it("emits Class.method for out-of-line definitions", async () => {
 		const r = await cppAdapter.extractCallGraph!(
 			"",
 			"src/x.cpp",
 			"class Foo { public: void bar(); }; void Foo::bar() {}",
 		);
-		expect(
-			r.functions.filter((f) => f.qualifiedName === "Foo::bar"),
-		).toHaveLength(2); // declaration + definition
-		expect(
-			r.functions.find(
-				(f) => f.qualifiedName === "Foo::bar" && f.isDeclarationOnly === true,
-			),
-		).toBeDefined();
-		expect(
-			r.functions.find(
-				(f) => f.qualifiedName === "Foo::bar" && f.isDeclarationOnly === false,
-			),
-		).toBeDefined();
+		const symbols = r.symbols!.filter((s) => s.qualifiedName === "Foo.bar");
+		expect(symbols.map((s) => s.isDeclarationOnly)).toEqual([true, false]); // declaration + definition
+		const fns = r.functions.filter((f) => f.qualifiedName === "Foo.bar");
+		expect(fns).toHaveLength(1); // one functions row per key, definition preferred
+		expect(fns[0].isDeclarationOnly).toBe(false);
 	});
 });
 
 describe("cpp adapter — qualified calls and new", () => {
-	it("extracts Foo::bar() as a call with callee 'Foo::bar'", async () => {
+	it("extracts Foo::bar() as a call with callee 'Foo.bar'", async () => {
 		const cppAdapter2 = await createCppAdapter();
 		const r = await cppAdapter2.extractCallGraph!(
 			"",
@@ -184,7 +176,7 @@ describe("cpp adapter — qualified calls and new", () => {
 			"class Foo { public: static void bar() {} }; void main2() { Foo::bar(); }",
 		);
 		expect(r.rawCalls).toContainEqual(
-			expect.objectContaining({ rawCallee: "Foo::bar", kind: "call" }),
+			expect.objectContaining({ rawCallee: "Foo.bar", kind: "call" }),
 		);
 	});
 
@@ -259,13 +251,13 @@ describe("cfamily adapter — boot", () => {
 
 	it("c adapter can parse an empty source without throwing", async () => {
 		const r = await cAdapter.extractCallGraph!("", "x.c", "");
-		expect(r).toEqual({ functions: [], rawCalls: [], importBindings: [] });
+		expect(r).toEqual({ functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
 		expect(await cAdapter.extractImports("", "x.c", "")).toEqual([]);
 	});
 
 	it("cpp adapter can parse an empty source without throwing", async () => {
 		const r = await cppAdapter.extractCallGraph!("", "x.cpp", "");
-		expect(r).toEqual({ functions: [], rawCalls: [], importBindings: [] });
+		expect(r).toEqual({ functions: [], symbols: [], rawCalls: [], rawRefs: [], reexports: [], importBindings: [] });
 		expect(await cppAdapter.extractImports("", "x.cpp", "")).toEqual([]);
 	});
 });
@@ -304,5 +296,91 @@ describe("c/c++ adapter — range and site emission (unit)", () => {
 		);
 		const ctor = r.rawCalls.find((c) => c.kind === "new");
 		expect(ctor?.site).toBeDefined();
+	});
+});
+
+describe("cfamily adapter : symbols and refs (3.2)", () => {
+	it("cpp: emits class, struct, enum, enum members, typedef, macro, method, out-of-line method with '.' separators", async () => {
+		const cpp = await createCppAdapter();
+		const r = await cpp.extractCallGraph!(
+			"",
+			"src/a.hpp",
+			[
+				"#define MAX 10",
+				"#define SQ(x) ((x)*(x))",
+				"typedef int Id;",
+				"enum Color { Red, Green = 2 };",
+				"struct Point { int x; };",
+				"namespace ns { class Foo { public: void bar(); static int s; }; void Foo::bar() {} }",
+				"int counter = 0;",
+			].join("\n"),
+		);
+		const byQn = Object.fromEntries(r.symbols!.map((s) => [s.qualifiedName, s]));
+		expect(byQn.MAX).toMatchObject({ kind: "macro" });
+		expect(byQn.SQ).toMatchObject({ kind: "macro" });
+		expect(byQn.Id).toMatchObject({ kind: "type" });
+		expect(byQn.Color).toMatchObject({ kind: "enum" });
+		expect(byQn["Color.Red"]).toMatchObject({ kind: "enum_member", containerQualifiedName: "Color" });
+		expect(byQn["Color.Green"]).toMatchObject({ kind: "enum_member" });
+		expect(byQn.Point).toMatchObject({ kind: "struct" });
+		expect(byQn["Point.x"]).toMatchObject({ kind: "property" });
+		expect(byQn["ns.Foo"]).toMatchObject({ kind: "class", containerQualifiedName: "ns" });
+		const bars = r.symbols!.filter((s) => s.qualifiedName === "ns.Foo.bar");
+		expect(bars.map((b) => b.isDeclarationOnly)).toEqual([true, false]);
+		expect(byQn.counter).toMatchObject({ kind: "variable" });
+		for (const s of r.symbols!) expect(s.qualifiedName).not.toContain("::");
+		expect(r.functions.filter((f) => f.qualifiedName === "ns.Foo.bar")).toHaveLength(1);
+		expect(r.functions.find((f) => f.qualifiedName === "ns.Foo.bar")!.isDeclarationOnly).toBe(false);
+	});
+
+	it("c: same-file prototype plus definition projects to one functions row", async () => {
+		const c = await createCAdapter();
+		const r = await c.extractCallGraph!("", "src/u.c", "int add(int a, int b);\nint add(int a, int b) { return a + b; }\n");
+		expect(r.symbols!.filter((s) => s.qualifiedName === "add")).toHaveLength(2);
+		expect(r.functions.filter((f) => f.qualifiedName === "add")).toHaveLength(1);
+		expect(r.functions[0].isDeclarationOnly).toBe(false);
+	});
+
+	it("emits call and new refs with receivers; qualified calls become receiver + member", async () => {
+		const cpp = await createCppAdapter();
+		const r = await cpp.extractCallGraph!(
+			"",
+			"src/m.cpp",
+			"class Foo { public: static void bar() {} void run() { Foo::bar(); this->bar(); } };\nvoid main2() { Foo* f = new Foo(); f->run(); plain(); }",
+		);
+		const refs = r.rawRefs!.map((x) => [x.kind, x.name, x.receiver, x.enclosingClass]);
+		expect(refs).toContainEqual(["call", "bar", "Foo", "Foo"]);
+		expect(refs).toContainEqual(["call", "bar", "this", "Foo"]);
+		expect(refs).toContainEqual(["new", "Foo", undefined, undefined]);
+		expect(refs).toContainEqual(["call", "run", "f", undefined]);
+		expect(refs).toContainEqual(["call", "plain", undefined, undefined]);
+		const qualified = r.rawCalls.find((c) => c.rawCallee === "Foo.bar")!;
+		expect(qualified.kind).toBe("call");
+		expect(qualified.enclosingClass).toBe("Foo");
+	});
+});
+
+describe("cfamily adapter: nested scopes agree across symbols, calls, and refs", () => {
+	it("nested namespace and nested class share one dotted qualified name", async () => {
+		const cpp = await createCppAdapter();
+		const r = await cpp.extractCallGraph!(
+			"",
+			"src/n.cpp",
+			"namespace a { namespace b { class Outer { public: class Inner { public: void go() { helper(); } }; }; } }",
+		);
+		expect(r.symbols!.map((s) => s.qualifiedName)).toContain("a.b.Outer.Inner.go");
+		expect(r.rawCalls[0]).toMatchObject({ callerQualifiedName: "a.b.Outer.Inner.go", enclosingClass: "a.b.Outer.Inner" });
+		expect(r.rawRefs![0]).toMatchObject({ enclosingQualifiedName: "a.b.Outer.Inner.go", enclosingClass: "a.b.Outer.Inner" });
+	});
+
+	it("out-of-line method call carries namespace-qualified class", async () => {
+		const cpp = await createCppAdapter();
+		const r = await cpp.extractCallGraph!(
+			"",
+			"src/o.cpp",
+			"namespace ns { class Foo { void bar(); }; void Foo::bar() { baz(); } }",
+		);
+		expect(r.rawCalls[0]).toMatchObject({ callerQualifiedName: "ns.Foo.bar", enclosingClass: "ns.Foo" });
+		expect(r.rawRefs![0]).toMatchObject({ enclosingQualifiedName: "ns.Foo.bar", enclosingClass: "ns.Foo" });
 	});
 });

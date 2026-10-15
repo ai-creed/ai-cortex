@@ -7,9 +7,14 @@ import type {
 	RawCallData,
 	RawCallSite,
 	RawImportSite,
+	RawRefSite,
 } from "../lang-adapter.js";
-import type { FunctionNode } from "../models.js";
-import { C_REF_KINDS, C_SYMBOL_KINDS } from "../symbols.js";
+import type { SymbolKind, SymbolNode } from "../models.js";
+import {
+	C_REF_KINDS,
+	C_SYMBOL_KINDS,
+	functionsFromSymbols,
+} from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -80,6 +85,8 @@ function declaratorName(declarator: SyntaxNode): string | null {
 function findFunctionDeclarator(node: SyntaxNode): SyntaxNode | null {
 	if (node.type === "function_declarator") return node;
 	for (const child of node.children) {
+		// A nested type body (struct X { void m(); } x;) holds its own members.
+		if (child.type === "field_declaration_list") continue;
 		const r = findFunctionDeclarator(child);
 		if (r) return r;
 	}
@@ -97,8 +104,11 @@ function hasPointerInChain(node: SyntaxNode): boolean {
 
 function joinQualified(parts: string[], leaf: string): string {
 	if (parts.length === 0) return leaf;
-	return `${parts.join("::")}::${leaf}`;
+	return `${parts.join(".")}.${leaf}`;
 }
+
+/** Normalize C++ scope-resolution source text to the '.'-separated qualified-name form. */
+const dotName = (n: string): string => n.replace(/::/g, ".");
 
 /** Return the namespace_identifier text for a namespace_definition node, or null. */
 function namespaceIdentifier(node: SyntaxNode): string | null {
@@ -108,166 +118,267 @@ function namespaceIdentifier(node: SyntaxNode): string | null {
 	return null;
 }
 
-/** Return the type_identifier text for a class_specifier or struct_specifier node, or null. */
-function classIdentifier(node: SyntaxNode): string | null {
+const CLASS_LIKE = new Set(["class_specifier", "struct_specifier", "union_specifier"]);
+
+function className(node: SyntaxNode): string | null {
 	for (const child of node.children) {
 		if (child.type === "type_identifier") return child.text;
 	}
 	return null;
 }
 
-function extractFunctions(root: SyntaxNode, filePath: string): FunctionNode[] {
-	const fns: FunctionNode[] = [];
+/** Namespace and class segments (outermost first) enclosing `from`, inclusive.
+ *  Mirrors the nesting extractSymbols builds so call/ref sites agree with symbols. */
+function scopeSegments(from: SyntaxNode | null): string[] {
+	const segs: string[] = [];
+	for (let cur = from; cur; cur = cur.parent) {
+		if (cur.type === "namespace_definition") {
+			const nsName = namespaceIdentifier(cur);
+			if (nsName) segs.unshift(...nsName.split("::").filter(Boolean));
+		} else if (CLASS_LIKE.has(cur.type)) {
+			const cls = className(cur);
+			if (cls) segs.unshift(cls);
+		}
+	}
+	return segs;
+}
+
+function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
+	const out: SymbolNode[] = [];
 
 	function emit(
-		name: string,
-		node: SyntaxNode,
-		isStatic: boolean,
-		isDecl: boolean,
+		kind: SymbolKind,
+		fullName: string,
+		nameNode: SyntaxNode,
+		declNode: SyntaxNode,
+		opts: { exported: boolean; declOnly: boolean },
 	): void {
-		fns.push({
-			qualifiedName: name,
+		const qualifiedName = dotName(fullName);
+		const idx = qualifiedName.lastIndexOf(".");
+		const name = idx === -1 ? qualifiedName : qualifiedName.slice(idx + 1);
+		out.push({
+			qualifiedName,
+			name,
 			file: filePath,
-			exported: !isStatic,
+			kind,
+			...(idx === -1 ? {} : { containerQualifiedName: qualifiedName.slice(0, idx) }),
+			exported: opts.exported,
 			isDefaultExport: false,
-			...rangeFromNode(node),
-			isDeclarationOnly: isDecl,
+			isDeclarationOnly: opts.declOnly,
+			range: rangeFromNode(declNode),
+			nameRange: rangeFromNode(nameNode),
 		});
 	}
 
-	function walk(
-		node: SyntaxNode,
-		nsStack: string[],
-		className: string | null,
-	): void {
+	/** The leaf identifier node of a declarator chain (for name ranges). */
+	function leafNameNode(declarator: SyntaxNode): SyntaxNode {
+		if (
+			declarator.type === "identifier" ||
+			declarator.type === "field_identifier" ||
+			declarator.type === "type_identifier" ||
+			declarator.type === "qualified_identifier" ||
+			declarator.type === "destructor_name" ||
+			declarator.type === "operator_name"
+		) {
+			if (declarator.type === "qualified_identifier") {
+				const n = declarator.childForFieldName("name");
+				if (n) return leafNameNode(n);
+			}
+			return declarator;
+		}
+		const inner = declarator.childForFieldName("declarator");
+		return inner ? leafNameNode(inner) : declarator;
+	}
+
+	function walk(node: SyntaxNode, nsStack: string[], className: string | null): void {
+		if (node.type === "preproc_def" || node.type === "preproc_function_def") {
+			const n = node.childForFieldName("name");
+			if (n) emit("macro", n.text, n, node, { exported: true, declOnly: false });
+			return;
+		}
 		if (node.type === "namespace_definition") {
 			const nsName = namespaceIdentifier(node);
 			const segs: string[] = [];
-			if (nsName) {
-				for (const part of nsName.split("::")) if (part) segs.push(part);
-			}
-			// The body of a namespace_definition is a declaration_list
+			if (nsName) for (const part of nsName.split("::")) if (part) segs.push(part);
 			for (const child of node.children) {
-				if (child.type === "declaration_list") {
-					walk(child, [...nsStack, ...segs], className);
+				if (child.type === "declaration_list") walk(child, [...nsStack, ...segs], className);
+			}
+			return;
+		}
+		if (node.type === "class_specifier" || node.type === "struct_specifier" || node.type === "union_specifier") {
+			const nameNode = node.children.find((c) => c.type === "type_identifier");
+			const cls = nameNode?.text ?? null;
+			const body = node.children.find((c) => c.type === "field_declaration_list");
+			if (cls && nameNode && body) {
+				// Forward declarations (no body) are not emitted.
+				const kind: SymbolKind = node.type === "class_specifier" ? "class" : "struct";
+				emit(kind, joinQualified(nsStack, className ? `${className}.${cls}` : cls), nameNode, node, { exported: true, declOnly: false });
+			}
+			if (body) walk(body, nsStack, cls ? (className ? `${className}.${cls}` : cls) : className);
+			return;
+		}
+		if (node.type === "enum_specifier") {
+			const nameNode = node.children.find((c) => c.type === "type_identifier");
+			const body = node.children.find((c) => c.type === "enumerator_list");
+			if (nameNode && body) {
+				const enumQn = joinQualified(nsStack, className ? `${className}.${nameNode.text}` : nameNode.text);
+				emit("enum", enumQn, nameNode, node, { exported: true, declOnly: false });
+				for (const e of body.namedChildren) {
+					if (e.type !== "enumerator") continue;
+					const en = e.childForFieldName("name");
+					if (en) emit("enum_member", `${enumQn}.${en.text}`, en, e, { exported: true, declOnly: false });
 				}
 			}
 			return;
 		}
-
-		if (node.type === "class_specifier" || node.type === "struct_specifier") {
-			const cls = classIdentifier(node);
-			// The body is field_declaration_list
-			for (const child of node.children) {
-				if (child.type === "field_declaration_list") {
-					walk(child, nsStack, cls ?? className);
-				}
+		if (node.type === "type_definition") {
+			const decl = node.childForFieldName("declarator");
+			if (decl) {
+				const leaf = leafNameNode(decl);
+				emit("type", joinQualified(nsStack, leaf.text), leaf, node, { exported: true, declOnly: false });
 			}
+			// typedef struct { ... } Name; also walks the inner struct for its fields
+			for (const c of node.namedChildren) if (c.type === "struct_specifier" || c.type === "enum_specifier" || c.type === "union_specifier") walk(c, nsStack, className);
 			return;
 		}
-
 		if (node.type === "function_definition") {
 			const declarator = node.childForFieldName("declarator");
 			const fnDecl = declarator ? findFunctionDeclarator(declarator) : null;
 			const inner = fnDecl?.childForFieldName("declarator");
 			let name = inner ? declaratorName(inner) : null;
-			if (name) {
-				// If the name already contains "::" (out-of-line Foo::bar), respect it.
-				// Otherwise, prepend className if inside a class body.
-				if (!name.includes("::") && className) {
-					name = `${className}::${name}`;
-				}
-				const fullName = joinQualified(nsStack, name);
+			if (name && inner) {
+				if (!name.includes("::") && className) name = `${className}.${name}`;
 				const isStatic = getStorageClass(node) === "static";
-				emit(fullName, node, isStatic, false);
+				const isMethod = name.includes("::") || className !== null;
+				emit(isMethod ? "method" : "function", joinQualified(nsStack, name), leafNameNode(inner), node, { exported: !isStatic, declOnly: false });
 			}
-			// Walk body for nested lambdas etc., but reset className context
-			const body = node.childForFieldName("body");
-			if (body) walk(body, nsStack, null);
-			return;
+			return; // bodies are not indexed scope (lambdas inside are not symbols)
 		}
-
-		// In-class declarations use "field_declaration" (not "declaration")
 		if (node.type === "declaration" || node.type === "field_declaration") {
 			const fnDecl = findFunctionDeclarator(node);
 			if (fnDecl) {
 				const inner = fnDecl.childForFieldName("declarator");
-				// Skip function-pointer variables: int (*cmp)(...) has a pointer_declarator in the chain
 				if (inner && hasPointerInChain(inner)) {
-					for (const child of node.children) walk(child, nsStack, className);
+					// function-pointer variable: treat as a variable/property below
+				} else {
+					let name = inner ? declaratorName(inner) : null;
+					if (name && inner) {
+						if (!name.includes("::") && className) name = `${className}.${name}`;
+						const isStatic = getStorageClass(node) === "static";
+						const isMethod = name.includes("::") || className !== null;
+						emit(isMethod ? "method" : "function", joinQualified(nsStack, name), leafNameNode(inner), node, { exported: !isStatic, declOnly: true });
+					}
 					return;
 				}
-				let name = inner ? declaratorName(inner) : null;
-				if (name) {
-					if (!name.includes("::") && className) {
-						name = `${className}::${name}`;
-					}
-					const fullName = joinQualified(nsStack, name);
-					const isStatic = getStorageClass(node) === "static";
-					emit(fullName, node, isStatic, true);
-				}
 			}
-			// Don't recurse into declaration children to avoid double-emitting
+			// Non-function declarator(s): file-scope variables or class fields.
+			for (const c of node.children) {
+				const d = c.type === "init_declarator" ? c.childForFieldName("declarator") : c;
+				if (!d) continue;
+				const leaf = leafNameNode(d);
+				if (leaf.type !== "identifier" && leaf.type !== "field_identifier") continue;
+				const kind: SymbolKind = node.type === "field_declaration" ? "property" : "variable";
+				const base = className ? `${className}.${leaf.text}` : leaf.text;
+				emit(kind, joinQualified(nsStack, base), leaf, node, { exported: getStorageClass(node) !== "static", declOnly: node.type === "field_declaration" });
+			}
+			// Nested struct/enum definitions inside a declaration (struct X {...} x;)
+			for (const c of node.namedChildren) if (c.type === "struct_specifier" || c.type === "enum_specifier" || c.type === "class_specifier" || c.type === "union_specifier") walk(c, nsStack, className);
 			return;
 		}
-
 		for (const child of node.children) walk(child, nsStack, className);
 	}
 
 	walk(root, [], null);
-	return fns;
+	return out;
+}
+
+/** Qualified name of a function_definition in the same '.' form extractSymbols
+ *  emits. Out-of-line `Foo::bar` keeps only namespace prefixes. */
+function definitionName(def: SyntaxNode): { qualifiedName: string; outOfLine: boolean } | null {
+	const decl = def.childForFieldName("declarator");
+	const fnDecl = decl ? findFunctionDeclarator(decl) : null;
+	const inner = fnDecl?.childForFieldName("declarator");
+	const name = inner ? declaratorName(inner) : null;
+	if (!name) return null;
+	if (!name.includes("::")) {
+		return { qualifiedName: joinQualified(scopeSegments(def.parent), name), outOfLine: false };
+	}
+	const nsOnly: string[] = [];
+	for (let o: SyntaxNode | null = def.parent; o; o = o.parent) {
+		if (o.type !== "namespace_definition") continue;
+		const nsName = namespaceIdentifier(o);
+		if (nsName) nsOnly.unshift(...nsName.split("::").filter(Boolean));
+	}
+	return { qualifiedName: dotName(joinQualified(nsOnly, name)), outOfLine: true };
 }
 
 function findEnclosingFunctionName(node: SyntaxNode): string | null {
-	let cur: SyntaxNode | null = node.parent;
-	while (cur) {
-		if (cur.type === "function_definition") {
-			const decl = cur.childForFieldName("declarator");
-			const fnDecl = decl ? findFunctionDeclarator(decl) : null;
-			const inner = fnDecl?.childForFieldName("declarator");
-			let name = inner ? declaratorName(inner) : null;
-			if (name) {
-				// If the name already has "::", it's already fully qualified (out-of-line method)
-				if (!name.includes("::")) {
-					// Check for enclosing class
-					let classNode: SyntaxNode | null = cur.parent;
-					while (classNode) {
-						if (
-							classNode.type === "class_specifier" ||
-							classNode.type === "struct_specifier"
-						) {
-							const cls = classIdentifier(classNode);
-							if (cls) name = `${cls}::${name}`;
-							break;
-						}
-						if (
-							classNode.type === "function_definition" ||
-							classNode.type === "namespace_definition"
-						)
-							break;
-						classNode = classNode.parent;
-					}
-				}
-				// Collect outer namespaces
-				const outerNs: string[] = [];
-				let outer: SyntaxNode | null = cur.parent;
-				while (outer) {
-					if (outer.type === "namespace_definition") {
-						const nsName = namespaceIdentifier(outer);
-						if (nsName) {
-							for (const seg of nsName.split("::").reverse()) {
-								if (seg) outerNs.unshift(seg);
-							}
-						}
-					}
-					outer = outer.parent;
-				}
-				return outerNs.length > 0 ? `${outerNs.join("::")}::${name}` : name;
-			}
-		}
-		cur = cur.parent;
+	for (let cur = node.parent; cur; cur = cur.parent) {
+		if (cur.type !== "function_definition") continue;
+		const def = definitionName(cur);
+		if (def) return def.qualifiedName;
 	}
 	return null;
+}
+
+/** Fully qualified innermost enclosing class, or for an out-of-line
+ *  `Foo::bar` definition the qualifier before the last '.'. */
+function findEnclosingClassName(node: SyntaxNode): string | null {
+	for (let cur = node.parent; cur; cur = cur.parent) {
+		if (CLASS_LIKE.has(cur.type) && className(cur)) return scopeSegments(cur).join(".");
+		if (cur.type !== "function_definition") continue;
+		const def = definitionName(cur);
+		if (def?.outOfLine) {
+			const idx = def.qualifiedName.lastIndexOf(".");
+			return idx === -1 ? null : def.qualifiedName.slice(0, idx);
+		}
+	}
+	return null;
+}
+
+type CallTarget = {
+	/** Token for the callee name, used for ref ranges. */
+	token: SyntaxNode;
+	name: string;
+	receiver?: string;
+	rawCallee: string;
+	kind: RawCallSite["kind"];
+};
+
+/** Resolve a call_expression's function node into receiver/member parts. */
+function callTarget(fnNode: SyntaxNode): CallTarget | null {
+	if (fnNode.type === "field_expression") {
+		const obj = fnNode.childForFieldName("argument");
+		const field = fnNode.childForFieldName("field");
+		if (!field) return null;
+		const receiver = obj?.text ?? "";
+		return { token: field, name: field.text, receiver, rawCallee: `${receiver}.${field.text}`, kind: "method" };
+	}
+	if (fnNode.type === "qualified_identifier") {
+		let leaf: SyntaxNode = fnNode;
+		while (leaf.type === "qualified_identifier") {
+			const next = leaf.childForFieldName("name");
+			if (!next) break;
+			leaf = next;
+		}
+		const full = dotName(fnNode.text);
+		const idx = full.lastIndexOf(".");
+		const receiver = idx > 0 ? full.slice(0, idx) : undefined;
+		return { token: leaf, name: leaf.text, ...(receiver ? { receiver } : {}), rawCallee: full, kind: "call" };
+	}
+	if (fnNode.type === "identifier") {
+		return { token: fnNode, name: fnNode.text, rawCallee: fnNode.text, kind: "call" };
+	}
+	return null;
+}
+
+function newTypeNode(node: SyntaxNode): SyntaxNode | undefined {
+	return (
+		node.childForFieldName("type") ??
+		node.childForFieldName("constructor") ??
+		node.children.find((c: SyntaxNode) => c.type === "type_identifier") ??
+		undefined
+	);
 }
 
 function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
@@ -277,43 +388,34 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 		if (node.type === "call_expression") {
 			const fnNode = node.childForFieldName("function");
 			if (fnNode) {
-				let rawCallee: string;
-				let kind: RawCallSite["kind"];
-				if (fnNode.type === "field_expression") {
-					const obj = fnNode.childForFieldName("argument")?.text ?? "";
-					const prop = fnNode.childForFieldName("field")?.text ?? "";
-					rawCallee = `${obj}.${prop}`;
-					kind = "method";
-				} else {
-					rawCallee = fnNode.text;
-					kind = "call";
-				}
+				const target = callTarget(fnNode);
 				const caller = findEnclosingFunctionName(node);
 				if (caller) {
+					const enclosingClass = findEnclosingClassName(node);
 					calls.push({
 						callerQualifiedName: caller,
 						callerFile: filePath,
-						rawCallee,
-						kind,
+						rawCallee: target ? target.rawCallee : fnNode.text,
+						kind: target ? target.kind : "call",
 						site: rangeFromNode(node),
+						...(enclosingClass ? { enclosingClass } : {}),
 					});
 				}
 			}
 		}
 		if (node.type === "new_expression") {
-			const typeNode =
-				node.childForFieldName("type") ??
-				node.childForFieldName("constructor") ??
-				node.children.find((c: SyntaxNode) => c.type === "type_identifier");
+			const typeNode = newTypeNode(node);
 			if (typeNode) {
 				const caller = findEnclosingFunctionName(node);
 				if (caller) {
+					const enclosingClass = findEnclosingClassName(node);
 					calls.push({
 						callerQualifiedName: caller,
 						callerFile: filePath,
 						rawCallee: typeNode.text,
 						kind: "new",
 						site: rangeFromNode(node),
+						...(enclosingClass ? { enclosingClass } : {}),
 					});
 				}
 			}
@@ -323,6 +425,41 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 
 	walk(root);
 	return calls;
+}
+
+function extractRawRefs(root: SyntaxNode, filePath: string): RawRefSite[] {
+	const refs: RawRefSite[] = [];
+
+	function push(kind: "call" | "new", name: string, token: SyntaxNode, site: SyntaxNode, receiver?: string): void {
+		const enclosingQualifiedName = findEnclosingFunctionName(site);
+		const enclosingClass = findEnclosingClassName(site);
+		refs.push({
+			file: filePath,
+			name,
+			kind,
+			range: rangeFromNode(token),
+			...(receiver ? { receiver } : {}),
+			...(enclosingQualifiedName ? { enclosingQualifiedName } : {}),
+			...(enclosingClass ? { enclosingClass } : {}),
+		});
+	}
+
+	function walk(node: SyntaxNode): void {
+		if (node.type === "call_expression") {
+			const fnNode = node.childForFieldName("function");
+			const target = fnNode ? callTarget(fnNode) : null;
+			if (target) push("call", target.name, target.token, node, target.receiver);
+		}
+		if (node.type === "new_expression") {
+			const typeNode = newTypeNode(node);
+			if (typeNode) push("new", typeNode.text, typeNode, node);
+		}
+		for (const child of node.children) walk(child);
+	}
+
+	walk(root);
+	refs.sort((a, b) => a.range.line - b.range.line || a.range.column - b.range.column);
+	return refs;
 }
 
 function extractImportSitesFromRoot(
@@ -354,6 +491,17 @@ function extractImportSitesFromRoot(
 	return sites;
 }
 
+function emptyCallData(): RawCallData {
+	return {
+		functions: [],
+		symbols: [],
+		rawCalls: [],
+		rawRefs: [],
+		reexports: [],
+		importBindings: [],
+	};
+}
+
 function buildAdapter(
 	exts: string[],
 	parserGetter: () => import("web-tree-sitter").Parser | null,
@@ -363,7 +511,7 @@ function buildAdapter(
 		capabilities: {
 			importExtraction: true,
 			callGraph: true,
-			symbolIndex: false,
+			symbolIndex: true,
 		},
 		symbolKinds: C_SYMBOL_KINDS,
 		referenceKinds: C_REF_KINDS,
@@ -390,13 +538,17 @@ function buildAdapter(
 				content ??
 				(await fs.promises.readFile(path.join(worktreePath, filePath), "utf8"));
 			const parser = parserGetter();
-			if (!parser) return { functions: [], rawCalls: [], importBindings: [] };
+			if (!parser) return emptyCallData();
 			const tree = parser.parse(source);
-			if (!tree) return { functions: [], rawCalls: [], importBindings: [] };
+			if (!tree) return emptyCallData();
 			const root = tree.rootNode;
+			const symbols = extractSymbols(root, filePath);
 			return {
-				functions: extractFunctions(root, filePath),
+				functions: functionsFromSymbols(symbols),
+				symbols,
 				rawCalls: extractRawCalls(root, filePath),
+				rawRefs: extractRawRefs(root, filePath),
+				reexports: [],
 				importBindings: [],
 			};
 		},
