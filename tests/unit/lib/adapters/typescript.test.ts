@@ -639,6 +639,32 @@ describe("typescript adapter — refs (3.2)", () => {
 		expect(thisCall.enclosingClass).toBe("Svc");
 	});
 
+	it("gives each ref its own enclosing chain when sites share ancestors", async () => {
+		const { refs } = await refsOf(
+			[
+				"namespace N {",
+				"  export class C {",
+				"    a() { f1(); const g = () => f2(); }",
+				"    b() { f3(); }",
+				"  }",
+				"  export function h() { f4(); }",
+				"}",
+				"f5();",
+				"export default function () { f6(); }",
+			].join("\n"),
+		);
+		const ctx = (name: string) => {
+			const r = refs.find((x) => x.kind === "call" && x.name === name)!;
+			return [r.enclosingQualifiedName, r.enclosingClass];
+		};
+		expect(ctx("f1")).toEqual(["N.C.a", "N.C"]);
+		expect(ctx("f2")).toEqual(["N.C.a", "N.C"]);
+		expect(ctx("f3")).toEqual(["N.C.b", "N.C"]);
+		expect(ctx("f4")).toEqual(["N.h", undefined]);
+		expect(ctx("f5")).toEqual([undefined, undefined]);
+		expect(ctx("f6")).toEqual(["default", undefined]);
+	});
+
 	it("does not emit a declaration's own name, and never emits read/write kinds", async () => {
 		const { refs } = await refsOf("export function handler() { return 1; }\nconst h = handler;\nlet v = 1; v = 2;");
 		expect(refs.filter((r) => r.range.line === 1)).toEqual([]);

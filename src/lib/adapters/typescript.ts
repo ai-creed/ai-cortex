@@ -378,56 +378,99 @@ function isIndexedClassMember(method: SyntaxNode): boolean {
 	return cls.parent?.type === "export_statement" || cls.parent?.type === "variable_declarator";
 }
 
-/** Enclosing indexed declaration for a node inside a body: the chain of
- *  containers from the outermost down to the first function-like declaration
- *  (functions cannot contain indexed declarations), joined with '.'. */
-export function enclosingContext(node: SyntaxNode): {
-	qualifiedName?: string;
-	enclosingClass?: string;
-} {
-	type Entry = { name: string; isClass: boolean; isFunction: boolean };
-	const chain: Entry[] = [];
-	let cur: SyntaxNode | null = node.parent;
-	while (cur) {
-		if (cur.type === "method_definition" && isIndexedClassMember(cur)) {
-			const n = cur.childForFieldName("name");
-			if (n) chain.unshift({ name: memberName(n) ?? n.text, isClass: false, isFunction: true });
-		} else if (cur.type === "class_declaration" || cur.type === "abstract_class_declaration" || cur.type === "class") {
-			const n = cur.childForFieldName("name");
-			if (n) chain.unshift({ name: n.text, isClass: true, isFunction: false });
-			else if (cur.parent?.type === "export_statement" || cur.parent?.type === "variable_declarator") {
-				const vn = cur.parent.type === "variable_declarator" ? cur.parent.childForFieldName("name")?.text : "default";
-				if (vn) chain.unshift({ name: vn, isClass: true, isFunction: false });
-			}
-		} else if (cur.type === "internal_module" || cur.type === "module") {
-			const n = cur.childForFieldName("name");
-			if (n) for (const part of n.text.split(".").reverse()) chain.unshift({ name: part, isClass: false, isFunction: false });
-		} else if (cur.type === "function_declaration") {
-			const n = cur.childForFieldName("name");
-			if (n) chain.unshift({ name: n.text, isClass: false, isFunction: true });
-			else if (cur.parent?.type === "export_statement") chain.unshift({ name: "default", isClass: false, isFunction: true });
-		} else if (cur.type === "arrow_function" || cur.type === "function_expression") {
-			if (cur.parent?.type === "variable_declarator") {
-				const n = cur.parent.childForFieldName("name");
-				if (n && n.type === "identifier") chain.unshift({ name: n.text, isClass: false, isFunction: true });
-			} else if (cur.parent?.type === "export_statement") {
-				chain.unshift({ name: "default", isClass: false, isFunction: true });
-			}
+type ContainerEntry = { name: string; isClass: boolean; isFunction: boolean };
+
+/** Container entries a single ancestor contributes, outermost first. */
+function containerEntries(cur: SyntaxNode): ContainerEntry[] {
+	if (cur.type === "method_definition" && isIndexedClassMember(cur)) {
+		const n = cur.childForFieldName("name");
+		if (n) return [{ name: memberName(n) ?? n.text, isClass: false, isFunction: true }];
+	} else if (cur.type === "class_declaration" || cur.type === "abstract_class_declaration" || cur.type === "class") {
+		const n = cur.childForFieldName("name");
+		if (n) return [{ name: n.text, isClass: true, isFunction: false }];
+		if (cur.parent?.type === "export_statement" || cur.parent?.type === "variable_declarator") {
+			const vn = cur.parent.type === "variable_declarator" ? cur.parent.childForFieldName("name")?.text : "default";
+			if (vn) return [{ name: vn, isClass: true, isFunction: false }];
 		}
-		cur = cur.parent;
+	} else if (cur.type === "internal_module" || cur.type === "module") {
+		const n = cur.childForFieldName("name");
+		if (n) return n.text.split(".").map((part) => ({ name: part, isClass: false, isFunction: false }));
+	} else if (cur.type === "function_declaration") {
+		const n = cur.childForFieldName("name");
+		if (n) return [{ name: n.text, isClass: false, isFunction: true }];
+		if (cur.parent?.type === "export_statement") return [{ name: "default", isClass: false, isFunction: true }];
+	} else if (cur.type === "arrow_function" || cur.type === "function_expression") {
+		if (cur.parent?.type === "variable_declarator") {
+			const n = cur.parent.childForFieldName("name");
+			if (n && n.type === "identifier") return [{ name: n.text, isClass: false, isFunction: true }];
+		} else if (cur.parent?.type === "export_statement") {
+			return [{ name: "default", isClass: false, isFunction: true }];
+		}
 	}
-	// Truncate at the first function-like entry from the outside in.
-	const kept: Entry[] = [];
-	for (const e of chain) {
-		kept.push(e);
-		if (e.isFunction) break;
-	}
+	return [];
+}
+
+type EnclosingContext = { qualifiedName?: string; enclosingClass?: string };
+type ChainMemo = { kept: ContainerEntry[]; closed: boolean; ctx: EnclosingContext };
+
+// Every ref and call site asks for its enclosing chain; memoizing per ancestor
+// node (per tree) turns repeated ancestor walks into one step to a cached parent.
+const chainMemos = new WeakMap<object, Map<number, ChainMemo>>();
+
+function contextOf(kept: ContainerEntry[]): EnclosingContext {
 	if (kept.length === 0) return {};
 	const qualifiedName = kept.map((e) => e.name).join(".");
 	let enclosingClass: string | undefined;
 	const lastClass = kept.map((e, i) => (e.isClass ? i : -1)).filter((i) => i >= 0).pop();
 	if (lastClass !== undefined) enclosingClass = kept.slice(0, lastClass + 1).map((e) => e.name).join(".");
 	return { qualifiedName, enclosingClass };
+}
+
+/** Enclosing indexed declaration for a node inside a body: the chain of
+ *  containers from the outermost down to the first function-like declaration
+ *  (functions cannot contain indexed declarations), joined with '.'. */
+export function enclosingContext(node: SyntaxNode): EnclosingContext {
+	const start = node.parent;
+	if (!start) return {};
+	let memo = chainMemos.get(start.tree);
+	if (!memo) {
+		memo = new Map();
+		chainMemos.set(start.tree, memo);
+	}
+	// Climb until a memoized ancestor (or the root), then fill the memo downwards.
+	const pending: SyntaxNode[] = [];
+	let base: ChainMemo = { kept: [], closed: false, ctx: {} };
+	for (let cur: SyntaxNode | null = start; cur; cur = cur.parent) {
+		const hit = memo.get(cur.id);
+		if (hit) {
+			base = hit;
+			break;
+		}
+		pending.push(cur);
+	}
+	for (let i = pending.length - 1; i >= 0; i--) {
+		const cur = pending[i];
+		let next = base;
+		if (!base.closed) {
+			const entries = containerEntries(cur);
+			if (entries.length > 0) {
+				// Truncate at the first function-like entry from the outside in.
+				const kept = [...base.kept];
+				let closed = false;
+				for (const e of entries) {
+					kept.push(e);
+					if (e.isFunction) {
+						closed = true;
+						break;
+					}
+				}
+				next = { kept, closed, ctx: contextOf(kept) };
+			}
+		}
+		memo.set(cur.id, next);
+		base = next;
+	}
+	return base.ctx;
 }
 
 function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
@@ -487,7 +530,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 	}
 
 	function walkChildren(node: SyntaxNode): void {
-		for (const child of node.children) {
+		for (const child of node.namedChildren) {
 			walk(child);
 		}
 	}
@@ -792,7 +835,7 @@ function extractRawRefs(
 				return;
 			}
 		}
-		for (const c of node.children) walk(c);
+		for (const c of node.namedChildren) walk(c);
 	}
 
 	function typeIdentifiersAs(kind: "extends" | "implements", node: SyntaxNode, at: SyntaxNode): void {
