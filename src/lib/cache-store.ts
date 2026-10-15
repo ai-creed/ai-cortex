@@ -12,8 +12,8 @@ import {
 	transcodeCacheToDb,
 	readFromDb,
 	dbSchemaValid,
-	majorOf,
 } from "./cache-store-sqlite.js";
+import { withSequenceLock } from "./seq-lock.js";
 
 // Re-export so coordinator + tests share one seam (cache-store.js is the mock
 // boundary in unit tests; the coordinator gets all its cache deps from here).
@@ -185,6 +185,14 @@ export function readFreshnessMeta(dbPath: string): {
 	}
 }
 
+let ensureValidDbTestHooks: { beforeLock?: () => Promise<void> } | null = null;
+/** Test-only seam: pause between the unlocked validity check and the lock. */
+export function setEnsureValidDbTestHooks(
+	h: { beforeLock?: () => Promise<void> } | null,
+): void {
+	ensureValidDbTestHooks = h;
+}
+
 /** Ensure a valid (current-version) .db exists for the worktree and return its
  *  path, performing legacy-JSON migration, WITHOUT assembling a RepoCache.
  *  Returns null on a cache miss (caller reindexes). */
@@ -202,14 +210,34 @@ export async function ensureValidDb(
 			await fs.promises.rm(jsonPath, { force: true });
 			return dbPath;
 		}
-		// Version mismatch: discard the db (and sidecars) so the caller reindexes.
-		for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
-			await fs.promises.rm(p, { force: true });
+		// Invalid: discard under the sequence lock with a recheck (spec B4), so a
+		// store another process published after our unlocked check is never
+		// deleted. The sequence sidecar is left in place.
+		if (ensureValidDbTestHooks?.beforeLock) {
+			await ensureValidDbTestHooks.beforeLock();
 		}
-		process.stderr.write(
-			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+		const outcome = withSequenceLock(
+			dbPath,
+			(): "valid" | "absent" | "discarded" => {
+				if (!fs.existsSync(dbPath)) return "absent";
+				if (dbSchemaValid(dbPath)) return "valid";
+				for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
+					fs.rmSync(p, { force: true });
+				}
+				return "discarded";
+			},
 		);
-		return null;
+		if (outcome === "valid") {
+			await fs.promises.rm(jsonPath, { force: true });
+			return dbPath;
+		}
+		if (outcome === "discarded") {
+			process.stderr.write(
+				`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+			);
+			return null;
+		}
+		// "absent": another process discarded it; continue as if no db existed.
 	}
 
 	// 2. No db, but a legacy json exists: migrate in place (transcode) or reindex.
@@ -223,8 +251,9 @@ export async function ensureValidDb(
 			await fs.promises.rm(jsonPath, { force: true }); // corrupt -> reindex
 			return null;
 		}
-		if (majorOf(cache.schemaVersion ?? "") !== majorOf(SCHEMA_VERSION)) {
-			await fs.promises.rm(jsonPath, { force: true }); // incompatible -> reindex
+		if (cache.schemaVersion !== SCHEMA_VERSION) {
+			// Older or newer minor (or any other version) -> reindex (A1).
+			await fs.promises.rm(jsonPath, { force: true });
 			return null;
 		}
 		try {

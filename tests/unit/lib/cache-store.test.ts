@@ -1,4 +1,5 @@
 // tests/unit/lib/cache-store.test.ts
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,9 +29,13 @@ import {
 	getCacheMetaFilePath,
 	isWorktreeDirty,
 	readCacheForWorktree,
+	readFreshnessMeta,
 	RepoKeyError,
+	setEnsureValidDbTestHooks,
 	writeCache,
 } from "../../../src/lib/cache-store.js";
+import { setTranscodeTestHooks } from "../../../src/lib/cache-store-sqlite.js";
+import { seqDbPathFor } from "../../../src/lib/seq-lock.js";
 
 const mockExec = vi.mocked(exec);
 
@@ -346,6 +351,61 @@ describe("readCacheForWorktree (SQLite + migration)", () => {
 		expect(fs.existsSync(dbPath)).toBe(false);
 		stderrSpy.mockRestore();
 	});
+
+	it("rejects a same-major older-minor legacy json: returns null, deletes json, creates no db (A1)", async () => {
+		const cache = makeCache();
+		const jsonPath = path.join(getCacheDir(cache.repoKey), cache.worktreeKey + ".json");
+		fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
+		fs.writeFileSync(jsonPath, JSON.stringify({ ...cache, schemaVersion: "3.1" }));
+		expect(await ensureValidDb(cache.repoKey, cache.worktreeKey)).toBeNull();
+		expect(fs.existsSync(jsonPath)).toBe(false);
+		expect(fs.existsSync(getCacheDbFilePath(cache.repoKey, cache.worktreeKey))).toBe(false);
+	});
+
+	it("still transcodes a current-version legacy json with indexSeq 1 and takes no sidecar lock before the transcode", async () => {
+		const cache = makeCache();
+		const jsonPath = path.join(getCacheDir(cache.repoKey), cache.worktreeKey + ".json");
+		fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
+		fs.writeFileSync(jsonPath, JSON.stringify(cache));
+		const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+		const sidecar = seqDbPathFor(dbPath);
+		// Ordering probe (spec C, fourth variant). Every withSequenceLock call opens
+		// the sidecar database and therefore creates the file. The transcode's own
+		// beforeLock hook fires immediately before the transcode takes the lock, so
+		// if the sidecar already exists at that instant, ensureValidDb must have
+		// locked earlier. Separately, ensureValidDb's beforeLock seam fires only on
+		// the locked-invalidation branch, which a JSON-only cache must never enter.
+		let sidecarExistedBeforeTranscodeLock: boolean | null = null;
+		setTranscodeTestHooks({ beforeLock: () => { sidecarExistedBeforeTranscodeLock = fs.existsSync(sidecar); } });
+		setEnsureValidDbTestHooks({ beforeLock: async () => { throw new Error("ensureValidDb entered the locked invalidation path for a JSON-only cache"); } });
+		try {
+			expect(await ensureValidDb(cache.repoKey, cache.worktreeKey)).toBe(dbPath);
+		} finally {
+			setTranscodeTestHooks(null);
+			setEnsureValidDbTestHooks(null);
+		}
+		expect(sidecarExistedBeforeTranscodeLock).toBe(false); // the hook fired, and nothing had locked before it
+		expect(fs.existsSync(sidecar)).toBe(true); // the transcode's own sequence commit created it afterwards
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(1);
+		expect(fs.existsSync(jsonPath)).toBe(false);
+	});
+
+	it("rejects a user_version=2 db whose meta.schemaVersion is 3.1", async () => {
+		const cache = makeCache();
+		const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+		await writeCache(cache);
+		const db = new Database(dbPath);
+		db.prepare("UPDATE meta SET value = '3.1' WHERE key = 'schemaVersion'").run();
+		db.close();
+		const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			expect(await ensureValidDb(cache.repoKey, cache.worktreeKey)).toBeNull();
+		} finally {
+			stderrSpy.mockRestore();
+		}
+		expect(fs.existsSync(dbPath)).toBe(false);
+		expect(fs.existsSync(seqDbPathFor(dbPath))).toBe(true); // sidecar survives invalidation
+	});
 });
 
 describe("ensureValidDb", () => {
@@ -393,6 +453,193 @@ describe("ensureValidDb", () => {
 		expect(p).toBe(getCacheDbFilePath(repoKey, worktreeKey));
 		expect(fs.existsSync(path.join(dir, `${worktreeKey}.json`))).toBe(false);
 	});
+});
+
+describe("ensureValidDb: concurrent upgrade (B4)", () => {
+	const cacheStoreSrc = path.resolve(process.cwd(), "src/lib/cache-store.ts").split(path.sep).join("/");
+	const sqliteStoreSrc = path.resolve(process.cwd(), "src/lib/cache-store-sqlite.ts").split(path.sep).join("/");
+	const tsxBin = path.resolve(process.cwd(), "node_modules/.bin/tsx");
+	let cacheHome: string;
+	let childScript: string;
+	let dbPath: string;
+	let spawned: Child[] = [];
+
+	// One child program, two modes. "check" runs ensureValidDb and reports. "write"
+	// runs ensureValidDb, reports, optionally waits for writeGate, then calls
+	// writeCache in ITS OWN process and reports the published value. pauseGate,
+	// when non-empty, installs the ensureValidDb beforeLock seam: the hook prints
+	// the "paused" marker and parks until the gate file exists. The first line is
+	// the script's own pid (tsx runs it in a grandchild process), so cleanup can
+	// kill a child left parked by a failed case.
+	const CHILD = `
+    import fs from "node:fs";
+    import { ensureValidDb, writeCache, setEnsureValidDbTestHooks } from ${JSON.stringify(cacheStoreSrc)};
+    process.stdout.write("pid " + process.pid + "\\n");
+    const [,, mode, repoKey, worktreeKey, pauseGate, writeGate, cacheJson] = process.argv;
+    const waitForFile = async (f) => { while (!fs.existsSync(f)) await new Promise((r) => setTimeout(r, 10)); };
+    const emit = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+    if (pauseGate) setEnsureValidDbTestHooks({ beforeLock: async () => { process.stdout.write("paused\\n"); await waitForFile(pauseGate); } });
+    const result = await ensureValidDb(repoKey, worktreeKey);
+    emit({ result });
+    if (mode === "write") {
+      if (writeGate) await waitForFile(writeGate);
+      const cache = JSON.parse(cacheJson);
+      await writeCache(cache);
+      emit({ indexSeq: cache.indexSeq });
+    }
+  `;
+
+	type Child = {
+		proc: ChildProcess;
+		waitFor: (token: string) => Promise<void>;
+		exited: Promise<number | null>;
+		records: () => Array<Record<string, unknown>>; // parsed JSON lines seen so far, in order
+		scriptPid: () => number | null;
+	};
+	function spawnScript(file: string, args: string[]): Child {
+		const proc = spawn(tsxBin, [file, ...args], {
+			// stderr is captured, not inherited, so the children's "reindexing"
+			// notices stay out of the test output; it is included in failures.
+			stdio: ["ignore", "pipe", "pipe"],
+			env: { ...process.env, AI_CORTEX_CACHE_HOME: cacheHome }, // same cache home as the parent's getCacheDbFilePath
+		});
+		let out = "";
+		let err = "";
+		proc.stdout!.on("data", (d) => (out += d));
+		proc.stderr!.on("data", (d) => (err += d));
+		const waitFor = (token: string) =>
+			new Promise<void>((resolve, reject) => {
+				const tick = () => (out.includes(token) ? resolve() : proc.exitCode !== null ? reject(new Error(`child exited before "${token}": ${out}${err}`)) : setTimeout(tick, 10));
+				tick();
+			});
+		const exited = new Promise<number | null>((resolve) => proc.on("exit", (code) => resolve(code)));
+		const records = () => out.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as Record<string, unknown>);
+		const scriptPid = () => {
+			const m = /^pid (\d+)$/m.exec(out);
+			return m ? Number(m[1]) : null;
+		};
+		const child = { proc, waitFor, exited, records, scriptPid };
+		spawned.push(child);
+		return child;
+	}
+	function spawnChild(mode: "check" | "write", o: { pauseGate?: string; writeGate?: string; cache?: RepoCache } = {}): Child {
+		const c = o.cache ?? makeCache();
+		return spawnScript(childScript, [mode, c.repoKey, c.worktreeKey, o.pauseGate ?? "", o.writeGate ?? "", JSON.stringify(c)]);
+	}
+	const gate = (name: string) => path.join(tmpDir, `gate-${name}`);
+	const open = (g: string) => fs.writeFileSync(g, "go");
+
+	beforeEach(async () => {
+		spawned = [];
+		cacheHome = path.join(tmpDir, "cache-home");
+		process.env.AI_CORTEX_CACHE_HOME = cacheHome;
+		childScript = path.join(tmpDir, "upgrade-child.mts"); // .mts: ESM, so top-level await works
+		fs.writeFileSync(childScript, CHILD);
+		// Start every case from a store that is invalid under 3.2 (user_version = 1)
+		// with no sidecar, which is the pre-3.2 on-disk layout.
+		const cache = makeCache();
+		dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+		await writeCache(cache);
+		const db = new Database(dbPath);
+		db.pragma("user_version = 1");
+		db.close();
+		fs.rmSync(seqDbPathFor(dbPath), { force: true });
+	});
+	afterEach(async () => {
+		process.env.AI_CORTEX_CACHE_HOME = SESSION_CACHE_HOME;
+		// A failed case can leave a child parked on a gate; kill the script process
+		// itself (tsx's grandchild) and the tsx wrapper, then wait for the exit.
+		for (const c of spawned) {
+			if (c.proc.exitCode !== null || c.proc.signalCode !== null) continue;
+			const pid = c.scriptPid();
+			if (pid !== null) {
+				try {
+					process.kill(pid, "SIGKILL");
+				} catch {
+					/* already gone */
+				}
+			}
+			c.proc.kill("SIGKILL");
+			await c.exited;
+		}
+	});
+
+	it("B paused before the lock does not delete A's freshly upgraded store, and B's own later write publishes 2", async () => {
+		const b = spawnChild("write", { pauseGate: gate("b-lock"), writeGate: gate("b-write") });
+		await b.waitFor("paused"); // B saw user_version = 1 and is parked before taking the lock
+		const a = spawnChild("write"); // A: discard under the lock, then publish 1
+		await a.exited;
+		expect(a.records()).toEqual([{ result: null }, { indexSeq: 1 }]);
+		const before = fs.readFileSync(dbPath);
+		open(gate("b-lock")); // B takes the lock; its recheck finds A's valid store
+		await b.waitFor('"result"');
+		expect(b.records()[0]).toEqual({ result: dbPath });
+		expect(fs.readFileSync(dbPath).equals(before)).toBe(true); // byte-identical: B deleted nothing
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(1);
+		open(gate("b-write")); // B's own process now writes
+		await b.exited;
+		expect(b.records()[1]).toEqual({ indexSeq: 2 });
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(2);
+	}, 30_000);
+
+	it("B blocks on the sidecar lock while the upgrader A is mid-commit, then observes A's store as valid", async () => {
+		// Spec C: "B paused while A holds the sidecar lock mid-commit, asserting B
+		// blocks and then observes A's store as valid". A is a writer whose
+		// afterRename hook parks it INSIDE the critical section (after step 6,
+		// before COMMIT) until a gate file appears. B first sees the invalid v1
+		// store (unlocked check), then enters withSequenceLock and must block in
+		// SQLite's busy handler because A holds the RESERVED lock.
+		const writerFile = path.join(tmpDir, "mid-commit-writer.mts");
+		fs.writeFileSync(writerFile, `
+      import fs from "node:fs";
+      import { writeCache } from ${JSON.stringify(cacheStoreSrc)};
+      import { setTranscodeTestHooks } from ${JSON.stringify(sqliteStoreSrc)};
+      process.stdout.write("pid " + process.pid + "\\n");
+      setTranscodeTestHooks({ afterRename: () => { process.stdout.write("mid-commit\\n"); while (!fs.existsSync(process.argv[3])) { const end = Date.now() + 20; while (Date.now() < end) {} } } });
+      await writeCache(JSON.parse(process.argv[2]));
+      process.stdout.write("published\\n");
+    `);
+		// B must take its unlocked check BEFORE A renames the new store over the old
+		// one, otherwise B's fast path sees a valid store and never enters the lock.
+		const b = spawnChild("check", { pauseGate: gate("b-lock") });
+		await b.waitFor("paused"); // B observed user_version = 1 and is parked before the lock
+		const a = spawnScript(writerFile, [JSON.stringify(makeCache()), gate("a-commit")]);
+		await a.waitFor("mid-commit"); // A has renamed the 3.2 store into place and still holds the lock
+		open(gate("b-lock")); // B now calls withSequenceLock and must block
+		await new Promise((r) => setTimeout(r, 500));
+		expect(b.proc.exitCode).toBeNull(); // still blocked behind A
+		expect(b.records()).toEqual([]); // no result yet
+		expect(fs.existsSync(dbPath)).toBe(true); // A's store is in place, sequence not yet committed
+		open(gate("a-commit")); // A commits and exits
+		await a.waitFor("published");
+		await b.exited;
+		expect(b.records()).toEqual([{ result: dbPath }]); // locked recheck: valid, nothing deleted
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(1);
+		expect(fs.existsSync(dbPath)).toBe(true);
+	}, 30_000);
+
+	it("B released after A discarded but before A wrote: B's recheck finds absent and returns null, then A publishes 1 and B's own write publishes 2", async () => {
+		const b = spawnChild("write", { pauseGate: gate("b-lock"), writeGate: gate("b-write") });
+		await b.waitFor("paused");
+		const a = spawnChild("write", { writeGate: gate("a-write") }); // A: discard under the lock, report, then wait before writing
+		await a.waitFor('"result"');
+		expect(a.records()).toEqual([{ result: null }]);
+		expect(fs.existsSync(dbPath)).toBe(false); // A discarded the invalid store
+		const sidecarBefore = fs.readFileSync(seqDbPathFor(dbPath)); // created by A's lock
+		open(gate("b-lock")); // B's locked recheck finds the store absent
+		await b.waitFor('"result"');
+		expect(b.records()).toEqual([{ result: null }]); // fell through to the JSON branch: no JSON, so null
+		expect(fs.existsSync(dbPath)).toBe(false);
+		expect(fs.readFileSync(seqDbPathFor(dbPath)).equals(sidecarBefore)).toBe(true); // B deleted nothing, sidecar untouched
+		open(gate("a-write")); // A publishes 1 from its own process
+		await a.exited;
+		expect(a.records()[1]).toEqual({ indexSeq: 1 });
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(1);
+		open(gate("b-write")); // B's own process publishes 2
+		await b.exited;
+		expect(b.records()[1]).toEqual({ indexSeq: 2 });
+		expect(readFreshnessMeta(dbPath).indexSeq).toBe(2);
+	}, 30_000);
 });
 
 describe("buildRepoFingerprint", () => {
