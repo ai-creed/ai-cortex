@@ -816,17 +816,48 @@ Test-first per task. Fixtures live under `tests/fixtures/`.
   usage on stdout and performs no index. `rehydrate --bogus` exits 2.
   `rehydrate --json` and `index --json` contain every A7 field and keep the
   existing ones. `rehydrate --stale --json` against an out-of-date store
-  reports `cacheStatus: "stale"` and does not change `indexSeq`. Dirty-worktree reindex changes `indexSeq` and
+  reports `cacheStatus: "stale"` and does not change `indexSeq`. Two
+  consecutive `index --refresh --json` invocations of the built CLI binary
+  on an unchanged fixture repo report `indexSeq` values `n` and `n+1`, the
+  same `fingerprint` and `contentFingerprint`, and `cacheStatus:
+  "reindexed"` both times; this is the CLI-layer counterpart of the
+  `writeCache` sequence tests and is what the consumer's section 11 check
+  exercises. A dirty-worktree `rehydrate --json` (after editing a tracked
+  file without committing) reports a changed `indexSeq` and
   `contentFingerprint` while `fingerprint` stays.
-- **Consumer acceptance replica.** A TS fixture mirroring the ai-14all
+- **Consumer acceptance replica (CI).** A TS fixture mirroring the ai-14all
   acceptance list (interface `WorktreeStatus`, class `CortexIndexService` with
   `findDefinitions` calling `this.open`). Run through `indexRepo` and assert
-  the section 11 checks from the consumer spec. Before tagging, run the real
-  acceptance queries against the ai-14all worktree by hand and record the
-  resolution rate in the changelog.
+  every section 11 check from the consumer spec, including the resolved-ref
+  ratio: rows with `to_key IS NOT NULL` are at least 50 percent of rows with
+  `kind IN ('call','new','type','import')` on the fixture.
+- **Consumer acceptance on the real repository (release gate).** A script,
+  `scripts/acceptance-v3.2.sh <path-to-ai-14all-worktree>`, runs
+  `ai-cortex index --refresh` on that worktree and then executes the section
+  11 queries against the resulting store with hard pass/fail thresholds:
+  `symbols` has at least one `interface` row and the `WorktreeStatus` row has
+  `name_line = line` and `name_col > col`; the `CortexIndexService.findDefinitions`
+  row has the specified kind, name, container key, and qualified name; every
+  `functions` row has a `symbols` row with the same key and declaration range;
+  `refs` has at least one `type` row; resolved refs are **at least 50 percent**
+  of `call`, `new`, `type`, and `import` refs; `this.open(keys)` inside
+  `findDefinitions` resolves to `CortexIndexService.open` in both `refs` and
+  `calls`; `navCapabilities` parses and lists the emitted kinds; two
+  consecutive `index --refresh` runs report increasing `indexSeq`; a
+  dirty-worktree reindex changes `indexSeq` and `contentFingerprint` while
+  `fingerprint` stays; and a 3.1 fixture store still ingests through the
+  consumer's fallback path. The script exits non-zero on any failed check and
+  prints the measured ratio and the `calls` resolution rate. It cannot run in
+  CI because it needs the ai-14all checkout, so it is a mandatory step in the
+  release checklist below: the tag is not cut while it fails. The measured
+  numbers are recorded in the changelog entry.
 
 Verification before claiming completion: `CI=true pnpm test`, `pnpm typecheck`,
-`pnpm lint`, `pnpm build`.
+`pnpm lint`, `pnpm build`, and `scripts/acceptance-v3.2.sh` against the local
+ai-14all worktree exiting `0`. The last item is the release gate for the
+consumer's section 11 list; a failing threshold, including the 50 percent
+resolved-ref ratio, blocks the release until the resolver or adapters are
+fixed, not until the number is merely written down.
 
 ## Files in scope
 
@@ -836,6 +867,7 @@ Verification before claiming completion: `CI=true pnpm test`, `pnpm typecheck`,
 - `src/lib/call-graph.ts`, `src/lib/indexer.ts`
 - `src/lib/cache-store-sqlite.ts`, `src/lib/cache-store.ts`
 - `src/cli.ts`
+- `scripts/acceptance-v3.2.sh` (new, release gate against the ai-14all worktree)
 - `docs/architecture/cortex-index-contract.md`, `README.md`, `docs/reference/*`,
   `CHANGELOG.md`
 - tests listed in Section C
