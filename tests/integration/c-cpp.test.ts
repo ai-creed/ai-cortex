@@ -155,8 +155,7 @@ describe("C/C++ incremental reindex", () => {
 });
 
 describe("C++ namespaced cross-file calls", () => {
-	// re-enabled in Task 8 (dotted callee include lookup in resolver)
-	it.skip("resolves ns::add() through the included header to the definition", async () => {
+	it("resolves ns::add() through the included header to the definition", async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-ccpp-ns-"));
 		try {
 			fs.mkdirSync(path.join(dir, "src"), { recursive: true });

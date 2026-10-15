@@ -4,10 +4,15 @@ import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
 import { functionsFromSymbols } from "./symbols.js";
 import {
+	buildReexportTable,
+	buildSymbolIndex,
 	companionSourceFiles,
 	findTargetFile,
+	knownFilesFor,
 	langOf,
+	resolveName,
 	resolvePythonTargetFile,
+	resolveRefs,
 	resolveSpecifier,
 } from "./symbol-resolver.js";
 import type { RawCallSite, RawRefSite, ImportBinding } from "./lang-adapter.js";
@@ -45,6 +50,8 @@ export function resolveCallSites(
 	allFunctions: FunctionNode[],
 	bindingsByFile: Map<string, ImportBinding[]>,
 	includesByFile: Map<string, ImportEdge[]>,
+	symbols: SymbolNode[] = [],
+	reexports: ReexportRow[] = [],
 ): CallEdge[] {
 	const funcsByFile = new Map<string, Map<string, FunctionNode[]>>();
 	for (const fn of allFunctions) {
@@ -65,11 +72,63 @@ export function resolveCallSites(
 		allFileNodes.set(fn.file, list);
 	}
 
+	const symIdx = buildSymbolIndex(symbols);
+	const reexportTable = buildReexportTable(reexports);
+	const known = knownFilesFor(symIdx, reexportTable, includesByFile);
+
+	// C/C++: a live exported definition of `name` in a directly-included file
+	// or in that header's companion source file.
+	const viaIncludes = (callerFile: string, name: string): string | null => {
+		for (const inc of includesByFile.get(callerFile) ?? []) {
+			const match = pickUnique(funcsByFile.get(inc.to)?.get(name), true);
+			if (match) return `${inc.to}::${match.qualifiedName}`;
+			for (const companion of companionSourceFiles(inc.to, funcsByFile)) {
+				const compMatch = pickUnique(
+					funcsByFile.get(companion)?.get(name),
+					true,
+				);
+				if (compMatch) return `${companion}::${compMatch.qualifiedName}`;
+			}
+		}
+		return null;
+	};
+
 	const edges: CallEdge[] = [];
 
 	for (const raw of rawCalls) {
 		const fromKey = `${raw.callerFile}::${raw.callerQualifiedName}`;
 		const bindings = bindingsByFile.get(raw.callerFile) ?? [];
+
+		// Shared resolver first (A5 steps 1 to 4, including aliased re-exports).
+		if (symbols.length > 0) {
+			const dot = raw.rawCallee.lastIndexOf(".");
+			const site =
+				dot === -1
+					? {
+							file: raw.callerFile,
+							name: raw.rawCallee,
+							enclosingClass: raw.enclosingClass,
+						}
+					: {
+							file: raw.callerFile,
+							name: raw.rawCallee.slice(dot + 1),
+							receiver: raw.rawCallee.slice(0, dot),
+							enclosingClass: raw.enclosingClass,
+						};
+			const hit = resolveName(
+				symIdx,
+				site,
+				bindings,
+				reexportTable,
+				includesByFile,
+				known,
+			);
+			if (hit) {
+				edges.push(makeEdge(fromKey, hit, raw));
+				continue;
+			}
+		}
+
 		let resolved = false;
 
 		const dotIndex = raw.rawCallee.indexOf(".");
@@ -127,6 +186,14 @@ export function resolveCallSites(
 							raw,
 						),
 					);
+					resolved = true;
+				}
+			}
+			if (!resolved && langOf(raw.callerFile) === "cfamily") {
+				// Qualified C++ call (`ns.add`): the full dotted name through includes.
+				const hit = viaIncludes(raw.callerFile, raw.rawCallee);
+				if (hit) {
+					edges.push(makeEdge(fromKey, hit, raw));
 					resolved = true;
 				}
 			}
@@ -207,41 +274,11 @@ export function resolveCallSites(
 
 		// C/C++ include-based lookup: check directly-included files for a live definition
 		if (langOf(raw.callerFile) === "cfamily") {
-			const includes = includesByFile.get(raw.callerFile);
-			if (includes) {
-				outer: for (const inc of includes) {
-					const incFile = inc.to;
-					const match = pickUnique(
-						funcsByFile.get(incFile)?.get(raw.rawCallee),
-						true,
-					);
-					if (match) {
-						edges.push(
-							makeEdge(fromKey, `${incFile}::${match.qualifiedName}`, raw),
-						);
-						resolved = true;
-						break;
-					}
-					for (const companion of companionSourceFiles(incFile, funcsByFile)) {
-						const compMatch = pickUnique(
-							funcsByFile.get(companion)?.get(raw.rawCallee),
-							true,
-						);
-						if (compMatch) {
-							edges.push(
-								makeEdge(
-									fromKey,
-									`${companion}::${compMatch.qualifiedName}`,
-									raw,
-								),
-							);
-							resolved = true;
-							break outer;
-						}
-					}
-				}
+			const hit = viaIncludes(raw.callerFile, raw.rawCallee);
+			if (hit) {
+				edges.push(makeEdge(fromKey, hit, raw));
+				continue;
 			}
-			if (resolved) continue;
 		}
 
 		// Repo-wide unique-name fallback for C/C++ callers only
@@ -340,7 +377,7 @@ export async function extractCallGraph(
 	refs: RefEdge[];
 	reexports: ReexportRow[];
 }> {
-	const { rawCalls, functions, symbols, reexports, bindingsByFile } =
+	const { rawCalls, rawRefs, functions, symbols, reexports, bindingsByFile } =
 		await extractCallGraphRaw(worktreePath, filePaths, contentMap);
 	const importEdges = await extractImports(
 		worktreePath,
@@ -359,6 +396,15 @@ export async function extractCallGraph(
 		functions,
 		bindingsByFile,
 		includesByFile,
+		symbols,
+		reexports,
 	);
-	return { calls, functions, symbols, refs: [], reexports };
+	const refs = resolveRefs(
+		rawRefs,
+		symbols,
+		bindingsByFile,
+		reexports,
+		includesByFile,
+	);
+	return { calls, functions, symbols, refs, reexports };
 }
