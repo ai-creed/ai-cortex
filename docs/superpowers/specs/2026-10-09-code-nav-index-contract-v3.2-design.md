@@ -336,6 +336,13 @@ Shared by `refs.to_key` and `calls.to_key`. Syntactic, first hit wins:
 no kind restriction; the only invariant is that a non-null `to_key` exists in
 `symbols`. Consumers that join `calls` to `functions` will not see those edges.
 
+`calls.from_key` may likewise name any `symbols` key, not only a `functions`
+key: a call in a namespace or class body, or in a module-level variable
+initializer inside a container (`export const v = foo()` inside `namespace N`),
+is attributed to that enclosing container (`a.ts::N`). In 3.1 those calls were
+dropped. Consumers that join `calls` to `functions` on `from_key` will not see
+those rows.
+
 Ambiguity rule: if a step yields more than one candidate (overloads aside,
 which share a key), leave unresolved. This is today's `pickUnique` behavior
 extended to symbols.

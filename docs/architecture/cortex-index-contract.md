@@ -251,6 +251,12 @@ Invariants and limits consumers should rely on:
   (for example a call to `const execAsync = promisify(exec)`), because step 2
   has no kind restriction. Consumers that join `calls` to `functions` will not
   see those edges; join to `symbols` instead.
+- `calls.from_key` may also name any `symbols` key, not only a `functions`
+  key: a call in a namespace or class body, or in a module-level variable
+  initializer inside a container (`export const v = foo()` inside
+  `namespace N`), is attributed to that enclosing container (`a.ts::N`).
+  Consumers that join `calls` to `functions` on `from_key` will not see those
+  rows; join to `symbols` instead.
 - `refs` kinds `read` and `write` are not emitted.
 - Writers keep every table consistent in one snapshot: `symbols`, `refs`,
   `reexports`, `functions`, `calls`, `imports`, `files`, and `meta` are replaced
