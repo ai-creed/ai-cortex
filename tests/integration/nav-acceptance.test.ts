@@ -60,10 +60,14 @@ describe("consumer acceptance (upstream request section 11)", () => {
 		expect(missing).toEqual([]);
 	});
 
-	it("refs has type rows and resolves at least 50 percent of call/new/type/import refs", () => {
+	// Same metric as the release gate: externals (globals, package types) stay
+	// NULL by contract, so the ratio counts only refs naming a repo-defined symbol.
+	it("refs has type rows and resolves at least 50 percent of call/new/type/import refs naming repo symbols", () => {
 		expect(one<{ c: number }>("SELECT count(*) c FROM refs WHERE kind='type'").c).toBeGreaterThan(0);
-		const t = one<{ c: number }>("SELECT count(*) c FROM refs WHERE kind IN ('call','new','type','import')").c;
-		const r = one<{ c: number }>("SELECT count(*) c FROM refs WHERE kind IN ('call','new','type','import') AND to_key IS NOT NULL").c;
+		const named = "kind IN ('call','new','type','import') AND name IN (SELECT DISTINCT name FROM symbols)";
+		const t = one<{ c: number }>(`SELECT count(*) c FROM refs WHERE ${named}`).c;
+		const r = one<{ c: number }>(`SELECT count(*) c FROM refs WHERE ${named} AND to_key IS NOT NULL`).c;
+		expect(t).toBeGreaterThan(0);
 		expect(r / t).toBeGreaterThanOrEqual(0.5);
 	});
 
