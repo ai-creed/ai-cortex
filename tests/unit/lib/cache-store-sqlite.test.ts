@@ -393,6 +393,23 @@ describe("3.2 tables and meta", () => {
 		}
 	});
 
+	it("parses container_key back by the file prefix, even when the file path contains '::'", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			const file = "src/odd::dir/b.ts";
+			const cache = richCache({
+				symbols: [
+					{ qualifiedName: "C", name: "C", file, kind: "class", exported: true, isDefaultExport: false, isDeclarationOnly: false, range: { line: 1, column: 1, endLine: 5, endColumn: 2 }, nameRange: { line: 1, column: 14, endLine: 1, endColumn: 14 } },
+					{ qualifiedName: "C.bar", name: "bar", file, kind: "method", containerQualifiedName: "C", exported: true, isDefaultExport: false, isDeclarationOnly: false, range: { line: 3, column: 3, endLine: 3, endColumn: 12 }, nameRange: { line: 3, column: 3, endLine: 3, endColumn: 5 } },
+				],
+			});
+			replaceAll(db, cache);
+			expect(assembleCache(db).symbols).toEqual(cache.symbols);
+		} finally {
+			db.close();
+		}
+	});
+
 	it("writes navCapabilities JSON naming refs as the references table", () => {
 		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
 		try {

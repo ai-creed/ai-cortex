@@ -335,7 +335,7 @@ export function assembleCache(db: DB, options: ReadOptions = {}): RepoCache {
 			range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col },
 			nameRange: { line: r.name_line, column: r.name_col, endLine: r.name_end_line, endColumn: r.name_end_col },
 		};
-		if (r.container_key !== null) s.containerQualifiedName = r.container_key.slice(r.container_key.indexOf("::") + 2);
+		if (r.container_key !== null) s.containerQualifiedName = r.container_key.slice(r.file.length + 2); // the container is always in the same file
 		return s;
 	});
 	const refs: RefEdge[] = !nav ? [] : (db.prepare("SELECT * FROM refs ORDER BY rowid").all() as Array<{ file: string; name: string; kind: string; line: number; col: number; end_line: number; end_col: number; to_key: string | null; from_key: string | null }>).map((r) => {
