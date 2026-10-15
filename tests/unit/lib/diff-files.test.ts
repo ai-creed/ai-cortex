@@ -45,6 +45,11 @@ function makeCache(
 ): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "testrepokey00000",
 		worktreeKey: "testworktreekey00",
 		worktreePath: dir,

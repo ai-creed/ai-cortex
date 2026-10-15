@@ -45,6 +45,11 @@ const mockIdentity = {
 function makeFreshCache(): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: mockIdentity.repoKey,
 		worktreeKey: mockIdentity.worktreeKey,
 		worktreePath: "/repo",

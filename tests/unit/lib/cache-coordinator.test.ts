@@ -33,6 +33,11 @@ const mockIdentity = {
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: mockIdentity.repoKey,
 		worktreeKey: mockIdentity.worktreeKey,
 		worktreePath: "/repo",

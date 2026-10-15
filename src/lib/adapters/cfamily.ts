@@ -9,6 +9,7 @@ import type {
 	RawImportSite,
 } from "../lang-adapter.js";
 import type { FunctionNode } from "../models.js";
+import { C_REF_KINDS, C_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -364,6 +365,8 @@ function buildAdapter(
 			callGraph: true,
 			symbolIndex: false,
 		},
+		symbolKinds: C_SYMBOL_KINDS,
+		referenceKinds: C_REF_KINDS,
 		async extractImports(
 			worktreePath: string,
 			filePath: string,

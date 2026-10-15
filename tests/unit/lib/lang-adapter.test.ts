@@ -11,6 +11,8 @@ import type { LanguageAdapter } from "../../../src/lib/lang-adapter.js";
 const stubAdapter: LanguageAdapter = {
 	extensions: [".ts", ".tsx"],
 	capabilities: { importExtraction: true, callGraph: true, symbolIndex: false },
+	symbolKinds: [],
+	referenceKinds: [],
 	extractImports: async () => [],
 	extractCallGraph: async () => ({
 		functions: [],
@@ -60,6 +62,8 @@ describe("registry helpers", () => {
 				callGraph: false,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: async () => [],
 		});
 		expect(isAdapterExt("a.foo")).toBe(true);
@@ -76,6 +80,8 @@ describe("registry helpers", () => {
 				callGraph: false,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: async () => [],
 		});
 		registerAdapter({
@@ -85,6 +91,8 @@ describe("registry helpers", () => {
 				callGraph: false,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: async () => [],
 		});
 		const exts = adapterExtensions();

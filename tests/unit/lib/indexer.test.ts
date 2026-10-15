@@ -93,8 +93,8 @@ beforeEach(async () => {
 	vi.mocked(ensureAdapters).mockResolvedValue(undefined);
 });
 
-it("uses schema version 3.1", () => {
-	expect(SCHEMA_VERSION).toBe("3.1");
+it("uses schema version 3.2", () => {
+	expect(SCHEMA_VERSION).toBe("3.2");
 });
 
 describe("buildIndex", () => {
@@ -174,6 +174,11 @@ describe("getCachedIndex", () => {
 	it("returns null when fingerprint is stale", async () => {
 		const stale: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
+			indexSeq: 0,
+			contentFingerprint: "",
+			symbols: [],
+			refs: [],
+			reexports: [],
 			repoKey: mockIdentity.repoKey,
 			worktreeKey: mockIdentity.worktreeKey,
 			worktreePath: "/repo",
@@ -195,6 +200,11 @@ describe("getCachedIndex", () => {
 	it("returns cached data when fingerprint matches", async () => {
 		const fresh: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
+			indexSeq: 0,
+			contentFingerprint: "",
+			symbols: [],
+			refs: [],
+			reexports: [],
 			repoKey: mockIdentity.repoKey,
 			worktreeKey: mockIdentity.worktreeKey,
 			worktreePath: "/repo",
@@ -217,6 +227,11 @@ describe("getCachedIndex", () => {
 function makeCacheForIncremental(): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: mockIdentity.repoKey,
 		worktreeKey: mockIdentity.worktreeKey,
 		worktreePath: "/repo",

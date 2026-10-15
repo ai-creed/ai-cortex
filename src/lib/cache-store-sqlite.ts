@@ -255,6 +255,11 @@ export function assembleCache(db: DB): RepoCache {
 		imports,
 		calls,
 		functions,
+		indexSeq: Number(m.get("indexSeq") ?? "0"),
+		contentFingerprint: m.get("contentFingerprint") ?? "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 	};
 	if (m.has("dirtyAtIndex")) cache.dirtyAtIndex = m.get("dirtyAtIndex") === "1";
 	return cache;

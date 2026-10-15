@@ -10,7 +10,12 @@ import type { RepoCache } from "../../../src/lib/models.js";
 
 function cache(repoKey: string): RepoCache {
 	return {
-		schemaVersion: "3.1",
+		schemaVersion: "3.2",
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey,
 		worktreeKey: "wt00000000000000",
 		worktreePath: "/wt",

@@ -7,6 +7,11 @@ import * as contentScanner from "../../../src/lib/content-scanner.js";
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "r",
 		worktreeKey: "w",
 		worktreePath: "/repo",

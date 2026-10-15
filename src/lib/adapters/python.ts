@@ -10,6 +10,7 @@ import type {
 	ImportBinding,
 } from "../lang-adapter.js";
 import type { FunctionNode } from "../models.js";
+import { PY_REF_KINDS, PY_SYMBOL_KINDS } from "../symbols.js";
 import { rangeFromNode } from "./_range.js";
 
 const require = createRequire(import.meta.url);
@@ -324,6 +325,8 @@ export async function createPythonAdapter(): Promise<LanguageAdapter> {
 			callGraph: true,
 			symbolIndex: false,
 		},
+		symbolKinds: PY_SYMBOL_KINDS,
+		referenceKinds: PY_REF_KINDS,
 		async extractImports(
 			worktreePath: string,
 			filePath: string,

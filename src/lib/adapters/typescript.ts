@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { FunctionNode } from "../models.js";
+import { TS_REF_KINDS, TS_SYMBOL_KINDS } from "../symbols.js";
 import type {
 	LanguageAdapter,
 	RawCallData,
@@ -374,6 +375,8 @@ export async function createTypescriptAdapter(): Promise<LanguageAdapter> {
 			callGraph: true,
 			symbolIndex: false,
 		},
+		symbolKinds: TS_SYMBOL_KINDS,
+		referenceKinds: TS_REF_KINDS,
 		async extractImports(
 			worktreePath: string,
 			filePath: string,

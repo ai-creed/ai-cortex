@@ -84,6 +84,11 @@ export async function buildIndex(identity: RepoIdentity): Promise<RepoCache> {
 			imports,
 			calls,
 			functions: functionNodes,
+			indexSeq: 0,
+			contentFingerprint: "",
+			symbols: [],
+			refs: [],
+			reexports: [],
 		};
 	} catch (err) {
 		if (err instanceof RepoIdentityError) throw err;
@@ -242,6 +247,11 @@ export async function buildIncrementalIndex(
 		imports,
 		calls,
 		functions: functionNodes,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 	};
 }
 

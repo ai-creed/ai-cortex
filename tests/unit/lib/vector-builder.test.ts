@@ -21,6 +21,11 @@ vi.mock("../../../src/lib/vector-sidecar.js", () => ({
 function makeCache(files: { path: string; hash?: string }[]): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "test-repo",
 		worktreeKey: "abcdef1234567890",
 		worktreePath: "/tmp/test-repo",

@@ -703,6 +703,8 @@ describe("extractCallGraph", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi.fn().mockResolvedValue({
 				functions: [
@@ -753,6 +755,8 @@ describe("extractCallGraph", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi
 				.fn()
@@ -1154,6 +1158,8 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: extractCallGraphFn,
 		};
