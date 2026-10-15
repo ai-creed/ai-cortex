@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect, afterEach } from "vitest";
 import { mkRepoKey, cleanupRepo } from "../../../helpers/memory-fixtures.js";
 import { transcodeCacheToDb } from "../../../../src/lib/cache-store-sqlite.js";
@@ -5,7 +8,10 @@ import { getCacheDbFilePath } from "../../../../src/lib/cache-store.js";
 import { openMemoryIndex } from "../../../../src/lib/memory/index.js";
 import type { RepoCache } from "../../../../src/lib/models.js";
 import type { MemoryFrontmatter } from "../../../../src/lib/memory/types.js";
-import { discoverStoreKeys } from "../../../../src/lib/graph/discover.js";
+import {
+	discoverDbFiles,
+	discoverStoreKeys,
+} from "../../../../src/lib/graph/discover.js";
 import { loadRepoStores } from "../../../../src/lib/graph/load.js";
 
 function minimalCache(repoKey: string): RepoCache {
@@ -91,5 +97,19 @@ describe("discover + load", () => {
 		expect(stores.memories[0]!.repoKey).toBe(repoKey);
 		expect(stores.memories[0]!.scopeFiles).toEqual(["src/a.ts"]);
 		expect(stores.memories[0]!.scopeTags).toEqual(["storage"]);
+	});
+});
+
+describe("discoverDbFiles", () => {
+	it("lists worktree stores and skips the .seq.db sequence sidecar", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-discover-"));
+		try {
+			for (const f of ["wt00000000000000.db", "wt00000000000000.seq.db", "wt00000000000000.meta.json"]) {
+				fs.writeFileSync(path.join(dir, f), "");
+			}
+			expect(discoverDbFiles(dir)).toEqual([path.join(dir, "wt00000000000000.db")]);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

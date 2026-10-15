@@ -28,12 +28,15 @@ export function discoverStoreKeys(): string[] {
 		.filter((name) => name === "global" || HEX16.test(name));
 }
 
-/** The `<worktreeKey>.db` files present in a store dir. */
+/** The `<worktreeKey>.db` files present in a store dir. The `.seq.db`
+ *  sequence sidecars are not stores and are skipped. */
 export function discoverDbFiles(dir: string): string[] {
 	try {
 		return fs
 			.readdirSync(dir, { withFileTypes: true })
-			.filter((e) => e.isFile() && e.name.endsWith(".db"))
+			.filter(
+				(e) => e.isFile() && e.name.endsWith(".db") && !e.name.endsWith(".seq.db"),
+			)
 			.map((e) => path.join(dir, e.name));
 	} catch {
 		return [];
