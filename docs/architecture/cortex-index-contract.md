@@ -263,8 +263,14 @@ Invariants and limits consumers should rely on:
    and the subcommand usage to stderr and exit `2`; nothing is printed to stdout
    and no index runs. `--help` and `-h` print the usage to stdout and exit `0`
    without indexing.
-2. Exit codes: `0` on success (including a `fresh` cache), `1` on failure with
-   a one-line reason on stderr, `2` for usage errors.
+2. Exit codes: `0` on success (including a `fresh` cache). `2` for usage
+   errors (stderr starts with `ai-cortex: unknown flag:` and includes the usage
+   block) and also for index failures (stderr starts with
+   `ai-cortex: index failed:`). `1` for repository-identity errors (stderr
+   starts with `ai-cortex:`). Any other unexpected exception is rethrown and
+   Node exits non-zero with a stack trace. Any non-zero code is a failure;
+   distinguish usage errors from index failures by the stderr prefix, not by
+   the code.
 3. `index --json` prints one object with these fields: `cacheStatus`,
    `packageName`, `fileCount`, `docCount`, `dbPath`, `schemaVersion`,
    `fingerprint`, `contentFingerprint`, `indexSeq`, `indexedAt`,

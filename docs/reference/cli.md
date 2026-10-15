@@ -46,7 +46,7 @@ ai-cortex index --json [path]
 
 `--json` prints one object with `cacheStatus` (`fresh` or `reindexed`), `packageName`, `fileCount`, `docCount`, `dbPath`, `schemaVersion`, `fingerprint`, `contentFingerprint`, `indexSeq`, `indexedAt`, and `dirtyAtIndex`. `indexSeq` increases on every successful write, including reindexes of a dirty worktree under an unchanged `fingerprint`; `contentFingerprint` changes only when file contents change.
 
-The human output prints the store path (`<worktree-key>.db`). Unknown flags print usage to stderr and exit 2; `--help` prints usage and exits 0.
+The human output prints the store path (`<worktree-key>.db`). Unknown flags print `unknown flag: --name` and usage to stderr and exit 2 (index failures also exit 2, with stderr starting `ai-cortex: index failed:`; repository-identity errors exit 1); `--help` prints usage and exits 0.
 
 Use this once per project, or after large structural changes. Other commands auto-refresh stale cache data when needed.
 
@@ -70,7 +70,7 @@ Machine-readable output:
 ai-cortex rehydrate --json [path]
 ```
 
-`--json` prints the same object as `index --json` plus `briefingPath`. `cacheStatus` is `fresh`, `reindexed`, or `stale`; `stale` is reported only with `--stale`, when the existing store is out of date and was read anyway. Unknown flags print usage to stderr and exit 2; `--help` prints usage and exits 0.
+`--json` prints the same object as `index --json` plus `briefingPath`. `cacheStatus` is `fresh`, `reindexed`, or `stale`; `stale` is reported only with `--stale`, when the existing store is out of date and was read anyway. Unknown flags print `unknown flag: --name` and usage to stderr and exit 2 (index failures also exit 2, with stderr starting `ai-cortex: index failed:`; repository-identity errors exit 1); `--help` prints usage and exits 0.
 
 Use this at the start of an agent session to orient the agent before broad file exploration.
 
