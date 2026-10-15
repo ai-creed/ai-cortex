@@ -512,8 +512,8 @@ describe("ensureValidDb: concurrent upgrade (B4)", () => {
 				const tick = () => (out.includes(token) ? resolve() : proc.exitCode !== null ? reject(new Error(`child exited before "${token}": ${out}${err}`)) : setTimeout(tick, 10));
 				tick();
 			});
-		const exited = new Promise<number | null>((resolve) => proc.on("exit", (code) => resolve(code)));
-		const records = () => out.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as Record<string, unknown>);
+		const exited = new Promise<number | null>((resolve) => proc.on("close", (code) => resolve(code))); // "close" fires after stdio ends
+		const records = () => out.split("\n").slice(0, out.endsWith("\n") ? undefined : -1).filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as Record<string, unknown>); // drop an incomplete trailing line
 		const scriptPid = () => {
 			const m = /^pid (\d+)$/m.exec(out);
 			return m ? Number(m[1]) : null;
