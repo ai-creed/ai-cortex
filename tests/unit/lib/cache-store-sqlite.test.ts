@@ -27,11 +27,18 @@ afterEach(() => {
 function richCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		symbols: [
+			{ qualifiedName: "foo", name: "foo", file: "src/a.ts", kind: "function", exported: true, isDefaultExport: false, isDeclarationOnly: false, range: { line: 10, column: 1, endLine: 12, endColumn: 2 }, nameRange: { line: 10, column: 17, endLine: 10, endColumn: 19 } },
+			{ qualifiedName: "C", name: "C", file: "src/b.ts", kind: "class", exported: true, isDefaultExport: false, isDeclarationOnly: false, range: { line: 1, column: 1, endLine: 5, endColumn: 2 }, nameRange: { line: 1, column: 14, endLine: 1, endColumn: 14 } },
+			{ qualifiedName: "C.bar", name: "bar", file: "src/b.ts", kind: "method", containerQualifiedName: "C", exported: true, isDefaultExport: false, isDeclarationOnly: true, range: { line: 3, column: 3, endLine: 3, endColumn: 12 }, nameRange: { line: 3, column: 3, endLine: 3, endColumn: 5 } },
+		],
+		refs: [
+			{ file: "src/a.ts", name: "bar", kind: "call", range: { line: 11, column: 5, endLine: 11, endColumn: 7 }, to: "src/b.ts::C.bar", from: "src/a.ts::foo" },
+			{ file: "src/a.ts", name: "Nope", kind: "type", range: { line: 11, column: 10, endLine: 11, endColumn: 13 } },
+		],
+		reexports: [{ file: "src/a.ts", exportedName: "bar2", sourceName: "bar", specifier: "./b" }],
 		indexSeq: 0,
-		contentFingerprint: "",
-		symbols: [],
-		refs: [],
-		reexports: [],
+		contentFingerprint: "cf-123",
 		repoKey: "aabbccdd11223344",
 		worktreeKey: "eeff00112233aabb",
 		worktreePath: "/repo",
@@ -86,6 +93,9 @@ describe("openStructuralDb", () => {
 				"functions",
 				"imports",
 				"meta",
+				"reexports",
+				"refs",
+				"symbols",
 			]);
 			expect(db.pragma("user_version", { simple: true })).toBe(
 				STORE_FORMAT_VERSION,
@@ -179,8 +189,8 @@ describe("readFromDb", () => {
 		expect(readFromDb(dbPath)).toBeNull();
 	});
 
-	it("accepts a compatible same-major content schemaVersion", () => {
-		// e.g. current major is "3"; a "3.x" db is still readable.
+	// Spec A1: ai-cortex readers require an exact schemaVersion match.
+	it("rejects a same-major different-minor schemaVersion (3.2 exact gate)", () => {
 		const compatible = `${majorOf(SCHEMA_VERSION)}.999`;
 		const dbPath = path.join(tmpDir, "wk.db");
 		const db = openStructuralDb(dbPath);
@@ -189,7 +199,7 @@ describe("readFromDb", () => {
 			richCache({ schemaVersion: compatible as RepoCache["schemaVersion"] }),
 		);
 		db.close();
-		expect(readFromDb(dbPath)).not.toBeNull();
+		expect(readFromDb(dbPath)).toBeNull();
 	});
 });
 
@@ -302,17 +312,95 @@ describe("v3.1 site/range round-trip", () => {
 		}
 	});
 
-	it("major-only invalidation: an EXACT Stage 1 schemaVersion '3' db is still read, not nuked", () => {
-		// A v3 db (no site/range columns populated) written by Stage 1 must remain
-		// readable under v3.1 because invalidation keys off the MAJOR version only.
-		// Use the literal "3", not `${major}.999`, to catch a regression that
-		// rejects the exact Stage 1 value.
+	// Spec A1: exact-minor gate.
+	it("rejects an exact Stage 1 schemaVersion '3' db", () => {
 		const dbPath = path.join(tmpDir, "wk.db");
 		const db = openStructuralDb(dbPath);
 		replaceAll(db, richCache({ schemaVersion: "3" as RepoCache["schemaVersion"] }));
 		db.close();
-		const read = readFromDb(dbPath);
-		expect(read).not.toBeNull();
-		expect(read!.schemaVersion).toBe("3");
+		expect(readFromDb(dbPath)).toBeNull();
+	});
+});
+
+describe("3.2 tables and meta", () => {
+	it("round-trips symbols, refs, reexports, contentFingerprint (indexSeq placeholder 0)", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			const cache = richCache();
+			replaceAll(db, cache);
+			expect(assembleCache(db)).toEqual(cache);
+		} finally {
+			db.close();
+		}
+	});
+
+	it("replaceAll writes the indexSeq placeholder 0 regardless of cache.indexSeq (B4)", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			replaceAll(db, richCache({ indexSeq: 7 }));
+			expect((db.prepare("SELECT value FROM meta WHERE key = 'indexSeq'").get() as { value: string }).value).toBe("0");
+			expect(assembleCache(db).indexSeq).toBe(0);
+		} finally {
+			db.close();
+		}
+	});
+
+	it("writes container_key from containerQualifiedName and NULL to_key/from_key for unresolved refs", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			replaceAll(db, richCache());
+			const row = db.prepare("SELECT key, container_key, name_line, name_col FROM symbols WHERE qualified_name = 'C.bar'").get() as { key: string; container_key: string; name_line: number; name_col: number };
+			expect(row).toEqual({ key: "src/b.ts::C.bar", container_key: "src/b.ts::C", name_line: 3, name_col: 3 });
+			const unresolved = db.prepare("SELECT to_key, from_key FROM refs WHERE name = 'Nope'").get() as { to_key: string | null; from_key: string | null };
+			expect(unresolved).toEqual({ to_key: null, from_key: null });
+		} finally {
+			db.close();
+		}
+	});
+
+	it("writes navCapabilities JSON naming refs as the references table", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			replaceAll(db, richCache());
+			const raw = (db.prepare("SELECT value FROM meta WHERE key = 'navCapabilities'").get() as { value: string }).value;
+			const caps = JSON.parse(raw);
+			expect(caps).toMatchObject({ symbols: true, references: true, referencesTable: "refs" });
+			expect(caps.symbolKinds).toContain("interface");
+			expect(caps.referenceKinds).toContain("type");
+			expect(caps.referenceKinds).not.toContain("read");
+		} finally {
+			db.close();
+		}
+	});
+
+	it("every functions row has a symbols row with the same key and declaration range", () => {
+		const db = openStructuralDb(path.join(tmpDir, "wk.db"));
+		try {
+			replaceAll(db, richCache({ functions: [{ qualifiedName: "foo", file: "src/a.ts", exported: true, isDefaultExport: false, line: 10, column: 1, endLine: 12, endColumn: 2, isDeclarationOnly: false }] }));
+			const missing = db.prepare(`SELECT f.file || '::' || f.qualified_name AS k FROM functions f
+				LEFT JOIN symbols s ON s.key = f.file || '::' || f.qualified_name AND s.line = f.line AND s.col = f.col AND s.end_line = f.end_line AND s.end_col = f.end_col
+				WHERE s.key IS NULL`).all();
+			expect(missing).toEqual([]);
+		} finally {
+			db.close();
+		}
+	});
+
+	it("rejects a store whose meta.schemaVersion is a different minor (exact match required)", () => {
+		const dbPath = path.join(tmpDir, "wk.db");
+		const db = openStructuralDb(dbPath);
+		replaceAll(db, richCache());
+		db.prepare("UPDATE meta SET value = '3.1' WHERE key = 'schemaVersion'").run();
+		db.close();
+		expect(readFromDb(dbPath)).toBeNull();
+	});
+
+	it("rejects a user_version = 1 store", () => {
+		const dbPath = path.join(tmpDir, "wk.db");
+		const db = openStructuralDb(dbPath);
+		replaceAll(db, richCache());
+		db.pragma("user_version = 1");
+		db.close();
+		expect(readFromDb(dbPath)).toBeNull();
 	});
 });

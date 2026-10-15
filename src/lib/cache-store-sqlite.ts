@@ -10,11 +10,15 @@ import type {
 	ImportEdge,
 	CallEdge,
 	FunctionNode,
+	SymbolNode,
+	RefEdge,
+	ReexportRow,
 } from "./models.js";
 import { SCHEMA_VERSION } from "./models.js";
 import { checkpointAndVerify } from "./cache-store-migrate.js";
+import { navCapabilities } from "./symbols.js";
 
-export const STORE_FORMAT_VERSION = 1;
+export const STORE_FORMAT_VERSION = 2;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -35,6 +39,28 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 CREATE INDEX IF NOT EXISTS idx_calls_to ON calls(to_key);
 CREATE INDEX IF NOT EXISTS idx_calls_from ON calls(from_key);
+CREATE TABLE IF NOT EXISTS symbols (
+  key TEXT NOT NULL, file TEXT NOT NULL, qualified_name TEXT NOT NULL, name TEXT NOT NULL,
+  kind TEXT NOT NULL, container_key TEXT, exported INTEGER NOT NULL, is_default_export INTEGER NOT NULL,
+  is_declaration_only INTEGER NOT NULL, line INTEGER NOT NULL, col INTEGER NOT NULL,
+  end_line INTEGER NOT NULL, end_col INTEGER NOT NULL, name_line INTEGER NOT NULL,
+  name_col INTEGER NOT NULL, name_end_line INTEGER NOT NULL, name_end_col INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_symbols_key  ON symbols(key);
+CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
+CREATE TABLE IF NOT EXISTS refs (
+  file TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
+  line INTEGER NOT NULL, col INTEGER NOT NULL, end_line INTEGER NOT NULL, end_col INTEGER NOT NULL,
+  to_key TEXT, from_key TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_refs_to   ON refs(to_key);
+CREATE INDEX IF NOT EXISTS idx_refs_name ON refs(name);
+CREATE INDEX IF NOT EXISTS idx_refs_file ON refs(file, line);
+CREATE TABLE IF NOT EXISTS reexports (
+  file TEXT NOT NULL, exported_name TEXT NOT NULL, source_name TEXT NOT NULL, specifier TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reexports_file ON reexports(file, exported_name);
 `;
 
 export function openStructuralDb(dbPath: string): DB {
@@ -65,7 +91,8 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 	const tx = db.transaction(() => {
 		db.exec(
 			"DELETE FROM meta; DELETE FROM files; DELETE FROM docs; " +
-				"DELETE FROM imports; DELETE FROM functions; DELETE FROM calls;",
+				"DELETE FROM imports; DELETE FROM functions; DELETE FROM calls; " +
+				"DELETE FROM symbols; DELETE FROM refs; DELETE FROM reexports;",
 		);
 
 		const metaIns = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)");
@@ -80,6 +107,9 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 		}
 		metaIns.run("packageMeta", JSON.stringify(cache.packageMeta));
 		metaIns.run("entryFiles", JSON.stringify(cache.entryFiles));
+		metaIns.run("indexSeq", "0"); // B4 placeholder: only the sequence commit stamps the published value
+		metaIns.run("contentFingerprint", cache.contentFingerprint ?? "");
+		metaIns.run("navCapabilities", JSON.stringify(navCapabilities()));
 
 		const fileIns = db.prepare(
 			"INSERT INTO files (path, kind, content_hash) VALUES (@path, @kind, @content_hash)",
@@ -142,6 +172,41 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 				site_end_line: c.site?.endLine ?? null,
 				site_end_col: c.site?.endColumn ?? null,
 			});
+		}
+		const symIns = db.prepare(
+			"INSERT INTO symbols (key, file, qualified_name, name, kind, container_key, exported, is_default_export, is_declaration_only, line, col, end_line, end_col, name_line, name_col, name_end_line, name_end_col) VALUES " +
+				"(@key, @file, @qualified_name, @name, @kind, @container_key, @exported, @is_default_export, @is_declaration_only, @line, @col, @end_line, @end_col, @name_line, @name_col, @name_end_line, @name_end_col)",
+		);
+		for (const s of cache.symbols) {
+			symIns.run({
+				key: `${s.file}::${s.qualifiedName}`,
+				file: s.file,
+				qualified_name: s.qualifiedName,
+				name: s.name,
+				kind: s.kind,
+				container_key: s.containerQualifiedName ? `${s.file}::${s.containerQualifiedName}` : null,
+				exported: s.exported ? 1 : 0,
+				is_default_export: s.isDefaultExport ? 1 : 0,
+				is_declaration_only: s.isDeclarationOnly ? 1 : 0,
+				line: s.range.line,
+				col: s.range.column,
+				end_line: s.range.endLine,
+				end_col: s.range.endColumn,
+				name_line: s.nameRange.line,
+				name_col: s.nameRange.column,
+				name_end_line: s.nameRange.endLine,
+				name_end_col: s.nameRange.endColumn,
+			});
+		}
+		const refIns = db.prepare(
+			"INSERT INTO refs (file, name, kind, line, col, end_line, end_col, to_key, from_key) VALUES (@file, @name, @kind, @line, @col, @end_line, @end_col, @to_key, @from_key)",
+		);
+		for (const r of cache.refs) {
+			refIns.run({ file: r.file, name: r.name, kind: r.kind, line: r.range.line, col: r.range.column, end_line: r.range.endLine, end_col: r.range.endColumn, to_key: r.to ?? null, from_key: r.from ?? null });
+		}
+		const reIns = db.prepare("INSERT INTO reexports (file, exported_name, source_name, specifier) VALUES (@file, @exported_name, @source_name, @specifier)");
+		for (const x of cache.reexports) {
+			reIns.run({ file: x.file, exported_name: x.exportedName, source_name: x.sourceName, specifier: x.specifier });
 		}
 	});
 	tx();
@@ -239,6 +304,29 @@ export function assembleCache(db: DB): RepoCache {
 		return c;
 	});
 
+	const symbols: SymbolNode[] = (db.prepare("SELECT * FROM symbols ORDER BY rowid").all() as Array<{ file: string; qualified_name: string; name: string; kind: string; container_key: string | null; exported: number; is_default_export: number; is_declaration_only: number; line: number; col: number; end_line: number; end_col: number; name_line: number; name_col: number; name_end_line: number; name_end_col: number }>).map((r) => {
+		const s: SymbolNode = {
+			qualifiedName: r.qualified_name,
+			name: r.name,
+			file: r.file,
+			kind: r.kind as SymbolNode["kind"],
+			exported: r.exported === 1,
+			isDefaultExport: r.is_default_export === 1,
+			isDeclarationOnly: r.is_declaration_only === 1,
+			range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col },
+			nameRange: { line: r.name_line, column: r.name_col, endLine: r.name_end_line, endColumn: r.name_end_col },
+		};
+		if (r.container_key !== null) s.containerQualifiedName = r.container_key.slice(r.container_key.indexOf("::") + 2);
+		return s;
+	});
+	const refs: RefEdge[] = (db.prepare("SELECT * FROM refs ORDER BY rowid").all() as Array<{ file: string; name: string; kind: string; line: number; col: number; end_line: number; end_col: number; to_key: string | null; from_key: string | null }>).map((r) => {
+		const e: RefEdge = { file: r.file, name: r.name, kind: r.kind as RefEdge["kind"], range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col } };
+		if (r.to_key !== null) e.to = r.to_key;
+		if (r.from_key !== null) e.from = r.from_key;
+		return e;
+	});
+	const reexports: ReexportRow[] = (db.prepare("SELECT * FROM reexports ORDER BY rowid").all() as Array<{ file: string; exported_name: string; source_name: string; specifier: string }>).map((r) => ({ file: r.file, exportedName: r.exported_name, sourceName: r.source_name, specifier: r.specifier }));
+
 	const cache: RepoCache = {
 		schemaVersion: (m.get("schemaVersion") ?? "") as RepoCache["schemaVersion"],
 		repoKey: m.get("repoKey") ?? "",
@@ -257,9 +345,9 @@ export function assembleCache(db: DB): RepoCache {
 		functions,
 		indexSeq: Number(m.get("indexSeq") ?? "0"),
 		contentFingerprint: m.get("contentFingerprint") ?? "",
-		symbols: [],
-		refs: [],
-		reexports: [],
+		symbols,
+		refs,
+		reexports,
 	};
 	if (m.has("dirtyAtIndex")) cache.dirtyAtIndex = m.get("dirtyAtIndex") === "1";
 	return cache;
@@ -279,7 +367,7 @@ export function dbSchemaValid(dbPath: string): boolean {
 		const row = db
 			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
 			.get() as { value: string } | undefined;
-		return majorOf(row?.value ?? "") === majorOf(SCHEMA_VERSION);
+		return (row?.value ?? "") === SCHEMA_VERSION;
 	} finally {
 		db.close();
 	}
@@ -294,7 +382,7 @@ export function readFromDb(dbPath: string): RepoCache | null {
 		const row = db
 			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
 			.get() as { value: string } | undefined;
-		if (majorOf(row?.value ?? "") !== majorOf(SCHEMA_VERSION)) return null;
+		if ((row?.value ?? "") !== SCHEMA_VERSION) return null;
 		return assembleCache(db);
 	} finally {
 		db.close();

@@ -4,9 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { SCHEMA_VERSION } from "./models.js";
-import type { RepoCache } from "./models.js";
+import type { RepoCache, FileNode } from "./models.js";
 import {
 	transcodeCacheToDb,
 	readFromDb,
@@ -145,15 +146,24 @@ export async function writeCacheMetaSidecar(
 
 /** Read the two freshness scalars from the db meta table WITHOUT assembling the
  *  whole RepoCache. Used by the coordinator to decide fresh-vs-stale cheaply. */
+/** A4: sha1 over sorted (path, contentHash) pairs joined with newlines. */
+export function computeContentFingerprint(files: FileNode[]): string {
+	const lines = files.map((f) => `${f.path}\t${f.contentHash ?? ""}`).sort();
+	return createHash("sha1").update(lines.join("\n")).digest("hex");
+}
+
 export function readFreshnessMeta(dbPath: string): {
 	fingerprint: string | null;
 	dirtyAtIndex: boolean | undefined;
+	indexSeq: number | null;
+	contentFingerprint: string | null;
+	schemaVersion: string | null;
 } {
 	const db = new Database(dbPath, { readonly: true });
 	try {
 		const rows = db
 			.prepare(
-				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex')",
+				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex','indexSeq','contentFingerprint','schemaVersion')",
 			)
 			.all() as Array<{ key: string; value: string }>;
 		const m = new Map(rows.map((r) => [r.key, r.value]));
@@ -162,6 +172,9 @@ export function readFreshnessMeta(dbPath: string): {
 			dirtyAtIndex: m.has("dirtyAtIndex")
 				? m.get("dirtyAtIndex") === "1"
 				: undefined,
+			indexSeq: m.has("indexSeq") ? Number(m.get("indexSeq")) : null,
+			contentFingerprint: m.get("contentFingerprint") ?? null,
+			schemaVersion: m.get("schemaVersion") ?? null,
 		};
 	} finally {
 		db.close();

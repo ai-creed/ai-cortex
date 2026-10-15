@@ -69,6 +69,9 @@ beforeEach(() => {
 	vi.mocked(readFreshnessMeta).mockReturnValue({
 		fingerprint: "abc123",
 		dirtyAtIndex: undefined,
+		indexSeq: 0,
+		contentFingerprint: null,
+		schemaVersion: null,
 	});
 	vi.mocked(rankSuggestions).mockReturnValue([
 		{
@@ -157,6 +160,9 @@ describe("suggestRepo", () => {
 		vi.mocked(readFreshnessMeta).mockReturnValue({
 			fingerprint: "abc123",
 			dirtyAtIndex: true,
+			indexSeq: 0,
+			contentFingerprint: null,
+			schemaVersion: null,
 		});
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 		vi.mocked(diffChangedFiles).mockResolvedValue({

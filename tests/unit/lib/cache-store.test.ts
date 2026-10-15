@@ -21,6 +21,7 @@ import { exec } from "node:child_process";
 import {
 	assertHashedRepoKey,
 	buildRepoFingerprint,
+	computeContentFingerprint,
 	ensureValidDb,
 	getCacheDbFilePath,
 	getCacheDir,
@@ -446,5 +447,16 @@ describe("getCacheDir invariant", () => {
 	it("returns a path for valid input", () => {
 		const dir = getCacheDir("0123456789abcdef");
 		expect(dir.endsWith("0123456789abcdef")).toBe(true);
+	});
+});
+
+describe("computeContentFingerprint", () => {
+	it("is order-independent, changes with any content hash, ignores indexedAt", () => {
+		const a = computeContentFingerprint([{ path: "b", kind: "file", contentHash: "2" }, { path: "a", kind: "file", contentHash: "1" }]);
+		const b = computeContentFingerprint([{ path: "a", kind: "file", contentHash: "1" }, { path: "b", kind: "file", contentHash: "2" }]);
+		const c = computeContentFingerprint([{ path: "a", kind: "file", contentHash: "X" }, { path: "b", kind: "file", contentHash: "2" }]);
+		expect(a).toBe(b);
+		expect(a).not.toBe(c);
+		expect(a).toMatch(/^[0-9a-f]{40}$/);
 	});
 });
