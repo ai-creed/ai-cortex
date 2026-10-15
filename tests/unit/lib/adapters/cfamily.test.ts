@@ -299,7 +299,7 @@ describe("c/c++ adapter — range and site emission (unit)", () => {
 	});
 });
 
-describe("cfamily adapter : symbols and refs (3.2)", () => {
+describe("cfamily adapter: symbols and refs (3.2)", () => {
 	it("cpp: emits class, struct, enum, enum members, typedef, macro, method, out-of-line method with '.' separators", async () => {
 		const cpp = await createCppAdapter();
 		const r = await cpp.extractCallGraph!(
@@ -382,5 +382,30 @@ describe("cfamily adapter: nested scopes agree across symbols, calls, and refs",
 		);
 		expect(r.rawCalls[0]).toMatchObject({ callerQualifiedName: "ns.Foo.bar", enclosingClass: "ns.Foo" });
 		expect(r.rawRefs![0]).toMatchObject({ enclosingQualifiedName: "ns.Foo.bar", enclosingClass: "ns.Foo" });
+	});
+});
+
+describe("cfamily adapter: typedef and new edge cases", () => {
+	it("anonymous typedef struct fields are scoped under the typedef name", async () => {
+		const c = await createCAdapter();
+		const r = await c.extractCallGraph!("", "src/p.c", "typedef struct { int a; int b; } Pt;");
+		const byQn = Object.fromEntries(r.symbols!.map((s) => [s.qualifiedName, s]));
+		expect(byQn.Pt).toMatchObject({ kind: "type" });
+		expect(byQn["Pt.a"]).toMatchObject({ kind: "property", containerQualifiedName: "Pt" });
+		expect(byQn["Pt.b"]).toMatchObject({ kind: "property", containerQualifiedName: "Pt" });
+		expect(byQn.a).toBeUndefined();
+	});
+
+	it("function-pointer typedef is named by its identifier", async () => {
+		const c = await createCAdapter();
+		const r = await c.extractCallGraph!("", "src/cb.c", "typedef int (*cb)(int);");
+		expect(r.symbols!.filter((s) => s.kind === "type").map((s) => s.qualifiedName)).toEqual(["cb"]);
+	});
+
+	it("new with a qualified type uses '.' and splits receiver from name", async () => {
+		const cpp = await createCppAdapter();
+		const r = await cpp.extractCallGraph!("", "src/q.cpp", "void f() { auto* x = new ns::Foo(); }");
+		expect(r.rawCalls.find((c) => c.kind === "new")!.rawCallee).toBe("ns.Foo");
+		expect(r.rawRefs!.map((x) => [x.kind, x.name, x.receiver])).toContainEqual(["new", "Foo", "ns"]);
 	});
 });

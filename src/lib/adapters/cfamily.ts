@@ -186,6 +186,10 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 			}
 			return declarator;
 		}
+		if (declarator.type === "parenthesized_declarator") {
+			const first = declarator.namedChildren[0];
+			return first ? leafNameNode(first) : declarator;
+		}
 		const inner = declarator.childForFieldName("declarator");
 		return inner ? leafNameNode(inner) : declarator;
 	}
@@ -237,8 +241,15 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 				const leaf = leafNameNode(decl);
 				emit("type", joinQualified(nsStack, leaf.text), leaf, node, { exported: true, declOnly: false });
 			}
-			// typedef struct { ... } Name; also walks the inner struct for its fields
-			for (const c of node.namedChildren) if (c.type === "struct_specifier" || c.type === "enum_specifier" || c.type === "union_specifier") walk(c, nsStack, className);
+			// typedef struct { ... } Name; also walks the inner struct for its fields,
+			// scoping an anonymous body under the typedef name.
+			const typedefName = decl ? leafNameNode(decl).text : null;
+			for (const c of node.namedChildren) {
+				if (c.type !== "struct_specifier" && c.type !== "enum_specifier" && c.type !== "union_specifier") continue;
+				const anonymous = !c.children.some((k) => k.type === "type_identifier");
+				const scope = anonymous && typedefName ? (className ? `${className}.${typedefName}` : typedefName) : className;
+				walk(c, nsStack, scope);
+			}
 			return;
 		}
 		if (node.type === "function_definition") {
@@ -372,6 +383,13 @@ function callTarget(fnNode: SyntaxNode): CallTarget | null {
 	return null;
 }
 
+/** Split a `new` type node into the leaf name token and its scope receiver. */
+function newTarget(typeNode: SyntaxNode): { token: SyntaxNode; name: string; receiver?: string } {
+	const target = typeNode.type === "qualified_identifier" ? callTarget(typeNode) : null;
+	if (target) return { token: target.token, name: target.name, ...(target.receiver ? { receiver: target.receiver } : {}) };
+	return { token: typeNode, name: typeNode.text };
+}
+
 function newTypeNode(node: SyntaxNode): SyntaxNode | undefined {
 	return (
 		node.childForFieldName("type") ??
@@ -412,7 +430,7 @@ function extractRawCalls(root: SyntaxNode, filePath: string): RawCallSite[] {
 					calls.push({
 						callerQualifiedName: caller,
 						callerFile: filePath,
-						rawCallee: typeNode.text,
+						rawCallee: dotName(typeNode.text),
 						kind: "new",
 						site: rangeFromNode(node),
 						...(enclosingClass ? { enclosingClass } : {}),
@@ -452,7 +470,10 @@ function extractRawRefs(root: SyntaxNode, filePath: string): RawRefSite[] {
 		}
 		if (node.type === "new_expression") {
 			const typeNode = newTypeNode(node);
-			if (typeNode) push("new", typeNode.text, typeNode, node);
+			if (typeNode) {
+				const t = newTarget(typeNode);
+				push("new", t.name, t.token, node, t.receiver);
+			}
 		}
 		for (const child of node.children) walk(child);
 	}

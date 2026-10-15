@@ -88,6 +88,7 @@ export const C_SYMBOL_KINDS: SymbolKind[] = [
 	"type",
 	"macro",
 	"variable",
+	"property",
 ];
 export const C_REF_KINDS: RefKind[] = ["call", "new"];
 

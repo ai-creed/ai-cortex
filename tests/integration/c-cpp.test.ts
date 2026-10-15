@@ -153,3 +153,22 @@ describe("C/C++ incremental reindex", () => {
 		expect(names).toContain("add");
 	});
 });
+
+describe("C++ namespaced cross-file calls", () => {
+	// re-enabled in Task 8 (dotted callee include lookup in resolver)
+	it.skip("resolves ns::add() through the included header to the definition", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-ccpp-ns-"));
+		try {
+			fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+			fs.writeFileSync(path.join(dir, "src/util.h"), "namespace ns { int add(int a, int b); }\n");
+			fs.writeFileSync(path.join(dir, "src/util.cpp"), '#include "util.h"\nnamespace ns { int add(int a, int b) { return a + b; } }\n');
+			fs.writeFileSync(path.join(dir, "src/main.cpp"), '#include "util.h"\nint main() { return ns::add(1, 2); }\n');
+			const { calls } = await extractCallGraph(dir, ["src/util.h", "src/util.cpp", "src/main.cpp"]);
+			const edge = calls.find((c) => c.from === "src/main.cpp::main");
+			expect(edge?.to).toBe("src/util.cpp::ns.add");
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
