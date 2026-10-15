@@ -123,6 +123,12 @@ function isFunctionValue(node: SyntaxNode | null): boolean {
 	);
 }
 
+/** Leaf identifiers of `A.B.C` in left-to-right order. */
+function nestedIdentifierLeaves(node: SyntaxNode): SyntaxNode[] {
+	if (node.type !== "nested_identifier") return [node];
+	return node.namedChildren.flatMap(nestedIdentifierLeaves);
+}
+
 function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 	const out: SymbolNode[] = [];
 
@@ -331,18 +337,22 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 				if (!nameNode) return;
 				const { exported } = exportFlags(node, scope);
 				// `namespace A.B {}` nests: emit A then B.
-				const parts = nameNode.type === "nested_identifier" ? nameNode.text.split(".") : [memberName(nameNode) ?? nameNode.text];
+				const leaves = nameNode.type === "nested_identifier" ? nestedIdentifierLeaves(nameNode) : [nameNode];
+				const parts = leaves.map((l) => memberName(l) ?? l.text);
 				let inner: Scope = scope;
 				for (let i = 0; i < parts.length; i++) {
-					const isLast = i === parts.length - 1;
-					const nsNameNode = isLast && nameNode.type !== "nested_identifier" ? nameNode : nameNode;
-					const nsQn = emit("namespace", nsNameNode, node, inner, { exported, isDefault: false, declOnly: false, nameText: parts[i] });
+					const nsQn = emit("namespace", leaves[i], node, inner, { exported, isDefault: false, declOnly: false, nameText: parts[i] });
 					if (!nsQn) return;
 					inner = { qualifiedName: nsQn, enclosingClass: inner.enclosingClass, exported };
 				}
 				walkContainerBody(node.childForFieldName("body"), inner);
 				return;
 			}
+			case "object":
+			case "class":
+				// Object literals and class expressions that are not bound to a name
+				// have no indexed members.
+				return;
 			case "arrow_function":
 			case "function_expression":
 			case "statement_block":
@@ -358,6 +368,15 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 	return out;
 }
 
+/** A method belongs to an indexed class only when it sits in a class body and
+ *  the class is named or bound to a name (variable or default export). */
+function isIndexedClassMember(method: SyntaxNode): boolean {
+	const cls = method.parent?.parent;
+	if (method.parent?.type !== "class_body" || !cls) return false;
+	if (cls.childForFieldName("name")) return true;
+	return cls.parent?.type === "export_statement" || cls.parent?.type === "variable_declarator";
+}
+
 /** Enclosing indexed declaration for a node inside a body: the chain of
  *  containers from the outermost down to the first function-like declaration
  *  (functions cannot contain indexed declarations), joined with '.'. */
@@ -369,7 +388,7 @@ export function enclosingContext(node: SyntaxNode): {
 	const chain: Entry[] = [];
 	let cur: SyntaxNode | null = node.parent;
 	while (cur) {
-		if (cur.type === "method_definition") {
+		if (cur.type === "method_definition" && isIndexedClassMember(cur)) {
 			const n = cur.childForFieldName("name");
 			if (n) chain.unshift({ name: memberName(n) ?? n.text, isClass: false, isFunction: true });
 		} else if (cur.type === "class_declaration" || cur.type === "abstract_class_declaration" || cur.type === "class") {

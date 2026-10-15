@@ -541,3 +541,40 @@ describe("typescript adapter — symbols (3.2)", () => {
 		expect(call.enclosingClass).toBe("N.C");
 	});
 });
+
+describe("typescript adapter — symbols (3.2) review fixes", () => {
+	it("object-literal methods are not indexed and do not become callers", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"function fetch() {}\nexport default { fetch() { helper(); } };\nfoo({ m() { go(); } });",
+		);
+		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["fetch"]);
+		expect(r.functions.map((f) => f.qualifiedName)).toEqual(["fetch"]);
+		expect(r.rawCalls.map((c) => c.callerQualifiedName)).not.toContain("fetch");
+		expect(r.rawCalls.find((c) => c.rawCallee === "go")).toBeUndefined();
+	});
+
+	it("methods of an anonymous class expression are not indexed", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"export const X = mixin(class { m() { foo(); } });",
+		);
+		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["X"]);
+		expect(r.rawCalls.find((c) => c.rawCallee === "foo")).toBeUndefined();
+	});
+
+	it("dotted namespace names get one name range per segment", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace A.B { export function f() {} }",
+		);
+		const a = r.symbols!.find((s) => s.qualifiedName === "A")!;
+		const b = r.symbols!.find((s) => s.qualifiedName === "A.B")!;
+		expect(a.nameRange).toEqual({ line: 1, column: 11, endLine: 1, endColumn: 11 });
+		expect(b.nameRange).toEqual({ line: 1, column: 13, endLine: 1, endColumn: 13 });
+		expect(r.symbols!.some((s) => s.qualifiedName === "A.B.f")).toBe(true);
+	});
+});
