@@ -594,8 +594,9 @@ describe("sequence commit (B4)", () => {
 			let out = "";
 			c.stdout!.on("data", (d) => (out += d));
 			const waitFor = (token: string) => new Promise<void>((resolve) => { const tick = () => (out.includes(token) ? resolve() : setTimeout(tick, 10)); tick(); });
-			const exited = new Promise<number | null>((resolve) => c.on("exit", (code) => resolve(code)));
-			return { c, waitFor, exited, out: () => out };
+			const exited = new Promise<number | null>((resolve) => c.on("close", (code) => resolve(code))); // "close" fires after stdio ends
+			// Only complete lines count; drop an incomplete trailing line.
+			return { c, waitFor, exited, out: () => out.slice(0, out.lastIndexOf("\n") + 1) };
 		};
 		const h = spawnOut(holder, [dbPath]);
 		await h.waitFor("\n"); // the whole "held <pid>" line has arrived
