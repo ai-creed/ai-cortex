@@ -12,7 +12,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLI="node $ROOT/dist/src/cli.js"
 SVC="electron/code-nav/cortex-index-service.ts"
 
-[[ -f "$ROOT/dist/src/cli.js" ]] || (cd "$ROOT" && pnpm build >/dev/null)
+# Always rebuild: a stale dist would let the gate certify code it never ran.
+(cd "$ROOT" && pnpm build >/dev/null)
 
 # All cache state (stores, sequence files) goes to a throwaway cache home so the
 # gate never touches ~/.cache/ai-cortex; the disposable clone lives here too.
@@ -23,7 +24,7 @@ mkdir -p "$AI_CORTEX_CACHE_HOME"
 
 # Snapshot the real worktree, ignored paths included, before any step runs so the
 # final check proves no step (indexing or the consumer probe) wrote into it.
-WT_STATUS_BEFORE="$(git -C "$WT" status --porcelain --ignored)"
+WT_STATUS_BEFORE="$(git -C "$WT" status --porcelain --ignored=matching --untracked-files=all)"
 
 echo "== index --refresh (1/2)"
 ONE="$($CLI index --refresh --json "$WT")"
@@ -65,7 +66,7 @@ echo "info  raw resolved refs (all call/new/type/import): $RAW_RESOLVED/$RAW_TOT
 TOTAL="$(q "SELECT count(*) FROM refs WHERE kind IN ('call','new','type','import') AND name IN (SELECT DISTINCT name FROM symbols)")"
 RESOLVED="$(q "SELECT count(*) FROM refs WHERE kind IN ('call','new','type','import') AND name IN (SELECT DISTINCT name FROM symbols) AND to_key IS NOT NULL")"
 RATIO="$(node -e 'console.log((Number(process.argv[1])/Math.max(1,Number(process.argv[2]))*100).toFixed(1))' "$RESOLVED" "$TOTAL")"
-check "resolved refs >= 50% of call/new/type/import refs naming repo-defined symbols ($RESOLVED/$TOTAL = ${RATIO}%)" "$(node -e 'console.log(Number(process.argv[1])>=0.5*Number(process.argv[2])?1:0)' "$RESOLVED" "$TOTAL")"
+check "resolved refs >= 50% of call/new/type/import refs naming repo-defined symbols ($RESOLVED/$TOTAL = ${RATIO}%)" "$(node -e 'const r=Number(process.argv[1]),t=Number(process.argv[2]);console.log(t>0&&r>=0.5*t?1:0)' "$RESOLVED" "$TOTAL")"
 check "this.open(keys) in findDefinitions resolves in refs" "$(q "SELECT count(*)>=1 FROM refs WHERE kind='call' AND name='open' AND from_key='$SVC::CortexIndexService.findDefinitions' AND to_key='$SVC::CortexIndexService.open'")"
 check "this.open(keys) in findDefinitions resolves in calls" "$(q "SELECT count(*)>=1 FROM calls WHERE from_key='$SVC::CortexIndexService.findDefinitions' AND to_key='$SVC::CortexIndexService.open'")"
 check "navCapabilities parses and covers emitted kinds" "$(node -e '
@@ -82,6 +83,8 @@ echo "== dirty-worktree reindex (in a disposable local clone; the real worktree 
 CLONE="$SCRATCH/ai-14all-clone"
 git clone -q --local --no-hardlinks "$WT" "$CLONE"
 BASE_JSON="$($CLI index --refresh --json "$CLONE")"
+# Edit a tracked file (the spec's "after editing a tracked file") and add an untracked one.
+echo "// acceptance-v3.2 tracked edit" >> "$CLONE/$SVC"
 echo "export const acceptanceTouch = 1;" > "$CLONE/.ai-cortex-acceptance-touch.ts"
 DIRTY_JSON="$($CLI rehydrate --json "$CLONE")"
 check "dirty reindex changes indexSeq and contentFingerprint while fingerprint stays" "$(node -e '
@@ -99,8 +102,8 @@ check "fresh 3.2 store is accepted by the consumer ingest (schema gate admits 3.
 const r=JSON.parse(process.argv[1])[1]; console.log(!r.unavailable&&r.schemaVersion==="3.2"&&r.functionsCount>0&&r.hasFindDefinitions===true?1:0)' "$INGEST")"
 check "3.1 fixture has no navCapabilities (feature detection falls back)" "$(qdb "$OLD" "SELECT count(*)=0 FROM meta WHERE key='navCapabilities'")"
 
-WT_STATUS_AFTER="$(git -C "$WT" status --porcelain --ignored)"
-check "real worktree unchanged across every step (git status --porcelain --ignored matches the snapshot)" "$([[ "$WT_STATUS_BEFORE" == "$WT_STATUS_AFTER" ]] && echo 1 || echo 0)"
+WT_STATUS_AFTER="$(git -C "$WT" status --porcelain --ignored=matching --untracked-files=all)"
+check "real worktree unchanged across every step (git status --porcelain --ignored=matching --untracked-files=all matches the snapshot)" "$([[ "$WT_STATUS_BEFORE" == "$WT_STATUS_AFTER" ]] && echo 1 || echo 0)"
 
 if [[ "$fail" -ne 0 ]]; then echo "acceptance-v3.2: FAILED"; exit 1; fi
 echo "acceptance-v3.2: OK (resolved refs naming repo symbols ${RATIO}%, raw resolved refs ${RAW_RATIO}%, calls $CALLS_RESOLVED/$CALLS_TOTAL)"
