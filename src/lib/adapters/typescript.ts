@@ -302,7 +302,7 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 				const nameNode = node.childForFieldName("name");
 				if (!nameNode) return;
 				const { exported } = exportFlags(node, scope);
-				const ifQn = emit("interface", nameNode, node, scope, { exported, isDefault: false, declOnly: true });
+				const ifQn = emit("interface", nameNode, node, scope, { exported, isDefault: false, declOnly: !!scope.declareContext });
 				if (ifQn) walkContainerBody(node.childForFieldName("body"), { qualifiedName: ifQn, exported });
 				return;
 			}
@@ -310,7 +310,7 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 				const nameNode = node.childForFieldName("name");
 				if (!nameNode) return;
 				const { exported } = exportFlags(node, scope);
-				emit("type", nameNode, node, scope, { exported, isDefault: false, declOnly: true });
+				emit("type", nameNode, node, scope, { exported, isDefault: false, declOnly: !!scope.declareContext });
 				return;
 			}
 			case "enum_declaration": {

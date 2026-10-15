@@ -289,7 +289,10 @@ function extractSymbols(root: SyntaxNode, filePath: string): SymbolNode[] {
 				if (leaf.type !== "identifier" && leaf.type !== "field_identifier") continue;
 				const kind: SymbolKind = node.type === "field_declaration" ? "property" : "variable";
 				const base = className ? `${className}.${leaf.text}` : leaf.text;
-				emit(kind, joinQualified(nsStack, base), leaf, node, { exported: getStorageClass(node) !== "static", declOnly: node.type === "field_declaration" });
+				// A field is its own definition; only a static data member is a
+				// declaration whose definition lives out of line.
+				const isStatic = getStorageClass(node) === "static";
+				emit(kind, joinQualified(nsStack, base), leaf, node, { exported: !isStatic, declOnly: node.type === "field_declaration" && isStatic });
 			}
 			// Nested struct/enum definitions inside a declaration (struct X {...} x;)
 			for (const c of node.namedChildren) if (c.type === "struct_specifier" || c.type === "enum_specifier" || c.type === "class_specifier" || c.type === "union_specifier") walk(c, nsStack, className);
