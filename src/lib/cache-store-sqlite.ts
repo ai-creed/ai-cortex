@@ -17,6 +17,7 @@ import type {
 import { SCHEMA_VERSION } from "./models.js";
 import { checkpointAndVerify } from "./cache-store-migrate.js";
 import { navCapabilities } from "./symbols.js";
+import { readCanonicalIndexSeq, withSequenceLock } from "./seq-lock.js";
 
 export const STORE_FORMAT_VERSION = 2;
 
@@ -389,12 +390,18 @@ export function readFromDb(dbPath: string): RepoCache | null {
 	}
 }
 
+type TranscodeHooks = { beforeLock?: () => void; afterRename?: () => void };
+let transcodeTestHooks: TranscodeHooks | null = null;
+/** Test-only seam: observe the point before the lock, or crash after the rename. */
+export function setTranscodeTestHooks(h: TranscodeHooks | null): void {
+	transcodeTestHooks = h;
+}
+
 /** Build a self-contained .db from a RepoCache via an OS-UNIQUE private build
- *  dir + checkpoint + atomic rename. Safe under concurrent transcodes of the
- *  same worktree (multiple processes OR worker threads): `fs.mkdtempSync`
- *  guarantees a distinct directory per attempt with no reliance on pid/threadId/
- *  counters, then the single-file rename over dbPath is atomic on POSIX
- *  (last-writer-wins; readers only ever see a complete db). */
+ *  dir, then publish it under the sequence commit (spec B4): stamp the next
+ *  indexSeq, checkpoint, and atomically rename over dbPath while holding the
+ *  sidecar lock, so concurrent writers (processes or worker threads) publish
+ *  distinct, strictly increasing values and readers only ever see a complete db. */
 export function transcodeCacheToDb(cache: RepoCache, dbPath: string): void {
 	const dir = path.dirname(dbPath);
 	fs.mkdirSync(dir, { recursive: true });
@@ -404,13 +411,28 @@ export function transcodeCacheToDb(cache: RepoCache, dbPath: string): void {
 	try {
 		const db = openStructuralDb(tmpDb);
 		try {
-			replaceAll(db, cache);
+			replaceAll(db, cache); // writes indexSeq placeholder "0"
 		} finally {
 			db.close();
 		}
-		// TRUNCATE-checkpoint and strip the build dir's -wal/-shm so a single file moves.
-		checkpointAndVerify(tmpDb);
-		fs.renameSync(tmpDb, dbPath); // same filesystem -> atomic
+		// B4 sequence commit: read, stamp, checkpoint, rename, commit, all under the sidecar lock.
+		transcodeTestHooks?.beforeLock?.();
+		const published = withSequenceLock(dbPath, (seq) => {
+			const next = Math.max(seq.read(), readCanonicalIndexSeq(dbPath)) + 1;
+			seq.write(next);
+			const stamp = new Database(tmpDb);
+			try {
+				stamp.prepare("UPDATE meta SET value = ? WHERE key = 'indexSeq'").run(String(next));
+			} finally {
+				stamp.close();
+			}
+			// TRUNCATE-checkpoint and strip the build dir's -wal/-shm so a single file moves.
+			checkpointAndVerify(tmpDb);
+			fs.renameSync(tmpDb, dbPath); // same filesystem -> atomic
+			transcodeTestHooks?.afterRename?.();
+			return next;
+		});
+		cache.indexSeq = published;
 	} finally {
 		fs.rmSync(buildDir, { recursive: true, force: true });
 	}

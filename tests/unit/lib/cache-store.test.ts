@@ -291,7 +291,8 @@ describe("readCacheForWorktree (SQLite + migration)", () => {
 
 		const result = await readCacheForWorktree(repoKey, worktreeKey);
 
-		expect(result).toEqual(cache);
+		// The transcode's sequence commit publishes indexSeq 1 on a fresh path (B4).
+		expect(result).toEqual({ ...cache, indexSeq: 1 });
 		expect(fs.existsSync(jsonPath)).toBe(false);
 		expect(fs.existsSync(getCacheDbFilePath(repoKey, worktreeKey))).toBe(true);
 		expect(fs.existsSync(getCacheMetaFilePath(repoKey, worktreeKey))).toBe(true);
