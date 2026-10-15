@@ -377,7 +377,7 @@ export function majorOf(v: string): string {
 	return v.split(".")[0] ?? "";
 }
 
-/** True iff the db's store format + content major version are current. Used to
+/** True iff the db's store format + exact schema version are current. Used to
  *  validate a db WITHOUT assembling the whole RepoCache. */
 export function dbSchemaValid(dbPath: string): boolean {
 	const db = new Database(dbPath, { readonly: true });
@@ -393,7 +393,7 @@ export function dbSchemaValid(dbPath: string): boolean {
 	}
 }
 
-/** Open read-only, gate on store format + content major version, assemble. */
+/** Open read-only, gate on store format + exact schema version, assemble. */
 export function readFromDb(
 	dbPath: string,
 	options: ReadOptions = {},

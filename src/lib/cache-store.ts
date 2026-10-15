@@ -118,7 +118,7 @@ export async function writeCache(cache: RepoCache): Promise<void> {
 	});
 
 	// Best-effort sidecar: dashboard reads this instead of the full cache.
-	// Failure here must not propagate — the db is the source of truth.
+	// Failure here must not propagate: the db is the source of truth.
 	try {
 		await writeCacheMetaSidecar(
 			cache.repoKey,
@@ -145,14 +145,16 @@ export async function writeCacheMetaSidecar(
 	await fs.promises.rename(tmp, filePath);
 }
 
-/** Read the two freshness scalars from the db meta table WITHOUT assembling the
- *  whole RepoCache. Used by the coordinator to decide fresh-vs-stale cheaply. */
 /** A4: sha1 over sorted (path, contentHash) pairs joined with newlines. */
 export function computeContentFingerprint(files: FileNode[]): string {
 	const lines = files.map((f) => `${f.path}\t${f.contentHash ?? ""}`).sort();
 	return createHash("sha1").update(lines.join("\n")).digest("hex");
 }
 
+/** Read the five freshness and identity scalars (fingerprint, dirtyAtIndex,
+ *  indexSeq, contentFingerprint, schemaVersion) from the db meta table WITHOUT
+ *  assembling the whole RepoCache. Used by the coordinator to decide
+ *  fresh-vs-stale cheaply and by `index --json` to report the published meta. */
 export function readFreshnessMeta(dbPath: string): {
 	fingerprint: string | null;
 	dirtyAtIndex: boolean | undefined;
