@@ -1,9 +1,15 @@
 // src/lib/call-graph.ts
-import path from "node:path";
 import { getAdapterForFile, adapterSupports } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
 import { functionsFromSymbols } from "./symbols.js";
+import {
+	companionSourceFiles,
+	findTargetFile,
+	langOf,
+	resolvePythonTargetFile,
+	resolveSpecifier,
+} from "./symbol-resolver.js";
 import type { RawCallSite, RawRefSite, ImportBinding } from "./lang-adapter.js";
 import type {
 	CallEdge,
@@ -14,93 +20,7 @@ import type {
 	SymbolNode,
 } from "./models.js";
 
-const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const C_FAMILY_EXTS = new Set([
-	".c",
-	".cpp",
-	".cc",
-	".cxx",
-	".c++",
-	".h",
-	".hpp",
-	".hh",
-	".hxx",
-	".h++",
-]);
-const H_EXTS = new Set([".h", ".hh", ".hpp", ".hxx", ".h++"]);
-const SRC_EXTS = [".cpp", ".cc", ".cxx", ".c++", ".c"];
-
-function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
-	const ext = path.extname(filePath);
-	if (TS_EXTS.has(ext)) return "ts";
-	if (C_FAMILY_EXTS.has(ext)) return "cfamily";
-	if (ext === ".py") return "python";
-	return "other";
-}
-
-export function stripTsExt(value: string): string {
-	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
-}
-
-export function resolvePythonTargetFile(
-	fromSpecifier: string,
-	callerFile: string,
-	allFileNodes: Map<string, FunctionNode[]>,
-	includesByFile: Map<string, ImportEdge[]>,
-): string | null {
-	const specPy = fromSpecifier + ".py";
-	const specInit = fromSpecifier + "/__init__.py";
-	// Use import-graph edges (already fully resolved by resolveSite) to find target.
-	// The suffix match handles src-layout projects where edge.to = "src/pkg/utils.py"
-	// but fromSpecifier = "pkg/utils".
-	const edges = includesByFile.get(callerFile) ?? [];
-	const edge = edges.find(
-		(e) =>
-			e.to === specPy ||
-			e.to === specInit ||
-			e.to.endsWith("/" + specPy) ||
-			e.to.endsWith("/" + specInit),
-	);
-	if (edge) return edge.to;
-	// Fallback: direct probe for flat-layout cases with no import edge
-	if (allFileNodes.has(specPy)) return specPy;
-	if (allFileNodes.has(specInit)) return specInit;
-	return null;
-}
-
-function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
-	return path
-		.normalize(path.join(path.dirname(callerFile), fromSpecifier))
-		.replace(/\\/g, "/");
-}
-
-function findTargetFile(
-	normalizedSpecifier: string,
-	allFiles: Map<string, FunctionNode[]>,
-	callerLang: "ts" | "cfamily" | "python" | "other",
-): string | null {
-	if (callerLang === "ts") {
-		const stripped = stripTsExt(normalizedSpecifier);
-		for (const file of allFiles.keys()) {
-			if (stripTsExt(file) === stripped) return file;
-		}
-		for (const file of allFiles.keys()) {
-			if (stripTsExt(file) === `${stripped}/index`) return file;
-		}
-		return null;
-	}
-	if (callerLang === "cfamily") {
-		if (allFiles.has(normalizedSpecifier)) return normalizedSpecifier;
-		const baseName = path.basename(normalizedSpecifier);
-		const matches: string[] = [];
-		for (const file of allFiles.keys()) {
-			if (path.basename(file) === baseName) matches.push(file);
-		}
-		if (matches.length === 1) return matches[0];
-		return null;
-	}
-	return null;
-}
+export { stripTsExt, resolvePythonTargetFile } from "./symbol-resolver.js";
 
 function pickUnique(
 	fns: FunctionNode[] | undefined,
@@ -112,16 +32,6 @@ function pickUnique(
 	);
 	if (live.length === 1) return live[0];
 	return null;
-}
-
-function companionSourceFiles(
-	headerPath: string,
-	known: Map<string, unknown>,
-): string[] {
-	const ext = path.extname(headerPath);
-	if (!H_EXTS.has(ext)) return [];
-	const base = headerPath.slice(0, -ext.length);
-	return SRC_EXTS.map((e) => `${base}${e}`).filter((p) => known.has(p));
 }
 
 function makeEdge(from: string, to: string, raw: RawCallSite): CallEdge {
