@@ -338,7 +338,7 @@ describe("python adapter: symbols and refs (3.2)", () => {
 			"pkg/m.py",
 			["class Model(Base):", "  def save(self):", "    self.flush()", "", "def helper():", "  pass", "", "LIMIT = 3", "x, y = 1, 2"].join("\n"),
 		);
-		const byQn = Object.fromEntries(r.symbols!.map((s) => [s.qualifiedName, s]));
+		const byQn = Object.fromEntries(r.symbols.map((s) => [s.qualifiedName, s]));
 		expect(byQn.Model).toMatchObject({ kind: "class", name: "Model", exported: true });
 		expect(byQn["Model.save"]).toMatchObject({ kind: "method", name: "save", containerQualifiedName: "Model" });
 		expect(byQn.helper).toMatchObject({ kind: "function" });
@@ -346,7 +346,6 @@ describe("python adapter: symbols and refs (3.2)", () => {
 		expect(byQn.x).toMatchObject({ kind: "variable" });
 		expect(byQn.y).toMatchObject({ kind: "variable" });
 		expect(byQn.Model.nameRange).toEqual({ line: 1, column: 7, endLine: 1, endColumn: 11 });
-		expect(functionsFromSymbols(r.symbols)).toEqual((await import("../../../../src/lib/symbols.js")).functionsFromSymbols(r.symbols!));
 	});
 
 	it("emits call refs with receiver, extends refs, and import refs; self-calls carry enclosingClass", async () => {
@@ -355,7 +354,7 @@ describe("python adapter: symbols and refs (3.2)", () => {
 			"pkg/m.py",
 			["from .utils import helper as h, other", "import os.path as osp", "class Model(Base):", "  def save(self):", "    self.flush()", "    h()", "    osp.join('a')"].join("\n"),
 		);
-		const refs = r.rawRefs!;
+		const refs = r.rawRefs;
 		const imports = refs.filter((x) => x.kind === "import").map((x) => [x.name, x.alias, x.specifier, x.importKind]);
 		expect(imports).toEqual([
 			["helper", "h", "pkg/utils", "named"],
@@ -376,17 +375,17 @@ describe("python adapter: symbols and refs (3.2)", () => {
 
 	it("does not emit nested function or local variables as symbols", async () => {
 		const r = await adapter.extractCallGraph!("", "pkg/m.py", "def outer():\n  local = 1\n  def inner():\n    pass\n");
-		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["outer"]);
+		expect(r.symbols.map((s) => s.qualifiedName)).toEqual(["outer"]);
 	});
 
 	it("uses the full dotted class chain for nested classes in symbols, calls, and refs", async () => {
 		const r = await adapter.extractCallGraph!("", "pkg/m.py", "class Outer:\n  class Inner:\n    def m(self):\n      self.n()\n");
-		const qns = r.symbols!.map((s) => s.qualifiedName);
+		const qns = r.symbols.map((s) => s.qualifiedName);
 		expect(qns).toContain("Outer.Inner.m");
 		const call = r.rawCalls.find((c) => c.rawCallee === "self.n")!;
 		expect(call.callerQualifiedName).toBe("Outer.Inner.m");
 		expect(call.enclosingClass).toBe("Outer.Inner");
-		const ref = r.rawRefs!.find((x) => x.kind === "call" && x.name === "n")!;
+		const ref = r.rawRefs.find((x) => x.kind === "call" && x.name === "n")!;
 		expect(ref.enclosingQualifiedName).toBe("Outer.Inner.m");
 		expect(ref.enclosingClass).toBe("Outer.Inner");
 	});

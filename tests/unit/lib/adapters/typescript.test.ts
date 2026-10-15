@@ -420,7 +420,7 @@ describe("typescript adapter — range and site emission (unit)", () => {
 describe("typescript adapter — symbols (3.2)", () => {
 	async function symbolsOf(src: string, file = "src/s.ts") {
 		const r = await adapter.extractCallGraph!("", file, src);
-		return r.symbols!;
+		return r.symbols;
 	}
 
 	it("emits interface, type alias, enum, enum members, namespace, variable, property", async () => {
@@ -494,7 +494,7 @@ describe("typescript adapter — symbols (3.2)", () => {
 			"src/s.ts",
 			"namespace N { export class C {} }\nnamespace N { export const y = 1; }",
 		);
-		const ns = r.symbols!.filter((s) => s.qualifiedName === "N");
+		const ns = r.symbols.filter((s) => s.qualifiedName === "N");
 		expect(ns).toHaveLength(2);
 		expect(ns.every((s) => s.kind === "namespace")).toBe(true);
 		expect(functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "N.C")).toHaveLength(1);
@@ -521,16 +521,6 @@ describe("typescript adapter — symbols (3.2)", () => {
 		expect(syms.map((s) => s.qualifiedName)).toEqual(["outer"]);
 	});
 
-	it("functions output equals the A2.2 projection of symbols", async () => {
-		const r = await adapter.extractCallGraph!(
-			"",
-			"src/s.ts",
-			"export class C { m() {} }\nexport const f = () => 1;\nfunction g() {}\nexport default function () {}",
-		);
-		const { functionsFromSymbols } = await import("../../../../src/lib/symbols.js");
-		expect(functionsFromSymbols(r.symbols)).toEqual(functionsFromSymbols(r.symbols!));
-	});
-
 	it("rawCalls carry enclosingClass for this.* calls inside namespaced classes", async () => {
 		const r = await adapter.extractCallGraph!(
 			"",
@@ -550,7 +540,7 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 			"src/s.ts",
 			"function fetch() {}\nexport default { fetch() { helper(); } };\nfoo({ m() { go(); } });",
 		);
-		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["fetch"]);
+		expect(r.symbols.map((s) => s.qualifiedName)).toEqual(["fetch"]);
 		expect(functionsFromSymbols(r.symbols).map((f) => f.qualifiedName)).toEqual(["fetch"]);
 		expect(r.rawCalls.map((c) => c.callerQualifiedName)).not.toContain("fetch");
 		expect(r.rawCalls.find((c) => c.rawCallee === "go")).toBeUndefined();
@@ -562,7 +552,7 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 			"src/s.ts",
 			"export const X = mixin(class { m() { foo(); } });",
 		);
-		expect(r.symbols!.map((s) => s.qualifiedName)).toEqual(["X"]);
+		expect(r.symbols.map((s) => s.qualifiedName)).toEqual(["X"]);
 		expect(r.rawCalls.find((c) => c.rawCallee === "foo")).toBeUndefined();
 	});
 
@@ -572,18 +562,18 @@ describe("typescript adapter — symbols (3.2) review fixes", () => {
 			"src/s.ts",
 			"namespace A.B { export function f() {} }",
 		);
-		const a = r.symbols!.find((s) => s.qualifiedName === "A")!;
-		const b = r.symbols!.find((s) => s.qualifiedName === "A.B")!;
+		const a = r.symbols.find((s) => s.qualifiedName === "A")!;
+		const b = r.symbols.find((s) => s.qualifiedName === "A.B")!;
 		expect(a.nameRange).toEqual({ line: 1, column: 11, endLine: 1, endColumn: 11 });
 		expect(b.nameRange).toEqual({ line: 1, column: 13, endLine: 1, endColumn: 13 });
-		expect(r.symbols!.some((s) => s.qualifiedName === "A.B.f")).toBe(true);
+		expect(r.symbols.some((s) => s.qualifiedName === "A.B.f")).toBe(true);
 	});
 });
 
 describe("typescript adapter — refs (3.2)", () => {
 	async function refsOf(src: string, file = "src/r.ts") {
 		const r = await adapter.extractCallGraph!("", file, src);
-		return { refs: r.rawRefs!, reexports: r.reexports! };
+		return { refs: r.rawRefs, reexports: r.reexports };
 	}
 	const pick = (refs: import("../../../../src/lib/lang-adapter.js").RawRefSite[], kind: string) =>
 		refs.filter((r) => r.kind === kind).map((r) => ({ name: r.name, receiver: r.receiver, alias: r.alias, specifier: r.specifier, importKind: r.importKind, line: r.range.line, col: r.range.column, endCol: r.range.endColumn }));
