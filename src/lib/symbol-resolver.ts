@@ -287,7 +287,9 @@ export function resolveName(
 		if (
 			site.enclosingClass &&
 			(SELF_RECEIVERS.has(site.receiver) ||
-				site.receiver === site.enclosingClass)
+				site.receiver === site.enclosingClass ||
+				// Source writes the short class name (`C.open()` inside N.C).
+				site.enclosingClass.endsWith(`.${site.receiver}`))
 		) {
 			const hit = keyIn(idx, site.file, `${site.enclosingClass}.${site.name}`);
 			if (hit) return hit;

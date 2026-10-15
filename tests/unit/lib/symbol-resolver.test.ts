@@ -81,6 +81,15 @@ describe("resolveName (A5)", () => {
 				noIncludes,
 			),
 		).toBe("a.ts::N.C.open");
+		expect(
+			resolveName(
+				idx,
+				{ file: "a.ts", name: "open", receiver: "C", enclosingClass: "N.C" },
+				[],
+				noReexports,
+				noIncludes,
+			),
+		).toBe("a.ts::N.C.open");
 	});
 
 	it("step 1: inherited member falls through to unresolved", () => {
