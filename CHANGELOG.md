@@ -32,6 +32,7 @@ This release turns the per-worktree store into a navigation index (index contrac
 - **Concurrent writers** could publish the same `indexSeq`. Sequence assignment is now serialized through a SQLite sidecar (`<worktreeKey>.seq.db`) whose lock the operating system releases on holder exit or crash, so there is no stale-lock state to reclaim. Discarding an invalid store takes the same lock, so a slow process can no longer delete a store another process just published. A waiter blocks at most once, for 15 seconds, and then fails with an error naming the sidecar path.
 
 ### Internal
+- **Hermetic intake config test.** `tests/unit/lib/memory/config-intake.test.ts` now points `os.homedir()` at an empty temp dir, so a developer's own `~/.config/ai-cortex/config.json` can no longer fail the suite and block the release gate.
 - New `symbol-resolver.ts` shared by `calls` and `refs`; adapters emit symbols and raw reference sites instead of `functions`, and `functions` is derived by `functionsFromSymbols`.
 - Writer-internal `reexports` table keeps one-hop re-export resolution correct across incremental indexes.
 - **`rehydrate`, `suggest`, and a fresh `index` skip the navigation tables.** They never read `symbols`, `refs`, or `reexports`, which dominate the store, so the cache load drops from about 37 ms and 18 MB to about 5 ms and 3 MB on ai-cortex and scales the same way on larger repos. Only the incremental rebuild loads them, and a cache read without them can never be written back.
