@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Unreleased
+## v0.18.0 (2026-10-17)
 
 This release turns the per-worktree store into a navigation index (index contract v3.2) for consumers such as ai-14all's in-app code navigation. The 3.1 schema is unchanged, every table and column included, while `functions` row content now follows the projection from `symbols`; the additions are new tables, new meta keys, better call resolution, and CLI fixes.
 
