@@ -7,6 +7,11 @@ import { renderBriefing } from "../../../src/lib/briefing.js";
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "aabbccdd11223344",
 		worktreeKey: "eeff00112233aabb",
 		worktreePath: "/repo",

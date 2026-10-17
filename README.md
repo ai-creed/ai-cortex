@@ -77,6 +77,12 @@ Index a project:
 ai-cortex index /path/to/repo
 ```
 
+Print the store location, schema version, and change-detection fields as JSON (the store is a SQLite `.db` file under `~/.cache/ai-cortex/`):
+
+```bash
+ai-cortex index --json /path/to/repo
+```
+
 Register the MCP server so your agent can call ai-cortex tools:
 
 ```bash
@@ -118,7 +124,7 @@ target repository is read, not modified
 
 There are three layers:
 
-- **Structural:** repo index, imports, functions, call graph, file ranking, blast radius.
+- **Structural:** repo index, imports, functions, call graph, navigation index (symbols with name ranges, references), file ranking, blast radius.
 - **Continuity:** captured sessions and searchable history.
 - **Memory:** durable project rules, decisions, gotchas, patterns, and how-tos.
 

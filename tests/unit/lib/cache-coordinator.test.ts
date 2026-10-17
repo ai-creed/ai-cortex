@@ -33,6 +33,11 @@ const mockIdentity = {
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: mockIdentity.repoKey,
 		worktreeKey: mockIdentity.worktreeKey,
 		worktreePath: "/repo",
@@ -58,6 +63,9 @@ beforeEach(() => {
 	vi.mocked(readFreshnessMeta).mockReturnValue({
 		fingerprint: "abc123",
 		dirtyAtIndex: undefined,
+		indexSeq: 0,
+		contentFingerprint: null,
+		schemaVersion: null,
 	});
 });
 
@@ -93,6 +101,8 @@ describe("resolveCacheWithFreshness", () => {
 		expect(result.cacheStatus).toBe("reindexed");
 		expect(vi.mocked(buildIncrementalIndex)).toHaveBeenCalledOnce();
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
+		// The incremental rebuild keeps unchanged files' nav rows, so it reads them.
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: true });
 	});
 
 	it("returns reindexed via incremental path when worktree is dirty", async () => {
@@ -128,6 +138,9 @@ describe("resolveCacheWithFreshness", () => {
 		vi.mocked(readFreshnessMeta).mockReturnValue({
 			fingerprint: "abc123",
 			dirtyAtIndex: true,
+			indexSeq: 0,
+			contentFingerprint: null,
+			schemaVersion: null,
 		});
 		vi.mocked(buildRepoFingerprint).mockResolvedValue("abc123");
 		vi.mocked(isWorktreeDirty).mockResolvedValue(false);
@@ -161,6 +174,7 @@ describe("resolveCacheWithFreshness", () => {
 
 		expect(result.cacheStatus).toBe("stale");
 		expect(result.cache).toBe(cache);
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: false });
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});
@@ -174,6 +188,8 @@ describe("resolveCacheWithFreshness", () => {
 
 		expect(result.cacheStatus).toBe("fresh");
 		expect(result.cache).toBe(cache);
+		// Read-only consumers skip the nav tables (Ruling 12).
+		expect(vi.mocked(readFromDb)).toHaveBeenCalledWith(DB_PATH, { nav: false });
 		expect(vi.mocked(indexRepo)).not.toHaveBeenCalled();
 		expect(vi.mocked(buildIncrementalIndex)).not.toHaveBeenCalled();
 	});

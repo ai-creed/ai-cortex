@@ -4,15 +4,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { SCHEMA_VERSION } from "./models.js";
-import type { RepoCache } from "./models.js";
+import type { RepoCache, FileNode } from "./models.js";
 import {
 	transcodeCacheToDb,
 	readFromDb,
 	dbSchemaValid,
-	majorOf,
 } from "./cache-store-sqlite.js";
+import type { ReadOptions } from "./cache-store-sqlite.js";
+import { withSequenceLock } from "./seq-lock.js";
 
 // Re-export so coordinator + tests share one seam (cache-store.js is the mock
 // boundary in unit tests; the coordinator gets all its cache deps from here).
@@ -116,7 +118,7 @@ export async function writeCache(cache: RepoCache): Promise<void> {
 	});
 
 	// Best-effort sidecar: dashboard reads this instead of the full cache.
-	// Failure here must not propagate — the db is the source of truth.
+	// Failure here must not propagate: the db is the source of truth.
 	try {
 		await writeCacheMetaSidecar(
 			cache.repoKey,
@@ -143,17 +145,28 @@ export async function writeCacheMetaSidecar(
 	await fs.promises.rename(tmp, filePath);
 }
 
-/** Read the two freshness scalars from the db meta table WITHOUT assembling the
- *  whole RepoCache. Used by the coordinator to decide fresh-vs-stale cheaply. */
+/** A4: sha1 over sorted (path, contentHash) pairs joined with newlines. */
+export function computeContentFingerprint(files: FileNode[]): string {
+	const lines = files.map((f) => `${f.path}\t${f.contentHash ?? ""}`).sort();
+	return createHash("sha1").update(lines.join("\n")).digest("hex");
+}
+
+/** Read the five freshness and identity scalars (fingerprint, dirtyAtIndex,
+ *  indexSeq, contentFingerprint, schemaVersion) from the db meta table WITHOUT
+ *  assembling the whole RepoCache. Used by the coordinator to decide
+ *  fresh-vs-stale cheaply and by `index --json` to report the published meta. */
 export function readFreshnessMeta(dbPath: string): {
 	fingerprint: string | null;
 	dirtyAtIndex: boolean | undefined;
+	indexSeq: number | null;
+	contentFingerprint: string | null;
+	schemaVersion: string | null;
 } {
 	const db = new Database(dbPath, { readonly: true });
 	try {
 		const rows = db
 			.prepare(
-				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex')",
+				"SELECT key, value FROM meta WHERE key IN ('fingerprint','dirtyAtIndex','indexSeq','contentFingerprint','schemaVersion')",
 			)
 			.all() as Array<{ key: string; value: string }>;
 		const m = new Map(rows.map((r) => [r.key, r.value]));
@@ -162,6 +175,9 @@ export function readFreshnessMeta(dbPath: string): {
 			dirtyAtIndex: m.has("dirtyAtIndex")
 				? m.get("dirtyAtIndex") === "1"
 				: undefined,
+			indexSeq: m.has("indexSeq") ? Number(m.get("indexSeq")) : null,
+			contentFingerprint: m.get("contentFingerprint") ?? null,
+			schemaVersion: m.get("schemaVersion") ?? null,
 		};
 	} finally {
 		db.close();
@@ -170,6 +186,14 @@ export function readFreshnessMeta(dbPath: string): {
 			fs.rmSync(dbPath + sfx, { force: true });
 		}
 	}
+}
+
+let ensureValidDbTestHooks: { beforeLock?: () => Promise<void> } | null = null;
+/** Test-only seam: pause between the unlocked validity check and the lock. */
+export function setEnsureValidDbTestHooks(
+	h: { beforeLock?: () => Promise<void> } | null,
+): void {
+	ensureValidDbTestHooks = h;
 }
 
 /** Ensure a valid (current-version) .db exists for the worktree and return its
@@ -189,14 +213,34 @@ export async function ensureValidDb(
 			await fs.promises.rm(jsonPath, { force: true });
 			return dbPath;
 		}
-		// Version mismatch: discard the db (and sidecars) so the caller reindexes.
-		for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
-			await fs.promises.rm(p, { force: true });
+		// Invalid: discard under the sequence lock with a recheck (spec B4), so a
+		// store another process published after our unlocked check is never
+		// deleted. The sequence sidecar is left in place.
+		if (ensureValidDbTestHooks?.beforeLock) {
+			await ensureValidDbTestHooks.beforeLock();
 		}
-		process.stderr.write(
-			`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+		const outcome = withSequenceLock(
+			dbPath,
+			(): "valid" | "absent" | "discarded" => {
+				if (!fs.existsSync(dbPath)) return "absent";
+				if (dbSchemaValid(dbPath)) return "valid";
+				for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) {
+					fs.rmSync(p, { force: true });
+				}
+				return "discarded";
+			},
 		);
-		return null;
+		if (outcome === "valid") {
+			await fs.promises.rm(jsonPath, { force: true });
+			return dbPath;
+		}
+		if (outcome === "discarded") {
+			process.stderr.write(
+				`ai-cortex: cache schema updated, reindexing ${worktreeKey}\n`,
+			);
+			return null;
+		}
+		// "absent": another process discarded it; continue as if no db existed.
 	}
 
 	// 2. No db, but a legacy json exists: migrate in place (transcode) or reindex.
@@ -210,8 +254,9 @@ export async function ensureValidDb(
 			await fs.promises.rm(jsonPath, { force: true }); // corrupt -> reindex
 			return null;
 		}
-		if (majorOf(cache.schemaVersion ?? "") !== majorOf(SCHEMA_VERSION)) {
-			await fs.promises.rm(jsonPath, { force: true }); // incompatible -> reindex
+		if (cache.schemaVersion !== SCHEMA_VERSION) {
+			// Older or newer minor (or any other version) -> reindex (A1).
+			await fs.promises.rm(jsonPath, { force: true });
 			return null;
 		}
 		try {
@@ -238,7 +283,8 @@ export async function ensureValidDb(
 export async function readCacheForWorktree(
 	repoKey: string,
 	worktreeKey: string,
+	options: ReadOptions = {},
 ): Promise<RepoCache | null> {
 	const dbPath = await ensureValidDb(repoKey, worktreeKey);
-	return dbPath ? readFromDb(dbPath) : null;
+	return dbPath ? readFromDb(dbPath, options) : null;
 }

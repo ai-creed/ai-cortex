@@ -47,7 +47,7 @@ import {
 import { ensureAdapters } from "../../../src/lib/adapters/ensure.js";
 import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { SCHEMA_VERSION } from "../../../src/lib/models.js";
-import type { RepoCache } from "../../../src/lib/models.js";
+import type { RepoCache, SymbolNode } from "../../../src/lib/models.js";
 import type { FilesDiff } from "../../../src/lib/diff-files.js";
 import {
 	buildIndex,
@@ -83,18 +83,27 @@ beforeEach(async () => {
 	vi.mocked(readCacheForWorktree).mockResolvedValue(null);
 	vi.mocked(writeCache).mockResolvedValue(undefined);
 	vi.mocked(hashFileContent).mockReturnValue("fakehash123");
-	vi.mocked(extractCallGraph).mockResolvedValue({ calls: [], functions: [] });
+	vi.mocked(extractCallGraph).mockResolvedValue({
+		calls: [],
+		functions: [],
+		symbols: [],
+		refs: [],
+		reexports: [],
+	});
 	vi.mocked(extractCallGraphRaw).mockResolvedValue({
 		rawCalls: [],
+		rawRefs: [],
+		symbols: [],
 		functions: [],
+		reexports: [],
 		bindingsByFile: new Map(),
 	});
 	vi.mocked(resolveCallSites).mockReturnValue([]);
 	vi.mocked(ensureAdapters).mockResolvedValue(undefined);
 });
 
-it("uses schema version 3.1", () => {
-	expect(SCHEMA_VERSION).toBe("3.1");
+it("uses schema version 3.2", () => {
+	expect(SCHEMA_VERSION).toBe("3.2");
 });
 
 describe("buildIndex", () => {
@@ -144,6 +153,9 @@ describe("buildIndex", () => {
 					line: 1,
 				},
 			],
+			symbols: [],
+			refs: [],
+			reexports: [],
 		});
 		const cache = await buildIndex(mockIdentity);
 		expect(cache.calls).toHaveLength(1);
@@ -174,6 +186,11 @@ describe("getCachedIndex", () => {
 	it("returns null when fingerprint is stale", async () => {
 		const stale: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
+			indexSeq: 0,
+			contentFingerprint: "",
+			symbols: [],
+			refs: [],
+			reexports: [],
 			repoKey: mockIdentity.repoKey,
 			worktreeKey: mockIdentity.worktreeKey,
 			worktreePath: "/repo",
@@ -195,6 +212,11 @@ describe("getCachedIndex", () => {
 	it("returns cached data when fingerprint matches", async () => {
 		const fresh: RepoCache = {
 			schemaVersion: SCHEMA_VERSION,
+			indexSeq: 0,
+			contentFingerprint: "",
+			symbols: [],
+			refs: [],
+			reexports: [],
 			repoKey: mockIdentity.repoKey,
 			worktreeKey: mockIdentity.worktreeKey,
 			worktreePath: "/repo",
@@ -214,9 +236,29 @@ describe("getCachedIndex", () => {
 	});
 });
 
+function fnSymbol(file: string, qualifiedName: string): SymbolNode {
+	const range = { line: 1, column: 0, endLine: 1, endColumn: 1 };
+	return {
+		name: qualifiedName.split(".").pop()!,
+		qualifiedName,
+		file,
+		kind: "function",
+		exported: true,
+		isDefaultExport: false,
+		isDeclarationOnly: false,
+		range,
+		nameRange: range,
+	};
+}
+
 function makeCacheForIncremental(): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: mockIdentity.repoKey,
 		worktreeKey: mockIdentity.worktreeKey,
 		worktreePath: "/repo",
@@ -571,15 +613,10 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_main_v2");
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
-			functions: [
-				{
-					qualifiedName: "main",
-					file: "src/main.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
-			],
+			rawRefs: [],
+			symbols: [fnSymbol("src/main.ts", "main")],
+			reexports: [],
+			functions: [],
 			bindingsByFile: new Map(),
 		});
 		vi.mocked(resolveCallSites).mockReturnValue([
@@ -596,21 +633,11 @@ describe("buildIncrementalIndex", () => {
 			{ from: "src/main.ts::main", to: "src/utils.ts::helper", kind: "call" },
 			{ from: "src/utils.ts::helper", to: "src/lib.ts::lib", kind: "call" },
 		];
-		existing.functions = [
-			{
-				qualifiedName: "main",
-				file: "src/main.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
-			{
-				qualifiedName: "helper",
-				file: "src/utils.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
+		existing.symbols = [
+			fnSymbol("src/main.ts", "main"),
+			fnSymbol("src/utils.ts", "helper"),
+			fnSymbol("src/utils.ts", "newHelper"),
+			fnSymbol("src/lib.ts", "lib"),
 		];
 
 		const diff: FilesDiff = {
@@ -661,22 +688,13 @@ describe("buildIncrementalIndex", () => {
 		vi.mocked(hashFileContent).mockReturnValue("hash_utils_v2");
 		vi.mocked(extractCallGraphRaw).mockResolvedValue({
 			rawCalls: [],
-			functions: [
-				{
-					qualifiedName: "helper",
-					file: "src/utils.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
-				{
-					qualifiedName: "main",
-					file: "src/main.ts",
-					exported: true,
-					isDefaultExport: false,
-					line: 1,
-				},
+			rawRefs: [],
+			symbols: [
+				fnSymbol("src/utils.ts", "helper"),
+				fnSymbol("src/main.ts", "main"),
 			],
+			reexports: [],
+			functions: [],
 			bindingsByFile: new Map(),
 		});
 		vi.mocked(resolveCallSites).mockReturnValue([
@@ -694,21 +712,10 @@ describe("buildIncrementalIndex", () => {
 			},
 			{ from: "src/utils.ts::oldHelper", to: "src/lib.ts::lib", kind: "call" },
 		];
-		existing.functions = [
-			{
-				qualifiedName: "main",
-				file: "src/main.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
-			{
-				qualifiedName: "oldHelper",
-				file: "src/utils.ts",
-				exported: true,
-				isDefaultExport: false,
-				line: 1,
-			},
+		existing.symbols = [
+			fnSymbol("src/main.ts", "main"),
+			fnSymbol("src/utils.ts", "oldHelper"),
+			fnSymbol("src/lib.ts", "lib"),
 		];
 
 		const diff: FilesDiff = {

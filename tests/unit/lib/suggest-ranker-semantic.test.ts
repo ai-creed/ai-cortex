@@ -23,6 +23,11 @@ vi.mock("../../../src/lib/vector-builder.js", () => ({
 function makeCache(filePaths: string[]): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "test-repo",
 		worktreeKey: "test-worktree",
 		worktreePath: "/tmp/test-repo",

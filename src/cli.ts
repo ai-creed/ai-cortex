@@ -15,7 +15,8 @@ import type {
 	SemanticSuggestResult,
 } from "./lib/suggest.js";
 import { IndexError, RepoIdentityError } from "./lib/models.js";
-import { assertHashedRepoKey } from "./lib/cache-store.js";
+import type { RepoCache } from "./lib/models.js";
+import { assertHashedRepoKey, getCacheDbFilePath, readFreshnessMeta } from "./lib/cache-store.js";
 import { VERSION } from "./version.js";
 
 const [, , command = "index", ...args] = process.argv;
@@ -32,8 +33,8 @@ function readPackageVersion(): string {
 const HELP_TEXT = `ai-cortex <command> [options]
 
 Commands:
-  index [path] [--refresh]         Index a repository (default command)
-  rehydrate [path] [--stale]       Refresh and load cached index
+  index [path] [--refresh] [--json]  Index a repository (default command)
+  rehydrate [path] [--stale] [--json]  Refresh and load cached index
   suggest <task> [path] [options]  Suggest relevant files for a task
   mcp                              Start the MCP server (stdio)
   stats [--window 7d] [--once]     Open the TUI stats dashboard
@@ -48,13 +49,70 @@ Commands:
 Run 'ai-cortex <command>' with no args to see subcommand usage.
 `;
 
+const INDEX_USAGE = `ai-cortex index [path] [--refresh] [--json]
+
+Index a repository (default command).
+  --refresh   Rebuild the index even when the cache is fresh
+  --json      Print one JSON object: dbPath, cacheStatus, schemaVersion, fingerprint,
+              contentFingerprint, indexSeq, indexedAt, dirtyAtIndex, packageName, fileCount, docCount
+  --help, -h  Show this help
+`;
+
+const REHYDRATE_USAGE = `ai-cortex rehydrate [path] [--stale] [--json]
+
+Refresh and load the cached index, writing the briefing.
+  --stale     Read the existing store even when it is out of date
+  --json      Print one JSON object: briefingPath plus the index fields
+  --help, -h  Show this help
+`;
+
 function parseIndexOrRehydrateArgs(
 	argv: string[],
 	flags: string[],
-): { repoPath: string; options: string[] } {
-	const options = argv.filter((arg) => flags.includes(arg));
-	const repoPath = argv.find((arg) => !arg.startsWith("--")) ?? process.cwd();
-	return { repoPath, options };
+): { repoPath: string; options: string[]; help: boolean; unknown: string[] } {
+	const options: string[] = [];
+	const unknown: string[] = [];
+	let help = false;
+	let repoPath: string | undefined;
+	for (const arg of argv) {
+		if (arg === "--help" || arg === "-h") help = true;
+		else if (arg.startsWith("-")) (flags.includes(arg) ? options : unknown).push(arg);
+		else if (repoPath === undefined) repoPath = arg;
+		else unknown.push(arg);
+	}
+	return { repoPath: repoPath ?? process.cwd(), options, help, unknown };
+}
+
+/** Exits the process on --help or unknown flags; returns otherwise. */
+function gateFlags(parsed: { help: boolean; unknown: string[] }, usage: string): void {
+	if (parsed.help) {
+		process.stdout.write(usage);
+		process.exit(0);
+	}
+	if (parsed.unknown.length > 0) {
+		process.stderr.write(`ai-cortex: unknown flag: ${parsed.unknown.join(" ")}\n${usage}`);
+		process.exit(2);
+	}
+}
+
+function indexJson(cache: RepoCache, cacheStatus: string): Record<string, unknown> {
+	// Key off the cache itself: it records where the store was actually written
+	// (a symlinked path form can resolve to a different repoKey than repoPath).
+	const dbPath = getCacheDbFilePath(cache.repoKey, cache.worktreeKey);
+	const meta = readFreshnessMeta(dbPath);
+	return {
+		cacheStatus,
+		packageName: cache.packageMeta.name,
+		fileCount: cache.files.length,
+		docCount: cache.docs.length,
+		dbPath,
+		schemaVersion: meta.schemaVersion ?? cache.schemaVersion,
+		fingerprint: meta.fingerprint ?? cache.fingerprint,
+		contentFingerprint: meta.contentFingerprint ?? cache.contentFingerprint,
+		indexSeq: meta.indexSeq ?? cache.indexSeq,
+		indexedAt: cache.indexedAt,
+		dirtyAtIndex: cache.dirtyAtIndex ?? meta.dirtyAtIndex ?? false,
+	};
 }
 
 function parseSuggestArgs(
@@ -484,27 +542,30 @@ async function main(): Promise<void> {
 			const { startMcpServer } = await import("./mcp/server.js");
 			await startMcpServer();
 		} else if (command === "index") {
-			const { repoPath, options } = parseIndexOrRehydrateArgs(args, [
-				"--refresh",
-			]);
+			const parsed = parseIndexOrRehydrateArgs(args, ["--refresh", "--json"]);
+			gateFlags(parsed, INDEX_USAGE);
+			const { repoPath, options } = parsed;
 			const refresh = options.includes("--refresh");
+			const json = options.includes("--json");
 			const start = performance.now();
-
 			const existing = refresh ? null : await getCachedIndex(repoPath);
 			const cache = existing ?? (await indexRepo(repoPath));
+			const cacheStatus = existing ? "fresh" : "reindexed";
 			const duration = Math.round(performance.now() - start);
-
-			process.stdout.write(
-				`indexed ${cache.packageMeta.name}\n` +
-					`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
-					`  cache: ~/.cache/ai-cortex/v1/${cache.repoKey}/${cache.worktreeKey}.json\n` +
-					`  duration: ${duration}ms\n`,
-			);
+			if (json) {
+				process.stdout.write(JSON.stringify(indexJson(cache, cacheStatus), null, 2) + "\n");
+			} else {
+				process.stdout.write(
+					`indexed ${cache.packageMeta.name}\n` +
+						`  files: ${cache.files.length}  docs: ${cache.docs.length}  imports: ${cache.imports.length}  entry files: ${cache.entryFiles.length}\n` +
+						`  cache: ${getCacheDbFilePath(cache.repoKey, cache.worktreeKey)}\n` +
+						`  duration: ${duration}ms\n`,
+				);
+			}
 		} else if (command === "rehydrate") {
-			const { repoPath, options } = parseIndexOrRehydrateArgs(args, [
-				"--stale",
-				"--json",
-			]);
+			const parsed = parseIndexOrRehydrateArgs(args, ["--stale", "--json"]);
+			gateFlags(parsed, REHYDRATE_USAGE);
+			const { repoPath, options } = parsed;
 			const stale = options.includes("--stale");
 			const json = options.includes("--json");
 
@@ -515,10 +576,7 @@ async function main(): Promise<void> {
 					JSON.stringify(
 						{
 							briefingPath: result.briefingPath,
-							cacheStatus: result.cacheStatus,
-							packageName: result.cache.packageMeta.name,
-							fileCount: result.cache.files.length,
-							docCount: result.cache.docs.length,
+							...indexJson(result.cache, result.cacheStatus),
 						},
 						null,
 						2,

@@ -7,6 +7,11 @@ import { rankSuggestions } from "../../../src/lib/suggest-ranker.js";
 function makeCache(overrides: Partial<RepoCache> = {}): RepoCache {
 	return {
 		schemaVersion: SCHEMA_VERSION,
+		indexSeq: 0,
+		contentFingerprint: "",
+		symbols: [],
+		refs: [],
+		reexports: [],
 		repoKey: "repokey1234567890",
 		worktreeKey: "worktree12345678",
 		worktreePath: "/repo",

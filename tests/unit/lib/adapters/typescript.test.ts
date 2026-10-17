@@ -1,6 +1,7 @@
 // tests/unit/lib/adapters/typescript.test.ts
 import { describe, expect, it, beforeAll } from "vitest";
 import { createTypescriptAdapter } from "../../../../src/lib/adapters/typescript.js";
+import { functionsFromSymbols } from "../../../../src/lib/symbols.js";
 import type { LanguageAdapter } from "../../../../src/lib/lang-adapter.js";
 
 let adapter: LanguageAdapter;
@@ -16,7 +17,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/foo.ts",
 			"function foo() { return 1; }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "foo",
 				file: "src/foo.ts",
@@ -32,7 +33,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/bar.ts",
 			"export function bar() {}",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "bar",
 				exported: true,
@@ -47,7 +48,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/baz.ts",
 			"const baz = () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "baz",
 				exported: false,
@@ -61,7 +62,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/qux.ts",
 			"export const qux = () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "qux",
 				exported: true,
@@ -76,10 +77,10 @@ describe("typescript adapter — function extraction", () => {
 			"src/foo.ts",
 			"class Foo { bar() {} render() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.bar" }),
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({ qualifiedName: "Foo.render" }),
 		);
 	});
@@ -90,7 +91,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/svc.ts",
 			"export class Svc { run() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Svc.run",
 				exported: true,
@@ -104,7 +105,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/ab.ts",
 			"class A { render() {} }\nclass B { render() {} }",
 		);
-		const names = result.functions.map((f) => f.qualifiedName);
+		const names = functionsFromSymbols(result.symbols).map((f) => f.qualifiedName);
 		expect(names).toContain("A.render");
 		expect(names).toContain("B.render");
 	});
@@ -115,7 +116,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/do.ts",
 			"export default function doThing() {}",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "doThing",
 				exported: true,
@@ -130,7 +131,7 @@ describe("typescript adapter — function extraction", () => {
 			"src/anon.ts",
 			"export default () => {};",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "default",
 				exported: true,
@@ -145,13 +146,13 @@ describe("typescript adapter — function extraction", () => {
 			"src/ctrl.ts",
 			"export default class Ctrl { handle() {} }",
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Ctrl",
 				isDefaultExport: true,
 			}),
 		);
-		expect(result.functions).toContainEqual(
+		expect(functionsFromSymbols(result.symbols)).toContainEqual(
 			expect.objectContaining({
 				qualifiedName: "Ctrl.handle",
 				exported: true,
@@ -162,7 +163,7 @@ describe("typescript adapter — function extraction", () => {
 	it("reports accurate line numbers", async () => {
 		const source = "// comment\n\nfunction foo() {}\n";
 		const result = await adapter.extractCallGraph!("", "src/foo.ts", source);
-		const foo = result.functions.find((f) => f.qualifiedName === "foo");
+		const foo = functionsFromSymbols(result.symbols).find((f) => f.qualifiedName === "foo");
 		expect(foo?.line).toBe(3);
 	});
 });
@@ -307,7 +308,7 @@ describe("typescript adapter — import binding extraction", () => {
 describe("typescript adapter — edge cases", () => {
 	it("returns empty result for empty file", async () => {
 		const result = await adapter.extractCallGraph!("", "src/empty.ts", "");
-		expect(result.functions).toHaveLength(0);
+		expect(functionsFromSymbols(result.symbols)).toHaveLength(0);
 		expect(result.rawCalls).toHaveLength(0);
 		expect(result.importBindings).toHaveLength(0);
 	});
@@ -382,7 +383,7 @@ describe("typescript adapter — range and site emission (unit)", () => {
 			"src/r.ts",
 			"function multi() {\n  return 1;\n}",
 		);
-		const fn = r.functions.find((f) => f.qualifiedName === "multi");
+		const fn = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "multi");
 		expect(fn?.column).toBe(1);
 		expect(fn?.endLine).toBeGreaterThan(fn!.line);
 		expect(fn?.endColumn).toBeGreaterThanOrEqual(1);
@@ -413,5 +414,306 @@ describe("typescript adapter — range and site emission (unit)", () => {
 		const ctor = r.rawCalls.find((c) => c.kind === "new");
 		expect(method?.site).toBeDefined();
 		expect(ctor?.site).toBeDefined();
+	});
+});
+
+describe("typescript adapter: symbols (3.2)", () => {
+	async function symbolsOf(src: string, file = "src/s.ts") {
+		const r = await adapter.extractCallGraph!("", file, src);
+		return r.symbols;
+	}
+
+	it("emits interface, type alias, enum, enum members, namespace, variable, property", async () => {
+		const syms = await symbolsOf(
+			[
+				"export interface WorktreeStatus { dirty: boolean; refresh(): void }",
+				"export type Id = string;",
+				"export enum Color { Red, Green = 2 }",
+				"export namespace Util { export const x = 1; }",
+				"const answer = 42;",
+				"export const { a, b: c } = obj;",
+			].join("\n"),
+		);
+		const byQn = Object.fromEntries(syms.map((s) => [s.qualifiedName, s]));
+		expect(byQn.WorktreeStatus).toMatchObject({ kind: "interface", name: "WorktreeStatus", exported: true });
+		expect(byQn["WorktreeStatus.dirty"]).toMatchObject({ kind: "property", isDeclarationOnly: true, containerQualifiedName: "WorktreeStatus" });
+		expect(byQn["WorktreeStatus.refresh"]).toMatchObject({ kind: "method", isDeclarationOnly: true });
+		expect(byQn.Id).toMatchObject({ kind: "type", exported: true });
+		expect(byQn.Color).toMatchObject({ kind: "enum" });
+		expect(byQn["Color.Red"]).toMatchObject({ kind: "enum_member", name: "Red", containerQualifiedName: "Color" });
+		expect(byQn["Color.Green"]).toMatchObject({ kind: "enum_member" });
+		expect(byQn.Util).toMatchObject({ kind: "namespace" });
+		expect(byQn["Util.x"]).toMatchObject({ kind: "variable", exported: true, containerQualifiedName: "Util" });
+		expect(byQn.answer).toMatchObject({ kind: "variable", exported: false });
+		expect(byQn.a).toMatchObject({ kind: "variable", exported: true });
+		expect(byQn.c).toMatchObject({ kind: "variable", name: "c" });
+		expect(byQn.b).toBeUndefined();
+	});
+
+	it("name range lies inside the declaration range and starts after it", async () => {
+		const [iface] = await symbolsOf("export interface WorktreeStatus {\n  dirty: boolean;\n}\n");
+		expect(iface.nameRange.line).toBe(iface.range.line);
+		expect(iface.nameRange.column).toBeGreaterThan(iface.range.column);
+		expect(iface.nameRange.column).toBe("export interface ".length + 1);
+		expect(iface.nameRange.endColumn).toBe("export interface WorktreeStatus".length);
+		expect(iface.range.endLine).toBe(3);
+	});
+
+	it("class members carry container and enclosing names; namespace containers join with '.'", async () => {
+		const syms = await symbolsOf(
+			"namespace N { export class C { x = 1; run() {} static s() {} } }",
+		);
+		const qns = syms.map((s) => s.qualifiedName).sort();
+		expect(qns).toEqual(["N", "N.C", "N.C.run", "N.C.s", "N.C.x"]);
+		const run = syms.find((s) => s.qualifiedName === "N.C.run")!;
+		expect(run).toMatchObject({ kind: "method", name: "run", containerQualifiedName: "N.C", exported: true });
+		for (const s of syms) expect(s.qualifiedName).not.toContain("::");
+	});
+
+	it("marks overload signatures, declare, abstract, and interface members declaration-only; implementation is not", async () => {
+		const syms = await symbolsOf(
+			[
+				"declare function d(): void;",
+				"export function o(a: string): void;",
+				"export function o(a: number): void;",
+				"export function o(a: unknown) {}",
+				"abstract class A { abstract m(): void; n() {} }",
+			].join("\n"),
+		);
+		const o = syms.filter((s) => s.qualifiedName === "o");
+		expect(o.map((s) => s.isDeclarationOnly)).toEqual([true, true, false]);
+		expect(syms.find((s) => s.qualifiedName === "d")!.isDeclarationOnly).toBe(true);
+		expect(syms.find((s) => s.qualifiedName === "A.m")!.isDeclarationOnly).toBe(true);
+		expect(syms.find((s) => s.qualifiedName === "A.n")!.isDeclarationOnly).toBe(false);
+		expect(syms.find((s) => s.qualifiedName === "A")!.kind).toBe("class");
+	});
+
+	it("re-opened namespace yields two symbol rows with one key, functions projects classes once", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace N { export class C {} }\nnamespace N { export const y = 1; }",
+		);
+		const ns = r.symbols.filter((s) => s.qualifiedName === "N");
+		expect(ns).toHaveLength(2);
+		expect(ns.every((s) => s.kind === "namespace")).toBe(true);
+		expect(functionsFromSymbols(r.symbols).filter((f) => f.qualifiedName === "N.C")).toHaveLength(1);
+	});
+
+	it("computed and string-literal member names are unquoted", async () => {
+		const syms = await symbolsOf(
+			"class K { ['computed']() {} \"quoted\" = 1 }",
+		);
+		expect(syms.map((s) => s.name).sort()).toEqual(["K", "computed", "quoted"]);
+	});
+
+	it("anonymous default export keeps 'default' with the name range on the keyword", async () => {
+		const syms = await symbolsOf("export default class {}");
+		expect(syms).toHaveLength(1);
+		expect(syms[0]).toMatchObject({ qualifiedName: "default", name: "default", kind: "class", isDefaultExport: true });
+		expect(syms[0].nameRange).toEqual({ line: 1, column: 8, endLine: 1, endColumn: 14 });
+	});
+
+	it("does not emit function-local declarations or parameters", async () => {
+		const syms = await symbolsOf(
+			"export function outer(p: number) { const inner = 1; function nested() {} class Local {} return inner; }",
+		);
+		expect(syms.map((s) => s.qualifiedName)).toEqual(["outer"]);
+	});
+
+	it("rawCalls carry enclosingClass for this.* calls inside namespaced classes", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace N { export class C { open() {} run() { this.open(); } } }",
+		);
+		const call = r.rawCalls.find((c) => c.rawCallee === "this.open")!;
+		expect(call.callerQualifiedName).toBe("N.C.run");
+		expect(call.enclosingClass).toBe("N.C");
+	});
+});
+
+describe("typescript adapter: symbols (3.2) review fixes", () => {
+	it("object-literal methods are not indexed and do not become callers", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"function fetch() {}\nexport default { fetch() { helper(); } };\nfoo({ m() { go(); } });",
+		);
+		expect(r.symbols.map((s) => s.qualifiedName)).toEqual(["fetch"]);
+		expect(functionsFromSymbols(r.symbols).map((f) => f.qualifiedName)).toEqual(["fetch"]);
+		expect(r.rawCalls.map((c) => c.callerQualifiedName)).not.toContain("fetch");
+		expect(r.rawCalls.find((c) => c.rawCallee === "go")).toBeUndefined();
+	});
+
+	it("methods of an anonymous class expression are not indexed", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"export const X = mixin(class { m() { foo(); } });",
+		);
+		expect(r.symbols.map((s) => s.qualifiedName)).toEqual(["X"]);
+		expect(r.rawCalls.find((c) => c.rawCallee === "foo")).toBeUndefined();
+	});
+
+	it("dotted namespace names get one name range per segment", async () => {
+		const r = await adapter.extractCallGraph!(
+			"",
+			"src/s.ts",
+			"namespace A.B { export function f() {} }",
+		);
+		const a = r.symbols.find((s) => s.qualifiedName === "A")!;
+		const b = r.symbols.find((s) => s.qualifiedName === "A.B")!;
+		expect(a.nameRange).toEqual({ line: 1, column: 11, endLine: 1, endColumn: 11 });
+		expect(b.nameRange).toEqual({ line: 1, column: 13, endLine: 1, endColumn: 13 });
+		expect(r.symbols.some((s) => s.qualifiedName === "A.B.f")).toBe(true);
+	});
+});
+
+describe("typescript adapter: refs (3.2)", () => {
+	async function refsOf(src: string, file = "src/r.ts") {
+		const r = await adapter.extractCallGraph!("", file, src);
+		return { refs: r.rawRefs, reexports: r.reexports };
+	}
+	const pick = (refs: import("../../../../src/lib/lang-adapter.js").RawRefSite[], kind: string) =>
+		refs.filter((r) => r.kind === kind).map((r) => ({ name: r.name, receiver: r.receiver, alias: r.alias, specifier: r.specifier, importKind: r.importKind, line: r.range.line, col: r.range.column, endCol: r.range.endColumn }));
+
+	it("import forms follow the A3 table exactly", async () => {
+		const { refs, reexports } = await refsOf(
+			[
+				'import { foo } from "./x";',
+				'import { foo as bar } from "./x";',
+				'import Foo from "./x";',
+				'import * as ns from "./x";',
+				'export { foo } from "./x";',
+				'export { foo as baz } from "./x";',
+				"export { foo };",
+				'export * from "./x";',
+				'import "./side";',
+			].join("\n"),
+		);
+		const F = "src/r.ts";
+		const at = (line: number, column: number, endColumn: number) => ({ line, column, endLine: line, endColumn });
+		expect(refs.filter((r) => r.kind === "import")).toStrictEqual([
+			{ file: F, name: "foo", kind: "import", range: at(1, 10, 12), specifier: "./x", importKind: "named" },
+			{ file: F, name: "foo", kind: "import", range: at(2, 10, 12), specifier: "./x", alias: "bar", importKind: "named" },
+			{ file: F, name: "Foo", kind: "import", range: at(3, 8, 10), specifier: "./x", importKind: "default" },
+			{ file: F, name: "ns", kind: "import", range: at(4, 13, 14), specifier: "./x", importKind: "namespace" },
+		]);
+		expect(refs.filter((r) => r.kind === "export")).toStrictEqual([
+			{ file: F, name: "foo", kind: "export", range: at(5, 10, 12), specifier: "./x" },
+			{ file: F, name: "foo", kind: "export", range: at(6, 10, 12), specifier: "./x", alias: "baz" },
+			{ file: F, name: "foo", kind: "export", range: at(7, 10, 12) },
+		]);
+		expect(reexports).toStrictEqual([
+			{ file: F, exportedName: "foo", sourceName: "foo", specifier: "./x" },
+			{ file: F, exportedName: "baz", sourceName: "foo", specifier: "./x" },
+		]);
+		expect(refs).toHaveLength(7);
+		expect(refs.some((r) => r.range.line === 8 || r.range.line === 9)).toBe(false);
+	});
+
+	it("emits call, new, member, type, extends, implements, jsx, decorator with token ranges", async () => {
+		const { refs } = await refsOf(
+			[
+				"class Base {} interface I {}",
+				"@Injectable()",
+				"class Svc extends Base implements I {",
+				"  run(x: Base, y: Map<string, I>): I { this.open(); return cfg.timeout as I; }",
+				"  open() { const b = new Base(); return <Button prop={1} /> }",
+				"}",
+			].join("\n"),
+			"src/r.tsx",
+		);
+		expect(pick(refs, "call")).toEqual([
+			{ name: "open", receiver: "this", alias: undefined, specifier: undefined, importKind: undefined, line: 4, col: 45, endCol: 48 },
+		]);
+		expect(pick(refs, "new")).toEqual([
+			{ name: "Base", receiver: undefined, alias: undefined, specifier: undefined, importKind: undefined, line: 5, col: 26, endCol: 29 },
+		]);
+		expect(pick(refs, "member").map((m) => [m.name, m.receiver])).toEqual([["timeout", "cfg"]]);
+		expect(pick(refs, "type").map((t) => t.name)).toEqual(["Base", "Map", "I", "I", "I"]);
+		expect(pick(refs, "extends").map((t) => t.name)).toEqual(["Base"]);
+		expect(pick(refs, "implements").map((t) => t.name)).toEqual(["I"]);
+		expect(pick(refs, "jsx").map((t) => t.name)).toEqual(["Button"]);
+		expect(pick(refs, "decorator").map((t) => t.name)).toEqual(["Injectable"]);
+		const thisCall = refs.find((r) => r.kind === "call")!;
+		expect(thisCall.enclosingQualifiedName).toBe("Svc.run");
+		expect(thisCall.enclosingClass).toBe("Svc");
+	});
+
+	it("gives each ref its own enclosing chain when sites share ancestors", async () => {
+		const { refs } = await refsOf(
+			[
+				"namespace N {",
+				"  export class C {",
+				"    a() { f1(); const g = () => f2(); }",
+				"    b() { f3(); }",
+				"  }",
+				"  export function h() { f4(); }",
+				"}",
+				"f5();",
+				"export default function () { f6(); }",
+			].join("\n"),
+		);
+		const ctx = (name: string) => {
+			const r = refs.find((x) => x.kind === "call" && x.name === name)!;
+			return [r.enclosingQualifiedName, r.enclosingClass];
+		};
+		expect(ctx("f1")).toEqual(["N.C.a", "N.C"]);
+		expect(ctx("f2")).toEqual(["N.C.a", "N.C"]);
+		expect(ctx("f3")).toEqual(["N.C.b", "N.C"]);
+		expect(ctx("f4")).toEqual(["N.h", undefined]);
+		expect(ctx("f5")).toEqual([undefined, undefined]);
+		expect(ctx("f6")).toEqual(["default", undefined]);
+	});
+
+	it("does not emit a declaration's own name, and never emits read/write kinds", async () => {
+		const { refs } = await refsOf("export function handler() { return 1; }\nconst h = handler;\nlet v = 1; v = 2;");
+		expect(refs.filter((r) => r.range.line === 1)).toEqual([]);
+		expect(refs.map((r) => r.kind)).not.toContain("read");
+		expect(refs.map((r) => r.kind)).not.toContain("write");
+	});
+
+	it("is deterministic across two parses", async () => {
+		const src = 'import { a } from "./a";\nexport class C { m(): a.T { return a.f(); } }';
+		const one = await refsOf(src);
+		const two = await refsOf(src);
+		expect(one).toEqual(two);
+	});
+
+	it("handles a file with syntax errors without throwing and keeps recovered refs", async () => {
+		const { refs } = await refsOf("import { ok } from \"./ok\";\nconst a = ok();\nfunction broken( {\nconst b = cfg.timeout;\n");
+		expect(refs.some((r) => r.kind === "import" && r.name === "ok")).toBe(true);
+		expect(refs.some((r) => r.kind === "call" && r.name === "ok" && r.range.line === 2)).toBe(true);
+	});
+
+	it("visits non-identifier callees (IIFE, chained calls, casts)", async () => {
+		const { refs } = await refsOf("(() => { foo(); new Bar(); x.y; })();\na()();\n(x as Foo)();\nx[y.z]();");
+		const has = (kind: string, name: string) => refs.some((r) => r.kind === kind && r.name === name);
+		expect(has("call", "foo")).toBe(true);
+		expect(has("new", "Bar")).toBe(true);
+		expect(has("member", "y")).toBe(true);
+		expect(has("call", "a")).toBe(true);
+		expect(has("type", "Foo")).toBe(true);
+		expect(has("member", "z")).toBe(true);
+	});
+
+	it("emits extends for JavaScript classes", async () => {
+		const { refs } = await refsOf("class A extends B {}\nclass C extends ns.D {}", "src/r.js");
+		expect(refs.filter((r) => r.kind === "extends").map((r) => [r.name, r.receiver])).toEqual([
+			["B", undefined],
+			["D", "ns"],
+		]);
+	});
+
+	it("does not emit type-parameter declarations as type refs", async () => {
+		const { refs } = await refsOf(
+			"function f<T extends Base>(x: T): T { return x; }\ntype M<K> = { [P in keyof K]: K[P] };\ntype U<V> = V extends Array<infer E> ? E : never;",
+		);
+		const types = refs.filter((r) => r.kind === "type");
+		expect(types.filter((r) => r.range.line === 1 && r.range.column < 25).map((r) => r.name)).toEqual(["Base"]);
+		expect(types.filter((r) => r.range.line === 2).map((r) => r.name)).toEqual(["K", "K", "P"]);
+		expect(types.filter((r) => r.range.line === 3 && r.name === "E").length).toBe(1);
 	});
 });

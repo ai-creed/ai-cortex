@@ -9,9 +9,9 @@ import {
 } from "../../../src/lib/models.js";
 import type { Range, CallEdge, FunctionNode } from "../../../src/lib/models.js";
 
-describe("v3.1 model contract", () => {
-	it("SCHEMA_VERSION is 3.1", () => {
-		expect(SCHEMA_VERSION).toBe("3.1");
+describe("v3.2 model contract", () => {
+	it("SCHEMA_VERSION is 3.2", () => {
+		expect(SCHEMA_VERSION).toBe("3.2");
 	});
 
 	it("Range and the new optional fields are assignable", () => {

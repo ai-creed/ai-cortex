@@ -10,11 +10,16 @@ import type {
 	ImportEdge,
 	CallEdge,
 	FunctionNode,
+	SymbolNode,
+	RefEdge,
+	ReexportRow,
 } from "./models.js";
 import { SCHEMA_VERSION } from "./models.js";
 import { checkpointAndVerify } from "./cache-store-migrate.js";
+import { navCapabilities } from "./symbols.js";
+import { readCanonicalIndexSeq, withSequenceLock } from "./seq-lock.js";
 
-export const STORE_FORMAT_VERSION = 1;
+export const STORE_FORMAT_VERSION = 2;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -35,6 +40,28 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 CREATE INDEX IF NOT EXISTS idx_calls_to ON calls(to_key);
 CREATE INDEX IF NOT EXISTS idx_calls_from ON calls(from_key);
+CREATE TABLE IF NOT EXISTS symbols (
+  key TEXT NOT NULL, file TEXT NOT NULL, qualified_name TEXT NOT NULL, name TEXT NOT NULL,
+  kind TEXT NOT NULL, container_key TEXT, exported INTEGER NOT NULL, is_default_export INTEGER NOT NULL,
+  is_declaration_only INTEGER NOT NULL, line INTEGER NOT NULL, col INTEGER NOT NULL,
+  end_line INTEGER NOT NULL, end_col INTEGER NOT NULL, name_line INTEGER NOT NULL,
+  name_col INTEGER NOT NULL, name_end_line INTEGER NOT NULL, name_end_col INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_symbols_key  ON symbols(key);
+CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
+CREATE TABLE IF NOT EXISTS refs (
+  file TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
+  line INTEGER NOT NULL, col INTEGER NOT NULL, end_line INTEGER NOT NULL, end_col INTEGER NOT NULL,
+  to_key TEXT, from_key TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_refs_to   ON refs(to_key);
+CREATE INDEX IF NOT EXISTS idx_refs_name ON refs(name);
+CREATE INDEX IF NOT EXISTS idx_refs_file ON refs(file, line);
+CREATE TABLE IF NOT EXISTS reexports (
+  file TEXT NOT NULL, exported_name TEXT NOT NULL, source_name TEXT NOT NULL, specifier TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reexports_file ON reexports(file, exported_name);
 `;
 
 export function openStructuralDb(dbPath: string): DB {
@@ -65,7 +92,8 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 	const tx = db.transaction(() => {
 		db.exec(
 			"DELETE FROM meta; DELETE FROM files; DELETE FROM docs; " +
-				"DELETE FROM imports; DELETE FROM functions; DELETE FROM calls;",
+				"DELETE FROM imports; DELETE FROM functions; DELETE FROM calls; " +
+				"DELETE FROM symbols; DELETE FROM refs; DELETE FROM reexports;",
 		);
 
 		const metaIns = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)");
@@ -80,6 +108,9 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 		}
 		metaIns.run("packageMeta", JSON.stringify(cache.packageMeta));
 		metaIns.run("entryFiles", JSON.stringify(cache.entryFiles));
+		metaIns.run("indexSeq", "0"); // B4 placeholder: only the sequence commit stamps the published value
+		metaIns.run("contentFingerprint", cache.contentFingerprint ?? "");
+		metaIns.run("navCapabilities", JSON.stringify(navCapabilities()));
 
 		const fileIns = db.prepare(
 			"INSERT INTO files (path, kind, content_hash) VALUES (@path, @kind, @content_hash)",
@@ -143,11 +174,64 @@ export function replaceAll(db: DB, cache: RepoCache): void {
 				site_end_col: c.site?.endColumn ?? null,
 			});
 		}
+		const symIns = db.prepare(
+			"INSERT INTO symbols (key, file, qualified_name, name, kind, container_key, exported, is_default_export, is_declaration_only, line, col, end_line, end_col, name_line, name_col, name_end_line, name_end_col) VALUES " +
+				"(@key, @file, @qualified_name, @name, @kind, @container_key, @exported, @is_default_export, @is_declaration_only, @line, @col, @end_line, @end_col, @name_line, @name_col, @name_end_line, @name_end_col)",
+		);
+		for (const s of cache.symbols) {
+			symIns.run({
+				key: `${s.file}::${s.qualifiedName}`,
+				file: s.file,
+				qualified_name: s.qualifiedName,
+				name: s.name,
+				kind: s.kind,
+				container_key: s.containerQualifiedName ? `${s.file}::${s.containerQualifiedName}` : null,
+				exported: s.exported ? 1 : 0,
+				is_default_export: s.isDefaultExport ? 1 : 0,
+				is_declaration_only: s.isDeclarationOnly ? 1 : 0,
+				line: s.range.line,
+				col: s.range.column,
+				end_line: s.range.endLine,
+				end_col: s.range.endColumn,
+				name_line: s.nameRange.line,
+				name_col: s.nameRange.column,
+				name_end_line: s.nameRange.endLine,
+				name_end_col: s.nameRange.endColumn,
+			});
+		}
+		const refIns = db.prepare(
+			"INSERT INTO refs (file, name, kind, line, col, end_line, end_col, to_key, from_key) VALUES (@file, @name, @kind, @line, @col, @end_line, @end_col, @to_key, @from_key)",
+		);
+		for (const r of cache.refs) {
+			refIns.run({ file: r.file, name: r.name, kind: r.kind, line: r.range.line, col: r.range.column, end_line: r.range.endLine, end_col: r.range.endColumn, to_key: r.to ?? null, from_key: r.from ?? null });
+		}
+		const reIns = db.prepare("INSERT INTO reexports (file, exported_name, source_name, specifier) VALUES (@file, @exported_name, @source_name, @specifier)");
+		for (const x of cache.reexports) {
+			reIns.run({ file: x.file, exported_name: x.exportedName, source_name: x.sourceName, specifier: x.specifier });
+		}
 	});
 	tx();
 }
 
-export function assembleCache(db: DB): RepoCache {
+export type ReadOptions = {
+	/** Load the navigation tables (`symbols`, `refs`, `reexports`). Defaults to
+	 *  true. Read-only consumers (rehydrate, suggest, `index` on a fresh store)
+	 *  pass false: those tables dominate the read cost and they never use them. */
+	nav?: boolean;
+};
+
+// Caches assembled with `nav: false` carry empty nav arrays that do not reflect
+// the store. They are tracked here, invisibly to equality and serialization, so
+// a write-back cannot silently erase the published nav rows.
+const navlessCaches = new WeakSet<RepoCache>();
+
+/** True when the cache was read with `nav: false` and must never be written. */
+export function isNavlessCache(cache: RepoCache): boolean {
+	return navlessCaches.has(cache);
+}
+
+export function assembleCache(db: DB, options: ReadOptions = {}): RepoCache {
+	const nav = options.nav ?? true;
 	const metaRows = db.prepare("SELECT key, value FROM meta").all() as Array<{
 		key: string;
 		value: string;
@@ -239,6 +323,29 @@ export function assembleCache(db: DB): RepoCache {
 		return c;
 	});
 
+	const symbols: SymbolNode[] = !nav ? [] : (db.prepare("SELECT * FROM symbols ORDER BY rowid").all() as Array<{ file: string; qualified_name: string; name: string; kind: string; container_key: string | null; exported: number; is_default_export: number; is_declaration_only: number; line: number; col: number; end_line: number; end_col: number; name_line: number; name_col: number; name_end_line: number; name_end_col: number }>).map((r) => {
+		const s: SymbolNode = {
+			qualifiedName: r.qualified_name,
+			name: r.name,
+			file: r.file,
+			kind: r.kind as SymbolNode["kind"],
+			exported: r.exported === 1,
+			isDefaultExport: r.is_default_export === 1,
+			isDeclarationOnly: r.is_declaration_only === 1,
+			range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col },
+			nameRange: { line: r.name_line, column: r.name_col, endLine: r.name_end_line, endColumn: r.name_end_col },
+		};
+		if (r.container_key !== null) s.containerQualifiedName = r.container_key.slice(r.file.length + 2); // the container is always in the same file
+		return s;
+	});
+	const refs: RefEdge[] = !nav ? [] : (db.prepare("SELECT * FROM refs ORDER BY rowid").all() as Array<{ file: string; name: string; kind: string; line: number; col: number; end_line: number; end_col: number; to_key: string | null; from_key: string | null }>).map((r) => {
+		const e: RefEdge = { file: r.file, name: r.name, kind: r.kind as RefEdge["kind"], range: { line: r.line, column: r.col, endLine: r.end_line, endColumn: r.end_col } };
+		if (r.to_key !== null) e.to = r.to_key;
+		if (r.from_key !== null) e.from = r.from_key;
+		return e;
+	});
+	const reexports: ReexportRow[] = !nav ? [] : (db.prepare("SELECT * FROM reexports ORDER BY rowid").all() as Array<{ file: string; exported_name: string; source_name: string; specifier: string }>).map((r) => ({ file: r.file, exportedName: r.exported_name, sourceName: r.source_name, specifier: r.specifier }));
+
 	const cache: RepoCache = {
 		schemaVersion: (m.get("schemaVersion") ?? "") as RepoCache["schemaVersion"],
 		repoKey: m.get("repoKey") ?? "",
@@ -255,8 +362,14 @@ export function assembleCache(db: DB): RepoCache {
 		imports,
 		calls,
 		functions,
+		indexSeq: Number(m.get("indexSeq") ?? "0"),
+		contentFingerprint: m.get("contentFingerprint") ?? "",
+		symbols,
+		refs,
+		reexports,
 	};
 	if (m.has("dirtyAtIndex")) cache.dirtyAtIndex = m.get("dirtyAtIndex") === "1";
+	if (!nav) navlessCaches.add(cache);
 	return cache;
 }
 
@@ -264,7 +377,7 @@ export function majorOf(v: string): string {
 	return v.split(".")[0] ?? "";
 }
 
-/** True iff the db's store format + content major version are current. Used to
+/** True iff the db's store format + exact schema version are current. Used to
  *  validate a db WITHOUT assembling the whole RepoCache. */
 export function dbSchemaValid(dbPath: string): boolean {
 	const db = new Database(dbPath, { readonly: true });
@@ -274,14 +387,17 @@ export function dbSchemaValid(dbPath: string): boolean {
 		const row = db
 			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
 			.get() as { value: string } | undefined;
-		return majorOf(row?.value ?? "") === majorOf(SCHEMA_VERSION);
+		return (row?.value ?? "") === SCHEMA_VERSION;
 	} finally {
 		db.close();
 	}
 }
 
-/** Open read-only, gate on store format + content major version, assemble. */
-export function readFromDb(dbPath: string): RepoCache | null {
+/** Open read-only, gate on store format + exact schema version, assemble. */
+export function readFromDb(
+	dbPath: string,
+	options: ReadOptions = {},
+): RepoCache | null {
 	const db = new Database(dbPath, { readonly: true });
 	try {
 		if (db.pragma("user_version", { simple: true }) !== STORE_FORMAT_VERSION)
@@ -289,20 +405,31 @@ export function readFromDb(dbPath: string): RepoCache | null {
 		const row = db
 			.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'")
 			.get() as { value: string } | undefined;
-		if (majorOf(row?.value ?? "") !== majorOf(SCHEMA_VERSION)) return null;
-		return assembleCache(db);
+		if ((row?.value ?? "") !== SCHEMA_VERSION) return null;
+		return assembleCache(db, options);
 	} finally {
 		db.close();
 	}
 }
 
+type TranscodeHooks = { beforeLock?: () => void; afterRename?: () => void };
+let transcodeTestHooks: TranscodeHooks | null = null;
+/** Test-only seam: observe the point before the lock, or crash after the rename. */
+export function setTranscodeTestHooks(h: TranscodeHooks | null): void {
+	transcodeTestHooks = h;
+}
+
 /** Build a self-contained .db from a RepoCache via an OS-UNIQUE private build
- *  dir + checkpoint + atomic rename. Safe under concurrent transcodes of the
- *  same worktree (multiple processes OR worker threads): `fs.mkdtempSync`
- *  guarantees a distinct directory per attempt with no reliance on pid/threadId/
- *  counters, then the single-file rename over dbPath is atomic on POSIX
- *  (last-writer-wins; readers only ever see a complete db). */
+ *  dir, then publish it under the sequence commit (spec B4): stamp the next
+ *  indexSeq, checkpoint, and atomically rename over dbPath while holding the
+ *  sidecar lock, so concurrent writers (processes or worker threads) publish
+ *  distinct, strictly increasing values and readers only ever see a complete db. */
 export function transcodeCacheToDb(cache: RepoCache, dbPath: string): void {
+	if (navlessCaches.has(cache)) {
+		throw new Error(
+			"ai-cortex: refusing to write a cache read without its nav tables (readFromDb nav: false)",
+		);
+	}
 	const dir = path.dirname(dbPath);
 	fs.mkdirSync(dir, { recursive: true });
 	// OS-unique build dir; no two attempts (threads or processes) can collide.
@@ -311,13 +438,28 @@ export function transcodeCacheToDb(cache: RepoCache, dbPath: string): void {
 	try {
 		const db = openStructuralDb(tmpDb);
 		try {
-			replaceAll(db, cache);
+			replaceAll(db, cache); // writes indexSeq placeholder "0"
 		} finally {
 			db.close();
 		}
-		// TRUNCATE-checkpoint and strip the build dir's -wal/-shm so a single file moves.
-		checkpointAndVerify(tmpDb);
-		fs.renameSync(tmpDb, dbPath); // same filesystem -> atomic
+		// B4 sequence commit: read, stamp, checkpoint, rename, commit, all under the sidecar lock.
+		transcodeTestHooks?.beforeLock?.();
+		const published = withSequenceLock(dbPath, (seq) => {
+			const next = Math.max(seq.read(), readCanonicalIndexSeq(dbPath)) + 1;
+			seq.write(next);
+			const stamp = new Database(tmpDb);
+			try {
+				stamp.prepare("UPDATE meta SET value = ? WHERE key = 'indexSeq'").run(String(next));
+			} finally {
+				stamp.close();
+			}
+			// TRUNCATE-checkpoint and strip the build dir's -wal/-shm so a single file moves.
+			checkpointAndVerify(tmpDb);
+			fs.renameSync(tmpDb, dbPath); // same filesystem -> atomic
+			transcodeTestHooks?.afterRename?.();
+			return next;
+		});
+		cache.indexSeq = published;
 	} finally {
 		fs.rmSync(buildDir, { recursive: true, force: true });
 	}

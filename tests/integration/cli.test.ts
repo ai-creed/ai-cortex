@@ -266,3 +266,117 @@ describe("ai-cortex --help", () => {
 		},
 	);
 });
+
+function freshRepo(): string {
+	const d = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-cli-flags-"));
+	execFileSync("git", ["init", d]);
+	execFileSync("git", ["-C", d, "config", "user.email", "test@test.com"]);
+	execFileSync("git", ["-C", d, "config", "user.name", "Test"]);
+	execFileSync("git", ["-C", d, "config", "commit.gpgsign", "false"]);
+	fs.writeFileSync(path.join(d, "package.json"), JSON.stringify({ name: "flags-repo", version: "1.0.0" }));
+	fs.writeFileSync(path.join(d, "src.ts"), "export function f() { return 1; }\n");
+	execFileSync("git", ["-C", d, "add", "."]);
+	execFileSync("git", ["-C", d, "commit", "-m", "init"]);
+	return d;
+}
+function dbFilesUnder(cacheHome: string): string[] {
+	const out: string[] = [];
+	const walk = (p: string) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const f = path.join(p, e.name); if (e.isDirectory()) walk(f); else if (f.endsWith(".db") && !f.endsWith(".seq.db")) out.push(f); } };
+	if (fs.existsSync(cacheHome)) walk(cacheHome);
+	return out;
+}
+
+describe.each(["index", "rehydrate"])("%s CLI flag handling (A7)", (cmd) => {
+	let repo: string;
+	let cacheHome: string;
+	beforeAll(() => { repo = freshRepo(); });
+	afterAll(() => fs.rmSync(repo, { recursive: true, force: true }));
+	const env = () => { cacheHome = fs.mkdtempSync(path.join(os.tmpdir(), "ai-cortex-cli-home-")); return { ...process.env, AI_CORTEX_CACHE_HOME: cacheHome }; };
+
+	it.each(["--help", "-h"])("%s prints usage to stdout, exits 0, creates no store", (flag) => {
+		const r = spawnSync("node", [CLI, cmd, flag, repo], { encoding: "utf8", env: env() });
+		expect(r.status).toBe(0);
+		expect(r.stdout).toContain(`ai-cortex ${cmd}`);
+		expect(r.stderr).toBe("");
+		expect(dbFilesUnder(cacheHome)).toEqual([]);
+	});
+
+	it("--bogus prints usage naming the flag to stderr, exits 2, creates no store", () => {
+		const r = spawnSync("node", [CLI, cmd, "--bogus", repo], { encoding: "utf8", env: env() });
+		expect(r.status).toBe(2);
+		expect(r.stderr).toContain("unknown flag: --bogus");
+		expect(r.stderr).toContain(`ai-cortex ${cmd}`);
+		expect(r.stdout).toBe("");
+		expect(dbFilesUnder(cacheHome)).toEqual([]);
+	});
+
+	it("--bogus --json is still rejected with the same usage and flag name on stderr and no partial JSON", () => {
+		const r = spawnSync("node", [CLI, cmd, "--bogus", "--json", repo], { encoding: "utf8", env: env() });
+		expect(r.status).toBe(2);
+		expect(r.stderr).toContain("unknown flag: --bogus");
+		expect(r.stderr).toContain(`ai-cortex ${cmd}`);
+		expect(r.stdout).toBe("");
+		expect(dbFilesUnder(cacheHome)).toEqual([]);
+	});
+});
+
+describe("index / rehydrate --json (A7)", () => {
+	const A7_FIELDS = ["cacheStatus", "packageName", "fileCount", "docCount", "dbPath", "schemaVersion", "fingerprint", "contentFingerprint", "indexSeq", "indexedAt", "dirtyAtIndex"];
+	let repo: string;
+	beforeAll(() => { repo = freshRepo(); });
+	afterAll(() => fs.rmSync(repo, { recursive: true, force: true }));
+
+	it("index --json has every A7 field and no briefingPath; human output prints the .db path", () => {
+		const j = spawnSync("node", [CLI, "index", "--json", repo], { encoding: "utf8" });
+		expect(j.status).toBe(0);
+		const obj = JSON.parse(j.stdout);
+		for (const f of A7_FIELDS) expect(obj).toHaveProperty(f);
+		expect(obj).not.toHaveProperty("briefingPath");
+		expect(obj.schemaVersion).toBe("3.2");
+		expect(obj.dbPath).toMatch(/\.db$/);
+		expect(["fresh", "reindexed"]).toContain(obj.cacheStatus);
+		const h = spawnSync("node", [CLI, "index", repo], { encoding: "utf8" });
+		expect(h.stdout).toMatch(/cache: .*\.db\n/);
+		expect(h.stdout).not.toContain(".json");
+	});
+
+	it("rehydrate --json keeps the existing fields and adds the A7 fields", () => {
+		const r = spawnSync("node", [CLI, "rehydrate", "--json", repo], { encoding: "utf8" });
+		expect(r.status).toBe(0);
+		const obj = JSON.parse(r.stdout);
+		for (const f of ["briefingPath", ...A7_FIELDS]) expect(obj).toHaveProperty(f);
+		expect(typeof obj.indexSeq).toBe("number");
+	});
+
+	it("two consecutive index --refresh --json runs report n and n+1 with unchanged fingerprints", () => {
+		const one = JSON.parse(spawnSync("node", [CLI, "index", "--refresh", "--json", repo], { encoding: "utf8" }).stdout);
+		const two = JSON.parse(spawnSync("node", [CLI, "index", "--refresh", "--json", repo], { encoding: "utf8" }).stdout);
+		expect(one.cacheStatus).toBe("reindexed");
+		expect(two.cacheStatus).toBe("reindexed");
+		expect(two.indexSeq).toBe(one.indexSeq + 1);
+		expect(two.fingerprint).toBe(one.fingerprint);
+		expect(two.contentFingerprint).toBe(one.contentFingerprint);
+	});
+
+	it("rehydrate --stale --json on an out-of-date store reports stale and does not move indexSeq", () => {
+		const before = JSON.parse(spawnSync("node", [CLI, "rehydrate", "--json", repo], { encoding: "utf8" }).stdout);
+		fs.appendFileSync(path.join(repo, "src.ts"), "export const dirty = 1;\n");
+		const stale = JSON.parse(spawnSync("node", [CLI, "rehydrate", "--stale", "--json", repo], { encoding: "utf8" }).stdout);
+		expect(stale.cacheStatus).toBe("stale");
+		expect(stale.indexSeq).toBe(before.indexSeq);
+		const dirty = JSON.parse(spawnSync("node", [CLI, "rehydrate", "--json", repo], { encoding: "utf8" }).stdout);
+		expect(dirty.cacheStatus).toBe("reindexed");
+		expect(dirty.indexSeq).toBe(before.indexSeq + 1);
+		expect(dirty.contentFingerprint).not.toBe(before.contentFingerprint);
+		expect(dirty.fingerprint).toBe(before.fingerprint);
+		expect(dirty.dirtyAtIndex).toBe(true);
+	});
+
+	it("index --json on a non-git directory exits 1 with one ai-cortex: line on stderr and empty stdout", () => {
+		const r = spawnSync("node", [CLI, "index", "--json", os.tmpdir()], { encoding: "utf8" });
+		expect(r.status).toBe(1);
+		expect(r.stdout).toBe("");
+		expect(r.stderr.trim().split("\n")).toHaveLength(1);
+		expect(r.stderr).toMatch(/^ai-cortex:/);
+	});
+});

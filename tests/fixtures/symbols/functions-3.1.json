@@ -1,0 +1,522 @@
+[
+	{
+		"file": "c-cpp-mixed/src/main.cpp",
+		"functions": [
+			{
+				"qualifiedName": "main",
+				"file": "c-cpp-mixed/src/main.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 2,
+				"column": 1,
+				"endLine": 5,
+				"endColumn": 1,
+				"isDeclarationOnly": false
+			}
+		]
+	},
+	{
+		"file": "c-cpp-mixed/src/main.ts",
+		"functions": [
+			{
+				"qualifiedName": "tsEntry",
+				"file": "c-cpp-mixed/src/main.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 1,
+				"column": 8,
+				"endLine": 3,
+				"endColumn": 1
+			}
+		]
+	},
+	{
+		"file": "c-cpp-mixed/src/utils.cpp",
+		"functions": [
+			{
+				"qualifiedName": "add",
+				"file": "c-cpp-mixed/src/utils.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 2,
+				"column": 1,
+				"endLine": 2,
+				"endColumn": 39,
+				"isDeclarationOnly": false
+			}
+		]
+	},
+	{
+		"file": "c-cpp-mixed/src/utils.h",
+		"functions": [
+			{
+				"qualifiedName": "add",
+				"file": "c-cpp-mixed/src/utils.h",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 3,
+				"column": 1,
+				"endLine": 3,
+				"endColumn": 22,
+				"isDeclarationOnly": true
+			}
+		]
+	},
+	{
+		"file": "deep-repo/src/components/Panel.tsx",
+		"functions": [
+			{
+				"qualifiedName": "Panel",
+				"file": "deep-repo/src/components/Panel.tsx",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 1,
+				"column": 8,
+				"endLine": 3,
+				"endColumn": 1
+			}
+		]
+	},
+	{
+		"file": "deep-repo/src/features/mywork/CardTitleEditor.tsx",
+		"functions": [
+			{
+				"qualifiedName": "CardTitleEditor",
+				"file": "deep-repo/src/features/mywork/CardTitleEditor.tsx",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 3,
+				"column": 8,
+				"endLine": 11,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "handleTitleEdit",
+				"file": "deep-repo/src/features/mywork/CardTitleEditor.tsx",
+				"exported": false,
+				"isDefaultExport": false,
+				"line": 13,
+				"column": 1,
+				"endLine": 15,
+				"endColumn": 1
+			}
+		]
+	},
+	{
+		"file": "deep-repo/src/features/mywork/index.ts",
+		"functions": []
+	},
+	{
+		"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+		"functions": [
+			{
+				"qualifiedName": "CortexIndexService",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 9,
+				"column": 8,
+				"endLine": 25,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "CortexIndexService.open",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 12,
+				"column": 2,
+				"endLine": 14,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "CortexIndexService.close",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 13,
+				"column": 12,
+				"endLine": 13,
+				"endColumn": 21
+			},
+			{
+				"qualifiedName": "CortexIndexService.findDefinitions",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 16,
+				"column": 2,
+				"endLine": 20,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "CortexIndexService.status",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 22,
+				"column": 2,
+				"endLine": 24,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "makeService",
+				"file": "nav-acceptance/electron/code-nav/cortex-index-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 27,
+				"column": 8,
+				"endLine": 29,
+				"endColumn": 1
+			}
+		]
+	},
+	{
+		"file": "nav-acceptance/electron/code-nav/namespaced-service.ts",
+		"functions": [
+			{
+				"qualifiedName": "C",
+				"file": "nav-acceptance/electron/code-nav/namespaced-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 4,
+				"column": 9,
+				"endLine": 12,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "C.open",
+				"file": "nav-acceptance/electron/code-nav/namespaced-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 5,
+				"column": 3,
+				"endLine": 7,
+				"endColumn": 3
+			},
+			{
+				"qualifiedName": "C.run",
+				"file": "nav-acceptance/electron/code-nav/namespaced-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 9,
+				"column": 3,
+				"endLine": 11,
+				"endColumn": 3
+			},
+			{
+				"qualifiedName": "open",
+				"file": "nav-acceptance/electron/code-nav/namespaced-service.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 14,
+				"column": 9,
+				"endLine": 16,
+				"endColumn": 2
+			}
+		]
+	},
+	{
+		"file": "nav-acceptance/electron/code-nav/types.ts",
+		"functions": []
+	},
+	{
+		"file": "python-basic/main.py",
+		"functions": [
+			{
+				"qualifiedName": "run",
+				"file": "python-basic/main.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 4,
+				"column": 1,
+				"endLine": 5,
+				"endColumn": 12
+			}
+		]
+	},
+	{
+		"file": "python-basic/mypackage/__init__.py",
+		"functions": []
+	},
+	{
+		"file": "python-basic/mypackage/models.py",
+		"functions": [
+			{
+				"qualifiedName": "Model.save",
+				"file": "python-basic/mypackage/models.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 5,
+				"column": 5,
+				"endLine": 6,
+				"endColumn": 23
+			},
+			{
+				"qualifiedName": "Model.finalize",
+				"file": "python-basic/mypackage/models.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 8,
+				"column": 5,
+				"endLine": 9,
+				"endColumn": 16
+			}
+		]
+	},
+	{
+		"file": "python-basic/mypackage/utils.py",
+		"functions": [
+			{
+				"qualifiedName": "helper",
+				"file": "python-basic/mypackage/utils.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 1,
+				"column": 1,
+				"endLine": 2,
+				"endColumn": 8
+			}
+		]
+	},
+	{
+		"file": "symbols/c.c",
+		"functions": [
+			{
+				"qualifiedName": "add",
+				"file": "symbols/c.c",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 20,
+				"column": 1,
+				"endLine": 20,
+				"endColumn": 22,
+				"isDeclarationOnly": true
+			},
+			{
+				"qualifiedName": "add",
+				"file": "symbols/c.c",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 22,
+				"column": 1,
+				"endLine": 25,
+				"endColumn": 1,
+				"isDeclarationOnly": false
+			},
+			{
+				"qualifiedName": "reset",
+				"file": "symbols/c.c",
+				"exported": false,
+				"isDefaultExport": false,
+				"line": 27,
+				"column": 1,
+				"endLine": 27,
+				"endColumn": 38,
+				"isDeclarationOnly": false
+			}
+		]
+	},
+	{
+		"file": "symbols/c.cpp",
+		"functions": [
+			{
+				"qualifiedName": "prototype",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 5,
+				"column": 1,
+				"endLine": 5,
+				"endColumn": 21,
+				"isDeclarationOnly": true
+			},
+			{
+				"qualifiedName": "Widget::area",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 27,
+				"column": 2,
+				"endLine": 27,
+				"endColumn": 35,
+				"isDeclarationOnly": false
+			},
+			{
+				"qualifiedName": "Widget::resize",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 28,
+				"column": 2,
+				"endLine": 28,
+				"endColumn": 20,
+				"isDeclarationOnly": true
+			},
+			{
+				"qualifiedName": "Widget::resize",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 31,
+				"column": 1,
+				"endLine": 31,
+				"endColumn": 40,
+				"isDeclarationOnly": false
+			},
+			{
+				"qualifiedName": "geo::dist",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 34,
+				"column": 2,
+				"endLine": 34,
+				"endColumn": 30,
+				"isDeclarationOnly": false
+			},
+			{
+				"qualifiedName": "prototype",
+				"file": "symbols/c.cpp",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 37,
+				"column": 1,
+				"endLine": 37,
+				"endColumn": 42,
+				"isDeclarationOnly": false
+			},
+			{
+				"qualifiedName": "local_helper",
+				"file": "symbols/c.cpp",
+				"exported": false,
+				"isDefaultExport": false,
+				"line": 39,
+				"column": 1,
+				"endLine": 39,
+				"endColumn": 39,
+				"isDeclarationOnly": false
+			}
+		]
+	},
+	{
+		"file": "symbols/py.py",
+		"functions": [
+			{
+				"qualifiedName": "helper",
+				"file": "symbols/py.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 8,
+				"column": 1,
+				"endLine": 9,
+				"endColumn": 12
+			},
+			{
+				"qualifiedName": "Service.__init__",
+				"file": "symbols/py.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 13,
+				"column": 5,
+				"endLine": 14,
+				"endColumn": 22
+			},
+			{
+				"qualifiedName": "Service.run",
+				"file": "symbols/py.py",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 16,
+				"column": 5,
+				"endLine": 17,
+				"endColumn": 33
+			}
+		]
+	},
+	{
+		"file": "symbols/ts.ts",
+		"functions": [
+			{
+				"qualifiedName": "plain",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 2,
+				"column": 8,
+				"endLine": 4,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "over",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 8,
+				"column": 8,
+				"endLine": 10,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "arrow",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 12,
+				"column": 8,
+				"endLine": 12,
+				"endColumn": 42
+			},
+			{
+				"qualifiedName": "fnExpr",
+				"file": "symbols/ts.ts",
+				"exported": false,
+				"isDefaultExport": false,
+				"line": 13,
+				"column": 1,
+				"endLine": 15,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "default",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": true,
+				"line": 17,
+				"column": 16,
+				"endLine": 19,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "Service",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 21,
+				"column": 8,
+				"endLine": 26,
+				"endColumn": 1
+			},
+			{
+				"qualifiedName": "Service.run",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 23,
+				"column": 2,
+				"endLine": 25,
+				"endColumn": 2
+			},
+			{
+				"qualifiedName": "dist",
+				"file": "symbols/ts.ts",
+				"exported": true,
+				"isDefaultExport": false,
+				"line": 51,
+				"column": 9,
+				"endLine": 53,
+				"endColumn": 2
+			}
+		]
+	}
+]

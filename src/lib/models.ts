@@ -1,6 +1,6 @@
 // src/lib/models.ts
 
-export const SCHEMA_VERSION = "3.1";
+export const SCHEMA_VERSION = "3.2";
 
 export class RepoIdentityError extends Error {
 	constructor(message: string) {
@@ -100,6 +100,69 @@ export type FunctionNode = {
 	// Writers MUST NOT emit at v3.1. Readers MUST tolerate present or absent.
 };
 
+export type SymbolKind =
+	| "function"
+	| "method"
+	| "class"
+	| "interface"
+	| "type"
+	| "struct"
+	| "enum"
+	| "enum_member"
+	| "variable"
+	| "property"
+	| "namespace"
+	| "macro";
+
+export type SymbolNode = {
+	qualifiedName: string; // container path joined with '.', never contains '::'
+	name: string; // identifier text of the name node
+	file: string;
+	kind: SymbolKind;
+	containerQualifiedName?: string; // enclosing symbol's qualifiedName, absent at module scope
+	exported: boolean;
+	isDefaultExport: boolean;
+	isDeclarationOnly: boolean;
+	range: Range; // declaration range
+	nameRange: Range; // identifier range, the jump target
+};
+
+export type RefKind =
+	| "call"
+	| "new"
+	| "type"
+	| "extends"
+	| "implements"
+	| "import"
+	| "export"
+	| "member"
+	| "jsx"
+	| "decorator";
+
+export type RefEdge = {
+	file: string;
+	name: string;
+	kind: RefKind;
+	range: Range; // identifier token range
+	to?: string; // symbols key, absent when unresolved
+	from?: string; // enclosing symbols key, absent at module scope
+};
+
+export type ReexportRow = {
+	file: string;
+	exportedName: string;
+	sourceName: string;
+	specifier: string;
+};
+
+export type NavCapabilities = {
+	symbols: true;
+	references: true;
+	referencesTable: "refs";
+	symbolKinds: SymbolKind[];
+	referenceKinds: RefKind[];
+};
+
 export type BlastHit = {
 	qualifiedName: string;
 	file: string;
@@ -117,11 +180,16 @@ export type RepoCache = {
 	indexedAt: string;
 	fingerprint: string;
 	dirtyAtIndex?: boolean;
+	indexSeq: number; // assigned by the sequence commit; 0 until written
+	contentFingerprint: string; // sha1 over sorted (path, contentHash) of files
 	packageMeta: PackageMeta;
 	entryFiles: string[];
 	files: FileNode[];
 	docs: DocInput[];
 	imports: ImportEdge[];
 	calls: CallEdge[];
-	functions: FunctionNode[];
+	functions: FunctionNode[]; // derived from symbols (A2.2)
+	symbols: SymbolNode[];
+	refs: RefEdge[];
+	reexports: ReexportRow[];
 };

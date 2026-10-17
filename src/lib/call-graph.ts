@@ -1,120 +1,33 @@
 // src/lib/call-graph.ts
-import path from "node:path";
 import { getAdapterForFile, adapterSupports } from "./adapters/index.js";
 import { ensureAdapters } from "./adapters/ensure.js";
 import { extractImports } from "./import-graph.js";
-import type { RawCallSite, ImportBinding } from "./lang-adapter.js";
-import type { CallEdge, FunctionNode, ImportEdge } from "./models.js";
+import { functionsFromSymbols } from "./symbols.js";
+import {
+	buildCFamilyFunctionIndex,
+	buildReexportTable,
+	buildSymbolIndex,
+	findTargetFile,
+	knownFilesFor,
+	langOf,
+	pickUnique,
+	resolveCFamilyFallback,
+	resolveName,
+	resolvePythonTargetFile,
+	resolveRefs,
+	resolveSpecifier,
+} from "./symbol-resolver.js";
+import type { RawCallSite, RawRefSite, ImportBinding } from "./lang-adapter.js";
+import type {
+	CallEdge,
+	FunctionNode,
+	ImportEdge,
+	RefEdge,
+	ReexportRow,
+	SymbolNode,
+} from "./models.js";
 
-const TS_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const C_FAMILY_EXTS = new Set([
-	".c",
-	".cpp",
-	".cc",
-	".cxx",
-	".c++",
-	".h",
-	".hpp",
-	".hh",
-	".hxx",
-	".h++",
-]);
-const H_EXTS = new Set([".h", ".hh", ".hpp", ".hxx", ".h++"]);
-const SRC_EXTS = [".cpp", ".cc", ".cxx", ".c++", ".c"];
-
-function langOf(filePath: string): "ts" | "cfamily" | "python" | "other" {
-	const ext = path.extname(filePath);
-	if (TS_EXTS.has(ext)) return "ts";
-	if (C_FAMILY_EXTS.has(ext)) return "cfamily";
-	if (ext === ".py") return "python";
-	return "other";
-}
-
-export function stripTsExt(value: string): string {
-	return value.replace(/\.(ts|tsx|js|jsx)$/u, "");
-}
-
-export function resolvePythonTargetFile(
-	fromSpecifier: string,
-	callerFile: string,
-	allFileNodes: Map<string, FunctionNode[]>,
-	includesByFile: Map<string, ImportEdge[]>,
-): string | null {
-	const specPy = fromSpecifier + ".py";
-	const specInit = fromSpecifier + "/__init__.py";
-	// Use import-graph edges (already fully resolved by resolveSite) to find target.
-	// The suffix match handles src-layout projects where edge.to = "src/pkg/utils.py"
-	// but fromSpecifier = "pkg/utils".
-	const edges = includesByFile.get(callerFile) ?? [];
-	const edge = edges.find(
-		(e) =>
-			e.to === specPy ||
-			e.to === specInit ||
-			e.to.endsWith("/" + specPy) ||
-			e.to.endsWith("/" + specInit),
-	);
-	if (edge) return edge.to;
-	// Fallback: direct probe for flat-layout cases with no import edge
-	if (allFileNodes.has(specPy)) return specPy;
-	if (allFileNodes.has(specInit)) return specInit;
-	return null;
-}
-
-function resolveSpecifier(fromSpecifier: string, callerFile: string): string {
-	return path
-		.normalize(path.join(path.dirname(callerFile), fromSpecifier))
-		.replace(/\\/g, "/");
-}
-
-function findTargetFile(
-	normalizedSpecifier: string,
-	allFiles: Map<string, FunctionNode[]>,
-	callerLang: "ts" | "cfamily" | "python" | "other",
-): string | null {
-	if (callerLang === "ts") {
-		const stripped = stripTsExt(normalizedSpecifier);
-		for (const file of allFiles.keys()) {
-			if (stripTsExt(file) === stripped) return file;
-		}
-		for (const file of allFiles.keys()) {
-			if (stripTsExt(file) === `${stripped}/index`) return file;
-		}
-		return null;
-	}
-	if (callerLang === "cfamily") {
-		if (allFiles.has(normalizedSpecifier)) return normalizedSpecifier;
-		const baseName = path.basename(normalizedSpecifier);
-		const matches: string[] = [];
-		for (const file of allFiles.keys()) {
-			if (path.basename(file) === baseName) matches.push(file);
-		}
-		if (matches.length === 1) return matches[0];
-		return null;
-	}
-	return null;
-}
-
-function pickUnique(
-	fns: FunctionNode[] | undefined,
-	requireExported = false,
-): FunctionNode | null {
-	if (!fns) return null;
-	const live = fns.filter(
-		(f) => !f.isDeclarationOnly && (!requireExported || f.exported),
-	);
-	if (live.length === 1) return live[0];
-	return null;
-}
-
-function companionSourceFiles(
-	headerPath: string,
-	known: Map<string, unknown>,
-): string[] {
-	const ext = path.extname(headerPath);
-	if (!H_EXTS.has(ext)) return [];
-	const base = headerPath.slice(0, -ext.length);
-	return SRC_EXTS.map((e) => `${base}${e}`).filter((p) => known.has(p));
-}
+export { stripTsExt, resolvePythonTargetFile } from "./symbol-resolver.js";
 
 function makeEdge(from: string, to: string, raw: RawCallSite): CallEdge {
 	const edge: CallEdge = { from, to, kind: raw.kind };
@@ -127,6 +40,8 @@ export function resolveCallSites(
 	allFunctions: FunctionNode[],
 	bindingsByFile: Map<string, ImportBinding[]>,
 	includesByFile: Map<string, ImportEdge[]>,
+	symbols: SymbolNode[] = [],
+	reexports: ReexportRow[] = [],
 ): CallEdge[] {
 	const funcsByFile = new Map<string, Map<string, FunctionNode[]>>();
 	for (const fn of allFunctions) {
@@ -147,11 +62,61 @@ export function resolveCallSites(
 		allFileNodes.set(fn.file, list);
 	}
 
+	const symIdx = buildSymbolIndex(symbols);
+	const reexportTable = buildReexportTable(reexports);
+	const known = knownFilesFor(symIdx, reexportTable, includesByFile);
+
+	const cIdx = buildCFamilyFunctionIndex(allFunctions);
+
 	const edges: CallEdge[] = [];
 
 	for (const raw of rawCalls) {
 		const fromKey = `${raw.callerFile}::${raw.callerQualifiedName}`;
 		const bindings = bindingsByFile.get(raw.callerFile) ?? [];
+
+		// Shared resolver first (A5 steps 1 to 4, including aliased re-exports).
+		if (symbols.length > 0) {
+			const dot = raw.rawCallee.lastIndexOf(".");
+			const site =
+				dot === -1
+					? {
+							file: raw.callerFile,
+							name: raw.rawCallee,
+							enclosingClass: raw.enclosingClass,
+						}
+					: {
+							file: raw.callerFile,
+							name: raw.rawCallee.slice(dot + 1),
+							receiver: raw.rawCallee.slice(0, dot),
+							enclosingClass: raw.enclosingClass,
+						};
+			const hit = resolveName(
+				symIdx,
+				site,
+				bindings,
+				reexportTable,
+				includesByFile,
+				known,
+			);
+			if (hit) {
+				edges.push(makeEdge(fromKey, hit, raw));
+				continue;
+			}
+		}
+
+		if (langOf(raw.callerFile) === "cfamily") {
+			const hit = resolveCFamilyFallback(
+				cIdx,
+				raw.callerFile,
+				raw.rawCallee,
+				includesByFile,
+			);
+			if (hit) {
+				edges.push(makeEdge(fromKey, hit, raw));
+				continue;
+			}
+		}
+
 		let resolved = false;
 
 		const dotIndex = raw.rawCallee.indexOf(".");
@@ -287,67 +252,6 @@ export function resolveCallSites(
 			}
 		}
 
-		// C/C++ include-based lookup: check directly-included files for a live definition
-		if (langOf(raw.callerFile) === "cfamily") {
-			const includes = includesByFile.get(raw.callerFile);
-			if (includes) {
-				outer: for (const inc of includes) {
-					const incFile = inc.to;
-					const match = pickUnique(
-						funcsByFile.get(incFile)?.get(raw.rawCallee),
-						true,
-					);
-					if (match) {
-						edges.push(
-							makeEdge(fromKey, `${incFile}::${match.qualifiedName}`, raw),
-						);
-						resolved = true;
-						break;
-					}
-					for (const companion of companionSourceFiles(incFile, funcsByFile)) {
-						const compMatch = pickUnique(
-							funcsByFile.get(companion)?.get(raw.rawCallee),
-							true,
-						);
-						if (compMatch) {
-							edges.push(
-								makeEdge(
-									fromKey,
-									`${companion}::${compMatch.qualifiedName}`,
-									raw,
-								),
-							);
-							resolved = true;
-							break outer;
-						}
-					}
-				}
-			}
-			if (resolved) continue;
-		}
-
-		// Repo-wide unique-name fallback for C/C++ callers only
-		if (!resolved && langOf(raw.callerFile) === "cfamily") {
-			const liveDefs = allFunctions.filter(
-				(f) =>
-					f.qualifiedName === raw.rawCallee &&
-					!f.isDeclarationOnly &&
-					f.exported &&
-					langOf(f.file) === "cfamily",
-			);
-			if (liveDefs.length === 1) {
-				edges.push(
-					makeEdge(
-						fromKey,
-						`${liveDefs[0].file}::${liveDefs[0].qualifiedName}`,
-						raw,
-					),
-				);
-				resolved = true;
-			}
-		}
-		if (resolved) continue;
-
 		edges.push(makeEdge(fromKey, `::${raw.rawCallee}`, raw));
 	}
 
@@ -356,7 +260,10 @@ export function resolveCallSites(
 
 export type ExtractResult = {
 	rawCalls: RawCallSite[];
+	rawRefs: RawRefSite[];
+	symbols: SymbolNode[];
 	functions: FunctionNode[];
+	reexports: ReexportRow[];
 	bindingsByFile: Map<string, ImportBinding[]>;
 };
 
@@ -366,8 +273,10 @@ export async function extractCallGraphRaw(
 	contentMap?: Map<string, string>,
 ): Promise<ExtractResult> {
 	await ensureAdapters();
-	const allFunctions: FunctionNode[] = [];
+	const allSymbols: SymbolNode[] = [];
 	const allRawCalls: RawCallSite[] = [];
+	const allRawRefs: RawRefSite[] = [];
+	const allReexports: ReexportRow[] = [];
 	const bindingsByFile = new Map<string, ImportBinding[]>();
 
 	for (const filePath of filePaths) {
@@ -384,8 +293,10 @@ export async function extractCallGraphRaw(
 				filePath,
 				content,
 			);
-			allFunctions.push(...result.functions);
+			allSymbols.push(...result.symbols);
 			allRawCalls.push(...result.rawCalls);
+			allRawRefs.push(...result.rawRefs);
+			allReexports.push(...result.reexports);
 			if (result.importBindings.length > 0) {
 				bindingsByFile.set(filePath, result.importBindings);
 			}
@@ -394,19 +305,29 @@ export async function extractCallGraphRaw(
 		}
 	}
 
-	return { rawCalls: allRawCalls, functions: allFunctions, bindingsByFile };
+	return {
+		rawCalls: allRawCalls,
+		rawRefs: allRawRefs,
+		symbols: allSymbols,
+		functions: functionsFromSymbols(allSymbols),
+		reexports: allReexports,
+		bindingsByFile,
+	};
 }
 
 export async function extractCallGraph(
 	worktreePath: string,
 	filePaths: string[],
 	contentMap?: Map<string, string>,
-): Promise<{ calls: CallEdge[]; functions: FunctionNode[] }> {
-	const { rawCalls, functions, bindingsByFile } = await extractCallGraphRaw(
-		worktreePath,
-		filePaths,
-		contentMap,
-	);
+): Promise<{
+	calls: CallEdge[];
+	functions: FunctionNode[];
+	symbols: SymbolNode[];
+	refs: RefEdge[];
+	reexports: ReexportRow[];
+}> {
+	const { rawCalls, rawRefs, functions, symbols, reexports, bindingsByFile } =
+		await extractCallGraphRaw(worktreePath, filePaths, contentMap);
 	const importEdges = await extractImports(
 		worktreePath,
 		filePaths,
@@ -424,6 +345,15 @@ export async function extractCallGraph(
 		functions,
 		bindingsByFile,
 		includesByFile,
+		symbols,
+		reexports,
 	);
-	return { calls, functions };
+	const refs = resolveRefs(
+		rawRefs,
+		symbols,
+		bindingsByFile,
+		reexports,
+		includesByFile,
+	);
+	return { calls, functions, symbols, refs, reexports };
 }

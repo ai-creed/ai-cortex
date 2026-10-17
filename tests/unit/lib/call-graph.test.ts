@@ -8,13 +8,19 @@ import {
 	getAdapterForFile,
 	adapterSupports,
 } from "../../../src/lib/adapters/index.js";
+import { createTypescriptAdapter } from "../../../src/lib/adapters/typescript.js";
 import { extractImports } from "../../../src/lib/import-graph.js";
 import type {
 	LanguageAdapter,
 	RawCallSite,
 	ImportBinding,
 } from "../../../src/lib/lang-adapter.js";
-import type { FunctionNode, ImportEdge } from "../../../src/lib/models.js";
+import type {
+	FunctionNode,
+	ImportEdge,
+	SymbolNode,
+} from "../../../src/lib/models.js";
+import { functionsFromSymbols } from "../../../src/lib/symbols.js";
 import {
 	resolveCallSites,
 	extractCallGraph,
@@ -446,7 +452,7 @@ describe("resolveCallSites — C/C++ includesByFile resolution", () => {
 		);
 	});
 
-	it("resolves to first matching included file when multiple headers are included", () => {
+	it("leaves the call unresolved when two included headers both define the callee (A5 ambiguity)", () => {
 		const fns: FunctionNode[] = [
 			{
 				qualifiedName: "helper",
@@ -483,12 +489,9 @@ describe("resolveCallSites — C/C++ includesByFile resolution", () => {
 			],
 		]);
 		const edges = resolveCallSites(calls, fns, new Map(), includesByFile);
-		// Should resolve to the first included file that has a unique live definition
-		expect(edges).toContainEqual({
-			from: "src/main.cpp::main",
-			to: "src/other.h::helper",
-			kind: "call",
-		});
+		expect(edges).toEqual([
+			{ from: "src/main.cpp::main", to: "::helper", kind: "call" },
+		]);
 	});
 
 	it("skips included file with no matching function and falls through to next", () => {
@@ -675,7 +678,7 @@ describe("resolveCallSites — decl-only never becomes a call edge target", () =
 			"src/utils.h",
 			"int add(int a, int b);", // declaration only
 		);
-		const decl = r.functions.find((f) => f.qualifiedName === "add");
+		const decl = functionsFromSymbols(r.symbols).find((f) => f.qualifiedName === "add");
 		expect(decl).toBeDefined();
 		expect(decl?.isDeclarationOnly).toBe(true);
 	});
@@ -703,22 +706,32 @@ describe("extractCallGraph", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi.fn().mockResolvedValue({
-				functions: [
+				symbols: [
 					{
 						qualifiedName: "main",
+						name: "main",
 						file: "src/main.ts",
+						kind: "function",
 						exported: true,
 						isDefaultExport: false,
-						line: 1,
+						isDeclarationOnly: false,
+						range: { line: 1, column: 1, endLine: 3, endColumn: 1 },
+						nameRange: { line: 1, column: 10, endLine: 1, endColumn: 14 },
 					},
 					{
 						qualifiedName: "helper",
+						name: "helper",
 						file: "src/main.ts",
+						kind: "function",
 						exported: false,
 						isDefaultExport: false,
-						line: 5,
+						isDeclarationOnly: false,
+						range: { line: 5, column: 1, endLine: 7, endColumn: 1 },
+						nameRange: { line: 5, column: 10, endLine: 5, endColumn: 16 },
 					},
 				],
 				rawCalls: [
@@ -729,6 +742,8 @@ describe("extractCallGraph", () => {
 						kind: "call",
 					},
 				],
+				rawRefs: [],
+				reexports: [],
 				importBindings: [],
 			}),
 		};
@@ -745,6 +760,45 @@ describe("extractCallGraph", () => {
 		});
 	});
 
+	it("derives functions from adapter symbols and surfaces symbols and reexports", async () => {
+		const sym = (file: string, qualifiedName: string): SymbolNode => ({
+			qualifiedName,
+			name: qualifiedName,
+			file,
+			kind: "function",
+			exported: true,
+			isDefaultExport: false,
+			isDeclarationOnly: false,
+			range: { line: 1, column: 1, endLine: 2, endColumn: 1 },
+			nameRange: { line: 1, column: 10, endLine: 1, endColumn: 13 },
+		});
+		const adapter: LanguageAdapter = {
+			extensions: [".ts"],
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: true },
+			symbolKinds: ["function"],
+			referenceKinds: ["call"],
+			async extractImports() { return []; },
+			async extractCallGraph(_w, file) {
+				return {
+					symbols: [sym(file, "foo"), { ...sym(file, "foo"), isDeclarationOnly: true }],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [{ file, exportedName: "x", sourceName: "y", specifier: "./z" }],
+					importBindings: [],
+				};
+			},
+		};
+		vi.mocked(getAdapterForFile).mockReturnValue(adapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(extractImports).mockResolvedValue([]);
+		const r = await extractCallGraph("/repo", ["src/a.ts"]);
+		expect(r.symbols).toHaveLength(2);
+		expect(r.functions).toHaveLength(1);
+		expect(r.functions[0]).toMatchObject({ qualifiedName: "foo", file: "src/a.ts", isDeclarationOnly: false, line: 1, column: 1, endLine: 2, endColumn: 1 });
+		expect(r.reexports).toEqual([{ file: "src/a.ts", exportedName: "x", sourceName: "y", specifier: "./z" }]);
+		expect(r.refs).toEqual([]);
+	});
+
 	it("calls extractImports with the file list and passes results to resolver", async () => {
 		const mockAdapter: LanguageAdapter = {
 			extensions: [".cpp"],
@@ -753,10 +807,18 @@ describe("extractCallGraph", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: vi
 				.fn()
-				.mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] }),
+				.mockResolvedValue({
+					symbols: [],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [],
+					importBindings: [],
+				}),
 		};
 		vi.mocked(adapterSupports).mockReturnValue(true);
 		vi.mocked(getAdapterForFile).mockReturnValue(mockAdapter);
@@ -1146,7 +1208,13 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 	it("uses content from contentMap without reading disk", async () => {
 		const extractCallGraphFn = vi
 			.fn()
-			.mockResolvedValue({ functions: [], rawCalls: [], importBindings: [] });
+			.mockResolvedValue({
+					symbols: [],
+					rawCalls: [],
+					rawRefs: [],
+					reexports: [],
+					importBindings: [],
+				});
 		const mockAdapter: LanguageAdapter = {
 			extensions: [".ts"],
 			capabilities: {
@@ -1154,6 +1222,8 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 				callGraph: true,
 				symbolIndex: false,
 			},
+			symbolKinds: [],
+			referenceKinds: [],
 			extractImports: vi.fn().mockResolvedValue([]),
 			extractCallGraph: extractCallGraphFn,
 		};
@@ -1170,5 +1240,165 @@ describe("extractCallGraph — contentMap skips file reads", () => {
 			"src/a.ts",
 			"export function foo() {}",
 		);
+	});
+});
+
+describe("resolveCallSites: 3.2 member resolution (A5 steps 1 and 4)", () => {
+	const R = { line: 1, column: 1, endLine: 1, endColumn: 5 };
+	const sym = (file: string, qualifiedName: string, kind: SymbolNode["kind"] = "method"): SymbolNode => ({
+		qualifiedName,
+		name: qualifiedName.slice(qualifiedName.lastIndexOf(".") + 1),
+		file,
+		kind,
+		exported: true,
+		isDefaultExport: false,
+		isDeclarationOnly: false,
+		range: R,
+		nameRange: R,
+	});
+	const fnOf = (s: SymbolNode): FunctionNode => ({ qualifiedName: s.qualifiedName, file: s.file, exported: true, isDefaultExport: false, line: 1 });
+
+	it("this.open() inside a namespaced class resolves to N.C.open, not N.open", () => {
+		const symbols = [sym("a.ts", "N.C", "class"), sym("a.ts", "N.C.open"), sym("a.ts", "N.C.run"), sym("a.ts", "N.open", "function")];
+		const raw: RawCallSite[] = [{ callerQualifiedName: "N.C.run", callerFile: "a.ts", rawCallee: "this.open", kind: "method", enclosingClass: "N.C" }];
+		const edges = resolveCallSites(raw, symbols.map(fnOf), new Map(), new Map(), symbols, []);
+		expect(edges).toEqual([{ from: "a.ts::N.C.run", to: "a.ts::N.C.open", kind: "method" }]);
+	});
+
+	it("python self.save() resolves through enclosingClass without adapter rewriting", () => {
+		const symbols = [sym("m.py", "Model", "class"), sym("m.py", "Model.save"), sym("m.py", "Model.run")];
+		const raw: RawCallSite[] = [{ callerQualifiedName: "Model.run", callerFile: "m.py", rawCallee: "self.save", kind: "method", enclosingClass: "Model" }];
+		const edges = resolveCallSites(raw, symbols.map(fnOf), new Map(), new Map(), symbols, []);
+		expect(edges[0].to).toBe("m.py::Model.save");
+	});
+
+	it("Foo.bar() on an imported class resolves to the static member (step 4)", () => {
+		const symbols = [sym("x.ts", "Foo", "class"), sym("x.ts", "Foo.bar"), sym("a.ts", "main", "function")];
+		const raw: RawCallSite[] = [{ callerQualifiedName: "main", callerFile: "a.ts", rawCallee: "Foo.bar", kind: "method" }];
+		const bindings = new Map([["a.ts", [{ localName: "Foo", importedName: "Foo", fromSpecifier: "./x", bindingKind: "named" as const }]]]);
+		const edges = resolveCallSites(raw, symbols.map(fnOf), bindings, new Map(), symbols, []);
+		expect(edges[0].to).toBe("x.ts::Foo.bar");
+	});
+
+	it("aliased re-export is followed one hop for a bare call", () => {
+		const symbols = [sym("c.ts", "foo", "function"), sym("a.ts", "main", "function")];
+		const raw: RawCallSite[] = [{ callerQualifiedName: "main", callerFile: "a.ts", rawCallee: "bar", kind: "call" }];
+		const bindings = new Map([["a.ts", [{ localName: "bar", importedName: "bar", fromSpecifier: "./b", bindingKind: "named" as const }]]]);
+		const edges = resolveCallSites(raw, symbols.map(fnOf), bindings, new Map(), symbols, [{ file: "b.ts", exportedName: "bar", sourceName: "foo", specifier: "./c" }]);
+		expect(edges[0].to).toBe("c.ts::foo");
+	});
+
+	it("inherited this.m() still falls back to ::m", () => {
+		const symbols = [sym("a.ts", "Base.m"), sym("a.ts", "Sub", "class"), sym("a.ts", "Sub.run")];
+		const raw: RawCallSite[] = [{ callerQualifiedName: "Sub.run", callerFile: "a.ts", rawCallee: "this.m", kind: "method", enclosingClass: "Sub" }];
+		const edges = resolveCallSites(raw, symbols.map(fnOf), new Map(), new Map(), symbols, []);
+		expect(edges[0].to).toBe("::m");
+	});
+
+	it("with no symbols passed, behavior is unchanged (legacy four-argument call)", () => {
+		const raw: RawCallSite[] = [{ callerQualifiedName: "foo", callerFile: "src/a.ts", rawCallee: "this.x", kind: "method" }];
+		const functions: FunctionNode[] = [{ qualifiedName: "foo", file: "src/a.ts", exported: true, isDefaultExport: false, line: 1 }];
+		const edges = resolveCallSites(raw, functions, new Map(), new Map());
+		expect(edges[0].to).toBe("::x");
+	});
+});
+
+describe("resolveCallSites: C-family dotted callee include lookup", () => {
+	const decl = (file: string, qualifiedName: string, isDeclarationOnly: boolean): FunctionNode => ({
+		qualifiedName,
+		file,
+		exported: true,
+		isDefaultExport: false,
+		line: 1,
+		isDeclarationOnly,
+	});
+	const site = (rawCallee: string): RawCallSite => ({ callerQualifiedName: "main", callerFile: "src/main.cpp", rawCallee, kind: "call" });
+	const includes = new Map([["src/main.cpp", [{ from: "src/main.cpp", to: "src/util.h" }]]]);
+
+	it("resolves ns.add through the included header's companion source", () => {
+		const fns = [decl("src/util.h", "ns.add", true), decl("src/util.cpp", "ns.add", false), decl("src/main.cpp", "main", false)];
+		const edges = resolveCallSites([site("ns.add")], fns, new Map(), includes);
+		expect(edges).toEqual([{ from: "src/main.cpp::main", to: "src/util.cpp::ns.add", kind: "call" }]);
+	});
+
+	it("resolves ns.add to a live definition in the included header itself", () => {
+		const fns = [decl("src/util.h", "ns.add", false), decl("src/main.cpp", "main", false)];
+		const edges = resolveCallSites([site("ns.add")], fns, new Map(), includes);
+		expect(edges[0].to).toBe("src/util.h::ns.add");
+	});
+
+	it("leaves ns.add unresolved (::add) when nothing included defines it", () => {
+		const fns = [decl("src/other.cpp", "ns.add", false), decl("src/other2.cpp", "ns.add", false), decl("src/main.cpp", "main", false)];
+		const edges = resolveCallSites([site("ns.add")], fns, new Map(), includes);
+		expect(edges[0].to).toBe("::add");
+	});
+});
+
+describe("extractCallGraph: refs", () => {
+	it("returns resolved refs alongside calls", async () => {
+		const R = { line: 2, column: 3, endLine: 2, endColumn: 6 };
+		const adapter: LanguageAdapter = {
+			extensions: [".ts"],
+			capabilities: { importExtraction: true, callGraph: true, symbolIndex: true },
+			symbolKinds: ["function"],
+			referenceKinds: ["call"],
+			async extractImports() { return []; },
+			async extractCallGraph(_w, file) {
+				return {
+					symbols: [{ qualifiedName: "foo", name: "foo", file, kind: "function", exported: true, isDefaultExport: false, isDeclarationOnly: false, range: R, nameRange: R }],
+					rawCalls: [],
+					rawRefs: [{ file, name: "foo", kind: "call", range: R }],
+					reexports: [],
+					importBindings: [],
+				};
+			},
+		};
+		vi.mocked(getAdapterForFile).mockReturnValue(adapter);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(extractImports).mockResolvedValue([]);
+		const r = await extractCallGraph("/repo", ["src/a.ts"]);
+		expect(r.refs).toEqual([{ file: "src/a.ts", name: "foo", kind: "call", range: R, to: "src/a.ts::foo" }]);
+	});
+});
+
+describe("extractCallGraph: calls and refs agree on this. sites (Section C Resolver)", () => {
+	beforeEach(async () => {
+		vi.mocked(extractImports).mockResolvedValue([]);
+		vi.mocked(adapterSupports).mockReturnValue(true);
+		vi.mocked(getAdapterForFile).mockReturnValue(await createTypescriptAdapter());
+	});
+
+	async function thisOpenTargets(source: string, caller: string) {
+		const { calls, refs } = await extractCallGraph("/fake", ["src/a.ts"], new Map([["src/a.ts", source]]));
+		const from = `src/a.ts::${caller}`;
+		const call = calls.filter((c) => c.from === from);
+		const ref = refs.filter((r) => r.kind === "call" && r.name === "open" && r.from === from);
+		expect(call).toHaveLength(1);
+		expect(ref).toHaveLength(1);
+		return { call: call[0].to, ref: ref[0].to };
+	}
+
+	it("this.open(keys) inside a module-scope class method resolves to C.open in both tables", async () => {
+		const source = [
+			"export class C {",
+			"\topen(keys: string[]): number { return keys.length; }",
+			"\trun(keys: string[]): number { return this.open(keys); }",
+			"}",
+			"export function open(): number { return 0; }",
+		].join("\n");
+		expect(await thisOpenTargets(source, "C.run")).toEqual({ call: "src/a.ts::C.open", ref: "src/a.ts::C.open" });
+	});
+
+	it("this.open() inside namespace N { class C } resolves to N.C.open, not N.open, in both tables", async () => {
+		const source = [
+			"export namespace N {",
+			"\texport class C {",
+			"\t\topen(): number { return 1; }",
+			"\t\trun(): number { return this.open(); }",
+			"\t}",
+			"\texport function open(): number { return 0; }",
+			"}",
+		].join("\n");
+		expect(await thisOpenTargets(source, "N.C.run")).toEqual({ call: "src/a.ts::N.C.open", ref: "src/a.ts::N.C.open" });
 	});
 });

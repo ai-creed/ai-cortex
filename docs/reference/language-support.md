@@ -16,6 +16,18 @@ ai-cortex can index any git repository at the file level, but parser-backed stru
 
 File discovery can still return unsupported-language files by path and content signals. Call graph and blast-radius analysis depend on parser-backed language adapters.
 
+## Navigation index (3.2)
+
+Besides the call graph, the index records `symbols` (declarations with a declaration range and an identifier range) and `refs` (identifier occurrences with resolved targets). TypeScript and JavaScript are complete; Python and C-family are best effort, so omissions there are not a contract violation. The union of kinds is advertised in `meta.navCapabilities`.
+
+| Language | Symbol kinds | Reference kinds | Coverage |
+|---|---|---|---|
+| TypeScript / JavaScript | `function`, `method`, `class`, `interface`, `type`, `enum`, `enum_member`, `variable`, `property`, `namespace` | `call`, `new`, `type`, `extends`, `implements`, `import`, `export`, `member`, `jsx`, `decorator` | complete |
+| Python | `function`, `method`, `class`, `variable` | `call`, `import`, `extends` | best effort |
+| C / C++ | `function`, `method`, `class`, `struct`, `enum`, `enum_member`, `type`, `macro`, `variable`, `property` | `call`, `new` | best effort |
+
+C-family `qualified_name` values use `.` as the container separator (`ns.Foo.bar`), not `::`, matching every other language. Keys for C and C++ repos changed accordingly in 3.2. Struct and class fields are emitted as `property`.
+
 ## TypeScript And JavaScript
 
 Supported extensions:
