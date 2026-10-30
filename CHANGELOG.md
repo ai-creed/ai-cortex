@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.18.1 (2026-10-31)
+
+This is a security maintenance release. It clears the open Dependabot alerts that ship in the published package, plus two newer advisories in the same dependency chain. None of the advisories reach code that ai-cortex runs: the MCP server uses only the stdio transport, and embeddings use only the text pipeline. They still appear in downstream dependency scanners, which is why they are fixed in a release rather than only in the repo. There are no behavior changes.
+
+### Changed
+- **MCP SDK raised to 1.32.2.** The advisories cover the SDK's HTTP transports, OAuth client, bearer authentication, and experimental tasks. ai-cortex loads none of these, but the old floor of `^1.0.0` let installs resolve vulnerable versions.
+- **js-yaml raised to 4.3.2.** Memory frontmatter goes through `yaml.load`, and two advisories allowed crafted YAML to burn CPU through merge keys and `!!omap`. 4.3.2 bounds both.
+
+### Fixed
+- **Patched transitive runtime dependencies through pnpm overrides.** fast-uri 3.1.9, hono 4.13.11, ip-address 10.7.1, proxy-addr 2.0.8, qs 6.16.0, body-parser 2.4.0, and @hono/node-server 2.1.3 all come in through the MCP SDK's HTTP stack. sharp 0.35.5 comes in through `@xenova/transformers`, which pins an older line, so the override is what keeps the patched native build.
+- **Patched development dependencies.** vite 7.3.7, source-map-js 1.2.2, brace-expansion 1.1.21 and 5.0.12, and @humanfs/node 0.16.8 are now forced through overrides. These are only used by tests and lint and are not published.
+
+### Known limitations
+- **The vitest chain is still flagged.** The tinypool and `@vitest/mocker` fixes exist only for vitest 4, so they wait for a separate test-runner upgrade. They affect development only.
+- **zod has an open advisory** for memory exhaustion while validating oversized collections. The fix is in zod 4, while ai-cortex pins zod 3, so it waits for that major upgrade. Tool inputs come from the local agent over stdio.
+
 ## v0.18.0 (2026-10-17)
 
 This release turns the per-worktree store into a navigation index (index contract v3.2) for consumers such as ai-14all's in-app code navigation. The 3.1 schema is unchanged, every table and column included, while `functions` row content now follows the projection from `symbols`; the additions are new tables, new meta keys, better call resolution, and CLI fixes.
