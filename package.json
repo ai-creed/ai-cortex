@@ -1,6 +1,6 @@
 {
 	"name": "ai-cortex",
-	"version": "0.18.0",
+	"version": "0.18.1",
 	"description": "Structural code intelligence and persistent memory for AI coding agents, served over MCP (Claude Code, Codex).",
 	"type": "module",
 	"license": "MIT",
@@ -138,6 +138,6 @@
 		"vitest": "^3.2.6"
 	},
 	"aiCortex": {
-		"releaseHeadline": "Navigation index: symbols, refs, and member-call resolution"
+		"releaseHeadline": "Security maintenance: patched MCP SDK and runtime dependencies"
 	}
 }
